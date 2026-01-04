@@ -1,0 +1,11 @@
+node_modules
+.next
+.env
+prisma/dev.db
+prisma/*.db
+.DS_Store
+
+prisma/e2e.db
+
+# optional
+.env.postgres
