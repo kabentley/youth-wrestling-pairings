@@ -12,7 +12,7 @@ datasource db {
 enum Role {
   ADMIN
   COACH
-  VIEWER
+  PARENT
 }
 
 enum MeetWrestlerStatus {
@@ -23,6 +23,10 @@ enum MeetWrestlerStatus {
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
+  symbol    String     @unique
+  color     String     @default("#000000")
+  logoData  Bytes?
+  logoType  String?
   createdAt DateTime   @default(now())
   wrestlers Wrestler[]
   meetTeams MeetTeam[]
@@ -31,10 +35,18 @@ model Team {
   homeTeamPreferSameMat Boolean @default(false)
 }
 
+model League {
+  id       String  @id @default(cuid())
+  name     String?
+  logoData Bytes?
+  logoType String?
+}
+
 model Wrestler {
   id              String   @id @default(cuid())
   teamId          String
   team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  guid            String   @unique @default(uuid())
 
   first           String
   last            String
@@ -46,6 +58,7 @@ model Wrestler {
 
   createdAt       DateTime @default(now())
   meetStatuses    MeetWrestlerStatus[]
+  parentLinks     UserChild[]
 
   @@index([teamId])
   @@index([last, first])
@@ -163,13 +176,15 @@ model ExcludedPair {
 
 // --- NextAuth.js models ---
 model User {
-  role          Role     @default(ADMIN)
+  role          Role     @default(PARENT)
   id            String   @id @default(cuid())
   name          String?
   username      String   @unique
   email         String?  @unique
   emailVerified DateTime?
   image         String?
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id])
 
   passwordHash  String?
   mfaEnabled    Boolean  @default(false)
@@ -179,9 +194,24 @@ model User {
   accounts      Account[]
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
+  children      UserChild[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model UserChild {
+  id         String   @id @default(cuid())
+  userId     String
+  wrestlerId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wrestler Wrestler @relation(fields: [wrestlerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, wrestlerId])
+  @@index([userId])
+  @@index([wrestlerId])
 }
 
 model Account {

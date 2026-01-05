@@ -16,6 +16,13 @@ export async function POST(req: Request, { params }: { params: { meetId: string 
     throw err;
   }
   const body = BodySchema.parse(await req.json());
+  const absent = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId, status: "ABSENT", wrestlerId: { in: [body.redId, body.greenId] } },
+    select: { wrestlerId: true },
+  });
+  if (absent.length > 0) {
+    return NextResponse.json({ error: "Cannot create a match for a not-attending wrestler" }, { status: 400 });
+  }
 
   await db.bout.deleteMany({
     where: {

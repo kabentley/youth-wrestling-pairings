@@ -12,9 +12,18 @@ export async function PATCH(req: Request, { params }: { params: { boutId: string
 
   const bout = await db.bout.findUnique({
     where: { id: params.boutId },
-    select: { id: true, meetId: true },
+    select: { id: true, meetId: true, redId: true, greenId: true },
   });
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
+
+  const absent = await db.meetWrestlerStatus.findMany({
+    where: { meetId: bout.meetId, status: "ABSENT" },
+    select: { wrestlerId: true },
+  });
+  const absentIds = new Set(absent.map(a => a.wrestlerId));
+  if (absentIds.has(bout.redId) || absentIds.has(bout.greenId)) {
+    return NextResponse.json({ error: "Cannot lock a bout with a not-attending wrestler" }, { status: 400 });
+  }
 
   try {
     await requireMeetLock(bout.meetId, user.id);

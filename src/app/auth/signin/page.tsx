@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -58,7 +59,7 @@ export default function SignInPage() {
         {err && <div style={{ color: "crimson" }}>{err}</div>}
 
         <div style={{ fontSize: 12, opacity: 0.75 }}>
-          If you need an account, ask your admin to create one (or use the seeded admin user).
+          Need an account? <Link href="/auth/signup">Create one</Link> (parent role).
         </div>
       </div>
     </main>

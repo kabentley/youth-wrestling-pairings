@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 
-type Team = { id: string; name: string };
+type Team = { id: string; name: string; symbol: string; color: string };
 type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[]; homeTeamId?: string | null };
 
 export default function MeetsPage() {
@@ -68,7 +68,8 @@ export default function MeetsPage() {
           <div style={{ marginBottom: 6 }}><b>Select teams (2–4)</b></div>
           {teams.map(t => (
             <label key={t.id} style={{ display: "block" }}>
-              <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} /> {t.name}
+              <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} />{" "}
+              <span style={{ color: t.color }}>{t.symbol}</span>
             </label>
           ))}
           <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
@@ -83,7 +84,7 @@ export default function MeetsPage() {
             {teamIds.map(id => {
               const t = teams.find(team => team.id === id);
               return (
-                <option key={id} value={id}>{t?.name ?? id}</option>
+                <option key={id} value={id}>{t?.symbol ?? id}</option>
               );
             })}
           </select>
@@ -101,7 +102,7 @@ export default function MeetsPage() {
             <a href={`/meets/${m.id}`}>{m.name}</a>{" "}
             — {new Date(m.date).toISOString().slice(0,10)}
             {m.location ? ` — ${m.location}` : ""} —{" "}
-            {m.meetTeams.map(mt => mt.team.name).join(", ")}
+            {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
           </li>
         ))}
       </ul>

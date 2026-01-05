@@ -3,20 +3,24 @@
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 
-type UserRow = { id: string; username: string; name: string | null; role: "ADMIN"|"COACH"|"VIEWER"; mfaEnabled: boolean };
+type UserRow = { id: string; username: string; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; mfaEnabled: boolean; teamId: string | null };
+type TeamRow = { id: string; name: string; symbol: string };
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("changeme123");
-  const [role, setRole] = useState<"ADMIN"|"COACH"|"VIEWER">("COACH");
+  const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT">("COACH");
+  const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
 
   async function load() {
-    const res = await fetch("/api/admin/users");
-    if (!res.ok) { setMsg("Not authorized."); return; }
-    setUsers(await res.json());
+    const [uRes, tRes] = await Promise.all([fetch("/api/admin/users"), fetch("/api/teams")]);
+    if (!uRes.ok) { setMsg("Not authorized."); return; }
+    setUsers(await uRes.json());
+    if (tRes.ok) setTeams(await tRes.json());
   }
 
   useEffect(() => { load(); }, []);
@@ -26,11 +30,11 @@ export default function AdminUsersPage() {
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, name, password, role }),
+      body: JSON.stringify({ username, name, password, role, teamId: teamId || null }),
     });
     const txt = await res.text();
     if (!res.ok) { setMsg(txt); return; }
-    setUsername(""); setName(""); setPassword("changeme123"); setRole("COACH");
+    setUsername(""); setName(""); setPassword("changeme123"); setRole("COACH"); setTeamId("");
     setMsg("User created.");
     load();
   }
@@ -40,6 +44,15 @@ export default function AdminUsersPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: newRole }),
+    });
+    load();
+  }
+
+  async function setUserTeam(id: string, newTeamId: string | null) {
+    await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teamId: newTeamId }),
     });
     load();
   }
@@ -81,7 +94,13 @@ export default function AdminUsersPage() {
           <select value={role} onChange={e => setRole(e.target.value as any)}>
             <option value="ADMIN">ADMIN</option>
             <option value="COACH">COACH</option>
-            <option value="VIEWER">VIEWER</option>
+            <option value="PARENT">PARENT</option>
+          </select>
+          <select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={role !== "COACH"}>
+            <option value="">Select team (coach only)</option>
+            {teams.map(t => (
+              <option key={t.id} value={t.id}>{t.symbol}</option>
+            ))}
           </select>
         </div>
         <button style={{ marginTop: 10 }} onClick={createUser}>Create</button>
@@ -94,6 +113,7 @@ export default function AdminUsersPage() {
             <th>Username</th>
             <th>Name</th>
             <th>Role</th>
+            <th>Team</th>
             <th>MFA</th>
             <th>Actions</th>
           </tr>
@@ -107,7 +127,19 @@ export default function AdminUsersPage() {
                 <select value={u.role} onChange={e => setUserRole(u.id, e.target.value as any)}>
                   <option value="ADMIN">ADMIN</option>
                   <option value="COACH">COACH</option>
-                  <option value="VIEWER">VIEWER</option>
+                  <option value="PARENT">PARENT</option>
+                </select>
+              </td>
+              <td>
+                <select
+                  value={u.teamId ?? ""}
+                  onChange={(e) => setUserTeam(u.id, e.target.value || null)}
+                  disabled={u.role !== "COACH"}
+                >
+                  <option value="">None</option>
+                  {teams.map(t => (
+                    <option key={t.id} value={t.id}>{t.symbol}</option>
+                  ))}
                 </select>
               </td>
               <td>{u.mfaEnabled ? "Enabled" : "Off"}</td>

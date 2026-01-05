@@ -11,17 +11,26 @@ export default async function WallChart({ params }: { params: { meetId: string }
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
 
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+
+  const filteredBouts = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
+
   const teamIds = meet?.meetTeams.map(mt => mt.teamId) ?? [];
   const wrestlers = await db.wrestler.findMany({ where: { teamId: { in: teamIds } } });
   const wMap = new Map(wrestlers.map(w => [w.id, w]));
-  const tMap = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.name]) ?? []);
+  const tMap = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.symbol]) ?? []);
+  const tColor = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.color]) ?? []);
 
-  const maxMat = Math.max(1, ...bouts.map(b => b.mat ?? 1));
+  const maxMat = Math.max(1, ...filteredBouts.map(b => b.mat ?? 1));
   const mats = Array.from({ length: maxMat }, (_, i) => i + 1);
 
   const perMat = new Map<number, typeof bouts>();
   for (const m of mats) perMat.set(m, []);
-  for (const b of bouts) {
+  for (const b of filteredBouts) {
     const m = b.mat ?? 1;
     if (!perMat.has(m)) perMat.set(m, []);
     perMat.get(m)!.push(b);
@@ -38,6 +47,8 @@ export default async function WallChart({ params }: { params: { meetId: string }
     return {
       red: r ? `${r.first} ${r.last} (${r.weight})` : b.redId,
       green: g ? `${g.first} ${g.last} (${g.weight})` : b.greenId,
+      redColor: r ? (tColor.get(r.teamId) ?? "#000000") : "#000000",
+      greenColor: g ? (tColor.get(g.teamId) ?? "#000000") : "#000000",
       teams: (rTeam || gTeam) ? `${rTeam} vs ${gTeam}` : "",
       locked: b.locked ? "LOCKED" : "",
     };
@@ -95,7 +106,7 @@ export default async function WallChart({ params }: { params: { meetId: string }
         <div className="meta">
           {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""} {meet?.location ? `— ${meet.location}` : ""}
           <br />
-          Teams: {meet?.meetTeams.map(mt => mt.team.name).join(", ")}
+          Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
         </div>
 
         <div className="grid">
@@ -113,8 +124,8 @@ export default async function WallChart({ params }: { params: { meetId: string }
                 return (
                   <div key={`c-${m}-${row}`} className="cell">
                     <div className="small">{t.teams}</div>
-                    <div style={{ fontWeight: 650, marginTop: 4 }}>{t.red}</div>
-                    <div style={{ marginTop: 2 }}>{t.green}</div>
+                    <div style={{ fontWeight: 650, marginTop: 4, color: t.redColor }}>{t.red}</div>
+                    <div style={{ marginTop: 2, color: t.greenColor }}>{t.green}</div>
                     <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between" }}>
                       <div className="small">{b.notes ?? ""}</div>
                       <div className="locked">{t.locked}</div>

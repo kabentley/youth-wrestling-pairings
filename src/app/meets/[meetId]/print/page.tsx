@@ -11,13 +11,21 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
 
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+  const filteredBouts = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
+
   const teamIds = meet?.meetTeams.map(mt => mt.teamId) ?? [];
   const wrestlers = await db.wrestler.findMany({ where: { teamId: { in: teamIds } } });
   const wMap = new Map(wrestlers.map(w => [w.id, w]));
-  const tMap = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.name]) ?? []);
+  const tMap = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.symbol]) ?? []);
+  const tColor = new Map(meet?.meetTeams.map(mt => [mt.team.id, mt.team.color]) ?? []);
 
   const mats = new Map<number, typeof bouts>();
-  for (const b of bouts) {
+  for (const b of filteredBouts) {
     const m = b.mat ?? 0;
     if (!mats.has(m)) mats.set(m, []);
     mats.get(m)!.push(b);
@@ -48,7 +56,7 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
           {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""}{" "}
           {meet?.location ? `— ${meet.location}` : ""}
           <br />
-          Teams: {meet?.meetTeams.map(mt => mt.team.name).join(", ")}
+          Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
         </div>
 
         {Array.from(mats.entries())
@@ -74,10 +82,14 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
                       <tr key={b.id}>
                         <td>{b.order ?? ""}</td>
                         <td>
-                          {r ? `${r.first} ${r.last} (${r.weight}) — ${tMap.get(r.teamId) ?? r.teamId}` : b.redId}
+                          <span style={{ color: tColor.get(r?.teamId ?? "") ?? "#000000" }}>
+                            {r ? `${r.first} ${r.last} (${r.weight}) — ${tMap.get(r.teamId) ?? r.teamId}` : b.redId}
+                          </span>
                         </td>
                         <td>
-                          {g ? `${g.first} ${g.last} (${g.weight}) — ${tMap.get(g.teamId) ?? g.teamId}` : b.greenId}
+                          <span style={{ color: tColor.get(g?.teamId ?? "") ?? "#000000" }}>
+                            {g ? `${g.first} ${g.last} (${g.weight}) — ${tMap.get(g.teamId) ?? g.teamId}` : b.greenId}
+                          </span>
                         </td>
                         <td className="small">
                           {b.locked ? "LOCKED • " : ""}
@@ -105,8 +117,12 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
               <tbody>
                 {mats.get(0)!.map(b => (
                   <tr key={b.id}>
-                    <td>{wMap.get(b.redId)?.first} {wMap.get(b.redId)?.last}</td>
-                    <td>{wMap.get(b.greenId)?.first} {wMap.get(b.greenId)?.last}</td>
+                    <td style={{ color: tColor.get(wMap.get(b.redId)?.teamId ?? "") ?? "#000000" }}>
+                      {wMap.get(b.redId)?.first} {wMap.get(b.redId)?.last}
+                    </td>
+                    <td style={{ color: tColor.get(wMap.get(b.greenId)?.teamId ?? "") ?? "#000000" }}>
+                      {wMap.get(b.greenId)?.first} {wMap.get(b.greenId)?.last}
+                    </td>
                     <td className="small">{b.notes ?? ""}</td>
                   </tr>
                 ))}

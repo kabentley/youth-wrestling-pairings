@@ -24,6 +24,15 @@ export async function PATCH(req: Request, { params }: { params: { boutId: string
   });
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
 
+  const absent = await db.meetWrestlerStatus.findMany({
+    where: { meetId: bout.meetId, status: "ABSENT" },
+    select: { wrestlerId: true },
+  });
+  const absentIds = new Set(absent.map(a => a.wrestlerId));
+  if (absentIds.has(bout.redId) || absentIds.has(bout.greenId)) {
+    return NextResponse.json({ error: "Cannot record results for a bout with a not-attending wrestler" }, { status: 400 });
+  }
+
   try {
     await requireMeetLock(bout.meetId, user.id);
   } catch (err) {

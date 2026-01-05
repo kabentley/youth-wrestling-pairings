@@ -58,6 +58,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).username = (user as any).username;
         (session.user as any).mfaEnabled = (user as any).mfaEnabled ?? false;
         (session.user as any).role = (user as any).role ?? "COACH";
+        (session.user as any).teamId = (user as any).teamId ?? null;
       }
       return session;
     },

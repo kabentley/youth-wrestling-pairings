@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
+import { requireTeamCoach } from "@/lib/rbac";
 import { z } from "zod";
 
 const RuleSchema = z.object({
@@ -22,7 +22,7 @@ const BodySchema = z.object({
 });
 
 export async function GET(_req: Request, { params }: { params: { teamId: string } }) {
-  await requireRole("COACH");
+  await requireTeamCoach(params.teamId);
   const team = await db.team.findUnique({
     where: { id: params.teamId },
     select: {
@@ -50,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: { teamId: string 
 }
 
 export async function PUT(req: Request, { params }: { params: { teamId: string } }) {
-  await requireRole("COACH");
+  await requireTeamCoach(params.teamId);
   const body = BodySchema.parse(await req.json());
 
   await db.team.update({

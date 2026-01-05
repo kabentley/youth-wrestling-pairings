@@ -39,6 +39,7 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({
       id: w.id,
+      guid: w.guid,
       teamId: w.teamId,
       first: w.first,
       last: w.last,

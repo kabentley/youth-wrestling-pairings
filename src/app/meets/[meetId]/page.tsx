@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 
-type Team = { id: string; name: string };
+type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
   id: string;
   teamId: string;
@@ -98,20 +98,24 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   function teamName(id: string) {
-    return teams.find(t => t.id === id)?.name ?? id;
+    const team = teams.find(t => t.id === id);
+    return team?.symbol || team?.name || id;
   }
-  function statusColor(status?: Wrestler["status"]) {
-    if (status === "LATE") return "#1e8a3b";
-    if (status === "EARLY") return "#8b5a2b";
-    if (status === "ABSENT") return "#777";
+  function teamColor(id: string) {
+    return teams.find(t => t.id === id)?.color ?? "#000000";
+  }
+  function statusBg(status?: Wrestler["status"]) {
+    if (status === "EARLY") return "#f3eadf";
+    if (status === "LATE") return "#e6f6ea";
+    if (status === "ABSENT") return "#f0f0f0";
     return "";
   }
   function wName(id: string) {
     const w = wMap[id];
     if (!w) return id;
-    const color = statusColor(w.status);
+    const color = teamColor(w.teamId);
     return (
-      <span style={color ? { color } : undefined}>
+      <span style={{ color }}>
         {w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}
         {w.status === "LATE" ? " (Arrive Late)" : ""}
         {w.status === "EARLY" ? " (Leave Early)" : ""}
@@ -165,6 +169,32 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   const unmatched = wrestlers
     .filter(w => !matchedIds.has(w.id) && w.status !== "ABSENT")
     .sort((a, b) => a.weight - b.weight);
+
+  const conflictBoutIds = (() => {
+    const gap = 6;
+    const byWrestler = new Map<string, { boutId: string; order: number }[]>();
+    for (const b of bouts) {
+      if (!b.order) continue;
+      for (const wid of [b.redId, b.greenId]) {
+        const list = byWrestler.get(wid) ?? [];
+        list.push({ boutId: b.id, order: b.order });
+        byWrestler.set(wid, list);
+      }
+    }
+    const conflicts = new Set<string>();
+    for (const list of byWrestler.values()) {
+      list.sort((a, b) => a.order - b.order);
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const diff = list[j].order - list[i].order;
+          if (diff > gap) break;
+          conflicts.add(list[i].boutId);
+          conflicts.add(list[j].boutId);
+        }
+      }
+    }
+    return conflicts;
+  })();
 
   async function generate() {
     if (!canEdit) return;
@@ -299,6 +329,14 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
         {msg && <span>{msg}</span>}
       </div>
 
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12, fontSize: 12 }}>
+        <span>Legend:</span>
+        <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
+        <span style={{ background: "#e6f6ea", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
+        <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
+        <span style={{ background: "#f0f0f0", padding: "2px 6px", borderRadius: 6 }}>Not attending</span>
+      </div>
+
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <label>Mats: <input type="number" min={1} max={10} value={matSettings.numMats} onChange={e => setMatSettings(s => ({ ...s, numMats: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <label>Min rest: <input type="number" min={0} max={20} value={matSettings.minRestBouts} onChange={e => setMatSettings(s => ({ ...s, minRestBouts: Number(e.target.value) }))} style={{ width: 60 }} /></label>
@@ -314,8 +352,23 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
           </tr>
         </thead>
         <tbody>
-          {bouts.map(b => (
-            <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
+          {bouts.map(b => {
+            const red = wMap[b.redId];
+            const green = wMap[b.greenId];
+            const hasLate = red?.status === "LATE" || green?.status === "LATE";
+            const hasEarly = red?.status === "EARLY" || green?.status === "EARLY";
+            const hasAbsent = red?.status === "ABSENT" || green?.status === "ABSENT";
+            const rowBg = hasAbsent
+              ? "#f0f0f0"
+              : hasEarly
+                ? "#f3eadf"
+                : hasLate
+                  ? "#e6f6ea"
+                  : conflictBoutIds.has(b.id)
+                    ? "#ffd6df"
+                    : undefined;
+            return (
+              <tr key={b.id} style={{ borderTop: "1px solid #ddd", background: rowBg }}>
               <td>{b.mat ?? ""}</td>
               <td>{b.order ?? ""}</td>
               <td><button onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>{wName(b.redId)}</button></td>
@@ -323,7 +376,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
               <td>{b.score.toFixed(3)}</td>
               <td><button onClick={() => setLock(b.id, !b.locked)} disabled={!canEdit}>{b.locked ? "Unlock" : "Lock"}</button></td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
 
@@ -347,7 +400,10 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
           {target && (
             <>
               <div style={{ marginBottom: 10 }}>
-                <b>{target.first} {target.last}</b> ({target.weight}) — {teamName(target.teamId)} — exp {target.experienceYears}, skill {target.skill}
+                <span style={{ color: teamColor(target.teamId) }}>
+                  <b>{target.first} {target.last}</b>
+                </span>{" "}
+                ({target.weight}) — {teamName(target.teamId)} — exp {target.experienceYears}, skill {target.skill}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                 <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
@@ -383,7 +439,11 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
                     const d = c.details;
                     return (
                       <tr key={o.id} style={{ borderTop: "1px solid #eee" }}>
-                        <td>{o.first} {o.last} ({o.weight}) — {teamName(o.teamId)}</td>
+                        <td>
+                          <span style={{ color: teamColor(o.teamId) }}>
+                            {o.first} {o.last} ({o.weight}) — {teamName(o.teamId)}
+                          </span>
+                        </td>
                         <td align="right">{Number(c.score).toFixed(3)}</td>
                         <td align="right">{Number(d.wDiff).toFixed(1)}</td>
                         <td align="right">{Number(d.wPct).toFixed(1)}%</td>

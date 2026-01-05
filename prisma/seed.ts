@@ -57,8 +57,8 @@ async function clearAll() {
   await db.team.deleteMany();
 }
 
-async function createTeam(name: string, roster: WrestlerSeed[]) {
-  const team = await db.team.create({ data: { name } });
+async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) {
+  const team = await db.team.create({ data: { name, symbol } });
   await db.wrestler.createMany({
     data: roster.map(w => ({
       teamId: team.id,
@@ -111,10 +111,10 @@ async function main() {
   await ensureAdmin();
   await clearAll();
 
-  const t1 = await createTeam("Tigers", rosterA);
-  const t2 = await createTeam("Bears", rosterB);
-  const t3 = await createTeam("Eagles", rosterC);
-  const t4 = await createTeam("Wolves", rosterD);
+  const t1 = await createTeam("Tigers", "TIG", rosterA);
+  const t2 = await createTeam("Bears", "BEA", rosterB);
+  const t3 = await createTeam("Eagles", "EAG", rosterC);
+  const t4 = await createTeam("Wolves", "WOL", rosterD);
 
   // 2-team meet
   await createMeet("Week 1 (Tigers vs Bears)", "2026-01-15", [t1.id, t2.id]);

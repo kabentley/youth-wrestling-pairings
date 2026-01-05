@@ -165,4 +165,4 @@ Future improvements may include:
 
 Coaches/Admins can enter results on the meet page. Results are stored on each bout.
 
-If you want VIEWER accounts to enter results, change RBAC so the results endpoint requires VIEWER instead of COACH (not recommended).
+If you want PARENT accounts to enter results, change RBAC so the results endpoint requires PARENT instead of COACH (not recommended).

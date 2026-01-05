@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
 type Wrestler = {
   id: string;
@@ -23,7 +23,12 @@ type MatRule = {
 
 export default function TeamDetail({ params }: { params: { teamId: string } }) {
   const { teamId } = params;
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role as string | undefined;
+  const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
+  const canEdit = role === "ADMIN" || (role === "COACH" && sessionTeamId === teamId);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
+  const [team, setTeam] = useState<{ name: string; symbol?: string; color?: string; hasLogo?: boolean } | null>(null);
   const [showInactive, setShowInactive] = useState(true);
   const [matRules, setMatRules] = useState<MatRule[]>([]);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
@@ -50,9 +55,10 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
   }
 
   async function load() {
-    const [wRes, rRes] = await Promise.all([
+    const [wRes, rRes, tRes] = await Promise.all([
       fetch(`/api/teams/${teamId}/wrestlers?includeInactive=${showInactive ? "1" : "0"}`),
       fetch(`/api/teams/${teamId}/mat-rules`),
+      fetch(`/api/teams/${teamId}`),
     ]);
     setWrestlers(await wRes.json());
     if (rRes.ok) {
@@ -70,9 +76,11 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
     } else if (matRules.length === 0) {
       setMatRules(Array.from({ length: 4 }, (_, idx) => defaultMatRule(idx)));
     }
+    if (tRes.ok) setTeam(await tRes.json());
   }
 
   async function add() {
+    if (!canEdit) return;
     if (!form.first.trim() || !form.last.trim()) return;
     await fetch(`/api/teams/${teamId}/wrestlers`, {
       method: "POST",
@@ -89,6 +97,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
   }
 
   async function saveMatRules() {
+    if (!canEdit) return;
     setRuleMsg("");
     const rules = matRules.map((rule, idx) => ({
       ...rule,
@@ -110,6 +119,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
   useEffect(() => { load(); }, [teamId, showInactive]);
 
   async function setWrestlerActive(wrestlerId: string, active: boolean) {
+    if (!canEdit) return;
     await fetch(`/api/teams/${teamId}/wrestlers/${wrestlerId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -127,14 +137,27 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
         <a href="/auth/mfa">MFA</a>
         <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
       </div>
-      <h2>Team Wrestlers</h2>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {team?.hasLogo ? (
+          <img src={`/api/teams/${teamId}/logo/file`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
+        ) : null}
+        <h2 style={{ margin: 0 }}>
+          {team?.symbol ? `${team.symbol} — ${team.name}` : (team?.name ?? "Team")}
+        </h2>
+      </div>
+
+      {!canEdit && (
+        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+          You can view this roster but cannot edit it.
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
-        <input placeholder="First" value={form.first} onChange={e => setForm({ ...form, first: e.target.value })} />
-        <input placeholder="Last" value={form.last} onChange={e => setForm({ ...form, last: e.target.value })} />
-        <input type="number" placeholder="Weight" value={form.weight} onChange={e => setForm({ ...form, weight: Number(e.target.value) })} />
-        <input type="date" value={form.birthdate} onChange={e => setForm({ ...form, birthdate: e.target.value })} />
-        <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => setForm({ ...form, experienceYears: Number(e.target.value) })} />
+        <input placeholder="First" value={form.first} onChange={e => setForm({ ...form, first: e.target.value })} disabled={!canEdit} />
+        <input placeholder="Last" value={form.last} onChange={e => setForm({ ...form, last: e.target.value })} disabled={!canEdit} />
+        <input type="number" placeholder="Weight" value={form.weight} onChange={e => setForm({ ...form, weight: Number(e.target.value) })} disabled={!canEdit} />
+        <input type="date" value={form.birthdate} onChange={e => setForm({ ...form, birthdate: e.target.value })} disabled={!canEdit} />
+        <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => setForm({ ...form, experienceYears: Number(e.target.value) })} disabled={!canEdit} />
         <input
           type="number"
           placeholder="Skill 0-5"
@@ -142,10 +165,11 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
           min={0}
           max={5}
           onChange={e => setForm({ ...form, skill: Number(e.target.value) })}
+          disabled={!canEdit}
         />
       </div>
 
-      <button onClick={add}>Add Wrestler</button>
+      <button onClick={add} disabled={!canEdit}>Add Wrestler</button>
 
       <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginTop: 16 }}>
         <h3 style={{ marginTop: 0 }}>Home Team Mat Rules</h3>
@@ -172,6 +196,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
                       const color = e.target.value;
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, color } : r)));
                     }}
+                    disabled={!canEdit}
                   />
                 </td>
                 <td>
@@ -185,6 +210,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, minExperience } : r)));
                     }}
                     style={{ width: 70 }}
+                    disabled={!canEdit}
                   />
                 </td>
                 <td>
@@ -198,6 +224,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, maxExperience } : r)));
                     }}
                     style={{ width: 70 }}
+                    disabled={!canEdit}
                   />
                 </td>
                 <td>
@@ -212,6 +239,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, minAge } : r)));
                     }}
                     style={{ width: 70 }}
+                    disabled={!canEdit}
                   />
                 </td>
                 <td>
@@ -226,6 +254,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, maxAge } : r)));
                     }}
                     style={{ width: 70 }}
+                    disabled={!canEdit}
                   />
                 </td>
               </tr>
@@ -239,6 +268,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
               if (matRules.length >= 10) return;
               setMatRules(rules => [...rules, defaultMatRule(rules.length)]);
             }}
+            disabled={!canEdit}
           >
             Add Mat
           </button>
@@ -247,6 +277,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
               if (matRules.length <= 1) return;
               setMatRules(rules => rules.slice(0, rules.length - 1));
             }}
+            disabled={!canEdit}
           >
             Remove Last Mat
           </button>
@@ -255,10 +286,11 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
               type="checkbox"
               checked={homeTeamPreferSameMat}
               onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
+              disabled={!canEdit}
             />{" "}
             Keep home team on the same mat
           </label>
-          <button onClick={saveMatRules}>Save Rules</button>
+          <button onClick={saveMatRules} disabled={!canEdit}>Save Rules</button>
           {ruleMsg && <span>{ruleMsg}</span>}
         </div>
       </div>
@@ -281,13 +313,13 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
         <tbody>
           {wrestlers.filter(w => w.active).map(w => (
             <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td>{w.first} {w.last}</td>
+              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last}</td>
               <td>{w.weight}</td>
               <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
               <td>{w.experienceYears}</td>
               <td>{w.skill}</td>
               <td>
-                <button onClick={() => setWrestlerActive(w.id, false)}>Remove</button>
+                <button onClick={() => setWrestlerActive(w.id, false)} disabled={!canEdit}>Remove</button>
               </td>
             </tr>
           ))}
@@ -306,16 +338,16 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
             <tbody>
               {wrestlers.filter(w => !w.active).map(w => (
                 <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-                  <td>{w.first} {w.last}</td>
+              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last}</td>
                   <td>{w.weight}</td>
                   <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
                   <td>{w.experienceYears}</td>
-                  <td>{w.skill}</td>
-                  <td>
-                    <button onClick={() => setWrestlerActive(w.id, true)}>Reinstate</button>
-                  </td>
-                </tr>
-              ))}
+              <td>{w.skill}</td>
+              <td>
+                <button onClick={() => setWrestlerActive(w.id, true)} disabled={!canEdit}>Reinstate</button>
+              </td>
+            </tr>
+          ))}
               {wrestlers.filter(w => !w.active).length === 0 && (
                 <tr><td colSpan={6}>None</td></tr>
               )}

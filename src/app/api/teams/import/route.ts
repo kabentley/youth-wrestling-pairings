@@ -16,21 +16,33 @@ const WrestlerRow = z.object({
 const BodySchema = z.object({
   teamId: z.string().min(1).optional(),
   teamName: z.string().min(2).optional(),
+  teamSymbol: z.string().trim().min(2).max(4).optional(),
   wrestlers: z.array(WrestlerRow).min(1).max(500),
 }).refine(v => Boolean(v.teamId || v.teamName), {
   message: "Provide teamId or teamName",
 });
 
 export async function POST(req: Request) {
-  await requireRole("COACH");
+  const { user } = await requireRole("COACH");
   const body = BodySchema.parse(await req.json());
 
   let teamId = body.teamId;
   if (!teamId) {
+    if (user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only admins can create teams" }, { status: 403 });
+    }
+    if (!body.teamSymbol) {
+      return NextResponse.json({ error: "teamSymbol is required to create a team" }, { status: 400 });
+    }
     const existing = await db.team.findUnique({ where: { name: body.teamName! } });
     teamId = existing
       ? existing.id
-      : (await db.team.create({ data: { name: body.teamName! } })).id;
+      : (await db.team.create({
+          data: { name: body.teamName!, symbol: body.teamSymbol.trim().toUpperCase() },
+        })).id;
+  }
+  if (user.role !== "ADMIN" && user.teamId !== teamId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const existingWrestlers = await db.wrestler.findMany({

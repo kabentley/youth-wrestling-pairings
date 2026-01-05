@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
+import { requireTeamCoach } from "@/lib/rbac";
 import { z } from "zod";
 
 const WrestlerSchema = z.object({
@@ -22,8 +22,8 @@ export async function GET(_: Request, { params }: { params: { teamId: string } }
   return NextResponse.json(wrestlers);
 }
 
-export async function POST(req: Request) {
-  await requireRole("COACH");
+export async function POST(req: Request, { params }: { params: { teamId: string } }) {
+  await requireTeamCoach(params.teamId);
   const body = await req.json();
   const parsed = WrestlerSchema.parse(body);
 

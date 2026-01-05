@@ -51,6 +51,23 @@ export async function PATCH(req: Request, { params }: { params: { meetId: string
         OR: [{ redId: body.wrestlerId }, { greenId: body.wrestlerId }],
       },
     });
+  } else {
+    const statuses = await db.meetWrestlerStatus.findMany({
+      where: { meetId: params.meetId, status: "ABSENT" },
+      select: { wrestlerId: true },
+    });
+    const absentIds = new Set(statuses.map(s => s.wrestlerId));
+    if (absentIds.size > 0) {
+      await db.bout.deleteMany({
+        where: {
+          meetId: params.meetId,
+          OR: [
+            { redId: { in: Array.from(absentIds) } },
+            { greenId: { in: Array.from(absentIds) } },
+          ],
+        },
+      });
+    }
   }
 
   return NextResponse.json({ ok: true });

@@ -8,7 +8,8 @@ declare module "next-auth" {
       email?: string | null;
       name?: string | null;
       mfaEnabled?: boolean;
-      role?: "ADMIN" | "COACH" | "VIEWER";
+      role?: "ADMIN" | "COACH" | "PARENT";
+      teamId?: string | null;
     };
   }
 }

@@ -19,10 +19,16 @@ export async function GET(_: Request, { params }: { params: { meetId: string } }
   });
   const statusMap = new Map(statuses.map(s => [s.wrestlerId, s.status]));
 
-  const teams = meetTeams.map(mt => ({ id: mt.team.id, name: mt.team.name }));
+  const teams = meetTeams.map(mt => ({
+    id: mt.team.id,
+    name: mt.team.name,
+    symbol: mt.team.symbol,
+    color: mt.team.color,
+  }));
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({
       id: w.id,
+      guid: w.guid,
       teamId: w.teamId,
       first: w.first,
       last: w.last,

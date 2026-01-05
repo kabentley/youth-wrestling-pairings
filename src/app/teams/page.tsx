@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
-type Team = { id: string; name: string };
+type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
 
 function parseCsv(text: string) {
   // Basic CSV parser that supports commas and quoted values.
@@ -59,12 +59,16 @@ function parseCsv(text: string) {
 }
 
 export default function TeamsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role as string | undefined;
   const [teams, setTeams] = useState<Team[]>([]);
   const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState("");
 
   // Import state
   const [importTeamId, setImportTeamId] = useState<string>("");
   const [importNewTeamName, setImportNewTeamName] = useState<string>("");
+  const [importNewTeamSymbol, setImportNewTeamSymbol] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
@@ -75,19 +79,20 @@ export default function TeamsPage() {
   }
 
   async function addTeam() {
-    if (!name.trim()) return;
+    if (!name.trim() || !symbol.trim()) return;
     await fetch("/api/teams", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, symbol }),
     });
     setName("");
+    setSymbol("");
     load();
   }
 
   useEffect(() => { load(); }, []);
 
-  const teamOptions = useMemo(() => [{ id: "", name: "— Select existing team —" }, ...teams], [teams]);
+  const teamOptions = useMemo(() => [{ id: "", name: "Select existing team", symbol: "" }, ...teams], [teams]);
 
   async function onChooseFile(f: File | null) {
     setFile(f);
@@ -130,9 +135,16 @@ export default function TeamsPage() {
     if (!file) { setImportMsg("Choose a CSV file first."); return; }
     const teamId = importTeamId || undefined;
     const teamName = (!teamId && importNewTeamName.trim()) ? importNewTeamName.trim() : undefined;
+    const teamSymbol = (!teamId && importNewTeamSymbol.trim())
+      ? importNewTeamSymbol.trim()
+      : undefined;
 
     if (!teamId && !teamName) {
       setImportMsg("Select an existing team OR enter a new team name.");
+      return;
+    }
+    if (!teamId && !teamSymbol) {
+      setImportMsg("Team symbol is required when creating a new team.");
       return;
     }
 
@@ -166,7 +178,7 @@ export default function TeamsPage() {
     const res = await fetch("/api/teams/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, teamName, wrestlers }),
+      body: JSON.stringify({ teamId, teamName, teamSymbol, wrestlers }),
     });
 
     if (!res.ok) {
@@ -181,6 +193,7 @@ export default function TeamsPage() {
     setPreview(null);
     setImportNewTeamName("");
     setImportTeamId("");
+    setImportNewTeamSymbol("");
     await load();
     setTimeout(() => setImportMsg(""), 2000);
   }
@@ -194,29 +207,43 @@ export default function TeamsPage() {
       </div>
       <h2>Teams</h2>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Team name" />
-        <button onClick={addTeam}>Add</button>
-      </div>
+      {role === "ADMIN" ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Team name" />
+          <input value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="Symbol (2-4)" style={{ width: 120 }} />
+          <button onClick={addTeam}>Add</button>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 16 }}>
+          Team management is handled by league admins.
+        </div>
+      )}
 
       <ul>
         {teams.map(t => (
           <li key={t.id}>
-            <a href={`/teams/${t.id}`}>{t.name}</a>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {t.hasLogo ? (
+                <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 28, height: 28, objectFit: "contain" }} />
+              ) : null}
+              <a href={`/teams/${t.id}`} style={{ color: t.color }}>{t.symbol}</a>
+            </div>
           </li>
         ))}
       </ul>
 
       <hr style={{ margin: "18px 0" }} />
 
-      <h3>Import roster from CSV</h3>
-      <div style={{ maxWidth: 900 }}>
+      {role === "ADMIN" && (
+        <>
+          <h3>Import roster from CSV</h3>
+          <div style={{ maxWidth: 900 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "end" }}>
           <div>
             <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Existing team</label>
             <select value={importTeamId} onChange={e => setImportTeamId(e.target.value)} style={{ width: "100%" }}>
               {teamOptions.map(t => (
-                <option key={t.id || "none"} value={t.id}>{t.name}</option>
+                <option key={t.id || "none"} value={t.id}>{t.id ? t.symbol : t.name}</option>
               ))}
             </select>
             <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
@@ -231,6 +258,13 @@ export default function TeamsPage() {
               onChange={e => setImportNewTeamName(e.target.value)}
               placeholder="New team name (optional)"
               style={{ width: "100%" }}
+              disabled={!!importTeamId}
+            />
+            <input
+              value={importNewTeamSymbol}
+              onChange={e => setImportNewTeamSymbol(e.target.value)}
+              placeholder="Team symbol (2-4)"
+              style={{ width: "100%", marginTop: 6 }}
               disabled={!!importTeamId}
             />
           </div>
@@ -281,14 +315,16 @@ export default function TeamsPage() {
           </div>
         )}
 
-        <details style={{ marginTop: 12 }}>
-          <summary>Example CSV</summary>
-          <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
+            <details style={{ marginTop: 12 }}>
+              <summary>Example CSV</summary>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
 Ben,Bentley,52,2015-03-11,1,3
 Sam,Smith,55,2014-11-02,0,2
 `}</pre>
-        </details>
-      </div>
+            </details>
+          </div>
+        </>
+      )}
 
       <p style={{ marginTop: 16 }}>
         <a href="/">Back</a>

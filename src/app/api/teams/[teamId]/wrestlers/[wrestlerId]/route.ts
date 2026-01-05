@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
+import { requireTeamCoach } from "@/lib/rbac";
 import { z } from "zod";
 
 const BodySchema = z.object({
@@ -8,7 +8,7 @@ const BodySchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: { teamId: string; wrestlerId: string } }) {
-  await requireRole("COACH");
+  await requireTeamCoach(params.teamId);
   const body = BodySchema.parse(await req.json());
 
   const wrestler = await db.wrestler.findUnique({

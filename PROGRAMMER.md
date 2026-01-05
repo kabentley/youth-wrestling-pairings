@@ -21,7 +21,7 @@ npm run test:e2e
 
 ## RBAC
 
-Roles are stored on `User.role` (ADMIN/COACH/VIEWER). Mutating API routes require at least COACH. Admin routes require ADMIN.
+Roles are stored on `User.role` (ADMIN/COACH/PARENT). Mutating API routes require at least COACH. Admin routes require ADMIN.
 
 
 ## Results

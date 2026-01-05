@@ -6,5 +6,11 @@ export async function GET(_: Request, { params }: { params: { meetId: string } }
     where: { meetId: params.meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
-  return NextResponse.json(bouts);
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId, status: "ABSENT" },
+    select: { wrestlerId: true },
+  });
+  const absentIds = new Set(statuses.map(s => s.wrestlerId));
+  const filtered = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
+  return NextResponse.json(filtered);
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Team = { id: string; name: string };
+type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "ABSENT" | null };
 type Bout = {
   id: string;
@@ -110,7 +110,11 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
   const canEdit = lockState.status === "acquired";
 
   function teamName(teamId: string) {
-    return teams.find(t => t.id === teamId)?.name ?? teamId;
+    const team = teams.find(t => t.id === teamId);
+    return team?.symbol || team?.name || teamId;
+  }
+  function teamColor(teamId: string) {
+    return teams.find(t => t.id === teamId)?.color ?? "#000000";
   }
 
   const mats = useMemo(() => {
@@ -118,6 +122,9 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     for (let m = 1; m <= numMats; m++) out[keyMat(m)] = [];
 
     for (const b of bouts) {
+      const r = wMap[b.redId];
+      const g = wMap[b.greenId];
+      if (r?.status === "ABSENT" || g?.status === "ABSENT") continue;
       const m = b.mat ?? 1;
       const k = keyMat(Math.min(Math.max(1, m), numMats));
       out[k] ??= [];
@@ -221,9 +228,17 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     const g = wMap[b.greenId];
     const rTxt = r ? `${r.first} ${r.last} (${r.weight}) — ${teamName(r.teamId)}` : b.redId;
     const gTxt = g ? `${g.first} ${g.last} (${g.weight}) — ${teamName(g.teamId)}` : b.greenId;
-    const rColor = r?.status === "LATE" ? "#1e8a3b" : r?.status === "EARLY" ? "#8b5a2b" : r?.status === "ABSENT" ? "#777" : "";
-    const gColor = g?.status === "LATE" ? "#1e8a3b" : g?.status === "EARLY" ? "#8b5a2b" : g?.status === "ABSENT" ? "#777" : "";
-    return { rTxt, gTxt, rColor, gColor };
+    const rColor = r ? teamColor(r.teamId) : "";
+    const gColor = g ? teamColor(g.teamId) : "";
+    const statusBg =
+      r?.status === "EARLY" || g?.status === "EARLY"
+        ? "#f3eadf"
+        : r?.status === "LATE" || g?.status === "LATE"
+          ? "#e6f6ea"
+          : r?.status === "ABSENT" || g?.status === "ABSENT"
+            ? "#f0f0f0"
+            : "";
+    return { rTxt, gTxt, rColor, gColor, statusBg };
   }
 
   return (
@@ -250,8 +265,6 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
           />
         </label>
         <span style={{ fontSize: 12, opacity: 0.7 }}>Pink = too close</span>
-        <span style={{ fontSize: 12, color: "#1e8a3b" }}>Arrive Late</span>
-        <span style={{ fontSize: 12, color: "#8b5a2b" }}>Leave Early</span>
       </div>
 
       {lockState.status === "locked" && (
@@ -282,7 +295,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
 
               <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                 {list.map((b, i) => {
-                  const { rTxt, gTxt, rColor, gColor } = boutLabel(b);
+                  const { rTxt, gTxt, rColor, gColor, statusBg } = boutLabel(b);
                   return (
                     <div key={b.id} draggable={canEdit}
                       onDragStart={() => {
@@ -301,7 +314,9 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
                         border: "1px solid #eee",
                         borderRadius: 10,
                         padding: 10,
-                        background: conflictBoutIds.has(b.id) ? "#ffd6df" : "#fff",
+                        background: conflictBoutIds.has(b.id)
+                          ? "#ffd6df"
+                          : (statusBg || "#fff"),
                         boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
                         cursor: "grab",
                       }}
