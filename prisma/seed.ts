@@ -86,16 +86,16 @@ async function createMeet(name: string, date: string, teamIds: string[]) {
 
 
 async function ensureAdmin() {
-  const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
+  const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? "admin1234";
-  const existing = await db.user.findUnique({ where: { email } });
+  const existing = await db.user.findUnique({ where: { username } });
   if (existing) return existing;
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await db.user.create({
-    data: { email, name: "Admin", passwordHash, mfaEnabled: false, role: "ADMIN" },
+    data: { username, name: "Admin", passwordHash, mfaEnabled: false, role: "ADMIN" },
   });
-  console.log(`✓ Created admin user: ${email} (password from ADMIN_PASSWORD or default admin1234)`);
+  console.log(`Created admin user: ${username} (password from ADMIN_PASSWORD or default admin1234)`);
   return user;
 }
 
@@ -121,7 +121,7 @@ async function main() {
   // 4-team quad meet
   await createMeet("Quad Meet", "2026-01-22", [t1.id, t2.id, t3.id, t4.id]);
 
-  console.log("✓ Seed complete");
+  console.log("Seed complete");
 }
 
 main()

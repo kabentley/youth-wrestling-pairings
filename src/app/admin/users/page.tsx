@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 
-type UserRow = { id: string; email: string | null; name: string | null; role: "ADMIN"|"COACH"|"VIEWER"; mfaEnabled: boolean };
+type UserRow = { id: string; username: string; name: string | null; role: "ADMIN"|"COACH"|"VIEWER"; mfaEnabled: boolean };
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("changeme123");
   const [role, setRole] = useState<"ADMIN"|"COACH"|"VIEWER">("COACH");
@@ -26,11 +26,11 @@ export default function AdminUsersPage() {
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, name, password, role }),
+      body: JSON.stringify({ username, name, password, role }),
     });
     const txt = await res.text();
     if (!res.ok) { setMsg(txt); return; }
-    setEmail(""); setName(""); setPassword("changeme123"); setRole("COACH");
+    setUsername(""); setName(""); setPassword("changeme123"); setRole("COACH");
     setMsg("User created.");
     load();
   }
@@ -75,7 +75,7 @@ export default function AdminUsersPage() {
       <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginBottom: 16 }}>
         <h3>Create user</h3>
         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
           <input placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
           <input placeholder="Temp password" value={password} onChange={e => setPassword(e.target.value)} />
           <select value={role} onChange={e => setRole(e.target.value as any)}>
@@ -91,7 +91,7 @@ export default function AdminUsersPage() {
       <table cellPadding={8} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-            <th>Email</th>
+            <th>Username</th>
             <th>Name</th>
             <th>Role</th>
             <th>MFA</th>
@@ -101,7 +101,7 @@ export default function AdminUsersPage() {
         <tbody>
           {users.map(u => (
             <tr key={u.id} style={{ borderTop: "1px solid #eee" }}>
-              <td>{u.email}</td>
+              <td>{u.username}</td>
               <td>{u.name}</td>
               <td>
                 <select value={u.role} onChange={e => setUserRole(u.id, e.target.value as any)}>

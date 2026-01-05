@@ -30,6 +30,12 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
     include: { team: { include: { wrestlers: true } } },
   });
 
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({
       id: w.id,
@@ -40,10 +46,14 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
       birthdate: w.birthdate,
       experienceYears: w.experienceYears,
       skill: w.skill,
+      active: w.active,
     }))
-  );
+  ).filter(w => w.active && !absentIds.has(w.id));
 
   const target = wrestlers.find(w => w.id === q.wrestlerId);
+  if (!target && absentIds.has(q.wrestlerId)) {
+    return NextResponse.json({ error: "wrestler is marked not attending" }, { status: 400 });
+  }
   if (!target) return NextResponse.json({ error: "wrestler not in this meet" }, { status: 404 });
 
   const excluded = await db.excludedPair.findMany({ where: { meetId: params.meetId } });

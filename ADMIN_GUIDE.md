@@ -28,12 +28,12 @@ npm run seed
 An admin account is created if it does not already exist.
 
 Defaults:
-- Email: `admin@example.com`
+- Username: `admin`
 - Password: `admin1234`
 
 Override using environment variables **before seeding**:
 ```bash
-ADMIN_EMAIL="you@example.com"
+ADMIN_USERNAME="youradmin"
 ADMIN_PASSWORD="strongpassword"
 ```
 
@@ -41,20 +41,8 @@ ADMIN_PASSWORD="strongpassword"
 
 ## User Management
 
-### Create a user (manual)
-Currently, user creation is done directly in the database.
-
-Example (Prisma Studio):
-```bash
-npx prisma studio
-```
-
-Create a `User` with:
-- email
-- passwordHash (bcrypt)
-- mfaEnabled = false
-
-> A UI for user management can be added later if needed.
+### Create a user
+Use **Admin → Users** in the app to create accounts with a username, temp password, and role.
 
 ---
 
@@ -129,7 +117,7 @@ npm run dev:pg:reset
 - `DATABASE_URL`
 - `NEXTAUTH_URL`
 - `NEXTAUTH_SECRET`
-- `ADMIN_EMAIL` (optional)
+- `ADMIN_USERNAME` (optional)
 - `ADMIN_PASSWORD` (optional)
 
 ### Build process

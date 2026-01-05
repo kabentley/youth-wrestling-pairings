@@ -63,7 +63,7 @@ export default function MfaPage() {
       <h2>Multi‑Factor Authentication (MFA)</h2>
 
       <div style={{ marginBottom: 12, opacity: 0.85 }}>
-        Signed in as <b>{session.user?.email}</b>
+        Signed in as <b>{session.user?.username}</b>
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>

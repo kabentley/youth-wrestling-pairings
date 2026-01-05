@@ -13,7 +13,7 @@ export async function requireSession() {
 
 export async function requireRole(minRole: Role) {
   const { session, userId } = await requireSession();
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, email: true } });
+  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, username: true } });
   if (!user) throw new Error("UNAUTHORIZED");
 
   const order: Record<Role, number> = { VIEWER: 0, COACH: 1, ADMIN: 2 };

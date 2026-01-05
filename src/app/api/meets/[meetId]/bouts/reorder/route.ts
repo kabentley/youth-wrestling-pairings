@@ -2,13 +2,21 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 
 const BodySchema = z.object({
   mats: z.record(z.string(), z.array(z.string().min(1))),
 });
 
-export async function POST(req: Request) {
-  await requireRole("COACH");
+export async function POST(req: Request, { params }: { params: { meetId: string } }) {
+  const { user } = await requireRole("COACH");
+  try {
+    await requireMeetLock(params.meetId, user.id);
+  } catch (err) {
+    const lockError = getMeetLockError(err);
+    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+    throw err;
+  }
   const body = BodySchema.parse(await req.json());
 
   const allIds = Object.values(body.mats).flat();

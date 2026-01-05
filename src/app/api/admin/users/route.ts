@@ -5,7 +5,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 
 const CreateSchema = z.object({
-  email: z.string().email(),
+  username: z.string().trim().min(3),
   name: z.string().optional(),
   password: z.string().min(6),
   role: z.enum(["ADMIN", "COACH", "VIEWER"]).default("COACH"),
@@ -14,8 +14,8 @@ const CreateSchema = z.object({
 export async function GET() {
   await requireAdmin();
   const users = await db.user.findMany({
-    select: { id: true, email: true, name: true, role: true, mfaEnabled: true },
-    orderBy: { email: "asc" },
+    select: { id: true, username: true, name: true, role: true, mfaEnabled: true },
+    orderBy: { username: "asc" },
   });
   return NextResponse.json(users);
 }
@@ -26,13 +26,13 @@ export async function POST(req: Request) {
   const passwordHash = await bcrypt.hash(body.password, 10);
   const user = await db.user.create({
     data: {
-      email: body.email.toLowerCase(),
+      username: body.username.toLowerCase(),
       name: body.name,
       passwordHash,
       role: body.role,
       mfaEnabled: false,
     },
-    select: { id: true, email: true, name: true, role: true, mfaEnabled: true },
+    select: { id: true, username: true, name: true, role: true, mfaEnabled: true },
   });
   return NextResponse.json(user);
 }

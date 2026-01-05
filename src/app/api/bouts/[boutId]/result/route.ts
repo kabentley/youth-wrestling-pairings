@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
 import { z } from "zod";
+import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 
 const BodySchema = z.object({
   winnerId: z.string().nullable().optional(), // null to clear
@@ -13,7 +14,7 @@ const BodySchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: { boutId: string } }) {
-  await requireRole("COACH");
+  const { user } = await requireRole("COACH");
 
   const body = BodySchema.parse(await req.json());
 
@@ -22,6 +23,14 @@ export async function PATCH(req: Request, { params }: { params: { boutId: string
     include: { red: true, green: true },
   });
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
+
+  try {
+    await requireMeetLock(bout.meetId, user.id);
+  } catch (err) {
+    const lockError = getMeetLockError(err);
+    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+    throw err;
+  }
 
   // Validate winnerId (must be red or green if provided)
   let winnerId: string | null | undefined = body.winnerId ?? undefined;

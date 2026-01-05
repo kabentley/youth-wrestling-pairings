@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 
 type Team = { id: string; name: string };
-type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[] };
+type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[]; homeTeamId?: string | null };
 
 export default function MeetsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -11,6 +12,7 @@ export default function MeetsPage() {
   const [date, setDate] = useState("2026-01-15");
   const [location, setLocation] = useState("");
   const [teamIds, setTeamIds] = useState<string[]>([]);
+  const [homeTeamId, setHomeTeamId] = useState<string>("");
 
   async function load() {
     const [t, m] = await Promise.all([fetch("/api/teams"), fetch("/api/meets")]);
@@ -31,15 +33,22 @@ export default function MeetsPage() {
     await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, date, location, teamIds }),
+      body: JSON.stringify({ name, date, location, teamIds, homeTeamId: homeTeamId || null }),
     });
     setName("");
     setLocation("");
     setTeamIds([]);
+    setHomeTeamId("");
     load();
   }
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setHomeTeamId((prev) => {
+      if (prev && teamIds.includes(prev)) return prev;
+      return teamIds[0] ?? "";
+    });
+  }, [teamIds]);
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
@@ -66,6 +75,19 @@ export default function MeetsPage() {
             Selected: {teamIds.length} (max 4)
           </div>
         </div>
+
+        <label>
+          Home team:
+          <select value={homeTeamId} onChange={e => setHomeTeamId(e.target.value)} style={{ marginLeft: 8 }}>
+            {teamIds.length === 0 && <option value="">Select teams first</option>}
+            {teamIds.map(id => {
+              const t = teams.find(team => team.id === id);
+              return (
+                <option key={id} value={id}>{t?.name ?? id}</option>
+              );
+            })}
+          </select>
+        </label>
 
         <button onClick={addMeet} disabled={teamIds.length < 2 || teamIds.length > 4 || name.trim().length < 2}>
           Create Meet

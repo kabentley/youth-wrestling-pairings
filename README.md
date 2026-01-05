@@ -22,7 +22,7 @@ npm run seed
 npm run dev
 ```
 
-Login: `admin@example.com / admin1234`
+Login: `admin / admin1234`
 
 ## Docs
 - Programmer: PROGRAMMER.md

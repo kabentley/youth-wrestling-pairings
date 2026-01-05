@@ -27,7 +27,14 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },
   });
-  const wrestlers = meetTeams.flatMap(mt => mt.team.wrestlers);
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+  const wrestlers = meetTeams
+    .flatMap(mt => mt.team.wrestlers)
+    .filter(w => w.active && !absentIds.has(w.id));
 
   const excluded = await db.excludedPair.findMany({ where: { meetId } });
   const excludedSet = new Set(excluded.map(e => `${e.aId}|${e.bId}`));

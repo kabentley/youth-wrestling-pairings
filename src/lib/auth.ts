@@ -5,32 +5,32 @@ import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import speakeasy from "speakeasy";
 
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
+function normalizeUsername(username: string) {
+  return username.trim().toLowerCase();
 }
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
-  session: { strategy: "database" },
+  session: { strategy: "database", maxAge: 30 * 24 * 60 * 60 },
   pages: {
     signIn: "/auth/signin",
   },
   providers: [
     CredentialsProvider({
-      name: "Email + Password",
+      name: "Username + Password",
       credentials: {
-        email: { label: "Email", type: "email" },
+        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
         totp: { label: "MFA Code", type: "text" },
       },
       async authorize(credentials) {
-        const email = normalizeEmail(credentials?.email ?? "");
+        const username = normalizeUsername(credentials?.username ?? "");
         const password = credentials?.password ?? "";
         const totp = (credentials?.totp ?? "").replace(/\s+/g, "");
 
-        if (!email || !password) return null;
+        if (!username || !password) return null;
 
-        const user = await db.user.findUnique({ where: { email } });
+        const user = await db.user.findUnique({ where: { username } });
         if (!user || !user.passwordHash) return null;
 
         const ok = await bcrypt.compare(password, user.passwordHash);
@@ -47,7 +47,7 @@ export const authOptions: NextAuthOptions = {
           if (!verified) return null;
         }
 
-        return { id: user.id, email: user.email, name: user.name ?? undefined };
+        return { id: user.id, username: user.username, name: user.name ?? undefined };
       },
     }),
   ],
@@ -55,6 +55,7 @@ export const authOptions: NextAuthOptions = {
     async session({ session, user }) {
       if (session.user) {
         (session.user as any).id = user.id;
+        (session.user as any).username = (user as any).username;
         (session.user as any).mfaEnabled = (user as any).mfaEnabled ?? false;
         (session.user as any).role = (user as any).role ?? "COACH";
       }

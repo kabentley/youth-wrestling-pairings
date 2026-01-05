@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const user = await db.user.update({
     where: { id: params.id },
     data: { role: body.role },
-    select: { id: true, email: true, name: true, role: true, mfaEnabled: true },
+    select: { id: true, username: true, name: true, role: true, mfaEnabled: true },
   });
   return NextResponse.json(user);
 }

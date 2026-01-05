@@ -7,6 +7,18 @@ export async function GET(_: Request, { params }: { params: { meetId: string } }
     include: { team: { include: { wrestlers: true } } },
   });
 
+  const boutWrestlers = await db.bout.findMany({
+    where: { meetId: params.meetId },
+    select: { redId: true, greenId: true },
+  });
+  const boutWrestlerIds = new Set(boutWrestlers.flatMap(b => [b.redId, b.greenId]));
+
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId: params.meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s.status]));
+
   const teams = meetTeams.map(mt => ({ id: mt.team.id, name: mt.team.name }));
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({
@@ -18,8 +30,10 @@ export async function GET(_: Request, { params }: { params: { meetId: string } }
       birthdate: w.birthdate,
       experienceYears: w.experienceYears,
       skill: w.skill,
+      status: statusMap.get(w.id) ?? null,
+      active: w.active,
     }))
-  );
+  ).filter(w => w.active || boutWrestlerIds.has(w.id));
 
   return NextResponse.json({ teams, wrestlers });
 }

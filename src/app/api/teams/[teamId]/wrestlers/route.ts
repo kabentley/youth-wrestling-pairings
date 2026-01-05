@@ -13,8 +13,10 @@ const WrestlerSchema = z.object({
 });
 
 export async function GET(_: Request, { params }: { params: { teamId: string } }) {
+  const url = new URL(_.url);
+  const includeInactive = url.searchParams.get("includeInactive") === "1";
   const wrestlers = await db.wrestler.findMany({
-    where: { teamId: params.teamId },
+    where: { teamId: params.teamId, ...(includeInactive ? {} : { active: true }) },
     orderBy: [{ last: "asc" }, { first: "asc" }],
   });
   return NextResponse.json(wrestlers);
@@ -34,6 +36,7 @@ export async function POST(req: Request) {
       birthdate: new Date(parsed.birthdate),
       experienceYears: parsed.experienceYears,
       skill: parsed.skill,
+      active: true,
     },
   });
 

@@ -16,10 +16,10 @@ export async function resetDb() {
     await db.user.deleteMany();
 
     // Create test user
-    const email = "admin@example.com";
+    const username = "admin";
     const passwordHash = await bcrypt.hash("admin1234", 10);
     await db.user.create({
-      data: { email, name: "Admin", passwordHash, mfaEnabled: false },
+      data: { username, name: "Admin", passwordHash, mfaEnabled: false },
     });
   } finally {
     await db.$disconnect();
@@ -28,7 +28,7 @@ export async function resetDb() {
 
 export async function login(page: any) {
   await page.goto("/auth/signin");
-  await page.getByPlaceholder("Email").fill("admin@example.com");
+  await page.getByPlaceholder("Username").fill("admin");
   await page.getByPlaceholder("Password").fill("admin1234");
   await page.getByRole("button", { name: "Sign in" }).click();
 }

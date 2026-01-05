@@ -12,7 +12,7 @@ export default async function Home() {
 
       {session ? (
         <>
-          <p>Signed in as <b>{session.user?.email}</b></p>
+          <p>Signed in as <b>{session.user?.username}</b></p>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <Link href="/teams">Teams</Link>
             <Link href="/meets">Meets</Link>

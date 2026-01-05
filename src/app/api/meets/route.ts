@@ -8,6 +8,7 @@ const MeetSchema = z.object({
   date: z.string(),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
+  homeTeamId: z.string().nullable().optional(),
 });
 
 export async function GET() {
@@ -22,12 +23,16 @@ export async function POST(req: Request) {
   await requireRole("COACH");
   const body = await req.json();
   const parsed = MeetSchema.parse(body);
+  if (parsed.homeTeamId && !parsed.teamIds.includes(parsed.homeTeamId)) {
+    return NextResponse.json({ error: "homeTeamId must be one of teamIds" }, { status: 400 });
+  }
 
   const meet = await db.meet.create({
     data: {
       name: parsed.name,
       date: new Date(parsed.date),
       location: parsed.location,
+      homeTeamId: parsed.homeTeamId ?? null,
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },
     include: { meetTeams: { include: { team: true } } },

@@ -7,7 +7,7 @@ import { useState } from "react";
 export default function SignInPage() {
   const sp = useSearchParams();
   const callbackUrl = sp.get("callbackUrl") || "/teams";
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [totp, setTotp] = useState("");
   const [err, setErr] = useState("");
@@ -16,14 +16,14 @@ export default function SignInPage() {
     setErr("");
     const res = await signIn("credentials", {
       redirect: false,
-      email,
+      username,
       password,
       totp,
       callbackUrl,
     });
 
     if (res?.error) {
-      setErr("Sign-in failed. Check email/password, and if MFA is enabled, enter the 6-digit code.");
+      setErr("Sign-in failed. Check username/password, and if MFA is enabled, enter the 6-digit code.");
       return;
     }
     window.location.href = callbackUrl;
@@ -35,10 +35,10 @@ export default function SignInPage() {
 
       <div style={{ display: "grid", gap: 10 }}>
         <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
         />
         <input
           type="password"

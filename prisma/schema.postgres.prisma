@@ -14,12 +14,21 @@ enum Role {
   COACH
   VIEWER
 }
+
+enum MeetWrestlerStatus {
+  LATE
+  EARLY
+  ABSENT
+}
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
   createdAt DateTime   @default(now())
   wrestlers Wrestler[]
   meetTeams MeetTeam[]
+  homeMeets Meet[]     @relation("MeetHomeTeam")
+  matRules  TeamMatRule[]
+  homeTeamPreferSameMat Boolean @default(false)
 }
 
 model Wrestler {
@@ -33,8 +42,10 @@ model Wrestler {
   birthdate       DateTime
   experienceYears Int
   skill           Int
+  active          Boolean  @default(true)
 
   createdAt       DateTime @default(now())
+  meetStatuses    MeetWrestlerStatus[]
 
   @@index([teamId])
   @@index([last, first])
@@ -48,10 +59,50 @@ model Meet {
   date      DateTime
   location  String?
   createdAt DateTime   @default(now())
+  homeTeamId String?
+  homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
+
+  lockedById    String?
+  lockedBy      User?    @relation("MeetLock", fields: [lockedById], references: [id])
+  lockedAt      DateTime?
+  lockExpiresAt DateTime?
 
   meetTeams MeetTeam[]
   bouts     Bout[]
   excluded  ExcludedPair[]
+  wrestlerStatuses MeetWrestlerStatus[]
+}
+
+model MeetWrestlerStatus {
+  id         String   @id @default(cuid())
+  meetId     String
+  wrestlerId String
+  status     MeetWrestlerStatus
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  meet     Meet     @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  wrestler Wrestler @relation(fields: [wrestlerId], references: [id], onDelete: Cascade)
+
+  @@unique([meetId, wrestlerId])
+  @@index([meetId])
+  @@index([wrestlerId])
+}
+
+model TeamMatRule {
+  id            String  @id @default(cuid())
+  teamId        String
+  matIndex      Int
+  color         String?
+  minExperience Int
+  maxExperience Int
+  minAge        Float
+  maxAge        Float
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, matIndex])
+  @@index([teamId])
 }
 
 model MeetTeam {
@@ -115,6 +166,7 @@ model User {
   role          Role     @default(ADMIN)
   id            String   @id @default(cuid())
   name          String?
+  username      String   @unique
   email         String?  @unique
   emailVerified DateTime?
   image         String?
@@ -126,6 +178,7 @@ model User {
 
   accounts      Account[]
   sessions      Session[]
+  meetLocks     Meet[]   @relation("MeetLock")
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -166,4 +219,3 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
-

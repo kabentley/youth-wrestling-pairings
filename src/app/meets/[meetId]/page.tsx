@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 
 type Team = { id: string; name: string };
@@ -13,6 +13,7 @@ type Wrestler = {
   experienceYears: number;
   skill: number;
   birthdate?: string;
+  status?: "LATE" | "EARLY" | "ABSENT" | null;
 };
 type Bout = {
   id: string;
@@ -26,6 +27,12 @@ type Bout = {
   order?: number | null;
 };
 
+type LockState = {
+  status: "loading" | "acquired" | "locked";
+  lockedByUsername?: string | null;
+  lockExpiresAt?: string | null;
+};
+
 export default function MeetDetail({ params }: { params: { meetId: string } }) {
   const meetId = params.meetId;
 
@@ -36,6 +43,8 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
 
   const [msg, setMsg] = useState("");
   const [matMsg, setMatMsg] = useState("");
+  const [lockState, setLockState] = useState<LockState>({ status: "loading" });
+  const lockStatusRef = useRef<LockState["status"]>("loading");
 
   const [settings, setSettings] = useState({
     maxAgeGapDays: 365,
@@ -55,12 +64,60 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   const [target, setTarget] = useState<Wrestler | null>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
 
+  function updateLockState(next: LockState) {
+    lockStatusRef.current = next.status;
+    setLockState(next);
+  }
+
+  async function acquireLock() {
+    const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
+    if (res.ok) {
+      const json = await res.json();
+      updateLockState({
+        status: "acquired",
+        lockExpiresAt: json.lockExpiresAt ?? null,
+      });
+      return;
+    }
+
+    if (res.status === 409) {
+      const json = await res.json();
+      updateLockState({
+        status: "locked",
+        lockedByUsername: json.lockedByUsername ?? "another user",
+        lockExpiresAt: json.lockExpiresAt ?? null,
+      });
+      return;
+    }
+
+    updateLockState({ status: "locked", lockedByUsername: "unknown user" });
+  }
+
+  function releaseLock() {
+    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
+  }
+
   function teamName(id: string) {
     return teams.find(t => t.id === id)?.name ?? id;
   }
+  function statusColor(status?: Wrestler["status"]) {
+    if (status === "LATE") return "#1e8a3b";
+    if (status === "EARLY") return "#8b5a2b";
+    if (status === "ABSENT") return "#777";
+    return "";
+  }
   function wName(id: string) {
     const w = wMap[id];
-    return w ? `${w.first} ${w.last} (${w.weight}) — ${teamName(w.teamId)}` : id;
+    if (!w) return id;
+    const color = statusColor(w.status);
+    return (
+      <span style={color ? { color } : undefined}>
+        {w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}
+        {w.status === "LATE" ? " (Arrive Late)" : ""}
+        {w.status === "EARLY" ? " (Leave Early)" : ""}
+        {w.status === "ABSENT" ? " (Not attending)" : ""}
+      </span>
+    );
   }
 
   async function load() {
@@ -85,12 +142,32 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   useEffect(() => { load(); }, [meetId]);
+  useEffect(() => {
+    acquireLock();
+    const interval = setInterval(() => {
+      if (lockStatusRef.current === "acquired") {
+        acquireLock();
+      }
+    }, 60_000);
+    const onBeforeUnload = () => releaseLock();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      releaseLock();
+    };
+  }, [meetId]);
+
+  const canEdit = lockState.status === "acquired";
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
-  const unmatched = wrestlers.filter(w => !matchedIds.has(w.id)).sort((a, b) => a.weight - b.weight);
+  const unmatched = wrestlers
+    .filter(w => !matchedIds.has(w.id) && w.status !== "ABSENT")
+    .sort((a, b) => a.weight - b.weight);
 
   async function generate() {
+    if (!canEdit) return;
     setMsg("Generating...");
     const res = await fetch(`/api/meets/${meetId}/pairings/generate`, {
       method: "POST",
@@ -111,6 +188,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   async function assignMats() {
+    if (!canEdit) return;
     setMatMsg("Assigning mats...");
     const res = await fetch(`/api/meets/${meetId}/mats/assign`, {
       method: "POST",
@@ -124,6 +202,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   async function setLock(boutId: string, locked: boolean) {
+    if (!canEdit) return;
     await fetch(`/api/bouts/${boutId}/lock`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -148,7 +227,23 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     setCandidates(json.candidates || []);
   }
 
+  async function updateWrestlerStatus(wrestlerId: string, status: "LATE" | "EARLY" | "ABSENT" | null) {
+    await fetch(`/api/meets/${meetId}/wrestlers/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wrestlerId, status }),
+    });
+    await load();
+    if (status === "ABSENT") {
+      setTarget(null);
+      setCandidates([]);
+    } else if (target?.id === wrestlerId) {
+      await loadCandidates(wrestlerId);
+    }
+  }
+
   async function forceMatch(redId: string, greenId: string) {
+    if (!canEdit) return;
     await fetch(`/api/meets/${meetId}/pairings/force`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -159,6 +254,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   async function excludePair(aId: string, bId: string) {
+    if (!canEdit) return;
     await fetch(`/api/meets/${meetId}/exclude`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -185,6 +281,13 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
 
       <h2>Meet Pairings</h2>
 
+      {lockState.status === "locked" && (
+        <div style={{ border: "1px solid #e8c3c3", background: "#fff3f3", padding: 10, borderRadius: 8, marginBottom: 12 }}>
+          Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
+          <button onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <label>Max age gap (days): <input type="number" value={settings.maxAgeGapDays} onChange={e => setSettings(s => ({ ...s, maxAgeGapDays: Number(e.target.value) }))} /></label>
         <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={e => setSettings(s => ({ ...s, maxWeightDiffPct: Number(e.target.value) }))} /></label>
@@ -192,7 +295,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
         <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={e => setSettings(s => ({ ...s, allowSameTeamMatches: e.target.checked }))} /> Same-team fallback</label>
         <label><input type="checkbox" checked={settings.balanceTeamPairs} onChange={e => setSettings(s => ({ ...s, balanceTeamPairs: e.target.checked }))} /> Balance team pairings</label>
         <label>Penalty: <input type="number" step="0.05" value={settings.balancePenalty} onChange={e => setSettings(s => ({ ...s, balancePenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
-        <button onClick={generate}>Generate Pairings</button>
+        <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
         {msg && <span>{msg}</span>}
       </div>
 
@@ -200,7 +303,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
         <label>Mats: <input type="number" min={1} max={10} value={matSettings.numMats} onChange={e => setMatSettings(s => ({ ...s, numMats: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <label>Min rest: <input type="number" min={0} max={20} value={matSettings.minRestBouts} onChange={e => setMatSettings(s => ({ ...s, minRestBouts: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <label>Rest penalty: <input type="number" min={0} max={1000} value={matSettings.restPenalty} onChange={e => setMatSettings(s => ({ ...s, restPenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
-        <button onClick={assignMats}>Assign Mats</button>
+        <button onClick={assignMats} disabled={!canEdit}>Assign Mats</button>
         {matMsg && <span>{matMsg}</span>}
       </div>
 
@@ -218,7 +321,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
               <td><button onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>{wName(b.redId)}</button></td>
               <td><button onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>{wName(b.greenId)}</button></td>
               <td>{b.score.toFixed(3)}</td>
-              <td><button onClick={() => setLock(b.id, !b.locked)}>{b.locked ? "Unlock" : "Lock"}</button></td>
+              <td><button onClick={() => setLock(b.id, !b.locked)} disabled={!canEdit}>{b.locked ? "Unlock" : "Lock"}</button></td>
             </tr>
           ))}
         </tbody>
@@ -245,6 +348,20 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
             <>
               <div style={{ marginBottom: 10 }}>
                 <b>{target.first} {target.last}</b> ({target.weight}) — {teamName(target.teamId)} — exp {target.experienceYears}, skill {target.skill}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
+                  Arrive Late
+                </button>
+                <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
+                  Leave Early
+                </button>
+                <button onClick={() => updateWrestlerStatus(target.id, "ABSENT")} disabled={!canEdit || target.status === "ABSENT"}>
+                  Not Attending
+                </button>
+                <button onClick={() => updateWrestlerStatus(target.id, null)} disabled={!canEdit || !target.status}>
+                  Clear Status
+                </button>
               </div>
 
               <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -274,8 +391,8 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
                         <td align="right">{d.expGap}</td>
                         <td align="right">{d.skillGap}</td>
                         <td>
-                          <button onClick={() => forceMatch(target.id, o.id)}>Force</button>{" "}
-                          <button onClick={() => excludePair(target.id, o.id)}>Exclude</button>
+                          <button onClick={() => forceMatch(target.id, o.id)} disabled={!canEdit}>Force</button>{" "}
+                          <button onClick={() => excludePair(target.id, o.id)} disabled={!canEdit}>Exclude</button>
                         </td>
                       </tr>
                     );

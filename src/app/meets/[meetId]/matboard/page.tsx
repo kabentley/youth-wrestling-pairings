@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Team = { id: string; name: string };
-type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string };
+type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "ABSENT" | null };
 type Bout = {
   id: string;
   redId: string;
@@ -16,6 +16,12 @@ type Bout = {
   order?: number | null;
 };
 
+type LockState = {
+  status: "loading" | "acquired" | "locked";
+  lockedByUsername?: string | null;
+  lockExpiresAt?: string | null;
+};
+
 function keyMat(m: number) { return String(m); }
 
 export default function MatBoard({ params }: { params: { meetId: string } }) {
@@ -26,8 +32,44 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(4);
   const [msg, setMsg] = useState("");
+  const [conflictGap, setConflictGap] = useState(6);
+  const [lockState, setLockState] = useState<LockState>({ status: "loading" });
+  const lockStatusRef = useRef<LockState["status"]>("loading");
 
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
+
+  function updateLockState(next: LockState) {
+    lockStatusRef.current = next.status;
+    setLockState(next);
+  }
+
+  async function acquireLock() {
+    const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
+    if (res.ok) {
+      const json = await res.json();
+      updateLockState({
+        status: "acquired",
+        lockExpiresAt: json.lockExpiresAt ?? null,
+      });
+      return;
+    }
+
+    if (res.status === 409) {
+      const json = await res.json();
+      updateLockState({
+        status: "locked",
+        lockedByUsername: json.lockedByUsername ?? "another user",
+        lockExpiresAt: json.lockExpiresAt ?? null,
+      });
+      return;
+    }
+
+    updateLockState({ status: "locked", lockedByUsername: "unknown user" });
+  }
+
+  function releaseLock() {
+    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
+  }
 
   async function load() {
     const [bRes, wRes] = await Promise.all([
@@ -49,6 +91,23 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
   }
 
   useEffect(() => { load(); }, [meetId]);
+  useEffect(() => {
+    acquireLock();
+    const interval = setInterval(() => {
+      if (lockStatusRef.current === "acquired") {
+        acquireLock();
+      }
+    }, 60_000);
+    const onBeforeUnload = () => releaseLock();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      releaseLock();
+    };
+  }, [meetId]);
+
+  const canEdit = lockState.status === "acquired";
 
   function teamName(teamId: string) {
     return teams.find(t => t.id === teamId)?.name ?? teamId;
@@ -67,6 +126,34 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     for (const k of Object.keys(out)) out[k].sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
     return out;
   }, [bouts, numMats]);
+
+  const conflictBoutIds = useMemo(() => {
+    if (conflictGap <= 0) return new Set<string>();
+    const byWrestler = new Map<string, { boutId: string; order: number }[]>();
+    for (const b of bouts) {
+      if (!b.order) continue;
+      const o = b.order;
+      for (const wid of [b.redId, b.greenId]) {
+        const list = byWrestler.get(wid) ?? [];
+        list.push({ boutId: b.id, order: o });
+        byWrestler.set(wid, list);
+      }
+    }
+
+    const conflicts = new Set<string>();
+    for (const list of byWrestler.values()) {
+      list.sort((a, b) => a.order - b.order);
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const gap = list[j].order - list[i].order;
+          if (gap > conflictGap) break;
+          conflicts.add(list[i].boutId);
+          conflicts.add(list[j].boutId);
+        }
+      }
+    }
+    return conflicts;
+  }, [bouts, conflictGap]);
 
   function moveBout(boutId: string, toMat: number, toIndex: number) {
     setBouts(prev => {
@@ -101,6 +188,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
   }
 
   async function save() {
+    if (!canEdit) return;
     setMsg("Saving...");
     const payload: Record<string, string[]> = {};
     for (let m = 1; m <= numMats; m++) payload[keyMat(m)] = [];
@@ -133,7 +221,9 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     const g = wMap[b.greenId];
     const rTxt = r ? `${r.first} ${r.last} (${r.weight}) — ${teamName(r.teamId)}` : b.redId;
     const gTxt = g ? `${g.first} ${g.last} (${g.weight}) — ${teamName(g.teamId)}` : b.greenId;
-    return { rTxt, gTxt };
+    const rColor = r?.status === "LATE" ? "#1e8a3b" : r?.status === "EARLY" ? "#8b5a2b" : r?.status === "ABSENT" ? "#777" : "";
+    const gColor = g?.status === "LATE" ? "#1e8a3b" : g?.status === "EARLY" ? "#8b5a2b" : g?.status === "ABSENT" ? "#777" : "";
+    return { rTxt, gTxt, rColor, gColor };
   }
 
   return (
@@ -141,14 +231,35 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <a href={`/meets/${meetId}`}>← Back</a>
         <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">Wall Chart</a>
-        <button onClick={save}>Save Order</button>
+        <button onClick={save} disabled={!canEdit}>Save Order</button>
         {msg && <span>{msg}</span>}
         <label style={{ marginLeft: 12 }}>
           Mats:
           <input type="number" min={1} max={10} value={numMats}
             onChange={e => setNumMats(Number(e.target.value))} style={{ width: 60, marginLeft: 6 }} />
         </label>
+        <label>
+          Conflict gap:
+          <input
+            type="number"
+            min={0}
+            max={20}
+            value={conflictGap}
+            onChange={(e) => setConflictGap(Number(e.target.value))}
+            style={{ width: 60, marginLeft: 6 }}
+          />
+        </label>
+        <span style={{ fontSize: 12, opacity: 0.7 }}>Pink = too close</span>
+        <span style={{ fontSize: 12, color: "#1e8a3b" }}>Arrive Late</span>
+        <span style={{ fontSize: 12, color: "#8b5a2b" }}>Leave Early</span>
       </div>
+
+      {lockState.status === "locked" && (
+        <div style={{ border: "1px solid #e8c3c3", background: "#fff3f3", padding: 10, borderRadius: 8, marginTop: 12 }}>
+          Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
+          <button onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${numMats}, minmax(260px, 1fr))`, gap: 12, marginTop: 12 }}>
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
@@ -159,7 +270,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                if (!dragging) return;
+                if (!dragging || !canEdit) return;
                 moveBout(dragging.boutId, matNum, list.length);
                 setDragging(null);
               }}
@@ -171,15 +282,18 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
 
               <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                 {list.map((b, i) => {
-                  const { rTxt, gTxt } = boutLabel(b);
+                  const { rTxt, gTxt, rColor, gColor } = boutLabel(b);
                   return (
-                    <div key={b.id} draggable
-                      onDragStart={() => setDragging({ boutId: b.id, fromMat: matNum })}
+                    <div key={b.id} draggable={canEdit}
+                      onDragStart={() => {
+                        if (!canEdit) return;
+                        setDragging({ boutId: b.id, fromMat: matNum });
+                      }}
                       onDragEnd={() => setDragging(null)}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => {
                         e.preventDefault();
-                        if (!dragging) return;
+                        if (!dragging || !canEdit) return;
                         moveBout(dragging.boutId, matNum, i);
                         setDragging(null);
                       }}
@@ -187,7 +301,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
                         border: "1px solid #eee",
                         borderRadius: 10,
                         padding: 10,
-                        background: "#fff",
+                        background: conflictBoutIds.has(b.id) ? "#ffd6df" : "#fff",
                         boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
                         cursor: "grab",
                       }}
@@ -197,8 +311,8 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
                         <span>Bout {b.order ?? i + 1}</span>
                         <span>{b.locked ? "LOCKED" : ""}</span>
                       </div>
-                      <div style={{ fontWeight: 600, marginTop: 4 }}>{rTxt}</div>
-                      <div style={{ marginTop: 2 }}>{gTxt}</div>
+                      <div style={{ fontWeight: 600, marginTop: 4, color: rColor || undefined }}>{rTxt}</div>
+                      <div style={{ marginTop: 2, color: gColor || undefined }}>{gTxt}</div>
                       {b.notes && <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>{b.notes}</div>}
                     </div>
                   );

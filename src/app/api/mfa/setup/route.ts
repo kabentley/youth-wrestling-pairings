@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   if (user.mfaEnabled) return NextResponse.json({ error: "MFA already enabled" }, { status: 400 });
 
   const secret = speakeasy.generateSecret({
-    name: `Wrestling Scheduler (${user.email ?? "user"})`,
+    name: `Wrestling Scheduler (${user.username ?? "user"})`,
     length: 20,
   });
 
