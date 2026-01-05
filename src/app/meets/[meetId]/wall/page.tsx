@@ -1,18 +1,20 @@
 import { db } from "@/lib/db";
+import PrintButton from "./PrintButton";
 
-export default async function WallChart({ params }: { params: { meetId: string } }) {
+export default async function WallChart({ params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const meet = await db.meet.findUnique({
-    where: { id: params.meetId },
+    where: { id: meetId },
     include: { meetTeams: { include: { team: true } } },
   });
 
   const bouts = await db.bout.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
 
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     select: { wrestlerId: true, status: true },
   });
   const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
@@ -50,7 +52,6 @@ export default async function WallChart({ params }: { params: { meetId: string }
       redColor: r ? (tColor.get(r.teamId) ?? "#000000") : "#000000",
       greenColor: g ? (tColor.get(g.teamId) ?? "#000000") : "#000000",
       teams: (rTeam || gTeam) ? `${rTeam} vs ${gTeam}` : "",
-      locked: b.locked ? "LOCKED" : "",
     };
   }
 
@@ -92,14 +93,13 @@ export default async function WallChart({ params }: { params: { meetId: string }
             min-height: 88px;
           }
           .small { font-size: 12px; opacity: 0.75; }
-          .locked { font-size: 11px; font-weight: 700; color: #444; }
         `}</style>
       </head>
       <body>
         <div className="noprint" style={{ marginBottom: 10 }}>
-          <a href={`/meets/${params.meetId}`}>← Back</a> &nbsp;|&nbsp;
-          <a href={`/meets/${params.meetId}/matboard`} target="_blank" rel="noreferrer">Mat Board</a> &nbsp;|&nbsp;
-          <button onClick={() => window.print()}>Print</button>
+          <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
+          <a href={`/meets/${meetId}/matboard`} target="_blank" rel="noreferrer">Mat Board</a> &nbsp;|&nbsp;
+          <PrintButton />
         </div>
 
         <h1>{meet?.name ?? "Meet"} — Wall Chart</h1>
@@ -114,8 +114,8 @@ export default async function WallChart({ params }: { params: { meetId: string }
           {mats.map(m => (<div key={m} className="hdr">Mat {m}</div>))}
 
           {Array.from({ length: maxRows }, (_, idx) => idx + 1).map(row => (
-            <>
-              <div key={`r-${row}`} className="rowlbl">{row}</div>
+            <div key={`row-${row}`} style={{ display: "contents" }}>
+              <div className="rowlbl">{row}</div>
               {mats.map(m => {
                 const b = perMat.get(m)![row - 1];
                 if (!b) return <div key={`c-${m}-${row}`} className="cell" />;
@@ -126,14 +126,13 @@ export default async function WallChart({ params }: { params: { meetId: string }
                     <div className="small">{t.teams}</div>
                     <div style={{ fontWeight: 650, marginTop: 4, color: t.redColor }}>{t.red}</div>
                     <div style={{ marginTop: 2, color: t.greenColor }}>{t.green}</div>
-                    <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between" }}>
+                    <div style={{ marginTop: 6 }}>
                       <div className="small">{b.notes ?? ""}</div>
-                      <div className="locked">{t.locked}</div>
                     </div>
                   </div>
                 );
               })}
-            </>
+            </div>
           ))}
         </div>
       </body>

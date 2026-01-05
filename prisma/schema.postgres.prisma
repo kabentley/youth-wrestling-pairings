@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 
@@ -15,7 +14,7 @@ enum Role {
   PARENT
 }
 
-enum MeetWrestlerStatus {
+enum MeetWrestlerStatusType {
   LATE
   EARLY
   ABSENT
@@ -33,6 +32,7 @@ model Team {
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
   homeTeamPreferSameMat Boolean @default(false)
+  coaches   User[]
 }
 
 model League {
@@ -59,6 +59,7 @@ model Wrestler {
   createdAt       DateTime @default(now())
   meetStatuses    MeetWrestlerStatus[]
   parentLinks     UserChild[]
+  wonBouts        Bout[]   @relation("BoutWinner")
 
   @@index([teamId])
   @@index([last, first])
@@ -93,7 +94,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     MeetWrestlerStatus
+  status     MeetWrestlerStatusType
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -140,8 +141,6 @@ model Bout {
   greenId   String
   type      String
   score     Float
-
-  locked    Boolean  @default(false)
   notes     String?
 
   mat       Int?
@@ -183,24 +182,37 @@ model User {
   id            String   @id @default(cuid())
   name          String?
   username      String   @unique
-  email         String?  @unique
+  email         String
+  phone         String
   emailVerified DateTime?
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
 
   passwordHash  String?
-  mfaEnabled    Boolean  @default(false)
-  mfaSecret     String?  // base32 (TOTP)
-  mfaTempSecret String?  // used during MFA enrollment
 
   accounts      Account[]
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
   children      UserChild[]
+  resetCodes    PasswordResetCode[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model PasswordResetCode {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserChild {

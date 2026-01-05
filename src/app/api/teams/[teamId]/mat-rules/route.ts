@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
-import { z } from "zod";
 
 const RuleSchema = z.object({
   matIndex: z.number().int().min(1).max(10),
@@ -21,10 +22,11 @@ const BodySchema = z.object({
   rules: z.array(RuleSchema).max(10),
 });
 
-export async function GET(_req: Request, { params }: { params: { teamId: string } }) {
-  await requireTeamCoach(params.teamId);
+export async function GET(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = await params;
+  await requireTeamCoach(teamId);
   const team = await db.team.findUnique({
-    where: { id: params.teamId },
+    where: { id: teamId },
     select: {
       homeTeamPreferSameMat: true,
       matRules: {
@@ -49,20 +51,21 @@ export async function GET(_req: Request, { params }: { params: { teamId: string 
   });
 }
 
-export async function PUT(req: Request, { params }: { params: { teamId: string } }) {
-  await requireTeamCoach(params.teamId);
+export async function PUT(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = await params;
+  await requireTeamCoach(teamId);
   const body = BodySchema.parse(await req.json());
 
   await db.team.update({
-    where: { id: params.teamId },
+    where: { id: teamId },
     data: { homeTeamPreferSameMat: body.homeTeamPreferSameMat ?? false },
   });
 
-  await db.teamMatRule.deleteMany({ where: { teamId: params.teamId } });
+  await db.teamMatRule.deleteMany({ where: { teamId } });
   if (body.rules.length > 0) {
     await db.teamMatRule.createMany({
       data: body.rules.map(rule => ({
-        teamId: params.teamId,
+        teamId,
         matIndex: rule.matIndex,
         color: rule.color ?? null,
         minExperience: rule.minExperience,

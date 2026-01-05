@@ -1,18 +1,19 @@
 import { db } from "@/lib/db";
 
-export default async function PrintMeet({ params }: { params: { meetId: string } }) {
+export default async function PrintMeet({ params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const meet = await db.meet.findUnique({
-    where: { id: params.meetId },
+    where: { id: meetId },
     include: { meetTeams: { include: { team: true } } },
   });
 
   const bouts = await db.bout.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
 
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     select: { wrestlerId: true, status: true },
   });
   const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
@@ -47,7 +48,7 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
       </head>
       <body>
         <div className="noprint" style={{ marginBottom: 12 }}>
-          <a href={`/meets/${params.meetId}`}>← Back</a> &nbsp;|&nbsp;
+          <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
           <button onClick={() => window.print()}>Print</button>
         </div>
 
@@ -92,7 +93,6 @@ export default async function PrintMeet({ params }: { params: { meetId: string }
                           </span>
                         </td>
                         <td className="small">
-                          {b.locked ? "LOCKED • " : ""}
                           {b.notes ?? ""}
                         </td>
                       </tr>

@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
   mats: z.record(z.string(), z.array(z.string().min(1))),
 });
 
-export async function POST(req: Request, { params }: { params: { meetId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const { user } = await requireRole("COACH");
   try {
-    await requireMeetLock(params.meetId, user.id);
+    await requireMeetLock(meetId, user.id);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
@@ -21,7 +23,7 @@ export async function POST(req: Request, { params }: { params: { meetId: string 
 
   const allIds = Object.values(body.mats).flat();
   const found = await db.bout.findMany({
-    where: { id: { in: allIds }, meetId: params.meetId },
+    where: { id: { in: allIds }, meetId },
     select: { id: true },
   });
   const foundSet = new Set(found.map(b => b.id));

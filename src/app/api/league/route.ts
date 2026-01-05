@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
-import { z } from "zod";
 
 const BodySchema = z.object({
   name: z.string().trim().max(100).optional(),

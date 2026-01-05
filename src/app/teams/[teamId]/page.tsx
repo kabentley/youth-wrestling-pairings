@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
+import { use, useEffect, useState } from "react";
 
 type Wrestler = {
   id: string;
@@ -14,15 +14,15 @@ type Wrestler = {
 };
 type MatRule = {
   matIndex: number;
-  color: string;
+  color?: string;
   minExperience: number;
   maxExperience: number;
   minAge: number;
   maxAge: number;
 };
 
-export default function TeamDetail({ params }: { params: { teamId: string } }) {
-  const { teamId } = params;
+export default function TeamDetail({ params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = use(params);
   const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
@@ -93,7 +93,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
       }),
     });
     setForm({ ...form, first: "", last: "" });
-    load();
+    await load();
   }
 
   async function saveMatRules() {
@@ -116,7 +116,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
     setTimeout(() => setRuleMsg(""), 1500);
   }
 
-  useEffect(() => { load(); }, [teamId, showInactive]);
+  useEffect(() => { void load(); }, [teamId, showInactive]);
 
   async function setWrestlerActive(wrestlerId: string, active: boolean) {
     if (!canEdit) return;
@@ -125,7 +125,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active }),
     });
-    load();
+    await load();
   }
 
   return (
@@ -134,8 +134,7 @@ export default function TeamDetail({ params }: { params: { teamId: string } }) {
         <a href="/">Home</a>
         <a href="/teams">Teams</a>
         <a href="/meets">Meets</a>
-        <a href="/auth/mfa">MFA</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {team?.hasLogo ? (

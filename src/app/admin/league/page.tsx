@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 
 type TeamRow = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
 
@@ -39,7 +39,7 @@ export default function AdminLeaguePage() {
     }
     setName("");
     setSymbol("");
-    load();
+    await load();
   }
 
   async function removeTeam(teamId: string) {
@@ -51,7 +51,7 @@ export default function AdminLeaguePage() {
       setMsg("Unable to delete team.");
       return;
     }
-    load();
+    await load();
   }
 
   async function uploadLogo(teamId: string, file: File | null) {
@@ -66,7 +66,7 @@ export default function AdminLeaguePage() {
       setMsg("Logo upload failed.");
       return;
     }
-    load();
+    await load();
   }
 
   async function clearLogo(teamId: string) {
@@ -75,7 +75,7 @@ export default function AdminLeaguePage() {
       setMsg("Unable to clear logo.");
       return;
     }
-    load();
+    await load();
   }
 
   async function updateTeamColor(teamId: string, color: string) {
@@ -88,7 +88,7 @@ export default function AdminLeaguePage() {
       setMsg("Unable to update team color.");
       return;
     }
-    load();
+    await load();
   }
 
   async function saveLeague() {
@@ -101,7 +101,7 @@ export default function AdminLeaguePage() {
       setMsg("Unable to save league.");
       return;
     }
-    load();
+    await load();
   }
 
   async function uploadLeagueLogo(file: File | null) {
@@ -116,7 +116,7 @@ export default function AdminLeaguePage() {
       setMsg("League logo upload failed.");
       return;
     }
-    load();
+    await load();
   }
 
   async function clearLeagueLogo() {
@@ -125,10 +125,10 @@ export default function AdminLeaguePage() {
       setMsg("Unable to clear league logo.");
       return;
     }
-    load();
+    await load();
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   if (!session) {
     return (

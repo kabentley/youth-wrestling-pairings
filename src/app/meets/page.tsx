@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
+import { useEffect, useState } from "react";
 
 type Team = { id: string; name: string; symbol: string; color: string };
 type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[]; homeTeamId?: string | null };
@@ -54,10 +54,10 @@ export default function MeetsPage() {
     setNumMats(4);
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(1);
-    load();
+    await load();
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
   useEffect(() => {
     setHomeTeamId((prev) => {
       if (prev && teamIds.includes(prev)) return prev;
@@ -69,8 +69,7 @@ export default function MeetsPage() {
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         <a href="/">Home</a>
-        <a href="/auth/mfa">MFA</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
       <h2>Meets</h2>
 

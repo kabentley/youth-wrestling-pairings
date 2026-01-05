@@ -4,22 +4,11 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 
 
-enum Role {
-  ADMIN
-  COACH
-  PARENT
-}
-
-enum MeetWrestlerStatus {
-  LATE
-  EARLY
-  ABSENT
-}
+// enums are not supported by the sqlite connector; use string fields instead.
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -33,6 +22,7 @@ model Team {
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
   homeTeamPreferSameMat Boolean @default(false)
+  coaches   User[]
 }
 
 model League {
@@ -59,6 +49,7 @@ model Wrestler {
   createdAt       DateTime @default(now())
   meetStatuses    MeetWrestlerStatus[]
   parentLinks     UserChild[]
+  wonBouts        Bout[]   @relation("BoutWinner")
 
   @@index([teamId])
   @@index([last, first])
@@ -93,7 +84,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     MeetWrestlerStatus
+  status     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -140,8 +131,6 @@ model Bout {
   greenId   String
   type      String
   score     Float
-
-  locked    Boolean  @default(false)
   notes     String?
 
   mat       Int?
@@ -179,28 +168,41 @@ model ExcludedPair {
 
 // --- NextAuth.js models ---
 model User {
-  role          Role     @default(PARENT)
+  role          String   @default("PARENT")
   id            String   @id @default(cuid())
   name          String?
   username      String   @unique
-  email         String?  @unique
+  email         String
+  phone         String
   emailVerified DateTime?
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
 
   passwordHash  String?
-  mfaEnabled    Boolean  @default(false)
-  mfaSecret     String?  // base32 (TOTP)
-  mfaTempSecret String?  // used during MFA enrollment
 
   accounts      Account[]
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
   children      UserChild[]
+  resetCodes    PasswordResetCode[]
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model PasswordResetCode {
+  id        String   @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserChild {

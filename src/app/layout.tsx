@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import Providers from "./providers";
+
 export const metadata: Metadata = {
   title: "Wrestling Scheduler",
   description: "Youth wrestling meet scheduler and pairing tool",

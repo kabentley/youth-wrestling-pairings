@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
 
-export async function GET(_req: Request, { params }: { params: { meetId: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   await requireRole("COACH");
   const meet = await db.meet.findUnique({
-    where: { id: params.meetId },
+    where: { id: meetId },
     select: {
       id: true,
       name: true,

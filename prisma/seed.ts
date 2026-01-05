@@ -1,7 +1,6 @@
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-const db = new PrismaClient();
+import { db } from "@/lib/db";
 
 function d(s: string) {
   return new Date(s);
@@ -87,13 +86,15 @@ async function createMeet(name: string, date: string, teamIds: string[]) {
 
 async function ensureAdmin() {
   const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
+  const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
+  const phone = process.env.ADMIN_PHONE?.trim() || "+15555550100";
   const password = process.env.ADMIN_PASSWORD ?? "admin1234";
   const existing = await db.user.findUnique({ where: { username } });
   if (existing) return existing;
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await db.user.create({
-    data: { username, name: "Admin", passwordHash, mfaEnabled: false, role: "ADMIN" },
+    data: { username, email, phone, name: "Admin", passwordHash, role: "ADMIN" },
   });
   console.log(`Created admin user: ${username} (password from ADMIN_PASSWORD or default admin1234)`);
   return user;

@@ -1,9 +1,11 @@
-import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
-export async function GET(_req: Request, { params }: { params: { teamId: string } }) {
+import { db } from "@/lib/db";
+
+export async function GET(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = await params;
   const team = await db.team.findUnique({
-    where: { id: params.teamId },
+    where: { id: teamId },
     select: { logoData: true, logoType: true },
   });
   if (!team?.logoData || !team.logoType) {

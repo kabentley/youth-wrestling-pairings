@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
 import { z } from "zod";
+
+import { db } from "@/lib/db";
 import { planRosterUpsert } from "@/lib/importRoster";
+import { requireRole } from "@/lib/rbac";
 
 const WrestlerRow = z.object({
   first: z.string().min(1),
@@ -18,7 +19,7 @@ const BodySchema = z.object({
   teamName: z.string().min(2).optional(),
   teamSymbol: z.string().trim().min(2).max(4).optional(),
   wrestlers: z.array(WrestlerRow).min(1).max(500),
-}).refine(v => Boolean(v.teamId || v.teamName), {
+}).refine(v => Boolean(v.teamId ?? v.teamName), {
   message: "Provide teamId or teamName",
 });
 

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
 import { z } from "zod";
+
+import { db } from "@/lib/db";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
   winnerId: z.string().nullable().optional(), // null to clear
@@ -13,13 +14,14 @@ const BodySchema = z.object({
   notes: z.string().trim().max(500).nullable().optional(),
 });
 
-export async function PATCH(req: Request, { params }: { params: { boutId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ boutId: string }> }) {
+  const { boutId } = await params;
   const { user } = await requireRole("COACH");
 
   const body = BodySchema.parse(await req.json());
 
   const bout = await db.bout.findUnique({
-    where: { id: params.boutId },
+    where: { id: boutId },
     include: { red: true, green: true },
   });
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
@@ -42,25 +44,33 @@ export async function PATCH(req: Request, { params }: { params: { boutId: string
   }
 
   // Validate winnerId (must be red or green if provided)
-  let winnerId: string | null | undefined = body.winnerId ?? undefined;
-  if (winnerId !== undefined && winnerId !== null) {
-    const allowed = [bout.redId, bout.greenId].filter(Boolean);
-    if (!allowed.includes(winnerId)) {
+  const winnerId = body.winnerId;
+  if (winnerId != null) {
+    if (winnerId !== bout.redId && winnerId !== bout.greenId) {
       return NextResponse.json({ error: "winnerId must be one of the bout wrestlers" }, { status: 400 });
     }
   }
 
+  const data: {
+    resultWinnerId?: string | null;
+    resultType?: string | null;
+    resultScore?: string | null;
+    resultPeriod?: number | null;
+    resultTime?: string | null;
+    resultNotes?: string | null;
+    resultAt: Date;
+  } = { resultAt: new Date() };
+
+  if (winnerId !== undefined) data.resultWinnerId = winnerId;
+  if (body.type !== undefined) data.resultType = body.type;
+  if (body.score !== undefined) data.resultScore = body.score;
+  if (body.period !== undefined) data.resultPeriod = body.period;
+  if (body.time !== undefined) data.resultTime = body.time;
+  if (body.notes !== undefined) data.resultNotes = body.notes;
+
   const updated = await db.bout.update({
-    where: { id: params.boutId },
-    data: {
-      resultWinnerId: winnerId === undefined ? undefined : winnerId,
-      resultType: body.type === undefined ? undefined : body.type,
-      resultScore: body.score === undefined ? undefined : body.score,
-      resultPeriod: body.period === undefined ? undefined : body.period,
-      resultTime: body.time === undefined ? undefined : body.time,
-      resultNotes: body.notes === undefined ? undefined : body.notes,
-      resultAt: new Date(),
-    },
+    where: { id: boutId },
+    data,
     select: {
       id: true,
       resultWinnerId: true,

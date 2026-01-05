@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
-import { z } from "zod";
 
 const BodySchema = z.object({
   wrestlerId: z.string().min(1),
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
     where: { id: body.wrestlerId },
     select: { id: true, active: true },
   });
-  if (!wrestler || !wrestler.active) {
+  if (!wrestler?.active) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
 

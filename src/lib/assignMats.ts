@@ -44,7 +44,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
 
   const bouts = await db.bout.findMany({
     where: { meetId },
-    orderBy: [{ locked: "desc" }, { score: "asc" }],
+    orderBy: [{ score: "asc" }],
   });
 
   const teamIds = meet?.meetTeams.map(mt => mt.teamId) ?? [];
@@ -150,8 +150,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
 
     if (homeTeamPrefs?.homeTeamPreferSameMat && meet?.homeTeamId) {
       const isHomeBout =
-        (red?.teamId && red.teamId === meet.homeTeamId) ||
-        (green?.teamId && green.teamId === meet.homeTeamId);
+        red?.teamId === meet.homeTeamId ||
+        green?.teamId === meet.homeTeamId;
       if (isHomeBout && homeTeamMatIdx !== null && homeTeamMatIdx !== matIdx) {
         p += HOME_TEAM_PENALTY;
       }
@@ -183,8 +183,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
       const red = getWrestler(b.redId);
       const green = getWrestler(b.greenId);
       const isHomeBout =
-        (red?.teamId && red.teamId === meet.homeTeamId) ||
-        (green?.teamId && green.teamId === meet.homeTeamId);
+        red?.teamId === meet.homeTeamId ||
+        green?.teamId === meet.homeTeamId;
       if (isHomeBout && homeTeamMatIdx === null) homeTeamMatIdx = bestMat;
     }
   }

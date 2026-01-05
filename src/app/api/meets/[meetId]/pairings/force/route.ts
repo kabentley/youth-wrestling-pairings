@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
 import { z } from "zod";
+
+import { db } from "@/lib/db";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({ redId: z.string().min(1), greenId: z.string().min(1) });
 
-export async function POST(req: Request, { params }: { params: { meetId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const { user } = await requireRole("COACH");
   try {
-    await requireMeetLock(params.meetId, user.id);
+    await requireMeetLock(meetId, user.id);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
@@ -17,32 +19,31 @@ export async function POST(req: Request, { params }: { params: { meetId: string 
   }
   const body = BodySchema.parse(await req.json());
   const absent = await db.meetWrestlerStatus.findMany({
-    where: { meetId: params.meetId, status: "ABSENT", wrestlerId: { in: [body.redId, body.greenId] } },
+    where: { meetId, status: "ABSENT", wrestlerId: { in: [body.redId, body.greenId] } },
     select: { wrestlerId: true },
   });
   if (absent.length > 0) {
     return NextResponse.json({ error: "Cannot create a match for a not-attending wrestler" }, { status: 400 });
   }
 
-  await db.bout.deleteMany({
+  const existing = await db.bout.findFirst({
     where: {
-      meetId: params.meetId,
-      locked: false,
+      meetId,
       OR: [
-        { redId: body.redId }, { greenId: body.redId },
-        { redId: body.greenId }, { greenId: body.greenId },
+        { redId: body.redId, greenId: body.greenId },
+        { redId: body.greenId, greenId: body.redId },
       ],
     },
   });
+  if (existing) return NextResponse.json(existing);
 
   const bout = await db.bout.create({
     data: {
-      meetId: params.meetId,
+      meetId,
       redId: body.redId,
       greenId: body.greenId,
       type: "counting",
       score: 0,
-      locked: true,
       notes: "forced",
     },
   });

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { signOut } from "next-auth/react";
+import { useEffect, useMemo, useState } from "react";
 
 type Child = {
   id: string;
@@ -73,7 +73,7 @@ export default function ParentPage() {
     }
     const res = await fetch(`/api/parent/meets/${id}/matches`);
     const json = await res.json();
-    setMatches(json.matches || []);
+    setMatches(json.matches ?? []);
   }
 
   async function findWrestlers() {
@@ -84,7 +84,7 @@ export default function ParentPage() {
     }
     const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(search.trim())}`);
     const json = await res.json();
-    setResults(json || []);
+    setResults(json ?? []);
   }
 
   async function addChild(wrestlerId: string) {
@@ -110,11 +110,11 @@ export default function ParentPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wrestlerId }),
     });
-    load();
+    await load();
   }
 
-  useEffect(() => { load(); }, []);
-  useEffect(() => { loadMatches(meetId); }, [meetId]);
+  useEffect(() => { void load(); }, []);
+  useEffect(() => { void loadMatches(meetId); }, [meetId]);
 
   const matchesByChild = useMemo(() => {
     const map = new Map<string, Match[]>();
@@ -132,7 +132,7 @@ export default function ParentPage() {
         <a href="/">Home</a>
         <a href="/teams">Teams</a>
         <a href="/meets">Meets</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
 
       <h2>My Children</h2>

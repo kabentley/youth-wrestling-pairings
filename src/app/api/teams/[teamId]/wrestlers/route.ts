@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
-import { z } from "zod";
 
 const WrestlerSchema = z.object({
   first: z.string().min(1),
@@ -12,24 +13,26 @@ const WrestlerSchema = z.object({
   skill: z.number().int().min(0).max(5),
 });
 
-export async function GET(_: Request, { params }: { params: { teamId: string } }) {
+export async function GET(_: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = await params;
   const url = new URL(_.url);
   const includeInactive = url.searchParams.get("includeInactive") === "1";
   const wrestlers = await db.wrestler.findMany({
-    where: { teamId: params.teamId, ...(includeInactive ? {} : { active: true }) },
+    where: { teamId, ...(includeInactive ? {} : { active: true }) },
     orderBy: [{ last: "asc" }, { first: "asc" }],
   });
   return NextResponse.json(wrestlers);
 }
 
-export async function POST(req: Request, { params }: { params: { teamId: string } }) {
-  await requireTeamCoach(params.teamId);
+export async function POST(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
+  const { teamId } = await params;
+  await requireTeamCoach(teamId);
   const body = await req.json();
   const parsed = WrestlerSchema.parse(body);
 
   const w = await db.wrestler.create({
     data: {
-      teamId: params.teamId,
+      teamId,
       first: parsed.first,
       last: parsed.last,
       weight: parsed.weight,

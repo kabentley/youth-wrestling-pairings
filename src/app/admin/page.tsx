@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+
 import { authOptions } from "@/lib/auth";
 
 export default async function AdminHome() {
@@ -26,14 +28,5 @@ export default async function AdminHome() {
     );
   }
 
-  return (
-    <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h2>Admin</h2>
-      <ul>
-        <li><Link href="/admin/league">League Setup</Link></li>
-        <li><Link href="/admin/users">User Management</Link></li>
-      </ul>
-      <p><Link href="/teams">Back to app</Link></p>
-    </main>
-  );
+  redirect("/admin/league");
 }

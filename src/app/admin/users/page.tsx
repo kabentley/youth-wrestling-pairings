@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
+import { useEffect, useState } from "react";
 
-type UserRow = { id: string; username: string; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; mfaEnabled: boolean; teamId: string | null };
+type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; teamId: string | null };
 type TeamRow = { id: string; name: string; symbol: string };
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("changeme123");
   const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT">("COACH");
@@ -23,20 +25,20 @@ export default function AdminUsersPage() {
     if (tRes.ok) setTeams(await tRes.json());
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   async function createUser() {
     setMsg("");
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, name, password, role, teamId: teamId || null }),
+      body: JSON.stringify({ username, email, phone, name, password, role, teamId: teamId || null }),
     });
     const txt = await res.text();
     if (!res.ok) { setMsg(txt); return; }
-    setUsername(""); setName(""); setPassword("changeme123"); setRole("COACH"); setTeamId("");
+    setUsername(""); setEmail(""); setPhone(""); setName(""); setPassword("changeme123"); setRole("COACH"); setTeamId("");
     setMsg("User created.");
-    load();
+    await load();
   }
 
   async function setUserRole(id: string, newRole: UserRow["role"]) {
@@ -45,7 +47,7 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: newRole }),
     });
-    load();
+    await load();
   }
 
   async function setUserTeam(id: string, newTeamId: string | null) {
@@ -54,12 +56,7 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ teamId: newTeamId }),
     });
-    load();
-  }
-
-  async function resetMfa(id: string) {
-    await fetch(`/api/admin/users/${id}/reset-mfa`, { method: "POST" });
-    load();
+    await load();
   }
 
   async function resetPassword(id: string) {
@@ -79,8 +76,7 @@ export default function AdminUsersPage() {
         <a href="/">Home</a>
         <a href="/teams">Teams</a>
         <a href="/meets">Meets</a>
-        <a href="/auth/mfa">My MFA</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
 
       <h2>User Management</h2>
@@ -89,6 +85,8 @@ export default function AdminUsersPage() {
         <h3>Create user</h3>
         <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
           <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
+          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+          <input placeholder="Phone (E.164)" value={phone} onChange={e => setPhone(e.target.value)} />
           <input placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
           <input placeholder="Temp password" value={password} onChange={e => setPassword(e.target.value)} />
           <select value={role} onChange={e => setRole(e.target.value as any)}>
@@ -111,10 +109,11 @@ export default function AdminUsersPage() {
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
             <th>Username</th>
+            <th>Email</th>
+            <th>Phone</th>
             <th>Name</th>
             <th>Role</th>
             <th>Team</th>
-            <th>MFA</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -122,6 +121,8 @@ export default function AdminUsersPage() {
           {users.map(u => (
             <tr key={u.id} style={{ borderTop: "1px solid #eee" }}>
               <td>{u.username}</td>
+              <td>{u.email}</td>
+              <td>{u.phone ?? ""}</td>
               <td>{u.name}</td>
               <td>
                 <select value={u.role} onChange={e => setUserRole(u.id, e.target.value as any)}>
@@ -142,9 +143,7 @@ export default function AdminUsersPage() {
                   ))}
                 </select>
               </td>
-              <td>{u.mfaEnabled ? "Enabled" : "Off"}</td>
               <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={() => resetMfa(u.id)}>Reset MFA</button>
                 <button onClick={() => resetPassword(u.id)}>Reset Password</button>
               </td>
             </tr>

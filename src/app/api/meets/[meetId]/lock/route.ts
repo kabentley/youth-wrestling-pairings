@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
-import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 
-export async function GET(_req: Request, { params }: { params: { meetId: string } }) {
+import { db } from "@/lib/db";
+import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
+import { requireRole } from "@/lib/rbac";
+
+export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   await requireRole("COACH");
   const now = new Date();
   const meet = await db.meet.findUnique({
-    where: { id: params.meetId },
+    where: { id: meetId },
     select: {
       lockedById: true,
       lockedBy: { select: { username: true } },
@@ -20,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: { meetId: string 
 
   if (meet.lockExpiresAt && meet.lockExpiresAt < now) {
     await db.meet.update({
-      where: { id: params.meetId },
+      where: { id: meetId },
       data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
     });
     return NextResponse.json({ locked: false });
@@ -33,14 +35,15 @@ export async function GET(_req: Request, { params }: { params: { meetId: string 
   });
 }
 
-export async function POST(_req: Request, { params }: { params: { meetId: string } }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const { user } = await requireRole("COACH");
   const now = new Date();
   const lockExpiresAt = new Date(now.getTime() + MEET_LOCK_TTL_MS);
 
   const updated = await db.meet.updateMany({
     where: {
-      id: params.meetId,
+      id: meetId,
       OR: [
         { lockExpiresAt: null },
         { lockExpiresAt: { lt: now } },
@@ -52,7 +55,7 @@ export async function POST(_req: Request, { params }: { params: { meetId: string
 
   if (updated.count === 0) {
     const meet = await db.meet.findUnique({
-      where: { id: params.meetId },
+      where: { id: meetId },
       select: {
         lockedById: true,
         lockedBy: { select: { username: true } },
@@ -79,12 +82,13 @@ export async function POST(_req: Request, { params }: { params: { meetId: string
   });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { meetId: string } }) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const { user } = await requireRole("COACH");
   const where =
     user.role === "ADMIN"
-      ? { id: params.meetId }
-      : { id: params.meetId, lockedById: user.id };
+      ? { id: meetId }
+      : { id: meetId, lockedById: user.id };
 
   await db.meet.updateMany({
     where,

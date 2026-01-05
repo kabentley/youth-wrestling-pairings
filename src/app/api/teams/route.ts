@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
-import { z } from "zod";
 
 const TeamSchema = z.object({
   name: z.string().trim().min(2),
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     data: {
       name: parsed.name.trim(),
       symbol: parsed.symbol.trim().toUpperCase(),
-      color: parsed.color?.trim() || "#000000",
+      color: parsed.color?.trim() ?? "#000000",
     },
   });
   return NextResponse.json(team);

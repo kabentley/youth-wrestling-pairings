@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
-import { z } from "zod";
 
 const QuerySchema = z.object({
   q: z.string().trim().min(1).max(100),

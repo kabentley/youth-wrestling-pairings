@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
+
 import { db } from "@/lib/db";
 
-export async function GET(_: Request, { params }: { params: { meetId: string } }) {
+export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const bouts = await db.bout.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId: params.meetId, status: "ABSENT" },
+    where: { meetId, status: "ABSENT" },
     select: { wrestlerId: true },
   });
   const absentIds = new Set(statuses.map(s => s.wrestlerId));

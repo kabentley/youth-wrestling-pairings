@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
-import { z } from "zod";
 
 const MeetSchema = z.object({
   name: z.string().min(2),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "ABSENT" | null };
@@ -11,7 +11,6 @@ type Bout = {
   type: string;
   score: number;
   notes?: string | null;
-  locked: boolean;
   mat?: number | null;
   order?: number | null;
 };
@@ -24,17 +23,18 @@ type LockState = {
 
 function keyMat(m: number) { return String(m); }
 
-export default function MatBoard({ params }: { params: { meetId: string } }) {
-  const meetId = params.meetId;
+export default function MatBoard({ params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = use(params);
 
   const [teams, setTeams] = useState<Team[]>([]);
-  const [wMap, setWMap] = useState<Record<string, Wrestler>>({});
+  const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(4);
   const [msg, setMsg] = useState("");
   const [conflictGap, setConflictGap] = useState(6);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
+  const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
 
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
 
@@ -82,7 +82,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
 
     const wJson = await wRes.json();
     setTeams(wJson.teams);
-    const map: Record<string, Wrestler> = {};
+    const map: Record<string, Wrestler | undefined> = {};
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
@@ -90,12 +90,12 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     setNumMats(maxMat > 0 ? maxMat : 4);
   }
 
-  useEffect(() => { load(); }, [meetId]);
+  useEffect(() => { void load(); }, [meetId]);
   useEffect(() => {
-    acquireLock();
+    void acquireLock();
     const interval = setInterval(() => {
       if (lockStatusRef.current === "acquired") {
-        acquireLock();
+        void acquireLock();
       }
     }, 60_000);
     const onBeforeUnload = () => releaseLock();
@@ -111,7 +111,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
 
   function teamName(teamId: string) {
     const team = teams.find(t => t.id === teamId);
-    return team?.symbol || team?.name || teamId;
+    return team?.symbol ?? team?.name ?? teamId;
   }
   function teamColor(teamId: string) {
     return teams.find(t => t.id === teamId)?.color ?? "#000000";
@@ -134,8 +134,8 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     return out;
   }, [bouts, numMats]);
 
-  const conflictBoutIds = useMemo(() => {
-    if (conflictGap <= 0) return new Set<string>();
+  const conflictByWrestler = useMemo(() => {
+    if (conflictGap <= 0) return new Map<string, Set<string>>();
     const byWrestler = new Map<string, { boutId: string; order: number }[]>();
     for (const b of bouts) {
       if (!b.order) continue;
@@ -147,15 +147,17 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
       }
     }
 
-    const conflicts = new Set<string>();
-    for (const list of byWrestler.values()) {
+    const conflicts = new Map<string, Set<string>>();
+    for (const [wrestlerId, list] of byWrestler.entries()) {
       list.sort((a, b) => a.order - b.order);
       for (let i = 0; i < list.length; i++) {
         for (let j = i + 1; j < list.length; j++) {
           const gap = list[j].order - list[i].order;
           if (gap > conflictGap) break;
-          conflicts.add(list[i].boutId);
-          conflicts.add(list[j].boutId);
+          const set = conflicts.get(wrestlerId) ?? new Set<string>();
+          set.add(list[i].boutId);
+          set.add(list[j].boutId);
+          conflicts.set(wrestlerId, set);
         }
       }
     }
@@ -194,6 +196,84 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
     });
   }
 
+  function computeConflictCount(list: Bout[], gap: number) {
+    if (gap <= 0) return 0;
+    const byWrestler = new Map<string, number[]>();
+    for (const b of list) {
+      if (b.order == null) continue;
+      const o = b.order;
+      const red = byWrestler.get(b.redId) ?? [];
+      red.push(o);
+      byWrestler.set(b.redId, red);
+      const green = byWrestler.get(b.greenId) ?? [];
+      green.push(o);
+      byWrestler.set(b.greenId, green);
+    }
+    let conflicts = 0;
+    for (const orders of byWrestler.values()) {
+      orders.sort((a, b) => a - b);
+      for (let i = 0; i < orders.length; i++) {
+        for (let j = i + 1; j < orders.length; j++) {
+          const diff = orders[j] - orders[i];
+          if (diff > gap) break;
+          conflicts += 1;
+        }
+      }
+    }
+    return conflicts;
+  }
+
+  function reorderBoutsForMat(list: Bout[], allBouts: Bout[], gap: number) {
+    const base = list.slice().sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+    if (gap <= 0) return base;
+    const originalOrders = new Map(base.map(b => [b.id, b.order ?? null]));
+
+    function scoreCandidate(candidate: Bout[]) {
+      candidate.forEach((b, idx) => { b.order = idx + 1; });
+      const score = computeConflictCount(allBouts, gap);
+      candidate.forEach(b => { b.order = originalOrders.get(b.id) ?? null; });
+      return score;
+    }
+
+    let best = base;
+    let bestScore = scoreCandidate(base);
+
+    for (let i = 0; i < base.length; i++) {
+      for (let j = 0; j < base.length; j++) {
+        if (i === j) continue;
+        const candidate = base.slice();
+        const [moved] = candidate.splice(i, 1);
+        candidate.splice(j, 0, moved);
+        const score = scoreCandidate(candidate);
+        if (score < bestScore) {
+          bestScore = score;
+          best = candidate;
+        }
+      }
+    }
+    return best;
+  }
+
+  function autoReorder() {
+    if (!canEdit) return;
+    setBouts(prev => {
+      const next = prev.map(b => ({ ...b }));
+      const byMat = new Map<number, Bout[]>();
+      for (const b of next) {
+        const m = b.mat ?? 1;
+        byMat.set(m, [...(byMat.get(m) ?? []), b]);
+      }
+      for (const [m, list] of byMat.entries()) {
+        const ordered = reorderBoutsForMat(list, next, conflictGap);
+        ordered.forEach((b, idx) => {
+          b.mat = m;
+          b.order = idx + 1;
+        });
+      }
+      return next;
+    });
+  }
+
   async function save() {
     if (!canEdit) return;
     setMsg("Saving...");
@@ -226,19 +306,15 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
-    const rTxt = r ? `${r.first} ${r.last} (${r.weight}) — ${teamName(r.teamId)}` : b.redId;
-    const gTxt = g ? `${g.first} ${g.last} (${g.weight}) — ${teamName(g.teamId)}` : b.greenId;
+    const rTxt = r ? `${r.first} ${r.last} — ${teamName(r.teamId)}` : b.redId;
+    const gTxt = g ? `${g.first} ${g.last} — ${teamName(g.teamId)}` : b.greenId;
     const rColor = r ? teamColor(r.teamId) : "";
     const gColor = g ? teamColor(g.teamId) : "";
-    const statusBg =
-      r?.status === "EARLY" || g?.status === "EARLY"
-        ? "#f3eadf"
-        : r?.status === "LATE" || g?.status === "LATE"
-          ? "#e6f6ea"
-          : r?.status === "ABSENT" || g?.status === "ABSENT"
-            ? "#f0f0f0"
-            : "";
-    return { rTxt, gTxt, rColor, gColor, statusBg };
+    return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
+  }
+
+  function toggleHighlight(wrestlerId: string) {
+    setHighlightWrestlerId(prev => (prev === wrestlerId ? null : wrestlerId));
   }
 
   return (
@@ -246,6 +322,7 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <a href={`/meets/${meetId}`}>← Back</a>
         <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">Wall Chart</a>
+        <button onClick={autoReorder} disabled={!canEdit}>Auto Reorder</button>
         <button onClick={save} disabled={!canEdit}>Save Order</button>
         {msg && <span>{msg}</span>}
         <label style={{ marginLeft: 12 }}>
@@ -295,17 +372,31 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
 
               <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
                 {list.map((b, i) => {
-                  const { rTxt, gTxt, rColor, gColor, statusBg } = boutLabel(b);
+                  const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
+                  const redConflict = conflictByWrestler.get(b.redId)?.has(b.id) ?? false;
+                  const greenConflict = conflictByWrestler.get(b.greenId)?.has(b.id) ?? false;
+                  const isRedHighlighted = highlightWrestlerId === b.redId;
+                  const isGreenHighlighted = highlightWrestlerId === b.greenId;
                   return (
                     <div key={b.id} draggable={canEdit}
-                      onDragStart={() => {
+                      onClick={() => setHighlightWrestlerId(null)}
+                      onDragStart={(e) => {
                         if (!canEdit) return;
+                        const target = e.target as HTMLElement | null;
+                        if (target?.dataset?.role === "wrestler") {
+                          e.preventDefault();
+                          return;
+                        }
                         setDragging({ boutId: b.id, fromMat: matNum });
                       }}
                       onDragEnd={() => setDragging(null)}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onDrop={(e) => {
                         e.preventDefault();
+                        e.stopPropagation();
                         if (!dragging || !canEdit) return;
                         moveBout(dragging.boutId, matNum, i);
                         setDragging(null);
@@ -314,21 +405,59 @@ export default function MatBoard({ params }: { params: { meetId: string } }) {
                         border: "1px solid #eee",
                         borderRadius: 10,
                         padding: 10,
-                        background: conflictBoutIds.has(b.id)
-                          ? "#ffd6df"
-                          : (statusBg || "#fff"),
+                        background: "#fff",
                         boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
                         cursor: "grab",
                       }}
                       title="Drag to reorder or move to another mat"
                     >
-                      <div style={{ fontSize: 12, opacity: 0.7, display: "flex", justifyContent: "space-between" }}>
-                        <span>Bout {b.order ?? i + 1}</span>
-                        <span>{b.locked ? "LOCKED" : ""}</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr", gap: 8, fontSize: 12, opacity: 0.85 }}>
+                        <span>{b.order ?? i + 1}</span>
+                        <span
+                          data-role="wrestler"
+                          style={{
+                            color: rColor || undefined,
+                            background: redConflict
+                              ? "#ffd6df"
+                              : rStatus === "EARLY"
+                                ? "#f3eadf"
+                                : rStatus === "LATE"
+                                  ? "#e6f6ea"
+                                  : undefined,
+                            borderRadius: 4,
+                            padding: redConflict || isRedHighlighted ? "0 4px" : undefined,
+                            outline: isRedHighlighted ? "2px solid #111" : undefined,
+                            display: "block",
+                            cursor: "pointer",
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); toggleHighlight(b.redId); }}
+                        >
+                          {rTxt}
+                        </span>
+                        <span
+                          data-role="wrestler"
+                          style={{
+                            color: gColor || undefined,
+                            background: greenConflict
+                              ? "#ffd6df"
+                              : gStatus === "EARLY"
+                                ? "#f3eadf"
+                                : gStatus === "LATE"
+                                  ? "#e6f6ea"
+                                  : undefined,
+                            borderRadius: 4,
+                            padding: greenConflict || isGreenHighlighted ? "0 4px" : undefined,
+                            outline: isGreenHighlighted ? "2px solid #111" : undefined,
+                            display: "block",
+                            cursor: "pointer",
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); toggleHighlight(b.greenId); }}
+                        >
+                          {gTxt}
+                        </span>
                       </div>
-                      <div style={{ fontWeight: 600, marginTop: 4, color: rColor || undefined }}>{rTxt}</div>
-                      <div style={{ marginTop: 2, color: gColor || undefined }}>{gTxt}</div>
-                      {b.notes && <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>{b.notes}</div>}
                     </div>
                   );
                 })}

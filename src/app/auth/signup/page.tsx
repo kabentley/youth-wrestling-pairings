@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 
 export default function SignUpPage() {
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
 
   async function submit() {
@@ -20,12 +23,20 @@ export default function SignUpPage() {
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, name, password }),
+      body: JSON.stringify({ username, email, phone, name, password }),
     });
 
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "Sign-up failed.");
+      const error = json?.error;
+      if (typeof error === "string") {
+        setMsg(error);
+      } else if (error && typeof error === "object") {
+        const flat = Object.values(error).flat().filter(Boolean);
+        setMsg(flat.length > 0 ? flat.join(" ") : "Sign-up failed.");
+      } else {
+        setMsg("Sign-up failed.");
+      }
       return;
     }
 
@@ -44,23 +55,43 @@ export default function SignUpPage() {
           onChange={(e) => setUsername(e.target.value)}
         />
         <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          type="tel"
+          placeholder="Phone (E.164)"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <input
           type="text"
           placeholder="Name (optional)"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
         <input
-          type="password"
+          type={showPassword ? "text" : "password"}
           placeholder="Confirm password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
         />
+        <label style={{ fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={showPassword}
+            onChange={(e) => setShowPassword(e.target.checked)}
+          />{" "}
+          Show password
+        </label>
 
         <button onClick={submit}>Create account</button>
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
+import { use, useEffect, useRef, useState } from "react";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
@@ -22,7 +22,6 @@ type Bout = {
   type: string;
   score: number;
   notes?: string | null;
-  locked: boolean;
   mat?: number | null;
   order?: number | null;
 };
@@ -33,13 +32,14 @@ type LockState = {
   lockExpiresAt?: string | null;
 };
 
-export default function MeetDetail({ params }: { params: { meetId: string } }) {
-  const meetId = params.meetId;
+export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = use(params);
+  const daysPerYear = 365;
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
   const [bouts, setBouts] = useState<Bout[]>([]);
-  const [wMap, setWMap] = useState<Record<string, Wrestler>>({});
+  const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
 
   const [msg, setMsg] = useState("");
   const [matMsg, setMatMsg] = useState("");
@@ -64,6 +64,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
+  const [showNotAttending, setShowNotAttending] = useState(true);
 
   function updateLockState(next: LockState) {
     lockStatusRef.current = next.status;
@@ -100,16 +101,10 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
 
   function teamName(id: string) {
     const team = teams.find(t => t.id === id);
-    return team?.symbol || team?.name || id;
+    return team?.symbol ?? team?.name ?? id;
   }
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
-  }
-  function statusBg(status?: Wrestler["status"]) {
-    if (status === "EARLY") return "#f3eadf";
-    if (status === "LATE") return "#e6f6ea";
-    if (status === "ABSENT") return "#f0f0f0";
-    return "";
   }
   function wName(id: string) {
     const w = wMap[id];
@@ -118,9 +113,6 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     return (
       <span style={{ color }}>
         {w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}
-        {w.status === "LATE" ? " (Arrive Late)" : ""}
-        {w.status === "EARLY" ? " (Leave Early)" : ""}
-        {w.status === "ABSENT" ? " (Not attending)" : ""}
       </span>
     );
   }
@@ -139,7 +131,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     setTeams(wJson.teams);
     setWrestlers(wJson.wrestlers);
 
-    const map: Record<string, Wrestler> = {};
+    const map: Record<string, Wrestler | undefined> = {};
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
@@ -156,12 +148,12 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     }
   }
 
-  useEffect(() => { load(); }, [meetId]);
+  useEffect(() => { void load(); }, [meetId]);
   useEffect(() => {
-    acquireLock();
+    void acquireLock();
     const interval = setInterval(() => {
       if (lockStatusRef.current === "acquired") {
-        acquireLock();
+        void acquireLock();
       }
     }, 60_000);
     const onBeforeUnload = () => releaseLock();
@@ -179,6 +171,9 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   const unmatched = wrestlers
     .filter(w => !matchedIds.has(w.id) && w.status !== "ABSENT")
+    .sort((a, b) => a.weight - b.weight);
+  const notAttending = wrestlers
+    .filter(w => w.status === "ABSENT")
     .sort((a, b) => a.weight - b.weight);
 
   const conflictBoutIds = (() => {
@@ -207,6 +202,10 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     return conflicts;
   })();
 
+  const currentMatches = target
+    ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
+    : [];
+
   async function generate() {
     if (!canEdit) return;
     setMsg("Generating...");
@@ -224,7 +223,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
       }),
     });
     const json = await res.json();
-    setMsg(`Created ${json.created} bouts (locked kept: ${json.locked})`);
+    setMsg(`Created ${json.created} bouts`);
     await load();
     setTimeout(() => setMsg(""), 1500);
   }
@@ -243,16 +242,6 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     setTimeout(() => setMatMsg(""), 1500);
   }
 
-  async function setLock(boutId: string, locked: boolean) {
-    if (!canEdit) return;
-    await fetch(`/api/bouts/${boutId}/lock`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ locked }),
-    });
-    await load();
-  }
-
   async function loadCandidates(wrestlerId: string) {
     const qs = new URLSearchParams({
       wrestlerId,
@@ -266,7 +255,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     const res = await fetch(`/api/meets/${meetId}/candidates?${qs.toString()}`);
     const json = await res.json();
     setTarget(json.target);
-    setCandidates(json.candidates || []);
+    setCandidates(json.candidates ?? []);
   }
 
   async function updateWrestlerStatus(wrestlerId: string, status: "LATE" | "EARLY" | "ABSENT" | null) {
@@ -295,24 +284,13 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     await loadCandidates(redId);
   }
 
-  async function excludePair(aId: string, bId: string) {
-    if (!canEdit) return;
-    await fetch(`/api/meets/${meetId}/exclude`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ aId, bId }),
-    });
-    await loadCandidates(aId);
-  }
-
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         <a href="/">Home</a>
         <a href="/teams">Teams</a>
         <a href="/meets">Meets</a>
-        <a href="/auth/mfa">MFA</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <a href="/meets">← Meets</a>
@@ -331,7 +309,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
       )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Max age gap (days): <input type="number" value={settings.maxAgeGapDays} onChange={e => setSettings(s => ({ ...s, maxAgeGapDays: Number(e.target.value) }))} /></label>
+        <label>Max age gap (years): <input type="number" step="0.1" value={settings.maxAgeGapDays / daysPerYear} onChange={e => setSettings(s => ({ ...s, maxAgeGapDays: Math.round(Number(e.target.value) * daysPerYear) }))} /></label>
         <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={e => setSettings(s => ({ ...s, maxWeightDiffPct: Number(e.target.value) }))} /></label>
         <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={e => setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: e.target.checked }))} /> First-year only with first-year</label>
         <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={e => setSettings(s => ({ ...s, allowSameTeamMatches: e.target.checked }))} /> Same-team fallback</label>
@@ -361,33 +339,38 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
       <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
-            <th align="left">Mat</th><th align="left">Order</th><th align="left">Red</th><th align="left">Green</th><th align="left">Score</th><th align="left">Lock</th>
+            <th align="left">Mat</th><th align="left">Order</th><th align="left">Red</th><th align="left">Green</th>
           </tr>
         </thead>
         <tbody>
           {bouts.map(b => {
             const red = wMap[b.redId];
             const green = wMap[b.greenId];
-            const hasLate = red?.status === "LATE" || green?.status === "LATE";
-            const hasEarly = red?.status === "EARLY" || green?.status === "EARLY";
-            const hasAbsent = red?.status === "ABSENT" || green?.status === "ABSENT";
-            const rowBg = hasAbsent
+            const conflictBg = conflictBoutIds.has(b.id) ? "#ffd6df" : undefined;
+            const redBg = red?.status === "ABSENT"
               ? "#f0f0f0"
-              : hasEarly
+              : red?.status === "EARLY"
                 ? "#f3eadf"
-                : hasLate
+                : red?.status === "LATE"
                   ? "#e6f6ea"
-                  : conflictBoutIds.has(b.id)
-                    ? "#ffd6df"
-                    : undefined;
+                  : conflictBg;
+            const greenBg = green?.status === "ABSENT"
+              ? "#f0f0f0"
+              : green?.status === "EARLY"
+                ? "#f3eadf"
+                : green?.status === "LATE"
+                  ? "#e6f6ea"
+                  : conflictBg;
             return (
-              <tr key={b.id} style={{ borderTop: "1px solid #ddd", background: rowBg }}>
+              <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
               <td>{b.mat ?? ""}</td>
               <td>{b.order ?? ""}</td>
-              <td><button onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>{wName(b.redId)}</button></td>
-              <td><button onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>{wName(b.greenId)}</button></td>
-              <td>{b.score.toFixed(3)}</td>
-              <td><button onClick={() => setLock(b.id, !b.locked)} disabled={!canEdit}>{b.locked ? "Unlock" : "Lock"}</button></td>
+              <td style={{ background: redBg }}>
+                <button onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>{wName(b.redId)}</button>
+              </td>
+              <td style={{ background: greenBg }}>
+                <button onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>{wName(b.greenId)}</button>
+              </td>
             </tr>
           )})}
         </tbody>
@@ -418,6 +401,26 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
                 </span>{" "}
                 ({target.weight}) — {teamName(target.teamId)} — exp {target.experienceYears}, skill {target.skill}
               </div>
+              <div style={{ marginBottom: 10, fontSize: 12 }}>
+                <div style={{ marginBottom: 4 }}>Current matches:</div>
+                {currentMatches.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {currentMatches.map(b => {
+                      const opponentId = b.redId === target.id ? b.greenId : b.redId;
+                      const matLabel = b.mat ? `Mat ${b.mat}` : null;
+                      const orderLabel = b.order ? `Order ${b.order}` : null;
+                      const meta = [matLabel, orderLabel].filter(Boolean).join(", ");
+                      return (
+                        <li key={b.id}>
+                          {wName(opponentId)}{meta ? ` (${meta})` : ""}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <div style={{ color: "#666" }}>None</div>
+                )}
+              </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
                 <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
                   Arrive Late
@@ -437,10 +440,9 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
                 <thead>
                   <tr>
                     <th align="left">Opponent</th>
-                    <th align="right">Score</th>
                     <th align="right">Wt Δ</th>
                     <th align="right">Wt %</th>
-                    <th align="right">Age Δ(d)</th>
+                    <th align="right">Age Δ(yr)</th>
                     <th align="right">Exp Δ</th>
                     <th align="right">Skill Δ</th>
                     <th align="left">Actions</th>
@@ -457,20 +459,18 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
                             {o.first} {o.last} ({o.weight}) — {teamName(o.teamId)}
                           </span>
                         </td>
-                        <td align="right">{Number(c.score).toFixed(3)}</td>
                         <td align="right">{Number(d.wDiff).toFixed(1)}</td>
                         <td align="right">{Number(d.wPct).toFixed(1)}%</td>
-                        <td align="right">{d.ageGapDays}</td>
+                        <td align="right">{(Number(d.ageGapDays) / daysPerYear).toFixed(1)}</td>
                         <td align="right">{d.expGap}</td>
                         <td align="right">{d.skillGap}</td>
                         <td>
-                          <button onClick={() => forceMatch(target.id, o.id)} disabled={!canEdit}>Force</button>{" "}
-                          <button onClick={() => excludePair(target.id, o.id)} disabled={!canEdit}>Exclude</button>
+                          <button onClick={() => forceMatch(target.id, o.id)} disabled={!canEdit}>Add</button>
                         </td>
                       </tr>
                     );
                   })}
-                  {target && candidates.length === 0 && (
+                  {candidates.length === 0 && (
                     <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
                   )}
                 </tbody>
@@ -478,6 +478,38 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
             </>
           )}
         </div>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Not Attending</h3>
+          <label style={{ fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={showNotAttending}
+              onChange={e => setShowNotAttending(e.target.checked)}
+            />{" "}
+            Show
+          </label>
+        </div>
+        {showNotAttending && (
+          notAttending.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
+              {notAttending.map(w => (
+                <div key={w.id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
+                  <div>{w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}</div>
+                  <div style={{ marginTop: 6 }}>
+                    <button onClick={() => updateWrestlerStatus(w.id, null)} disabled={!canEdit}>
+                      Mark Attending
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "#666" }}>None</div>
+          )
+        )}
       </div>
     </main>
   );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
+import { useEffect, useMemo, useState } from "react";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
 
@@ -87,10 +87,10 @@ export default function TeamsPage() {
     });
     setName("");
     setSymbol("");
-    load();
+    await load();
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   const teamOptions = useMemo(() => [{ id: "", name: "Select existing team", symbol: "" }, ...teams], [teams]);
 
@@ -202,8 +202,7 @@ export default function TeamsPage() {
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
         <a href="/">Home</a>
-        <a href="/auth/mfa">MFA</a>
-        <button onClick={() => signOut({ callbackUrl: "/auth/signin" })}>Sign out</button>
+        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
       </div>
       <h2>Teams</h2>
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
 import { z } from "zod";
+
+import { db } from "@/lib/db";
 
 const QuerySchema = z.object({
   wrestlerId: z.string().min(1),
@@ -21,19 +22,21 @@ function weightPctDiff(a: number, b: number) {
   return base <= 0 ? 999 : (100 * diff) / base;
 }
 
-export async function GET(req: Request, { params }: { params: { meetId: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
   const url = new URL(req.url);
   const q = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
 
   const meetTeams = await db.meetTeam.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     include: { team: { include: { wrestlers: true } } },
   });
 
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId: params.meetId },
+    where: { meetId },
     select: { wrestlerId: true, status: true },
   });
+  const statusById = new Map(statuses.map(s => [s.wrestlerId, s.status]));
   const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
 
   const wrestlers = meetTeams.flatMap(mt =>
@@ -48,6 +51,7 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
       experienceYears: w.experienceYears,
       skill: w.skill,
       active: w.active,
+      status: statusById.get(w.id) ?? null,
     }))
   ).filter(w => w.active && !absentIds.has(w.id));
 
@@ -57,7 +61,20 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
   }
   if (!target) return NextResponse.json({ error: "wrestler not in this meet" }, { status: 404 });
 
-  const excluded = await db.excludedPair.findMany({ where: { meetId: params.meetId } });
+  const currentBouts = await db.bout.findMany({
+    where: {
+      meetId,
+      OR: [{ redId: target.id }, { greenId: target.id }],
+    },
+    select: { redId: true, greenId: true },
+  });
+  const currentOpponentIds = new Set<string>();
+  for (const b of currentBouts) {
+    const opponentId = b.redId === target.id ? b.greenId : b.redId;
+    currentOpponentIds.add(opponentId);
+  }
+
+  const excluded = await db.excludedPair.findMany({ where: { meetId } });
   const excludedSet = new Set(excluded.map(e => `${e.aId}|${e.bId}`));
   function isExcluded(aId: string, bId: string) {
     const [a, b] = aId < bId ? [aId, bId] : [bId, aId];
@@ -67,6 +84,7 @@ export async function GET(req: Request, { params }: { params: { meetId: string }
   const rows: any[] = [];
   for (const opp of wrestlers) {
     if (opp.id === target.id) continue;
+    if (currentOpponentIds.has(opp.id)) continue;
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
     if (isExcluded(target.id, opp.id)) continue;

@@ -1,9 +1,10 @@
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import bcrypt from "bcryptjs";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@next-auth/prisma-adapter";
+
 import { db } from "@/lib/db";
-import bcrypt from "bcryptjs";
-import speakeasy from "speakeasy";
+
 
 function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
@@ -11,7 +12,7 @@ function normalizeUsername(username: string) {
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
-  session: { strategy: "database", maxAge: 30 * 24 * 60 * 60 },
+  session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: {
     signIn: "/auth/signin",
   },
@@ -21,44 +22,45 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
-        totp: { label: "MFA Code", type: "text" },
       },
       async authorize(credentials) {
         const username = normalizeUsername(credentials?.username ?? "");
         const password = credentials?.password ?? "";
-        const totp = (credentials?.totp ?? "").replace(/\s+/g, "");
 
         if (!username || !password) return null;
 
         const user = await db.user.findUnique({ where: { username } });
-        if (!user || !user.passwordHash) return null;
+        if (!user?.passwordHash) return null;
 
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
 
-        if (user.mfaEnabled) {
-          if (!user.mfaSecret) return null;
-          const verified = speakeasy.totp.verify({
-            secret: user.mfaSecret,
-            encoding: "base32",
-            token: totp,
-            window: 1,
-          });
-          if (!verified) return null;
-        }
-
-        return { id: user.id, username: user.username, name: user.name ?? undefined };
+        return {
+          id: user.id,
+          username: user.username,
+          name: user.name ?? undefined,
+          role: user.role,
+          teamId: user.teamId,
+        };
       },
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = (user as any).id;
+        token.username = (user as any).username;
+        token.role = (user as any).role ?? "COACH";
+        token.teamId = (user as any).teamId ?? null;
+      }
+      return token;
+    },
+    async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = user.id;
-        (session.user as any).username = (user as any).username;
-        (session.user as any).mfaEnabled = (user as any).mfaEnabled ?? false;
-        (session.user as any).role = (user as any).role ?? "COACH";
-        (session.user as any).teamId = (user as any).teamId ?? null;
+        (session.user).id = token.id as string | undefined;
+        (session.user).username = token.username as string | undefined;
+        (session.user).role = (token.role as "ADMIN" | "COACH" | "PARENT" | undefined) ?? "COACH";
+        (session.user).teamId = token.teamId as string | null | undefined;
       }
       return session;
     },

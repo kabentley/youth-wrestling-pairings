@@ -1,26 +1,28 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
 import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
-import { z } from "zod";
 
 const BodySchema = z.object({
   active: z.boolean(),
 });
 
-export async function PATCH(req: Request, { params }: { params: { teamId: string; wrestlerId: string } }) {
-  await requireTeamCoach(params.teamId);
+export async function PATCH(req: Request, { params }: { params: Promise<{ teamId: string; wrestlerId: string }> }) {
+  const { teamId, wrestlerId } = await params;
+  await requireTeamCoach(teamId);
   const body = BodySchema.parse(await req.json());
 
   const wrestler = await db.wrestler.findUnique({
-    where: { id: params.wrestlerId },
+    where: { id: wrestlerId },
     select: { id: true, teamId: true },
   });
-  if (!wrestler || wrestler.teamId !== params.teamId) {
+  if (wrestler?.teamId !== teamId) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
 
   await db.wrestler.update({
-    where: { id: params.wrestlerId },
+    where: { id: wrestlerId },
     data: { active: body.active },
   });
 
