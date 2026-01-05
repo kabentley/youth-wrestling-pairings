@@ -9,6 +9,7 @@ const SettingsSchema = z.object({
   maxWeightDiffPct: z.number().min(0),
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),
+  matchesPerWrestler: z.number().int().min(1).max(5).default(1),
   balanceTeamPairs: z.boolean().default(true),
   balancePenalty: z.number().min(0).default(0.25),
 });

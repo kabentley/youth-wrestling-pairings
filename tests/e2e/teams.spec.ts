@@ -18,8 +18,8 @@ test("create a team and add wrestlers", async ({ page }) => {
   await page.getByRole("link", { name: "Tigers" }).click();
   await expect(page.getByRole("heading", { name: "Team Wrestlers" })).toBeVisible();
 
-  await page.getByPlaceholder("First").fill("Ben");
-  await page.getByPlaceholder("Last").fill("Bentley");
+  await page.getByPlaceholder("First").fill("Jason");
+  await page.getByPlaceholder("Last").fill("Nolf");
   await page.getByPlaceholder("Weight").fill("52");
   await page.locator('input[type="date"]').fill("2015-03-11");
   await page.getByPlaceholder("Exp").fill("1");
@@ -27,6 +27,6 @@ test("create a team and add wrestlers", async ({ page }) => {
 
   await page.getByRole("button", { name: "Add Wrestler" }).click();
 
-  await expect(page.getByText("Ben Bentley")).toBeVisible();
+  await expect(page.getByText("Jason Nolf")).toBeVisible();
   await expect(page.getByText("52")).toBeVisible();
 });

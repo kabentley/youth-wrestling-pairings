@@ -9,6 +9,9 @@ const MeetSchema = z.object({
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
   homeTeamId: z.string().nullable().optional(),
+  numMats: z.number().int().min(1).max(10).default(4),
+  allowSameTeamMatches: z.boolean().default(false),
+  matchesPerWrestler: z.number().int().min(1).max(5).default(1),
 });
 
 export async function GET() {
@@ -33,6 +36,9 @@ export async function POST(req: Request) {
       date: new Date(parsed.date),
       location: parsed.location,
       homeTeamId: parsed.homeTeamId ?? null,
+      numMats: parsed.numMats,
+      allowSameTeamMatches: parsed.allowSameTeamMatches,
+      matchesPerWrestler: parsed.matchesPerWrestler,
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },
     include: { meetTeams: { include: { team: true } } },

@@ -53,6 +53,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
     allowSameTeamMatches: false,
     balanceTeamPairs: true,
     balancePenalty: 0.25,
+    matchesPerWrestler: 1,
   });
 
   const [matSettings, setMatSettings] = useState({
@@ -125,9 +126,10 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
   }
 
   async function load() {
-    const [bRes, wRes] = await Promise.all([
+    const [bRes, wRes, mRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/pairings`),
       fetch(`/api/meets/${meetId}/wrestlers`),
+      fetch(`/api/meets/${meetId}`),
     ]);
 
     const bJson: Bout[] = await bRes.json();
@@ -143,6 +145,15 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
 
     const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
     if (maxMat > 0) setMatSettings(s => ({ ...s, numMats: maxMat }));
+    if (mRes.ok) {
+      const meetJson = await mRes.json();
+      setMatSettings(s => ({ ...s, numMats: meetJson.numMats ?? s.numMats }));
+      setSettings(s => ({
+        ...s,
+        allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
+        matchesPerWrestler: Number(meetJson.matchesPerWrestler ?? s.matchesPerWrestler),
+      }));
+    }
   }
 
   useEffect(() => { load(); }, [meetId]);
@@ -209,6 +220,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
         allowSameTeamMatches: Boolean(settings.allowSameTeamMatches),
         balanceTeamPairs: Boolean(settings.balanceTeamPairs),
         balancePenalty: Number(settings.balancePenalty),
+        matchesPerWrestler: Number(settings.matchesPerWrestler),
       }),
     });
     const json = await res.json();
@@ -323,6 +335,7 @@ export default function MeetDetail({ params }: { params: { meetId: string } }) {
         <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={e => setSettings(s => ({ ...s, maxWeightDiffPct: Number(e.target.value) }))} /></label>
         <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={e => setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: e.target.checked }))} /> First-year only with first-year</label>
         <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={e => setSettings(s => ({ ...s, allowSameTeamMatches: e.target.checked }))} /> Same-team fallback</label>
+        <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <label><input type="checkbox" checked={settings.balanceTeamPairs} onChange={e => setSettings(s => ({ ...s, balanceTeamPairs: e.target.checked }))} /> Balance team pairings</label>
         <label>Penalty: <input type="number" step="0.05" value={settings.balancePenalty} onChange={e => setSettings(s => ({ ...s, balancePenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>

@@ -13,6 +13,9 @@ export default function MeetsPage() {
   const [location, setLocation] = useState("");
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [homeTeamId, setHomeTeamId] = useState<string>("");
+  const [numMats, setNumMats] = useState(4);
+  const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
+  const [matchesPerWrestler, setMatchesPerWrestler] = useState(1);
 
   async function load() {
     const [t, m] = await Promise.all([fetch("/api/teams"), fetch("/api/meets")]);
@@ -33,12 +36,24 @@ export default function MeetsPage() {
     await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, date, location, teamIds, homeTeamId: homeTeamId || null }),
+      body: JSON.stringify({
+        name,
+        date,
+        location,
+        teamIds,
+        homeTeamId: homeTeamId || null,
+        numMats,
+        allowSameTeamMatches,
+        matchesPerWrestler,
+      }),
     });
     setName("");
     setLocation("");
     setTeamIds([]);
     setHomeTeamId("");
+    setNumMats(4);
+    setAllowSameTeamMatches(false);
+    setMatchesPerWrestler(1);
     load();
   }
 
@@ -63,6 +78,36 @@ export default function MeetsPage() {
         <input placeholder="Meet name" value={name} onChange={e => setName(e.target.value)} />
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         <input placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} />
+        <label>
+          Number of mats:
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={numMats}
+            onChange={e => setNumMats(Number(e.target.value))}
+            style={{ marginLeft: 8, width: 60 }}
+          />
+        </label>
+        <label>
+          Matches per wrestler:
+          <input
+            type="number"
+            min={1}
+            max={5}
+            value={matchesPerWrestler}
+            onChange={e => setMatchesPerWrestler(Number(e.target.value))}
+            style={{ marginLeft: 8, width: 60 }}
+          />
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={allowSameTeamMatches}
+            onChange={e => setAllowSameTeamMatches(e.target.checked)}
+          />{" "}
+          Attempt same-team matches
+        </label>
 
         <div style={{ border: "1px solid #ddd", padding: 10, borderRadius: 8 }}>
           <div style={{ marginBottom: 6 }}><b>Select teams (2–4)</b></div>

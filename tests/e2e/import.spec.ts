@@ -19,7 +19,7 @@ test("CSV import creates and then re-import overwrites existing by name+birthday
 
   // Upload a CSV via file chooser
   const csv1 = `first,last,weight,birthdate,experienceYears,skill
-Ben,Bentley,52,2015-03-11,1,3
+Jason,Nolf,52,2015-03-11,1,3
 `;
   await page.setInputFiles('input[type="file"]', {
     name: "roster.csv",
@@ -32,7 +32,7 @@ Ben,Bentley,52,2015-03-11,1,3
 
   // Re-import with different weight/exp/skill for same name+bday -> should update not duplicate
   const csv2 = `first,last,weight,birthdate,experienceYears,skill
-Ben,Bentley,60,2015-03-11,2,5
+Jason,Nolf,60,2015-03-11,2,5
 `;
   await page.setInputFiles('input[type="file"]', {
     name: "roster2.csv",
@@ -44,7 +44,7 @@ Ben,Bentley,60,2015-03-11,2,5
 
   // Check team roster reflects updated fields
   await page.getByRole("link", { name: "Tigers" }).click();
-  await expect(page.getByText("Ben Bentley")).toBeVisible();
+  await expect(page.getByText("Jason Nolf")).toBeVisible();
   await expect(page.getByText("60")).toBeVisible();
   await expect(page.getByText("2")).toBeVisible();
   await expect(page.getByText("5")).toBeVisible();

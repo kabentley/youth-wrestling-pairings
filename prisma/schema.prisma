@@ -74,6 +74,9 @@ model Meet {
   createdAt DateTime   @default(now())
   homeTeamId String?
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
+  numMats   Int        @default(4)
+  allowSameTeamMatches Boolean @default(false)
+  matchesPerWrestler Int @default(1)
 
   lockedById    String?
   lockedBy      User?    @relation("MeetLock", fields: [lockedById], references: [id])
