@@ -289,6 +289,7 @@ export default function AdminLeaguePage() {
         <AppHeader links={headerLinks} />
         <div className="admin-header">
           <h1 className="admin-title">League Setup</h1>
+          <a className="admin-btn admin-btn-ghost" href="/admin/users">User Management</a>
         </div>
         <div className="admin-card">
           <h3>League</h3>

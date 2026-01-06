@@ -7,7 +7,10 @@ import { useEffect, useState } from "react";
 
 export default function SignInPage() {
   const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const rawCallbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
+    ? rawCallbackUrl
+    : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -56,7 +59,7 @@ export default function SignInPage() {
       twoFactorMethod,
       twoFactorCode: twoFactorRequired ? twoFactorCode : "",
       bypassEmailVerification: bypassEmailVerification ? "true" : "false",
-      callbackUrl,
+      callbackUrl: postLoginUrl,
     });
 
     if (res?.error) {
@@ -84,7 +87,7 @@ export default function SignInPage() {
       setErr("Sign-in failed. Check username/password.");
       return;
     }
-    window.location.href = callbackUrl;
+    window.location.href = postLoginUrl;
   }
 
   async function resendVerification() {
@@ -223,7 +226,7 @@ export default function SignInPage() {
               <li>Print and wall charts ready</li>
               <li>Track meet progress</li>
             </ul>
-            <Link className="ghost-btn" href="/auth/signup">Create Free Account</Link>
+            <Link className="ghost-btn" href="/auth/signup">Create New Account</Link>
           </div>
 
           <div className="signin-right">
@@ -325,7 +328,7 @@ export default function SignInPage() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#ffffff", color: "#1d232b", border: "1px solid #d5dbe2" }}
-                        onClick={() => void signIn("google", { callbackUrl })}
+                        onClick={() => void signIn("google", { callbackUrl: postLoginUrl })}
                       >
                         Google
                       </button>
@@ -335,7 +338,7 @@ export default function SignInPage() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#000000" }}
-                        onClick={() => void signIn("apple", { callbackUrl })}
+                        onClick={() => void signIn("apple", { callbackUrl: postLoginUrl })}
                       >
                         Apple
                       </button>
@@ -345,7 +348,7 @@ export default function SignInPage() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#1877f2" }}
-                        onClick={() => void signIn("facebook", { callbackUrl })}
+                        onClick={() => void signIn("facebook", { callbackUrl: postLoginUrl })}
                       >
                         Facebook
                       </button>

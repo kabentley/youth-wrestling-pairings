@@ -8,7 +8,10 @@ import { useSession } from "next-auth/react";
 export default function ChooseUsernamePage() {
   const router = useRouter();
   const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const rawCallbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
+    ? rawCallbackUrl
+    : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;
   const { status, data: session } = useSession();
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [teams, setTeams] = useState<Array<{ id: string; name: string; symbol: string }>>([]);
@@ -39,9 +42,9 @@ export default function ChooseUsernamePage() {
     const role = session?.user?.role;
     const hasTeam = Boolean(session?.user?.teamId);
     if (status === "authenticated" && current && !current.startsWith("oauth-") && (role === "ADMIN" || hasTeam)) {
-      router.replace(callbackUrl);
+      router.replace(postLoginUrl);
     }
-  }, [status, session, router, callbackUrl]);
+  }, [status, session, router, postLoginUrl]);
 
   useEffect(() => {
     let active = true;
@@ -78,7 +81,7 @@ export default function ChooseUsernamePage() {
         setErr(json?.error ?? "Unable to save username.");
         return;
       }
-      router.replace(callbackUrl);
+      router.replace(postLoginUrl);
     } finally {
       setSaving(false);
     }

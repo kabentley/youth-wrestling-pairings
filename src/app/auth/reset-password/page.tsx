@@ -34,12 +34,12 @@ export default function ResetPasswordPage() {
       setErr("Enter the reset code.");
       return;
     }
-    if (password.length < 6) {
-      setErr("Password must be at least 8 characters and include upper, lower, number, and symbol.");
+    if (password.length < 8) {
+      setErr("Password must be at least 8 characters and include a symbol.");
       return;
     }
     if (!isStrongPassword(password)) {
-      setErr("Password is too weak. Use 8+ chars with upper, lower, number, and symbol.");
+      setErr("Password must be at least 8 characters and include a symbol.");
       return;
     }
     if (password !== confirm) {
@@ -158,24 +158,15 @@ export default function ResetPasswordPage() {
 }
 
 function passwordStrength(password: string) {
-  let score = 0;
-  if (password.length >= 8) score += 1;
-  if (/[a-z]/.test(password)) score += 1;
-  if (/[A-Z]/.test(password)) score += 1;
-  if (/\d/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+  const longEnough = password.length >= 8;
+  const hasSymbol = /[^A-Za-z0-9]/.test(password);
 
   if (!password) return { pct: 0, color: "#e6e9ee", label: "Password strength" };
-  if (score <= 2) return { pct: 25, color: "#e57373", label: "Weak" };
-  if (score === 3) return { pct: 50, color: "#f2b705", label: "Fair" };
-  if (score === 4) return { pct: 75, color: "#64b5f6", label: "Good" };
+  if (!longEnough) return { pct: 40, color: "#e57373", label: "Too short" };
+  if (!hasSymbol) return { pct: 75, color: "#f2b705", label: "Add a symbol" };
   return { pct: 100, color: "#2e7d32", label: "Strong" };
 }
 
 function isStrongPassword(password: string) {
-  return password.length >= 8
-    && /[a-z]/.test(password)
-    && /[A-Z]/.test(password)
-    && /\d/.test(password)
-    && /[^A-Za-z0-9]/.test(password);
+  return password.length >= 8 && /[^A-Za-z0-9]/.test(password);
 }

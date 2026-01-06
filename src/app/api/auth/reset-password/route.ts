@@ -10,7 +10,7 @@ const BodySchema = z.object({
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
   code: z.string().trim().min(4).max(20),
-  password: z.string().min(6).max(100),
+  password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
 }).refine(v => Boolean(v.email || v.phone), {
   message: "Provide email or phone",
 });

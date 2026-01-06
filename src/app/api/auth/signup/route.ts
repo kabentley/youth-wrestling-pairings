@@ -11,7 +11,7 @@ const BodySchema = z.object({
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   teamId: z.string().trim().min(1),
   name: z.string().trim().max(100).optional(),
-  password: z.string().min(6).max(100),
+  password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
 });
 
 function normalizeUsername(username: string) {
@@ -29,8 +29,31 @@ export async function POST(req: Request) {
   const phone = body.phone ? body.phone.trim() : "";
   const teamId = body.teamId.trim();
 
-  const existing = await db.user.findUnique({ where: { username } });
+  const existing = await db.user.findUnique({
+    where: { username },
+    select: { id: true, email: true, emailVerified: true },
+  });
   if (existing) {
+    const sameEmail = existing.email?.trim().toLowerCase() === email;
+    if (sameEmail && !existing.emailVerified) {
+      const passwordHash = await bcrypt.hash(body.password, 10);
+      await db.user.update({
+        where: { id: existing.id },
+        data: {
+          email,
+          phone: phone === "" ? "" : phone,
+          teamId,
+          name: (() => {
+            const trimmed = body.name?.trim();
+            return trimmed === "" ? null : (trimmed ?? null);
+          })(),
+          passwordHash,
+          role: "PARENT",
+        },
+      });
+      await sendVerificationEmail(req, email);
+      return NextResponse.json({ ok: true, reused: true });
+    }
     return NextResponse.json({ error: "Username already taken" }, { status: 409 });
   }
   const team = await db.team.findUnique({ where: { id: teamId }, select: { id: true } });
@@ -38,20 +61,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
   const passwordHash = await bcrypt.hash(body.password, 10);
-  await db.user.create({
-    data: {
-      username,
-      email,
-      phone: phone === "" ? null : phone,
-      teamId,
-      name: (() => {
-        const trimmed = body.name?.trim();
-        return trimmed === "" ? null : (trimmed ?? null);
-      })(),
-      passwordHash,
-      role: "PARENT",
-    },
-  });
+  try {
+    await db.user.create({
+      data: {
+        username,
+        email,
+        phone: phone === "" ? "" : phone,
+        teamId,
+        name: (() => {
+          const trimmed = body.name?.trim();
+          return trimmed === "" ? null : (trimmed ?? null);
+        })(),
+        passwordHash,
+        role: "PARENT",
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === "P2002") {
+      return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+    }
+    throw err;
+  }
 
   await sendVerificationEmail(req, email);
 
