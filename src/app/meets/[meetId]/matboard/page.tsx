@@ -35,6 +35,8 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
 
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
   const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
@@ -90,7 +92,11 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
 
     const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
     setNumMats(maxMat > 0 ? maxMat : 4);
+    setDirty(false);
+    dirtyRef.current = false;
   }
+
+  const canEdit = lockState.status === "acquired";
 
   useEffect(() => { void load(); }, [meetId]);
   useEffect(() => {
@@ -109,7 +115,18 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
     };
   }, [meetId]);
 
-  const canEdit = lockState.status === "acquired";
+  useEffect(() => {
+    const saveOnExit = () => {
+      if (dirtyRef.current && canEdit) {
+        void saveOrder({ silent: true, keepalive: true });
+      }
+    };
+    window.addEventListener("pagehide", saveOnExit);
+    return () => {
+      saveOnExit();
+      window.removeEventListener("pagehide", saveOnExit);
+    };
+  }, [canEdit, meetId]);
 
   function teamName(teamId: string) {
     const team = teams.find(t => t.id === teamId);
@@ -198,6 +215,8 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
         return { ...x, mat: u.mat, order: u.order };
       });
     });
+    setDirty(true);
+    dirtyRef.current = true;
   }
 
   function computeConflictCount(matLists: Bout[][], gap: number) {
@@ -278,11 +297,14 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
       }
       return next;
     });
+    setDirty(true);
+    dirtyRef.current = true;
   }
 
-  async function save() {
+  async function saveOrder(opts?: { silent?: boolean; keepalive?: boolean }) {
     if (!canEdit) return;
-    setMsg("Saving...");
+    const silent = Boolean(opts?.silent);
+    if (!silent) setMsg("Saving...");
     const payload: Record<string, string[]> = {};
     for (let m = 1; m <= numMats; m++) payload[keyMat(m)] = [];
 
@@ -302,11 +324,20 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mats: payload }),
+      keepalive: Boolean(opts?.keepalive),
     });
 
-    setMsg("Saved.");
-    await load();
-    setTimeout(() => setMsg(""), 1200);
+    setDirty(false);
+    dirtyRef.current = false;
+    if (!silent) {
+      setMsg("Saved.");
+      await load();
+      setTimeout(() => setMsg(""), 1200);
+    }
+  }
+
+  async function save() {
+    await saveOrder();
   }
 
   function boutLabel(b: Bout) {
@@ -320,17 +351,145 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   }
 
   return (
-    <main style={{ padding: 16, fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <a href={`/meets/${meetId}`}>← Back</a>
+    <main className="matboard">
+      <style>{`
+        @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+        :root {
+          --bg: #eef1f4;
+          --card: #ffffff;
+          --ink: #1d232b;
+          --muted: #5a6673;
+          --accent: #1e88e5;
+          --line: #d5dbe2;
+          --warn: #b00020;
+        }
+        .matboard {
+          font-family: "Source Sans 3", Arial, sans-serif;
+          color: var(--ink);
+          background: var(--bg);
+          min-height: 100vh;
+          padding: 28px 22px 40px;
+        }
+        .matboard a {
+          color: var(--ink);
+          text-decoration: none;
+          font-weight: 600;
+        }
+        .matboard a:hover {
+          color: var(--accent);
+        }
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          border-bottom: 1px solid var(--line);
+          padding-bottom: 12px;
+          margin-bottom: 12px;
+        }
+        .topbar .nav {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .nav-btn {
+          color: var(--ink);
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-weight: 600;
+          font-size: 14px;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+        }
+        .nav-btn:hover {
+          background: #f7f9fb;
+        }
+        .subnav {
+          display: flex;
+          gap: 14px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 12px;
+        }
+        .subnav a {
+          padding: 6px 8px;
+          border-radius: 6px;
+          border: 1px solid transparent;
+        }
+        .subnav a:hover {
+          border-color: var(--line);
+          background: #f7f9fb;
+        }
+        .notice {
+          border: 1px solid #e8c3c3;
+          background: #fff3f3;
+          padding: 10px;
+          border-radius: 8px;
+          margin-top: 12px;
+          color: var(--warn);
+        }
+        .toolbar {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .toolbar label {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .toolbar input {
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 6px 8px;
+        }
+        h2 {
+          font-family: "Oswald", Arial, sans-serif;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+      `}</style>
+      <div className="topbar">
+        <div className="nav">
+          <a href="/">Home</a>
+          <a href="/teams">Teams</a>
+          <a href="/meets">Meets</a>
+        </div>
+        <button
+          className="nav-btn"
+          onClick={async () => {
+            await signOut({ redirect: false });
+            window.location.href = "/auth/signin";
+          }}
+        >
+          Sign out
+        </button>
+      </div>
+      <div className="subnav">
+        <a href={`/meets/${meetId}`}>Meet Pairings</a>
         <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
-        <button onClick={autoReorder} disabled={!canEdit}>Auto Reorder</button>
-        <button onClick={save} disabled={!canEdit}>Save Order</button>
+      </div>
+
+      <h2>Mat Board</h2>
+      <div className="toolbar">
+        <button className="nav-btn" onClick={autoReorder} disabled={!canEdit}>Auto Reorder</button>
+        <button className="nav-btn" onClick={save} disabled={!canEdit}>Save Order</button>
         {msg && <span>{msg}</span>}
-        <label style={{ marginLeft: 12 }}>
+        <label>
           Mats:
-          <input type="number" min={1} max={10} value={numMats}
-            onChange={e => setNumMats(Number(e.target.value))} style={{ width: 60, marginLeft: 6 }} />
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={numMats}
+            onChange={e => setNumMats(Number(e.target.value))}
+            style={{ width: 60 }}
+          />
         </label>
         <label>
           Conflict gap:
@@ -340,16 +499,16 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
             max={20}
             value={conflictGap}
             onChange={(e) => setConflictGap(Number(e.target.value))}
-            style={{ width: 60, marginLeft: 6 }}
+            style={{ width: 60 }}
           />
         </label>
-        <span style={{ fontSize: 12, opacity: 0.7 }}>Pink = too close</span>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>Pink = too close</span>
       </div>
 
       {lockState.status === "locked" && (
-        <div style={{ border: "1px solid #e8c3c3", background: "#fff3f3", padding: 10, borderRadius: 8, marginTop: 12 }}>
+        <div className="notice">
           Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
-          <button onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
+          <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
         </div>
       )}
 

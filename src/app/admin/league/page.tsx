@@ -1,9 +1,9 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-type TeamRow = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
+type TeamRow = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 
 export default function AdminLeaguePage() {
   const { data: session } = useSession();
@@ -11,9 +11,22 @@ export default function AdminLeaguePage() {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [address, setAddress] = useState("");
   const [msg, setMsg] = useState("");
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
+  const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
+  const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string>>({});
+  const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
+  const [teamAddressEdits, setTeamAddressEdits] = useState<Record<string, string>>({});
+  const [openPicker, setOpenPicker] = useState<string | null>(null);
+  const [openLogoMenu, setOpenLogoMenu] = useState<string | null>(null);
+  const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
+  const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
+  const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const colorPopoverRef = useRef<HTMLDivElement | null>(null);
+  const logoPopoverRef = useRef<HTMLDivElement | null>(null);
 
   async function load() {
     const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
@@ -31,7 +44,7 @@ export default function AdminLeaguePage() {
     const res = await fetch("/api/teams", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol }),
+      body: JSON.stringify({ name, symbol, address }),
     });
     if (!res.ok) {
       setMsg("Unable to add team.");
@@ -39,6 +52,7 @@ export default function AdminLeaguePage() {
     }
     setName("");
     setSymbol("");
+    setAddress("");
     await load();
   }
 
@@ -63,9 +77,11 @@ export default function AdminLeaguePage() {
       body: form,
     });
     if (!res.ok) {
-      setMsg("Logo upload failed.");
+      const json = await res.json().catch(() => ({}));
+      setMsg(json?.error ?? "Logo upload failed.");
       return;
     }
+    setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
     await load();
   }
 
@@ -75,6 +91,7 @@ export default function AdminLeaguePage() {
       setMsg("Unable to clear logo.");
       return;
     }
+    setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
     await load();
   }
 
@@ -89,6 +106,47 @@ export default function AdminLeaguePage() {
       return;
     }
     await load();
+  }
+
+  async function updateTeamDetails(teamId: string, name: string, symbol: string, address: string) {
+    const res = await fetch(`/api/teams/${teamId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, symbol, address }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setMsg(json?.error ?? "Unable to update team.");
+      return;
+    }
+    setTeamNameEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    setTeamSymbolEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    setTeamAddressEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    await load();
+  }
+
+  function getTeamName(team: TeamRow) {
+    return teamNameEdits[team.id] ?? team.name;
+  }
+
+  function getTeamSymbol(team: TeamRow) {
+    return teamSymbolEdits[team.id] ?? team.symbol;
+  }
+
+  function getTeamAddress(team: TeamRow) {
+    return teamAddressEdits[team.id] ?? team.address ?? "";
   }
 
   async function saveLeague() {
@@ -113,10 +171,35 @@ export default function AdminLeaguePage() {
       body: form,
     });
     if (!res.ok) {
-      setMsg("League logo upload failed.");
+      const json = await res.json().catch(() => ({}));
+      setMsg(json?.error ?? "League logo upload failed.");
       return;
     }
+    setLeagueLogoVersion(Date.now());
     await load();
+  }
+
+  function scheduleTeamDetailsSave(teamId: string, name: string, symbol: string, address: string) {
+    const cleanName = name.trim();
+    const cleanSymbol = symbol.trim();
+    if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) return;
+    if (detailTimers.current[teamId]) clearTimeout(detailTimers.current[teamId]);
+    detailTimers.current[teamId] = setTimeout(() => {
+      void updateTeamDetails(teamId, cleanName, cleanSymbol, address);
+    }, 500);
+  }
+
+  function scheduleColorSave(teamId: string, color: string) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
+    if (colorTimers.current[teamId]) clearTimeout(colorTimers.current[teamId]);
+    colorTimers.current[teamId] = setTimeout(() => {
+      void updateTeamColor(teamId, color);
+    }, 300);
+  }
+
+  function setTeamColor(teamId: string, color: string) {
+    setColorEdits((prev) => ({ ...prev, [teamId]: color }));
+    scheduleColorSave(teamId, color);
   }
 
   async function clearLeagueLogo() {
@@ -125,116 +208,562 @@ export default function AdminLeaguePage() {
       setMsg("Unable to clear league logo.");
       return;
     }
+    setLeagueLogoVersion(Date.now());
     await load();
   }
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!openPicker) return;
+    function handleClick(e: MouseEvent) {
+      if (!colorPopoverRef.current) return;
+      if (!colorPopoverRef.current.contains(e.target as Node)) {
+        setOpenPicker(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [openPicker]);
+  useEffect(() => {
+    if (!openLogoMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (!logoPopoverRef.current) return;
+      if (!logoPopoverRef.current.contains(e.target as Node)) {
+        setOpenLogoMenu(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [openLogoMenu]);
 
   if (!session) {
     return (
-      <main style={{ padding: 24, fontFamily: "system-ui" }}>
-        <h2>League Setup</h2>
-        <p>You must sign in.</p>
-        <a href="/auth/signin">Sign in</a>
+      <main className="admin">
+        <style>{adminStyles}</style>
+        <div className="admin-shell">
+          <h1 className="admin-title">League Setup</h1>
+          <div className="admin-card">
+            <p>You must sign in.</p>
+            <a className="admin-link" href="/auth/signin">Sign in</a>
+          </div>
+        </div>
       </main>
     );
   }
 
   if (role !== "ADMIN") {
     return (
-      <main style={{ padding: 24, fontFamily: "system-ui" }}>
-        <h2>League Setup</h2>
-        <p>Access denied.</p>
-        <a href="/">Back</a>
+      <main className="admin">
+        <style>{adminStyles}</style>
+        <div className="admin-shell">
+          <h1 className="admin-title">League Setup</h1>
+          <div className="admin-card">
+            <p>Access denied.</p>
+            <a className="admin-link" href="/">Back</a>
+          </div>
+        </div>
       </main>
     );
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h2>League Setup</h2>
-      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>League</h3>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <input
-            value={leagueName}
-            onChange={(e) => setLeagueName(e.target.value)}
-            placeholder="League name"
-          />
-          <button onClick={saveLeague}>Save</button>
+    <main className="admin">
+      <style>{adminStyles}</style>
+      <div className="admin-shell">
+        <div className="admin-nav">
+          <a className="admin-link" href="/">Home</a>
+          <a className="admin-link" href="/admin/users">Users</a>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
-          {leagueHasLogo ? (
-            <img src="/api/league/logo/file" alt="League logo" style={{ width: 64, height: 64, objectFit: "contain" }} />
-          ) : (
-            <span style={{ fontSize: 12, opacity: 0.7 }}>No logo</span>
-          )}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => uploadLeagueLogo(e.target.files?.[0] ?? null)}
-          />
-          <button onClick={clearLeagueLogo} disabled={!leagueHasLogo}>Clear Logo</button>
+        <div className="admin-header">
+          <h1 className="admin-title">League Setup</h1>
         </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
-        <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" style={{ width: 120 }} />
-        <button onClick={addTeam}>Add Team</button>
-      </div>
-      {msg && <div style={{ color: "crimson", marginBottom: 8 }}>{msg}</div>}
-
-      <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-            <th>Logo</th>
-            <th>Symbol</th>
-            <th>Team</th>
-            <th>Color</th>
-            <th>Upload Logo</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {teams.map(t => (
-            <tr key={t.id} style={{ borderTop: "1px solid #eee" }}>
-              <td>
-                {t.hasLogo ? (
-                  <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 36, height: 36, objectFit: "contain" }} />
+        <div className="admin-card">
+          <h3>League</h3>
+          <div className="admin-row">
+            <label className="admin-label" htmlFor="league-name">League Name</label>
+            <input
+              id="league-name"
+              value={leagueName}
+              onChange={(e) => setLeagueName(e.target.value)}
+              placeholder="League name"
+            />
+            <button className="admin-btn" onClick={saveLeague}>Save</button>
+          </div>
+          <div className="admin-row admin-row-tight">
+            <div className="logo-cell">
+              <button
+                type="button"
+                className="logo-button"
+                onClick={() => setOpenLogoMenu(openLogoMenu === "league" ? null : "league")}
+              >
+                {leagueHasLogo ? (
+                  <img src={`/api/league/logo/file?v=${leagueLogoVersion}`} alt="League logo" className="admin-logo" />
                 ) : (
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>None</span>
+                  <span className="admin-muted">Set Logo</span>
                 )}
-              </td>
-              <td>{t.symbol}</td>
-              <td>{t.name}</td>
-              <td>
-                <input
-                  type="color"
-                  value={t.color}
-                  onChange={(e) => updateTeamColor(t.id, e.target.value)}
-                />
-              </td>
-              <td>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => uploadLogo(t.id, e.target.files?.[0] ?? null)}
-                />
-              </td>
-              <td style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => clearLogo(t.id)} disabled={!t.hasLogo}>Clear Logo</button>
-                <button onClick={() => removeTeam(t.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-          {teams.length === 0 && (
-            <tr><td colSpan={4}>No teams yet.</td></tr>
-          )}
-        </tbody>
-      </table>
+              </button>
+              {openLogoMenu === "league" && (
+                <div className="logo-popover" ref={logoPopoverRef}>
+                  <label className="admin-label">Upload Logo File</label>
+                  <input
+                    id="league-logo-file"
+                    className="file-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={(e) => {
+                      void uploadLeagueLogo(e.target.files?.[0] ?? null);
+                      setOpenLogoMenu(null);
+                    }}
+                  />
+                  <label className="admin-btn admin-btn-ghost" htmlFor="league-logo-file">
+                    Upload Logo File
+                  </label>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-ghost"
+                    onClick={() => { void clearLeagueLogo(); setOpenLogoMenu(null); }}
+                    disabled={!leagueHasLogo}
+                  >
+                    Clear Logo
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-      <p style={{ marginTop: 16 }}><a href="/admin">Back to Admin</a></p>
+        <div className="admin-card">
+          <h3>Teams</h3>
+          <div className="admin-row">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
+            <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" className="admin-input-sm" />
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" style={{ minWidth: 260 }} />
+            <button className="admin-btn" onClick={addTeam}>Add Team</button>
+          </div>
+          {msg && <div className="admin-error">{msg}</div>}
+
+          <div className="admin-table">
+            <table cellPadding={6}>
+              <thead>
+                <tr>
+                  <th>Logo</th>
+                  <th>Symbol</th>
+                  <th>Team</th>
+                  <th>Color</th>
+                  <th>Address</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teams.map(t => (
+                  <tr key={t.id}>
+                    <td>
+                      <div className="logo-cell">
+                        <button
+                          type="button"
+                          className="logo-button"
+                          onClick={() => setOpenLogoMenu(openLogoMenu === t.id ? null : t.id)}
+                        >
+                          {t.hasLogo ? (
+                            <img src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`} alt={`${t.name} logo`} className="admin-team-logo" />
+                          ) : (
+                            <span className="admin-muted">Set Logo</span>
+                          )}
+                        </button>
+                        {openLogoMenu === t.id && (
+                          <div className="logo-popover" ref={logoPopoverRef}>
+                            <label className="admin-label">Upload Logo File</label>
+                            <input
+                              id={`team-logo-file-${t.id}`}
+                              className="file-input"
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                              onChange={(e) => {
+                                void uploadLogo(t.id, e.target.files?.[0] ?? null);
+                                setOpenLogoMenu(null);
+                              }}
+                            />
+                            <label className="admin-btn admin-btn-ghost" htmlFor={`team-logo-file-${t.id}`}>
+                              Upload Logo File
+                            </label>
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn-ghost"
+                              onClick={() => { void clearLogo(t.id); setOpenLogoMenu(null); }}
+                              disabled={!t.hasLogo}
+                            >
+                              Clear Logo
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <input
+                        value={getTeamSymbol(t)}
+                        onChange={(e) => {
+                          const nextSymbol = e.target.value;
+                          setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
+                          scheduleTeamDetailsSave(t.id, getTeamName(t), nextSymbol, getTeamAddress(t));
+                        }}
+                        className="admin-input-sm"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={getTeamName(t)}
+                        onChange={(e) => {
+                          const nextName = e.target.value;
+                          setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
+                          scheduleTeamDetailsSave(t.id, nextName, getTeamSymbol(t), getTeamAddress(t));
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <div className="color-cell">
+                        <button
+                          type="button"
+                          className="color-swatch"
+                          style={{ backgroundColor: colorEdits[t.id] ?? t.color }}
+                          onClick={() => setOpenPicker(openPicker === t.id ? null : t.id)}
+                          aria-label={`Choose color for ${t.name}`}
+                        />
+                        {openPicker === t.id && (
+                          <div className="color-popover" ref={colorPopoverRef}>
+                            <label className="admin-label" htmlFor={`color-${t.id}`}>Hex color</label>
+                            <input
+                              id={`color-${t.id}`}
+                              type="text"
+                              value={colorEdits[t.id] ?? t.color}
+                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                              placeholder="#1e88e5"
+                            />
+                            <label className="admin-label" htmlFor={`color-preset-${t.id}`}>Named colors</label>
+                            <select
+                              id={`color-preset-${t.id}`}
+                              value={colorEdits[t.id] ?? t.color}
+                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                            >
+                              {!NAMED_COLORS.some(c => c.value.toLowerCase() === (colorEdits[t.id] ?? t.color).toLowerCase()) && (
+                                <option value={colorEdits[t.id] ?? t.color}>Custom</option>
+                              )}
+                              {NAMED_COLORS.map((c) => (
+                                <option key={c.value} value={c.value}>{c.name}</option>
+                              ))}
+                            </select>
+                            <label className="admin-label" htmlFor={`color-custom-${t.id}`}>Custom color</label>
+                            <input
+                              id={`color-custom-${t.id}`}
+                              type="color"
+                              value={colorEdits[t.id] ?? t.color}
+                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                              className="color-input"
+                            />
+                            <div className="swatch-grid">
+                              {NAMED_COLORS.map((c) => (
+                                <button
+                                  key={`${t.id}-${c.value}`}
+                                  type="button"
+                                  className="swatch"
+                                  style={{ backgroundColor: c.value }}
+                                  title={`${c.name} (${c.value})`}
+                                  onClick={() => setTeamColor(t.id, c.value)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <input
+                        value={getTeamAddress(t)}
+                        onChange={(e) => {
+                          const nextAddress = e.target.value;
+                          setTeamAddressEdits((prev) => ({ ...prev, [t.id]: nextAddress }));
+                          scheduleTeamDetailsSave(t.id, getTeamName(t), getTeamSymbol(t), nextAddress);
+                        }}
+                        placeholder="Street, City, State"
+                      />
+                    </td>
+                    <td className="admin-actions">
+                      <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>Delete Team</button>
+                    </td>
+                  </tr>
+                ))}
+                {teams.length === 0 && (
+                  <tr><td colSpan={6}>No teams yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p className="admin-footer"></p>
+      </div>
     </main>
   );
 }
+
+const adminStyles = `
+  @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+  :root {
+    --bg: #eef1f4;
+    --card: #ffffff;
+    --ink: #1d232b;
+    --muted: #5a6673;
+    --accent: #1e88e5;
+    --line: #d5dbe2;
+    --danger: #c62828;
+  }
+  .admin {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", Arial, sans-serif;
+    padding: 28px 18px 40px;
+  }
+  .admin-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .admin-title {
+    font-family: "Oswald", Arial, sans-serif;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .admin-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .admin-nav {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .admin-nav .admin-link {
+    padding: 6px 8px;
+    border-radius: 6px;
+  }
+  .admin-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  .admin-card h3 {
+    margin-top: 0;
+  }
+  .admin-label {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .admin-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .admin-row-tight {
+    margin-top: 10px;
+  }
+  .admin input,
+  .admin select {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .admin input[type="file"] {
+    padding: 6px;
+  }
+  .color-cell {
+    position: relative;
+  }
+  .color-swatch {
+    width: 38px;
+    height: 24px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .color-popover {
+    position: absolute;
+    z-index: 20;
+    top: 30px;
+    left: 0;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 200px;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+    display: grid;
+    gap: 8px;
+  }
+  .logo-cell {
+    position: relative;
+  }
+  .logo-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 6px;
+    background: #f7f9fb;
+    cursor: pointer;
+  }
+  .file-input {
+    display: none;
+  }
+  .logo-popover {
+    position: absolute;
+    z-index: 20;
+    top: 30px;
+    left: 0;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    min-width: 200px;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
+    display: grid;
+    gap: 8px;
+  }
+  .color-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .color-input {
+    width: 44px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: transparent;
+  }
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  .swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    cursor: pointer;
+  }
+  .admin-input-sm {
+    width: 120px;
+  }
+  .admin-btn {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .admin-btn-ghost {
+    background: #f2f5f8;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .admin-btn-danger {
+    background: var(--danger);
+  }
+  .admin-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .admin-error {
+    color: #b00020;
+    margin: 10px 0;
+  }
+  .admin-table {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: visible;
+    background: #fff;
+    margin-top: 12px;
+  }
+  .admin table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .admin thead {
+    background: #f7f9fb;
+    text-align: left;
+  }
+  .admin th,
+  .admin td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .admin tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .admin-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .admin-logo {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+  }
+  .admin-team-logo {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+  }
+  .admin-muted {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .admin-footer {
+    margin-top: 12px;
+  }
+  @media (max-width: 900px) {
+    .admin-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+`;
+
+const NAMED_COLORS = [
+  { name: "Navy", value: "#0d3b66" },
+  { name: "Royal Blue", value: "#1e88e5" },
+  { name: "Sky Blue", value: "#64b5f6" },
+  { name: "Teal", value: "#00897b" },
+  { name: "Turquoise", value: "#00acc1" },
+  { name: "Green", value: "#2e7d32" },
+  { name: "Forest", value: "#1b5e20" },
+  { name: "Lime", value: "#9ccc65" },
+  { name: "Gold", value: "#f2b705" },
+  { name: "Amber", value: "#ffb300" },
+  { name: "Orange", value: "#f57c00" },
+  { name: "Deep Orange", value: "#e64a19" },
+  { name: "Red", value: "#c62828" },
+  { name: "Crimson", value: "#d32f2f" },
+  { name: "Maroon", value: "#8e1037" },
+  { name: "Purple", value: "#5e35b1" },
+  { name: "Indigo", value: "#3949ab" },
+  { name: "Magenta", value: "#ad1457" },
+  { name: "Gray", value: "#546e7a" },
+  { name: "Slate", value: "#455a64" },
+  { name: "Black", value: "#1d232b" },
+];

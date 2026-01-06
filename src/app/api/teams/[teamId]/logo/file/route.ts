@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
   return new NextResponse(team.logoData, {
     headers: {
       "Content-Type": team.logoType,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "no-store",
     },
   });
 }

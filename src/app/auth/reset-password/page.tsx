@@ -35,7 +35,11 @@ export default function ResetPasswordPage() {
       return;
     }
     if (password.length < 6) {
-      setErr("Password must be at least 6 characters.");
+      setErr("Password must be at least 8 characters and include upper, lower, number, and symbol.");
+      return;
+    }
+    if (!isStrongPassword(password)) {
+      setErr("Password is too weak. Use 8+ chars with upper, lower, number, and symbol.");
       return;
     }
     if (password !== confirm) {
@@ -120,6 +124,10 @@ export default function ResetPasswordPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <div style={{ height: 8, borderRadius: 999, background: "#e6e9ee", overflow: "hidden", border: "1px solid #d5dbe2" }}>
+          <span style={{ display: "block", height: "100%", width: `${passwordStrength(password).pct}%`, background: passwordStrength(password).color, transition: "width 150ms ease" }} />
+        </div>
+        <div style={{ fontSize: 12, color: "#5a6673" }}>{passwordStrength(password).label}</div>
         <input
           type={showPassword ? "text" : "password"}
           placeholder="Confirm password"
@@ -147,4 +155,27 @@ export default function ResetPasswordPage() {
       </div>
     </main>
   );
+}
+
+function passwordStrength(password: string) {
+  let score = 0;
+  if (password.length >= 8) score += 1;
+  if (/[a-z]/.test(password)) score += 1;
+  if (/[A-Z]/.test(password)) score += 1;
+  if (/\d/.test(password)) score += 1;
+  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+
+  if (!password) return { pct: 0, color: "#e6e9ee", label: "Password strength" };
+  if (score <= 2) return { pct: 25, color: "#e57373", label: "Weak" };
+  if (score === 3) return { pct: 50, color: "#f2b705", label: "Fair" };
+  if (score === 4) return { pct: 75, color: "#64b5f6", label: "Good" };
+  return { pct: 100, color: "#2e7d32", label: "Strong" };
+}
+
+function isStrongPassword(password: string) {
+  return password.length >= 8
+    && /[a-z]/.test(password)
+    && /[A-Z]/.test(password)
+    && /\d/.test(password)
+    && /[^A-Za-z0-9]/.test(password);
 }

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,7 +8,8 @@ import { db } from "@/lib/db";
 const BodySchema = z.object({
   username: z.string().trim().min(3).max(32),
   email: z.string().trim().email(),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/),
+  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
+  teamId: z.string().trim().min(1),
   name: z.string().trim().max(100).optional(),
   password: z.string().min(6).max(100),
 });
@@ -24,18 +26,24 @@ export async function POST(req: Request) {
   const body = parsed.data;
   const username = normalizeUsername(body.username);
   const email = body.email.trim().toLowerCase();
-  const phone = body.phone.trim();
+  const phone = body.phone ? body.phone.trim() : "";
+  const teamId = body.teamId.trim();
 
   const existing = await db.user.findUnique({ where: { username } });
   if (existing) {
     return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+  }
+  const team = await db.team.findUnique({ where: { id: teamId }, select: { id: true } });
+  if (!team) {
+    return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
   const passwordHash = await bcrypt.hash(body.password, 10);
   await db.user.create({
     data: {
       username,
       email,
-      phone,
+      phone: phone === "" ? null : phone,
+      teamId,
       name: (() => {
         const trimmed = body.name?.trim();
         return trimmed === "" ? null : (trimmed ?? null);
@@ -45,5 +53,38 @@ export async function POST(req: Request) {
     },
   });
 
+  await sendVerificationEmail(req, email);
+
   return NextResponse.json({ ok: true });
+}
+
+async function sendVerificationEmail(req: Request, email: string) {
+  const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const token = crypto.randomBytes(24).toString("hex");
+  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24);
+
+  await db.verificationToken.deleteMany({ where: { identifier: email } });
+  await db.verificationToken.create({
+    data: { identifier: email, token, expires },
+  });
+
+  const link = `${origin}/auth/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+  const key = process.env.SENDGRID_API_KEY;
+  const from = process.env.SENDGRID_FROM;
+  if (!key || !from) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`Verify email link for ${email}: ${link}`);
+      return;
+    }
+    return;
+  }
+
+  const sgMail = await import("@sendgrid/mail");
+  sgMail.default.setApiKey(key);
+  await sgMail.default.send({
+    to: email,
+    from,
+    subject: "Verify your email",
+    text: `Verify your email address by visiting: ${link}`,
+  });
 }

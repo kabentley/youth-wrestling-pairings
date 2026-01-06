@@ -19,10 +19,18 @@ function tokenize(q: string) {
 }
 
 export async function GET(req: Request) {
-  await requireSession();
+  const { userId } = await requireSession();
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true, teamId: true },
+  });
   const url = new URL(req.url);
   const { q, limit } = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
   const tokens = tokenize(q);
+
+  if (user?.role === "PARENT" && !user.teamId) {
+    return NextResponse.json({ error: "No team assigned." }, { status: 400 });
+  }
 
   const where =
     tokens.length === 1
@@ -43,8 +51,10 @@ export async function GET(req: Request) {
           })),
         };
 
+  const teamFilter = user?.role === "PARENT" && user.teamId ? { teamId: user.teamId } : {};
+
   const wrestlers = await db.wrestler.findMany({
-    where,
+    where: { ...where, ...teamFilter },
     take: limit,
     select: {
       id: true,

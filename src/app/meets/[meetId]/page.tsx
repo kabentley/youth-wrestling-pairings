@@ -40,6 +40,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
+  const [meetName, setMeetName] = useState("");
 
   const [msg, setMsg] = useState("");
   const [matMsg, setMatMsg] = useState("");
@@ -112,8 +113,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!w) return id;
     const color = teamColor(w.teamId);
     return (
-      <span style={{ color }}>
-        {w.first} {w.last} ({teamName(w.teamId)})
+      <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
+        <span>{w.first} {w.last} ({teamName(w.teamId)})</span>
+        <span style={{ width: 12, height: 12, background: color, display: "inline-block" }} />
       </span>
     );
   }
@@ -130,6 +132,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const bDate = new Date(b);
     if (Number.isNaN(aDate.getTime()) || Number.isNaN(bDate.getTime())) return null;
     return Math.round((bDate.getTime() - aDate.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  function ageYears(birthdate?: string) {
+    if (!birthdate) return null;
+    const bDate = new Date(birthdate);
+    if (Number.isNaN(bDate.getTime())) return null;
+    const now = new Date();
+    const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
+    return days / daysPerYear;
   }
   function weightPctDiff(a?: number, b?: number) {
     if (typeof a !== "number" || typeof b !== "number") return null;
@@ -166,6 +176,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (maxMat > 0) setMatSettings(s => ({ ...s, numMats: maxMat }));
     if (mRes.ok) {
       const meetJson = await mRes.json();
+      setMeetName(meetJson.name ?? "");
       setMatSettings(s => ({ ...s, numMats: meetJson.numMats ?? s.numMats }));
       setSettings(s => ({
         ...s,
@@ -201,6 +212,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const notAttending = wrestlers
     .filter(w => w.status === "ABSENT")
     .sort((a, b) => a.weight - b.weight);
+  const teamList = teams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
+  const meetLabel = [meetName, teamList].filter(Boolean).join(" - ");
 
   const conflictBoutIds = (() => {
     const gap = 6;
@@ -323,31 +336,150 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
-        <a href="/">Home</a>
-        <a href="/teams">Teams</a>
-        <a href="/meets">Meets</a>
-        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
+    <main className="meet-detail">
+      <style>{`
+        @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+        :root {
+          --bg: #eef1f4;
+          --card: #ffffff;
+          --ink: #1d232b;
+          --muted: #5a6673;
+          --accent: #1e88e5;
+          --line: #d5dbe2;
+          --warn: #b00020;
+        }
+        .meet-detail {
+          font-family: "Source Sans 3", Arial, sans-serif;
+          color: var(--ink);
+          background: var(--bg);
+          min-height: 100vh;
+          padding: 28px 22px 40px;
+        }
+        .meet-detail a {
+          color: var(--ink);
+          text-decoration: none;
+          font-weight: 600;
+        }
+        .meet-detail a:hover {
+          color: var(--accent);
+        }
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          border-bottom: 1px solid var(--line);
+          padding-bottom: 12px;
+          margin-bottom: 12px;
+        }
+        .topbar .nav {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .nav-btn {
+          color: var(--ink);
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-weight: 600;
+          font-size: 14px;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+        }
+        .nav-btn:hover {
+          background: #f7f9fb;
+        }
+        .subnav {
+          display: flex;
+          gap: 14px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 12px;
+        }
+        .subnav a {
+          padding: 6px 8px;
+          border-radius: 6px;
+          border: 1px solid transparent;
+        }
+        .subnav a:hover {
+          border-color: var(--line);
+          background: #f7f9fb;
+        }
+        h2 {
+          font-family: "Oswald", Arial, sans-serif;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        input, select, textarea, button {
+          font-family: inherit;
+        }
+        input, select, textarea {
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 6px 8px;
+        }
+        .notice {
+          border: 1px solid #e8c3c3;
+          background: #fff3f3;
+          padding: 10px;
+          border-radius: 8px;
+          margin-bottom: 12px;
+          color: var(--warn);
+        }
+        .wrestler-link {
+          border: none;
+          background: transparent;
+          padding: 0;
+          cursor: pointer;
+        }
+        .wrestler-link:hover {
+          text-decoration: underline;
+          text-decoration-thickness: 2px;
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+          border-radius: 4px;
+        }
+        .wrestler-link:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+      `}</style>
+      <div className="topbar">
+        <div className="nav">
+          <a href="/">Home</a>
+          <a href="/teams">Teams</a>
+          <a href="/meets">Meets</a>
+        </div>
+        <button
+          className="nav-btn"
+          onClick={async () => {
+            await signOut({ redirect: false });
+            window.location.href = "/auth/signin";
+          }}
+        >
+          Sign out
+        </button>
       </div>
-      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-        <a href="/meets">← Meets</a>
+      <div className="subnav">
         <a href={`/meets/${meetId}/matboard`}>Mat Board</a>
-        <a href={`/meets/${meetId}/print`}>Print</a>
         <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
       </div>
 
-      <h2>Meet Pairings</h2>
+      <h2>{meetLabel || "this meet"}</h2>
 
       {lockState.status === "locked" && (
-        <div style={{ border: "1px solid #e8c3c3", background: "#fff3f3", padding: 10, borderRadius: 8, marginBottom: 12 }}>
+        <div className="notice">
           Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
-          <button onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
+          <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
         </div>
       )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Max age gap (years): <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} onChange={async e => {
+        <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} onChange={async e => {
           const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
           setSettings(s => ({ ...s, maxAgeGapDays }));
           if (target) await loadCandidates(target.id, { maxAgeGapDays });
@@ -361,12 +493,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           const checked = e.target.checked;
           setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
           if (target) await loadCandidates(target.id, { firstYearOnlyWithFirstYear: checked });
-        }} /> First-year only with first-year</label>
+        }} /> First-year only rule</label>
         <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
           const allowSameTeamMatches = e.target.checked;
           setSettings(s => ({ ...s, allowSameTeamMatches }));
           if (target) await loadCandidates(target.id, { allowSameTeamMatches });
-        }} /> Allow same team</label>
+        }} /> Include same team</label>
         <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
         {msg && <span>{msg}</span>}
@@ -388,10 +520,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         {matMsg && <span>{matMsg}</span>}
       </div>
 
-      <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+      <table cellPadding={2} style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "5%"}} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "20%" }} />
+          <col style={{ width: "20%" }} />
+        </colgroup>
         <thead>
           <tr>
-            <th align="left">Mat</th><th align="left">Order</th><th align="left">Red</th><th align="left">Green</th>
+            <th align="left" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>Mat</th>
+            <th align="left" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>Bout</th>
+            <th align="left" style={{ width: "20%" }}>Wrestler 1</th>
+            <th align="left" style={{ width: "20%" }}>Wrestler 2</th>
           </tr>
         </thead>
         <tbody>
@@ -414,14 +555,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   ? "#e6f6ea"
                   : conflictBg;
             return (
-              <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td>{b.mat ?? ""}</td>
-              <td>{b.order ?? ""}</td>
+            <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
+              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>{b.mat ?? ""}</td>
+              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>{b.order ?? ""}</td>
               <td style={{ background: redBg }}>
-                <button onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>{wName(b.redId)}</button>
+                <button className="wrestler-link" onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>
+                  {wName(b.redId)}
+                </button>
               </td>
               <td style={{ background: greenBg }}>
-                <button onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>{wName(b.greenId)}</button>
+                <button className="wrestler-link" onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>
+                  {wName(b.greenId)}
+                </button>
               </td>
             </tr>
           )})}
@@ -433,8 +578,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <h3>Unmatched</h3>
           <div style={{ display: "grid", gap: 6 }}>
             {unmatched.map(w => (
-              <button key={w.id} onClick={() => loadCandidates(w.id)} style={{ textAlign: "left" }}>
-                {w.first} {w.last} ({teamName(w.teamId)})
+              <button key={w.id} className="wrestler-link" onClick={() => loadCandidates(w.id)} style={{ textAlign: "left" }}>
+                {wName(w.id)}
               </button>
             ))}
             {unmatched.length === 0 && <div>None</div>}
@@ -442,16 +587,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
 
         <div style={{ flex: 3, border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <h3>Candidates</h3>
+          <h3>Current Matches For:</h3>
           {!target && <div>Select a wrestler (from Unmatched or a bout) to see opponent options.</div>}
 
           {target && (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-                <span style={{ color: teamColor(target.teamId) }}>
+                <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
                   <b>{target.first} {target.last} ({teamName(target.teamId)})</b>
+                  <span style={{ width: 12, height: 12, background: teamColor(target.teamId), display: "inline-block" }} />
                 </span>{" "}
-                wt {target.weight}, exp {target.experienceYears}, skill {target.skill}
+                age {ageYears(target.birthdate)?.toFixed(1) ?? ""}, wt {target.weight}, exp {target.experienceYears}, skill {target.skill}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
                     Arrive Late
@@ -468,14 +614,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 </div>
               </div>
               <div style={{ marginBottom: 10 }}>
-                <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+                <table cellPadding={4} style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead>
                     <tr>
                       <th align="left">Current Matches</th>
                       <th align="right">Wt</th>
                       <th align="right">Wt Δ</th>
                       <th align="right">Wt %</th>
-                      <th align="right">Age Δ(yr)</th>
+                      <th align="right">Age</th>
+                      <th align="right">Age Δ</th>
                       <th align="right">Exp Δ</th>
                       <th align="right">Skill Δ</th>
                       <th align="left">Actions</th>
@@ -484,23 +631,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <tbody>
                     {currentMatches.length === 0 && (
                       <tr>
-                        <td colSpan={8} style={{ color: "#666" }}>None</td>
+                        <td colSpan={9} style={{ color: "#666" }}>None</td>
                       </tr>
                     )}
                     {currentMatches.map(b => {
                       const opponentId = b.redId === target.id ? b.greenId : b.redId;
                       const opponent = wMap[opponentId];
-                      const wDiff = opponent ? (opponent.weight - target.weight) : null;
-                      const wPct = opponent ? weightPctDiffSigned(target.weight, opponent.weight) : null;
-                      const ageGapDays = opponent ? signedDaysBetween(target.birthdate, opponent.birthdate) : null;
-                      const expGap = opponent ? (opponent.experienceYears - target.experienceYears) : null;
-                      const skillGap = opponent ? (opponent.skill - target.skill) : null;
+                      const wDiff = opponent ? (target.weight - opponent.weight) : null;
+                      const wPct = opponent ? weightPctDiffSigned(opponent.weight, target.weight) : null;
+                      const opponentAge = ageYears(opponent?.birthdate);
+                      const ageGapDays = opponent ? signedDaysBetween(opponent.birthdate, target.birthdate) : null;
+                      const expGap = opponent ? (target.experienceYears - opponent.experienceYears) : null;
+                      const skillGap = opponent ? (target.skill - opponent.skill) : null;
                       return (
                         <tr key={b.id} style={{ borderTop: "1px solid #eee" }}>
                           <td>{wName(opponentId)}</td>
                           <td align="right">{opponent?.weight ?? ""}</td>
                           <td align="right">{wDiff == null ? "" : wDiff.toFixed(1)}</td>
                           <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
+                          <td align="right">{opponentAge == null ? "" : opponentAge.toFixed(1)}</td>
                           <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
                           <td align="right">{expGap == null ? "" : expGap}</td>
                           <td align="right">{skillGap == null ? "" : skillGap}</td>
@@ -513,13 +662,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   </tbody>
                 </table>
               </div>
-              <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+              <table cellPadding={4} style={{ borderCollapse: "collapse", width: "100%" }}>
                     <thead>
                       <tr>
                         <th align="left">Available Matches</th>
                     <th align="right">Wt</th>
                     <th align="right">Wt Δ</th>
                     <th align="right">Wt %</th>
+                    <th align="right">Age (yr)</th>
                     <th align="right">Age Δ(yr)</th>
                     <th align="right">Exp Δ</th>
                     <th align="right">Skill Δ</th>
@@ -538,21 +688,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     })
                     .map((c: any) => {
                     const o = c.opponent as Wrestler;
-                    const wDiff = o.weight - target.weight;
-                    const wPct = weightPctDiffSigned(target.weight, o.weight);
-                    const ageGapDays = signedDaysBetween(target.birthdate, o.birthdate);
-                    const expGap = o.experienceYears - target.experienceYears;
-                    const skillGap = o.skill - target.skill;
+                    const wDiff = target.weight - o.weight;
+                    const wPct = weightPctDiffSigned(o.weight, target.weight);
+                    const opponentAge = ageYears(o.birthdate);
+                    const ageGapDays = signedDaysBetween(o.birthdate, target.birthdate);
+                    const expGap = target.experienceYears - o.experienceYears;
+                    const skillGap = target.skill - o.skill;
                     return (
                       <tr key={o.id} style={{ borderTop: "1px solid #eee" }}>
                         <td>
-                          <span style={{ color: teamColor(o.teamId) }}>
+                          <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
                             {o.first} {o.last} ({teamName(o.teamId)})
+                            <span style={{ width: 12, height: 12, background: teamColor(o.teamId), display: "inline-block" }} />
                           </span>
                         </td>
                         <td align="right">{o.weight}</td>
                         <td align="right">{Number.isFinite(wDiff) ? wDiff.toFixed(1) : ""}</td>
                         <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
+                        <td align="right">{opponentAge == null ? "" : opponentAge.toFixed(1)}</td>
                         <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
                         <td align="right">{Number.isFinite(expGap) ? expGap : ""}</td>
                         <td align="right">{Number.isFinite(skillGap) ? skillGap : ""}</td>
@@ -563,7 +716,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     );
                   })}
                   {candidates.length === 0 && (
-                    <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
+                    <tr><td colSpan={9}>No candidates meet the current limits.</td></tr>
                   )}
                 </tbody>
               </table>

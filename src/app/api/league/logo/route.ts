@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: Request) {
   await requireAdmin();
@@ -15,6 +16,9 @@ export async function POST(req: Request) {
 
   if (!ALLOWED_TYPES.has(file.type)) {
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
+  }
+  if (file.size > MAX_LOGO_BYTES) {
+    return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 400 });
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());

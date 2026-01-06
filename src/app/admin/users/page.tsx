@@ -2,6 +2,7 @@
 
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; teamId: string | null };
 type TeamRow = { id: string; name: string; symbol: string };
@@ -9,23 +10,36 @@ type TeamRow = { id: string; name: string; symbol: string };
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [query, setQuery] = useState("");
+  const [teamFilter, setTeamFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [password, setPassword] = useState("changeme123");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT">("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
 
-  async function load() {
-    const [uRes, tRes] = await Promise.all([fetch("/api/admin/users"), fetch("/api/teams")]);
+  async function load(overrides?: { page?: number; query?: string; pageSize?: number; teamFilter?: string }) {
+    const params = new URLSearchParams({
+      q: (overrides?.query ?? query).trim(),
+      teamId: (overrides?.teamFilter ?? teamFilter).trim(),
+      page: String(overrides?.page ?? page),
+      pageSize: String(overrides?.pageSize ?? pageSize),
+    });
+    const [uRes, tRes] = await Promise.all([fetch(`/api/admin/users?${params}`), fetch("/api/teams")]);
     if (!uRes.ok) { setMsg("Not authorized."); return; }
-    setUsers(await uRes.json());
+    const data = await uRes.json();
+    setUsers(data.items ?? []);
+    setTotal(Number(data.total ?? 0));
     if (tRes.ok) setTeams(await tRes.json());
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [page, pageSize, teamFilter]);
 
   async function createUser() {
     setMsg("");
@@ -34,9 +48,12 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, phone, name, password, role, teamId: teamId || null }),
     });
-    const txt = await res.text();
-    if (!res.ok) { setMsg(txt); return; }
-    setUsername(""); setEmail(""); setPhone(""); setName(""); setPassword("changeme123"); setRole("COACH"); setTeamId("");
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to create user.");
+      return;
+    }
+    setUsername(""); setEmail(""); setPhone(""); setName(""); setPassword(""); setRole("COACH"); setTeamId("");
     setMsg("User created.");
     await load();
   }
@@ -70,86 +87,315 @@ export default function AdminUsersPage() {
     setMsg("Password reset.");
   }
 
+  function onSearchSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (page !== 1) {
+      setPage(1);
+    }
+    void load({ page: 1, query, teamFilter });
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const showingTo = Math.min(total, page * pageSize);
+
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui", maxWidth: 980 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
-        <a href="/">Home</a>
-        <a href="/teams">Teams</a>
-        <a href="/meets">Meets</a>
-        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
-      </div>
+    <main className="admin">
+      <style>{adminStyles}</style>
+      <div className="admin-shell">
+        <div className="admin-header">
+          <h1 className="admin-title">User Management</h1>
+          <div className="admin-nav">
+            <a className="admin-link" href="/">Home</a>
+            <a className="admin-link" href="/teams">Teams</a>
+            <a className="admin-link" href="/meets">Meets</a>
+            <button
+              className="admin-btn admin-btn-ghost"
+              onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
 
-      <h2>User Management</h2>
+        <div className="admin-card">
+          <form className="admin-search" onSubmit={onSearchSubmit}>
+            <input
+              placeholder="Search username, email, or name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button className="admin-btn" type="submit">Search</button>
+            <select
+              value={teamFilter}
+              onChange={(e) => { setPage(1); setTeamFilter(e.target.value); }}
+            >
+              <option value="">All teams</option>
+              {teams.map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>
+              ))}
+            </select>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+            <div className="admin-muted">
+              {total === 0 ? "No users" : `Showing ${showingFrom}-${showingTo} of ${total}`}
+            </div>
+          </form>
+          <div className="admin-pager">
+            <button
+              className="admin-btn admin-btn-ghost"
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+            >
+              Prev
+            </button>
+            <span className="admin-muted">Page {page} of {totalPages}</span>
+            <button
+              className="admin-btn admin-btn-ghost"
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
+        </div>
 
-      <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-        <h3>Create user</h3>
-        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
-          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
-          <input placeholder="Phone (E.164)" value={phone} onChange={e => setPhone(e.target.value)} />
-          <input placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
-          <input placeholder="Temp password" value={password} onChange={e => setPassword(e.target.value)} />
+        <div className="admin-card">
+          <h3>Create user</h3>
+          <div className="admin-grid">
+            <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
+            <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+            <input placeholder="Phone (E.164)" value={phone} onChange={e => setPhone(e.target.value)} />
+            <input placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
+            <input placeholder="Temp password" value={password} onChange={e => setPassword(e.target.value)} />
           <select value={role} onChange={e => setRole(e.target.value as any)}>
             <option value="ADMIN">ADMIN</option>
             <option value="COACH">COACH</option>
             <option value="PARENT">PARENT</option>
           </select>
-          <select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={role !== "COACH"}>
-            <option value="">Select team (coach only)</option>
+          <select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={role === "ADMIN"}>
+            <option value="">Select team (coach/parent)</option>
             {teams.map(t => (
               <option key={t.id} value={t.id}>{t.symbol}</option>
             ))}
           </select>
+          </div>
+          <button className="admin-btn" style={{ marginTop: 10 }} onClick={createUser}>Create</button>
+          {msg && <div className="admin-info">{msg}</div>}
         </div>
-        <button style={{ marginTop: 10 }} onClick={createUser}>Create</button>
-        {msg && <div style={{ marginTop: 8 }}>{msg}</div>}
-      </div>
 
-      <table cellPadding={8} style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-            <th>Username</th>
-            <th>Email</th>
-            <th>Phone</th>
-            <th>Name</th>
-            <th>Role</th>
-            <th>Team</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => (
-            <tr key={u.id} style={{ borderTop: "1px solid #eee" }}>
-              <td>{u.username}</td>
-              <td>{u.email}</td>
-              <td>{u.phone ?? ""}</td>
-              <td>{u.name}</td>
-              <td>
-                <select value={u.role} onChange={e => setUserRole(u.id, e.target.value as any)}>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="COACH">COACH</option>
-                  <option value="PARENT">PARENT</option>
-                </select>
-              </td>
-              <td>
-                <select
-                  value={u.teamId ?? ""}
-                  onChange={(e) => setUserTeam(u.id, e.target.value || null)}
-                  disabled={u.role !== "COACH"}
-                >
-                  <option value="">None</option>
-                  {teams.map(t => (
-                    <option key={t.id} value={t.id}>{t.symbol}</option>
-                  ))}
-                </select>
-              </td>
-              <td style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={() => resetPassword(u.id)}>Reset Password</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        <div className="admin-table">
+          <table cellPadding={8}>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td>{u.username}</td>
+                  <td>{u.email}</td>
+                  <td>{u.phone ?? ""}</td>
+                  <td>{u.name}</td>
+                  <td>
+                    <select value={u.role} onChange={e => setUserRole(u.id, e.target.value as any)}>
+                      <option value="ADMIN">ADMIN</option>
+                      <option value="COACH">COACH</option>
+                      <option value="PARENT">PARENT</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={u.teamId ?? ""}
+                      onChange={(e) => setUserTeam(u.id, e.target.value || null)}
+                      disabled={u.role === "ADMIN"}
+                    >
+                      <option value="">None</option>
+                      {teams.map(t => (
+                        <option key={t.id} value={t.id}>{t.symbol}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="admin-actions">
+                    <button className="admin-btn admin-btn-ghost" onClick={() => resetPassword(u.id)}>Reset Password</button>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={7}>No users found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </main>
   );
 }
+
+function formatError(error: unknown) {
+  if (!error) return null;
+  if (typeof error === "string") return error;
+  if (typeof error !== "object") return String(error);
+
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(error)) {
+    if (Array.isArray(value)) {
+      parts.push(`${key}: ${value.join(", ")}`);
+    } else if (value) {
+      parts.push(`${key}: ${String(value)}`);
+    }
+  }
+  return parts.length ? parts.join(" | ") : "Invalid input.";
+}
+
+const adminStyles = `
+  @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+  :root {
+    --bg: #eef1f4;
+    --card: #ffffff;
+    --ink: #1d232b;
+    --muted: #5a6673;
+    --accent: #1e88e5;
+    --line: #d5dbe2;
+  }
+  .admin {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", Arial, sans-serif;
+    padding: 28px 18px 40px;
+  }
+  .admin-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .admin-title {
+    font-family: "Oswald", Arial, sans-serif;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .admin-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .admin-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  .admin-card h3 {
+    margin-top: 0;
+  }
+  .admin-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+  .admin input,
+  .admin select {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .admin-btn {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .admin-btn-ghost {
+    background: #f2f5f8;
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .admin-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .admin-info {
+    margin-top: 8px;
+    color: var(--muted);
+  }
+  .admin-table {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .admin table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .admin thead {
+    background: #f7f9fb;
+    text-align: left;
+  }
+  .admin th,
+  .admin td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .admin tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .admin-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .admin-search {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(220px, 1fr) auto auto 1fr;
+    align-items: center;
+  }
+  .admin-pager {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  @media (max-width: 900px) {
+    .admin-header {
+      align-items: flex-start;
+    }
+    .admin-search {
+      grid-template-columns: 1fr;
+    }
+  }
+`;

@@ -29,6 +29,8 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const canEdit = role === "ADMIN" || (role === "COACH" && sessionTeamId === teamId);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
   const [team, setTeam] = useState<{ name: string; symbol?: string; color?: string; hasLogo?: boolean } | null>(null);
+  const [teamColor, setTeamColor] = useState("");
+  const [teamLogoVersion, setTeamLogoVersion] = useState(0);
   const [showInactive, setShowInactive] = useState(true);
   const [matRules, setMatRules] = useState<MatRule[]>([]);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
@@ -76,7 +78,11 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     } else if (matRules.length === 0) {
       setMatRules(Array.from({ length: 4 }, (_, idx) => defaultMatRule(idx)));
     }
-    if (tRes.ok) setTeam(await tRes.json());
+    if (tRes.ok) {
+      const tJson = await tRes.json();
+      setTeam(tJson);
+      setTeamColor(tJson.color ?? "");
+    }
   }
 
   async function add() {
@@ -116,6 +122,51 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     setTimeout(() => setRuleMsg(""), 1500);
   }
 
+  async function saveTeamColor() {
+    if (!canEdit) return;
+    if (!/^#[0-9a-fA-F]{6}$/.test(teamColor)) {
+      setRuleMsg("Team color must be a 6-digit hex value.");
+      return;
+    }
+    const res = await fetch(`/api/teams/${teamId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color: teamColor }),
+    });
+    if (!res.ok) {
+      setRuleMsg("Unable to update team color.");
+      return;
+    }
+    await load();
+  }
+
+  async function uploadTeamLogo(file: File | null) {
+    if (!canEdit || !file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/teams/${teamId}/logo`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      setRuleMsg("Logo upload failed.");
+      return;
+    }
+    setTeamLogoVersion(Date.now());
+    await load();
+  }
+
+  async function clearTeamLogo() {
+    if (!canEdit) return;
+    const res = await fetch(`/api/teams/${teamId}/logo`, { method: "DELETE" });
+    if (!res.ok) {
+      setRuleMsg("Unable to clear logo.");
+      return;
+    }
+    setTeamLogoVersion(Date.now());
+    await load();
+  }
+
   useEffect(() => { void load(); }, [teamId, showInactive]);
 
   async function setWrestlerActive(wrestlerId: string, active: boolean) {
@@ -138,12 +189,65 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {team?.hasLogo ? (
-          <img src={`/api/teams/${teamId}/logo/file`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
+          <img src={`/api/teams/${teamId}/logo/file?v=${teamLogoVersion}`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
         ) : null}
         <h2 style={{ margin: 0 }}>
           {team?.symbol ? `${team.symbol} — ${team.name}` : (team?.name ?? "Team")}
         </h2>
       </div>
+
+      {canEdit && (
+        <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginTop: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Team Settings</h3>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            {team?.hasLogo ? (
+              <img src={`/api/teams/${teamId}/logo/file?v=${teamLogoVersion}`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
+            ) : (
+              <span style={{ fontSize: 12, opacity: 0.7 }}>No logo</span>
+            )}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              onChange={(e) => uploadTeamLogo(e.target.files?.[0] ?? null)}
+            />
+            <button onClick={clearTeamLogo} disabled={!team?.hasLogo}>Clear Logo</button>
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ fontSize: 12, opacity: 0.7 }}>Team color (hex)</label>
+            <input
+              value={teamColor}
+              onChange={(e) => setTeamColor(e.target.value)}
+              placeholder="#1e88e5"
+              style={{ maxWidth: 180 }}
+            />
+            <label style={{ fontSize: 12, opacity: 0.7 }}>Named colors</label>
+            <select value={teamColor} onChange={(e) => setTeamColor(e.target.value)} style={{ maxWidth: 240 }}>
+              {NAMED_COLORS.map((c) => (
+                <option key={c.value} value={c.value}>{c.name}</option>
+              ))}
+            </select>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 22px)", gap: 6 }}>
+              {NAMED_COLORS.map((c) => (
+                <button
+                  key={`${teamId}-${c.value}`}
+                  onClick={() => setTeamColor(c.value)}
+                  title={`${c.name} (${c.value})`}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 4,
+                    border: "1px solid rgba(0,0,0,0.2)",
+                    backgroundColor: c.value,
+                    cursor: "pointer",
+                  }}
+                />
+              ))}
+            </div>
+            <button onClick={saveTeamColor} style={{ maxWidth: 160 }}>Save Team Color</button>
+          </div>
+        </div>
+      )}
 
       {!canEdit && (
         <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
@@ -359,3 +463,19 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     </main>
   );
 }
+
+const NAMED_COLORS = [
+  { name: "Navy", value: "#0d3b66" },
+  { name: "Royal Blue", value: "#1e88e5" },
+  { name: "Sky Blue", value: "#64b5f6" },
+  { name: "Teal", value: "#00897b" },
+  { name: "Green", value: "#2e7d32" },
+  { name: "Lime", value: "#9ccc65" },
+  { name: "Gold", value: "#f2b705" },
+  { name: "Orange", value: "#f57c00" },
+  { name: "Red", value: "#c62828" },
+  { name: "Maroon", value: "#8e1037" },
+  { name: "Purple", value: "#5e35b1" },
+  { name: "Gray", value: "#546e7a" },
+  { name: "Black", value: "#1d232b" },
+];

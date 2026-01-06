@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     data: {
       name: parsed.name,
       date: new Date(parsed.date),
-      location: parsed.location,
+      location: parsed.location?.trim() || undefined,
       homeTeamId: parsed.homeTeamId ?? null,
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
@@ -44,6 +44,18 @@ export async function POST(req: Request) {
     },
     include: { meetTeams: { include: { team: true } } },
   });
+
+  if (!meet.location && meet.homeTeamId) {
+    const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });
+    if (home?.address) {
+      const updated = await db.meet.update({
+        where: { id: meet.id },
+        data: { location: home.address },
+        include: { meetTeams: { include: { team: true } } },
+      });
+      return NextResponse.json(updated);
+    }
+  }
 
   return NextResponse.json(meet);
 }

@@ -16,7 +16,7 @@ type WrestlerSeed = {
 };
 
 const rosterA: WrestlerSeed[] = [
-  { first: "Ben", last: "Bentley", weight: 52, birthdate: "2015-03-11", experienceYears: 1, skill: 3 },
+  { first: "Ben", last: "Jones", weight: 52, birthdate: "2015-03-11", experienceYears: 1, skill: 3 },
   { first: "Sam", last: "Smith", weight: 55, birthdate: "2014-11-02", experienceYears: 0, skill: 2 },
   { first: "Max", last: "Miller", weight: 60, birthdate: "2014-08-19", experienceYears: 2, skill: 4 },
   { first: "Noah", last: "Nelson", weight: 65, birthdate: "2013-12-07", experienceYears: 3, skill: 4 },

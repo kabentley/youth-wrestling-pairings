@@ -10,8 +10,8 @@ const WrestlerRow = z.object({
   last: z.string().min(1),
   weight: z.number().positive(),
   birthdate: z.string().min(4),
-  experienceYears: z.number().int().min(0).default(0),
-  skill: z.number().int().min(0).max(5).default(3),
+  experienceYears: z.number().int().min(0),
+  skill: z.number().int().min(0).max(5),
 });
 
 const BodySchema = z.object({

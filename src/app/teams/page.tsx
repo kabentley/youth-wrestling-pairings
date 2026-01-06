@@ -4,6 +4,16 @@ import { signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
+type Wrestler = {
+  id: string;
+  first: string;
+  last: string;
+  weight: number;
+  birthdate: string;
+  experienceYears: number;
+  skill: number;
+  active: boolean;
+};
 
 function parseCsv(text: string) {
   // Basic CSV parser that supports commas and quoted values.
@@ -48,8 +58,14 @@ function parseCsv(text: string) {
 
   if (rows.length === 0) return { headers: [], data: [] as Record<string, string>[] };
 
-  const headers = rows[0].map(h => h.trim());
-  const data = rows.slice(1).filter(r => r.some(c => c.trim() !== "")).map(r => {
+  const firstRow = rows[0].map(h => h.trim());
+  const requiredHeaders = ["first", "last", "weight", "birthdate", "experienceYears", "skill"];
+  const headerTokens = firstRow.map(h => h.toLowerCase());
+  const hasHeader = headerTokens.some(h => requiredHeaders.includes(h));
+  const headers = hasHeader ? firstRow : requiredHeaders;
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  const data = dataRows.filter(r => r.some(c => c.trim() !== "")).map(r => {
     const obj: Record<string, string> = {};
     for (let j = 0; j < headers.length; j++) obj[headers[j]] = (r[j] ?? "").trim();
     return obj;
@@ -61,38 +77,42 @@ function parseCsv(text: string) {
 export default function TeamsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
+  const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const [teams, setTeams] = useState<Team[]>([]);
-  const [name, setName] = useState("");
-  const [symbol, setSymbol] = useState("");
-
+  const [leagueName, setLeagueName] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [roster, setRoster] = useState<Wrestler[]>([]);
+  const [rosterMsg, setRosterMsg] = useState("");
   // Import state
   const [importTeamId, setImportTeamId] = useState<string>("");
-  const [importNewTeamName, setImportNewTeamName] = useState<string>("");
-  const [importNewTeamSymbol, setImportNewTeamSymbol] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
 
   async function load() {
-    const res = await fetch("/api/teams");
-    setTeams(await res.json());
-  }
-
-  async function addTeam() {
-    if (!name.trim() || !symbol.trim()) return;
-    await fetch("/api/teams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol }),
-    });
-    setName("");
-    setSymbol("");
-    await load();
+    const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
+    if (tRes.ok) setTeams(await tRes.json());
+    if (lRes.ok) {
+      const league = await lRes.json();
+      setLeagueName(String(league.name ?? "").trim());
+    }
   }
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (role === "COACH" && sessionTeamId && !selectedTeamId) {
+      setSelectedTeamId(sessionTeamId);
+      setImportTeamId(sessionTeamId);
+    }
+  }, [role, sessionTeamId, selectedTeamId]);
 
-  const teamOptions = useMemo(() => [{ id: "", name: "Select existing team", symbol: "" }, ...teams], [teams]);
+  const teamOptions = useMemo(() => {
+    if (role === "COACH" && sessionTeamId) {
+      const own = teams.find(t => t.id === sessionTeamId);
+      return own ? [own] : [];
+    }
+    return teams;
+  }, [teams, role, sessionTeamId]);
 
   async function onChooseFile(f: File | null) {
     setFile(f);
@@ -118,13 +138,23 @@ export default function TeamsPage() {
     const first = get("first", "First", "FIRST");
     const last = get("last", "Last", "LAST");
     const weightStr = get("weight", "Weight", "WEIGHT", "wt", "Wt");
-    const birthdate = get("birthdate", "Birthdate", "DOB", "dob", "DateOfBirth", "dateOfBirth");
+    let birthdate = get("birthdate", "Birthdate", "DOB", "dob", "DateOfBirth", "dateOfBirth");
     const expStr = get("experienceYears", "ExperienceYears", "experience", "Experience", "expYears", "ExpYears");
     const skillStr = get("skill", "Skill", "SKILL");
 
     const weight = Number(weightStr);
-    const experienceYears = expStr ? Number(expStr) : 0;
-    const skill = skillStr ? Number(skillStr) : 3;
+    const experienceYears = expStr ? Number(expStr) : Number.NaN;
+    const skill = skillStr ? Number(skillStr) : Number.NaN;
+
+    if (birthdate) {
+      const match = birthdate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (match) {
+        const mm = match[1].padStart(2, "0");
+        const dd = match[2].padStart(2, "0");
+        const yyyy = match[3];
+        birthdate = `${yyyy}-${mm}-${dd}`;
+      }
+    }
 
     return { first, last, weight, birthdate, experienceYears, skill };
   }
@@ -134,17 +164,9 @@ export default function TeamsPage() {
 
     if (!file) { setImportMsg("Choose a CSV file first."); return; }
     const teamId = importTeamId || undefined;
-    const teamName = (!teamId && importNewTeamName.trim()) ? importNewTeamName.trim() : undefined;
-    const teamSymbol = (!teamId && importNewTeamSymbol.trim())
-      ? importNewTeamSymbol.trim()
-      : undefined;
 
-    if (!teamId && !teamName) {
-      setImportMsg("Select an existing team OR enter a new team name.");
-      return;
-    }
-    if (!teamId && !teamSymbol) {
-      setImportMsg("Team symbol is required when creating a new team.");
+    if (!teamId) {
+      setImportMsg("Select an existing team.");
       return;
     }
 
@@ -156,21 +178,27 @@ export default function TeamsPage() {
       return;
     }
 
+    const normalized = parsed.data.map(normalizeRow);
+    const missingRequired = normalized.some(w => !Number.isFinite(w.experienceYears) || !Number.isFinite(w.skill));
+    if (missingRequired) {
+      setImportMsg("ExperienceYears and Skill are required for every row.");
+      return;
+    }
+
     // Convert rows -> API payload
-    const wrestlers = parsed.data
-      .map(normalizeRow)
+    const wrestlers = normalized
       .filter(w => w.first && w.last && Number.isFinite(w.weight) && w.weight > 0 && w.birthdate)
       .map(w => ({
         first: w.first,
         last: w.last,
         weight: Number(w.weight),
         birthdate: w.birthdate,
-        experienceYears: Number.isFinite(w.experienceYears) ? Math.max(0, Math.floor(w.experienceYears)) : 0,
-        skill: Number.isFinite(w.skill) ? Math.min(5, Math.max(0, Math.floor(w.skill))) : 3,
+        experienceYears: Math.max(0, Math.floor(w.experienceYears)),
+        skill: Math.min(5, Math.max(0, Math.floor(w.skill))),
       }));
 
     if (wrestlers.length === 0) {
-      setImportMsg("No valid wrestler rows found. Expected columns: first,last,weight,birthdate (YYYY-MM-DD). Optional: experienceYears,skill.");
+      setImportMsg("No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill.");
       return;
     }
 
@@ -178,7 +206,7 @@ export default function TeamsPage() {
     const res = await fetch("/api/teams/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId, teamName, teamSymbol, wrestlers }),
+      body: JSON.stringify({ teamId, wrestlers }),
     });
 
     if (!res.ok) {
@@ -191,143 +219,458 @@ export default function TeamsPage() {
     setImportMsg(`Imported ${json.created} wrestlers.`);
     setFile(null);
     setPreview(null);
-    setImportNewTeamName("");
-    setImportTeamId("");
-    setImportNewTeamSymbol("");
     await load();
+    await loadRoster(teamId);
     setTimeout(() => setImportMsg(""), 2000);
   }
 
+  async function loadRoster(teamId: string) {
+    setRosterMsg("");
+    if (!teamId) {
+      setRoster([]);
+      return;
+    }
+    const res = await fetch(`/api/teams/${teamId}/wrestlers?includeInactive=1`);
+    if (!res.ok) {
+      setRosterMsg("Unable to load roster.");
+      setRoster([]);
+      return;
+    }
+    setRoster(await res.json());
+  }
+
+  useEffect(() => {
+    void loadRoster(selectedTeamId);
+  }, [selectedTeamId]);
+
   return (
-    <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
-        <a href="/">Home</a>
-        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
-      </div>
-      <h2>Teams</h2>
-
-      {role === "ADMIN" ? (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Team name" />
-          <input value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="Symbol (2-4)" style={{ width: 120 }} />
-          <button onClick={addTeam}>Add</button>
+    <main className="teams">
+      <style>{`
+        @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap");
+        :root {
+          --bg: #eef1f4;
+          --card: #ffffff;
+          --ink: #1d232b;
+          --muted: #5a6673;
+          --brand: #0d3b66;
+          --accent: #1e88e5;
+          --line: #d5dbe2;
+        }
+        .teams {
+          font-family: "Source Sans 3", Arial, sans-serif;
+          color: var(--ink);
+          background: var(--bg);
+          min-height: 100vh;
+          padding: 28px 22px 40px;
+        }
+        .mast {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 18px;
+          border-bottom: 1px solid var(--line);
+          padding-bottom: 14px;
+          margin-bottom: 18px;
+        }
+        .title {
+          font-family: "Oswald", Arial, sans-serif;
+          font-size: clamp(26px, 3vw, 38px);
+          letter-spacing: 0.5px;
+          margin: 0;
+          text-transform: uppercase;
+        }
+        .tagline {
+          color: var(--muted);
+          font-size: 13px;
+          margin-top: 4px;
+          text-transform: uppercase;
+          letter-spacing: 1.6px;
+        }
+        .nav {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .nav a {
+          color: var(--ink);
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 14px;
+          letter-spacing: 0.5px;
+          padding: 8px 10px;
+          border: 1px solid transparent;
+          border-radius: 6px;
+        }
+        .nav-btn {
+          color: var(--ink);
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-weight: 600;
+          font-size: 14px;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+        }
+        .nav a:hover,
+        .nav-btn:hover {
+          border-color: var(--line);
+          background: #f7f9fb;
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          gap: 18px;
+        }
+        .card {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          padding: 18px;
+          box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+        }
+        .card-title {
+          font-family: "Oswald", Arial, sans-serif;
+          margin: 0 0 10px;
+          text-transform: uppercase;
+        }
+        .muted {
+          color: var(--muted);
+          font-size: 12px;
+        }
+        .row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        .input,
+        .select {
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-size: 14px;
+          background: #fff;
+        }
+        .input-sm {
+          width: 120px;
+        }
+        .btn {
+          border: 0;
+          background: var(--accent);
+          color: #fff;
+          font-weight: 700;
+          padding: 10px 12px;
+          border-radius: 6px;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+          cursor: pointer;
+        }
+        .btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .btn-ghost {
+          background: #f2f5f8;
+          color: var(--ink);
+          border: 1px solid var(--line);
+        }
+        .team-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 12px;
+        }
+        .team-card {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          padding: 10px 12px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          background: #fff;
+          text-align: left;
+          cursor: pointer;
+          width: 100%;
+        }
+        .team-card-active {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.15);
+        }
+        .team-head {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+        }
+        .team-logo {
+          width: 44px;
+          height: 44px;
+          object-fit: contain;
+        }
+        .team-meta {
+          display: flex;
+          align-items: baseline;
+          gap: 10px;
+          flex-wrap: nowrap;
+        }
+        .team-symbol {
+          font-weight: 700;
+          font-size: 18px;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+        .team-name {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--ink);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .team-link a {
+          color: var(--accent);
+          font-size: 12px;
+          text-decoration: none;
+        }
+        .color-dot {
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          border: 1px solid var(--line);
+        }
+        .divider {
+          height: 1px;
+          background: var(--line);
+          margin: 6px 0 12px;
+        }
+        .two-col {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 12px;
+          align-items: end;
+        }
+        .preview-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 12px;
+        }
+        .preview-table th,
+        .preview-table td {
+          padding: 8px 6px;
+          border-bottom: 1px solid var(--line);
+          text-align: left;
+        }
+        .roster-table {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          overflow: hidden;
+          background: #fff;
+        }
+        .roster-table table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .roster-table th,
+        .roster-table td {
+          padding: 8px 6px;
+          border-bottom: 1px solid var(--line);
+          text-align: left;
+        }
+        @media (max-width: 900px) {
+          .mast {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+      `}</style>
+      <header className="mast">
+        <div>
+          <h1 className="title">Team Rosters</h1>
+          <div className="tagline">League Directory</div>
         </div>
-      ) : (
-        <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 16 }}>
-          Team management is handled by league admins.
-        </div>
-      )}
+        <nav className="nav">
+          <a href="/">Home</a>
+          <a href="/meets">Meets</a>
+          <button className="nav-btn" onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
+        </nav>
+      </header>
 
-      <ul>
-        {teams.map(t => (
-          <li key={t.id}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {t.hasLogo ? (
-                <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 28, height: 28, objectFit: "contain" }} />
-              ) : null}
-              <a href={`/teams/${t.id}`} style={{ color: t.color }}>{t.symbol}</a>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <hr style={{ margin: "18px 0" }} />
-
-      {role === "ADMIN" && (
-        <>
-          <h3>Import roster from CSV</h3>
-          <div style={{ maxWidth: 900 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "end" }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Existing team</label>
-            <select value={importTeamId} onChange={e => setImportTeamId(e.target.value)} style={{ width: "100%" }}>
-              {teamOptions.map(t => (
-                <option key={t.id || "none"} value={t.id}>{t.id ? t.symbol : t.name}</option>
-              ))}
-            </select>
-            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
-              If you choose an existing team, the new team name below is ignored.
-            </div>
+      <div className="grid">
+        <section className="card">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h2 className="card-title">Teams{leagueName ? ` for ${leagueName}` : ""}</h2>
+            {role !== "ADMIN" && <span className="muted">Team management is handled by league admins.</span>}
           </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Or create new team</label>
-            <input
-              value={importNewTeamName}
-              onChange={e => setImportNewTeamName(e.target.value)}
-              placeholder="New team name (optional)"
-              style={{ width: "100%" }}
-              disabled={!!importTeamId}
-            />
-            <input
-              value={importNewTeamSymbol}
-              onChange={e => setImportNewTeamSymbol(e.target.value)}
-              placeholder="Team symbol (2-4)"
-              style={{ width: "100%", marginTop: 6 }}
-              disabled={!!importTeamId}
-            />
+          <div className="team-grid">
+            {teams.map(t => (
+              <div
+                key={t.id}
+                role="button"
+                tabIndex={0}
+                className={`team-card ${selectedTeamId === t.id ? "team-card-active" : ""}`}
+                onClick={() => { setSelectedTeamId(t.id); setImportTeamId(t.id); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedTeamId(t.id);
+                    setImportTeamId(t.id);
+                  }
+                }}
+              >
+                <div className="team-head">
+                  {t.hasLogo ? (
+                    <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} className="team-logo" />
+                  ) : (
+                    <div className="color-dot" style={{ backgroundColor: t.color }} />
+                  )}
+                  <div className="team-meta">
+                    <span className="team-symbol" style={{ color: t.color }}>{t.symbol}</span>
+                    <div className="team-name">{t.name}</div>
+                  </div>
+                </div>
+                <div className="team-link">
+                  <a href={`/teams/${t.id}`}>Open team</a>
+                </div>
+              </div>
+            ))}
           </div>
+        </section>
 
-          <div style={{ gridColumn: "1 / span 2" }}>
-            <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>CSV file</label>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
-            />
-            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-              Required columns: <b>first,last,weight,birthdate</b> (YYYY-MM-DD). Optional: <b>experienceYears,skill</b>.
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 10 }}>
-          <button onClick={importCsv} disabled={!file}>
-            Import CSV
-          </button>
-          {importMsg && <span style={{ marginLeft: 10 }}>{importMsg}</span>}
-        </div>
-
-        {preview && (
-          <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
-            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-              Preview (first {preview.rows.length} rows). Headers: {preview.headers.join(", ")}
-            </div>
-            <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  {preview.headers.slice(0, 8).map(h => (
-                    <th key={h} align="left">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.map((r, i) => (
-                  <tr key={i} style={{ borderTop: "1px solid #eee" }}>
-                    {preview.headers.slice(0, 8).map(h => (
-                      <td key={h}>{r[h]}</td>
+        <section className="card">
+          <h2 className="card-title">Roster</h2>
+          {selectedTeamId ? (
+            <>
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+                <div className="muted">Selected team: {teams.find(t => t.id === selectedTeamId)?.name ?? "Team"}</div>
+                {role === "ADMIN" && (
+                  <select
+                    className="select"
+                    value={importTeamId}
+                    onChange={e => { setImportTeamId(e.target.value); setSelectedTeamId(e.target.value); }}
+                  >
+                    <option value="">Select team</option>
+                    {teamOptions.map(t => (
+                      <option key={t.id} value={t.id}>{t.symbol}</option>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  </select>
+                )}
+              </div>
+              {rosterMsg && <div className="muted">{rosterMsg}</div>}
+              <div className="roster-table">
+                <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Weight</th>
+                        <th>Birthdate</th>
+                        <th>Experience</th>
+                        <th>Skill</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {roster.map(w => (
+                        <tr key={w.id}>
+                          <td>{w.first} {w.last}</td>
+                          <td>{w.weight}</td>
+                          <td>{new Date(w.birthdate).toISOString().slice(0, 10)}</td>
+                          <td>{w.experienceYears}</td>
+                          <td>{w.skill}</td>
+                          <td>{w.active ? "Active" : "Inactive"}</td>
+                        </tr>
+                      ))}
+                    {roster.length === 0 && (
+                      <tr><td colSpan={6}>No wrestlers yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="muted">Select a team above to view its roster.</div>
+          )}
 
-            <details style={{ marginTop: 12 }}>
-              <summary>Example CSV</summary>
-              <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
+          {(role === "ADMIN" || role === "COACH") && (
+            <>
+              <div className="divider" />
+              <h3 className="card-title" style={{ fontSize: 18, marginBottom: 10 }}>Import / Update CSV</h3>
+              <div className="two-col">
+                <div>
+                  <label className="muted">Team</label>
+                  <select
+                    className="select"
+                    value={importTeamId}
+                    onChange={e => { setImportTeamId(e.target.value); setSelectedTeamId(e.target.value); }}
+                    style={{ width: "100%" }}
+                    disabled={role === "COACH"}
+                  >
+                    <option value="">Select team</option>
+                    {teamOptions.map(t => (
+                      <option key={t.id} value={t.id}>{t.symbol}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ gridColumn: "1 / span 2" }}>
+                  <label className="muted">CSV file</label>
+                  <input
+                    className="input"
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
+                  />
+                  <div className="muted" style={{ marginTop: 6 }}>
+                  Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
+                </div>
+                </div>
+              </div>
+
+              <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn" onClick={importCsv} disabled={!file || !importTeamId}>
+                Import / Update CSV
+              </button>
+                {importMsg && <span className="muted">{importMsg}</span>}
+              </div>
+
+              {preview && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="muted" style={{ marginBottom: 8 }}>
+                    Preview (first {preview.rows.length} rows). Headers: {preview.headers.join(", ")}
+                  </div>
+                  <table className="preview-table">
+                    <thead>
+                      <tr>
+                        {preview.headers.slice(0, 8).map(h => (
+                          <th key={h}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.rows.map((r, i) => (
+                        <tr key={i}>
+                          {preview.headers.slice(0, 8).map(h => (
+                            <td key={h}>{r[h]}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <details style={{ marginTop: 12 }}>
+                <summary>Example CSV</summary>
+                <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
 Ben,Bentley,52,2015-03-11,1,3
 Sam,Smith,55,2014-11-02,0,2
 `}</pre>
-            </details>
-          </div>
-        </>
-      )}
-
-      <p style={{ marginTop: 16 }}>
-        <a href="/">Back</a>
-      </p>
+              </details>
+            </>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

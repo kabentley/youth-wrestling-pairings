@@ -8,12 +8,13 @@ const TeamSchema = z.object({
   name: z.string().trim().min(2),
   symbol: z.string().trim().min(2).max(4),
   color: z.string().trim().optional(),
+  address: z.string().trim().optional(),
 });
 
 export async function GET() {
   const teams = await db.team.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, symbol: true, color: true, logoData: true },
+    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true },
   });
   return NextResponse.json(
     teams.map((t) => ({
@@ -21,6 +22,7 @@ export async function GET() {
       name: t.name,
       symbol: t.symbol,
       color: t.color,
+      address: t.address,
       hasLogo: Boolean(t.logoData),
     })),
   );
@@ -35,6 +37,7 @@ export async function POST(req: Request) {
       name: parsed.name.trim(),
       symbol: parsed.symbol.trim().toUpperCase(),
       color: parsed.color?.trim() ?? "#000000",
+      address: parsed.address?.trim() || null,
     },
   });
   return NextResponse.json(team);

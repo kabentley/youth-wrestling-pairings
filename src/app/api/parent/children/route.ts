@@ -47,12 +47,26 @@ export async function POST(req: Request) {
   const { userId } = await requireSession();
   const body = BodySchema.parse(await req.json());
 
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, teamId: true },
+  });
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  if (!user.teamId) {
+    return NextResponse.json({ error: "Your account has no team assigned." }, { status: 400 });
+  }
+
   const wrestler = await db.wrestler.findUnique({
     where: { id: body.wrestlerId },
-    select: { id: true, active: true },
+    select: { id: true, active: true, teamId: true },
   });
   if (!wrestler?.active) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
+  }
+  if (user.role === "PARENT" && wrestler.teamId !== user.teamId) {
+    return NextResponse.json({ error: "You can only add wrestlers from your team." }, { status: 403 });
   }
 
   await db.userChild.upsert({

@@ -32,16 +32,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (body.role) {
     data.role = body.role;
-    if (body.role !== "COACH") data.teamId = null;
+    if (body.role === "ADMIN") data.teamId = null;
   }
   if (body.teamId !== undefined) {
-    if (finalRole !== "COACH" && body.teamId) {
-      return NextResponse.json({ error: "Only coaches can be assigned a team" }, { status: 400 });
+    if (finalRole === "ADMIN" && body.teamId) {
+      return NextResponse.json({ error: "Admins cannot be assigned a team" }, { status: 400 });
     }
     data.teamId = body.teamId;
   }
-  if (finalRole === "COACH" && !finalTeamId) {
-    return NextResponse.json({ error: "Coaches must be assigned a team" }, { status: 400 });
+  if ((finalRole === "COACH" || finalRole === "PARENT") && !finalTeamId) {
+    return NextResponse.json({ error: `${finalRole === "COACH" ? "Coaches" : "Parents"} must be assigned a team` }, { status: 400 });
   }
 
   const user = await db.user.update({

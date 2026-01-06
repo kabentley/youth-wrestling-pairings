@@ -13,7 +13,7 @@ export async function GET() {
   return new NextResponse(league.logoData, {
     headers: {
       "Content-Type": league.logoType,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "no-store",
     },
   });
 }
