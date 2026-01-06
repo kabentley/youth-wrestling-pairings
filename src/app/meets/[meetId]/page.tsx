@@ -45,6 +45,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [matMsg, setMatMsg] = useState("");
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
+  const candidatesReqIdRef = useRef(0);
 
   const [settings, setSettings] = useState({
     maxAgeGapDays: 365,
@@ -112,9 +113,35 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const color = teamColor(w.teamId);
     return (
       <span style={{ color }}>
-        {w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}
+        {w.first} {w.last} ({teamName(w.teamId)})
       </span>
     );
+  }
+  function daysBetween(a?: string, b?: string) {
+    if (!a || !b) return null;
+    const aDate = new Date(a);
+    const bDate = new Date(b);
+    if (Number.isNaN(aDate.getTime()) || Number.isNaN(bDate.getTime())) return null;
+    return Math.abs(Math.round((aDate.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  function signedDaysBetween(a?: string, b?: string) {
+    if (!a || !b) return null;
+    const aDate = new Date(a);
+    const bDate = new Date(b);
+    if (Number.isNaN(aDate.getTime()) || Number.isNaN(bDate.getTime())) return null;
+    return Math.round((bDate.getTime() - aDate.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  function weightPctDiff(a?: number, b?: number) {
+    if (typeof a !== "number" || typeof b !== "number") return null;
+    const diff = Math.abs(a - b);
+    const base = Math.min(a, b);
+    return base <= 0 ? null : (100 * diff) / base;
+  }
+  function weightPctDiffSigned(a?: number, b?: number) {
+    if (typeof a !== "number" || typeof b !== "number") return null;
+    const diff = b - a;
+    const base = Math.min(a, b);
+    return base <= 0 ? null : (100 * diff) / base;
   }
 
   async function load() {
@@ -143,7 +170,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setSettings(s => ({
         ...s,
         allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
-        matchesPerWrestler: Number(meetJson.matchesPerWrestler ?? s.matchesPerWrestler),
       }));
     }
   }
@@ -242,18 +268,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setTimeout(() => setMatMsg(""), 1500);
   }
 
-  async function loadCandidates(wrestlerId: string) {
+  async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
+    const effectiveSettings = { ...settings, ...overrides };
     const qs = new URLSearchParams({
       wrestlerId,
       limit: "20",
-      maxAgeGapDays: String(settings.maxAgeGapDays),
-      maxWeightDiffPct: String(settings.maxWeightDiffPct),
-      firstYearOnlyWithFirstYear: String(settings.firstYearOnlyWithFirstYear),
-      allowSameTeamMatches: String(settings.allowSameTeamMatches),
+      maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
+      maxWeightDiffPct: String(effectiveSettings.maxWeightDiffPct),
+      firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
+      allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
     });
 
+    const reqId = candidatesReqIdRef.current + 1;
+    candidatesReqIdRef.current = reqId;
     const res = await fetch(`/api/meets/${meetId}/candidates?${qs.toString()}`);
+    if (reqId !== candidatesReqIdRef.current) return;
     const json = await res.json();
+    if (!res.ok) return;
     setTarget(json.target);
     setCandidates(json.candidates ?? []);
   }
@@ -284,6 +315,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await loadCandidates(redId);
   }
 
+  async function removeBout(boutId: string) {
+    if (!canEdit) return;
+    await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
+    await load();
+    if (target) await loadCandidates(target.id);
+  }
+
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
@@ -294,9 +332,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       </div>
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
         <a href="/meets">← Meets</a>
-        <a href={`/meets/${meetId}/matboard`} target="_blank" rel="noreferrer">Mat Board</a>
-        <a href={`/meets/${meetId}/print`} target="_blank" rel="noreferrer">Print</a>
-        <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">Wall Chart</a>
+        <a href={`/meets/${meetId}/matboard`}>Mat Board</a>
+        <a href={`/meets/${meetId}/print`}>Print</a>
+        <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
       </div>
 
       <h2>Meet Pairings</h2>
@@ -309,13 +347,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Max age gap (years): <input type="number" step="0.1" value={settings.maxAgeGapDays / daysPerYear} onChange={e => setSettings(s => ({ ...s, maxAgeGapDays: Math.round(Number(e.target.value) * daysPerYear) }))} /></label>
-        <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={e => setSettings(s => ({ ...s, maxWeightDiffPct: Number(e.target.value) }))} /></label>
-        <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={e => setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: e.target.checked }))} /> First-year only with first-year</label>
-        <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={e => setSettings(s => ({ ...s, allowSameTeamMatches: e.target.checked }))} /> Same-team fallback</label>
+        <label>Max age gap (years): <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} onChange={async e => {
+          const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
+          setSettings(s => ({ ...s, maxAgeGapDays }));
+          if (target) await loadCandidates(target.id, { maxAgeGapDays });
+        }} /></label>
+        <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={async e => {
+          const maxWeightDiffPct = Number(e.target.value);
+          setSettings(s => ({ ...s, maxWeightDiffPct }));
+          if (target) await loadCandidates(target.id, { maxWeightDiffPct });
+        }} /></label>
+        <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={async e => {
+          const checked = e.target.checked;
+          setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
+          if (target) await loadCandidates(target.id, { firstYearOnlyWithFirstYear: checked });
+        }} /> First-year only with first-year</label>
+        <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
+          const allowSameTeamMatches = e.target.checked;
+          setSettings(s => ({ ...s, allowSameTeamMatches }));
+          if (target) await loadCandidates(target.id, { allowSameTeamMatches });
+        }} /> Allow same team</label>
         <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <label><input type="checkbox" checked={settings.balanceTeamPairs} onChange={e => setSettings(s => ({ ...s, balanceTeamPairs: e.target.checked }))} /> Balance team pairings</label>
-        <label>Penalty: <input type="number" step="0.05" value={settings.balancePenalty} onChange={e => setSettings(s => ({ ...s, balancePenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
         {msg && <span>{msg}</span>}
       </div>
@@ -379,10 +431,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
         <div style={{ flex: 2 }}>
           <h3>Unmatched</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "grid", gap: 6 }}>
             {unmatched.map(w => (
-              <button key={w.id} onClick={() => loadCandidates(w.id)}>
-                {w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}
+              <button key={w.id} onClick={() => loadCandidates(w.id)} style={{ textAlign: "left" }}>
+                {w.first} {w.last} ({teamName(w.teamId)})
               </button>
             ))}
             {unmatched.length === 0 && <div>None</div>}
@@ -395,51 +447,77 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
           {target && (
             <>
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                 <span style={{ color: teamColor(target.teamId) }}>
-                  <b>{target.first} {target.last}</b>
+                  <b>{target.first} {target.last} ({teamName(target.teamId)})</b>
                 </span>{" "}
-                ({target.weight}) — {teamName(target.teamId)} — exp {target.experienceYears}, skill {target.skill}
+                wt {target.weight}, exp {target.experienceYears}, skill {target.skill}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
+                    Arrive Late
+                  </button>
+                  <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
+                    Leave Early
+                  </button>
+                  <button onClick={() => updateWrestlerStatus(target.id, "ABSENT")} disabled={!canEdit || target.status === "ABSENT"}>
+                    Not Attending
+                  </button>
+                  <button onClick={() => updateWrestlerStatus(target.id, null)} disabled={!canEdit || !target.status}>
+                    Clear Status
+                  </button>
+                </div>
               </div>
-              <div style={{ marginBottom: 10, fontSize: 12 }}>
-                <div style={{ marginBottom: 4 }}>Current matches:</div>
-                {currentMatches.length > 0 ? (
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+              <div style={{ marginBottom: 10 }}>
+                <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th align="left">Current Matches</th>
+                      <th align="right">Wt</th>
+                      <th align="right">Wt Δ</th>
+                      <th align="right">Wt %</th>
+                      <th align="right">Age Δ(yr)</th>
+                      <th align="right">Exp Δ</th>
+                      <th align="right">Skill Δ</th>
+                      <th align="left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentMatches.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ color: "#666" }}>None</td>
+                      </tr>
+                    )}
                     {currentMatches.map(b => {
                       const opponentId = b.redId === target.id ? b.greenId : b.redId;
-                      const matLabel = b.mat ? `Mat ${b.mat}` : null;
-                      const orderLabel = b.order ? `Order ${b.order}` : null;
-                      const meta = [matLabel, orderLabel].filter(Boolean).join(", ");
+                      const opponent = wMap[opponentId];
+                      const wDiff = opponent ? (opponent.weight - target.weight) : null;
+                      const wPct = opponent ? weightPctDiffSigned(target.weight, opponent.weight) : null;
+                      const ageGapDays = opponent ? signedDaysBetween(target.birthdate, opponent.birthdate) : null;
+                      const expGap = opponent ? (opponent.experienceYears - target.experienceYears) : null;
+                      const skillGap = opponent ? (opponent.skill - target.skill) : null;
                       return (
-                        <li key={b.id}>
-                          {wName(opponentId)}{meta ? ` (${meta})` : ""}
-                        </li>
+                        <tr key={b.id} style={{ borderTop: "1px solid #eee" }}>
+                          <td>{wName(opponentId)}</td>
+                          <td align="right">{opponent?.weight ?? ""}</td>
+                          <td align="right">{wDiff == null ? "" : wDiff.toFixed(1)}</td>
+                          <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
+                          <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
+                          <td align="right">{expGap == null ? "" : expGap}</td>
+                          <td align="right">{skillGap == null ? "" : skillGap}</td>
+                          <td>
+                            <button onClick={() => removeBout(b.id)} disabled={!canEdit}>Remove</button>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </ul>
-                ) : (
-                  <div style={{ color: "#666" }}>None</div>
-                )}
+                  </tbody>
+                </table>
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
-                  Arrive Late
-                </button>
-                <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
-                  Leave Early
-                </button>
-                <button onClick={() => updateWrestlerStatus(target.id, "ABSENT")} disabled={!canEdit || target.status === "ABSENT"}>
-                  Not Attending
-                </button>
-                <button onClick={() => updateWrestlerStatus(target.id, null)} disabled={!canEdit || !target.status}>
-                  Clear Status
-                </button>
-              </div>
-
               <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
-                <thead>
-                  <tr>
-                    <th align="left">Opponent</th>
+                    <thead>
+                      <tr>
+                        <th align="left">Available Matches</th>
+                    <th align="right">Wt</th>
                     <th align="right">Wt Δ</th>
                     <th align="right">Wt %</th>
                     <th align="right">Age Δ(yr)</th>
@@ -449,21 +527,35 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((c: any) => {
+                  {candidates
+                    .filter((c: any) => settings.allowSameTeamMatches || c.opponent?.teamId !== target.teamId)
+                    .filter((c: any) => {
+                      if (!settings.firstYearOnlyWithFirstYear) return true;
+                      const o = c.opponent as Wrestler;
+                      const tFirst = target.experienceYears <= 0;
+                      const oFirst = o.experienceYears <= 0;
+                      return tFirst === oFirst;
+                    })
+                    .map((c: any) => {
                     const o = c.opponent as Wrestler;
-                    const d = c.details;
+                    const wDiff = o.weight - target.weight;
+                    const wPct = weightPctDiffSigned(target.weight, o.weight);
+                    const ageGapDays = signedDaysBetween(target.birthdate, o.birthdate);
+                    const expGap = o.experienceYears - target.experienceYears;
+                    const skillGap = o.skill - target.skill;
                     return (
                       <tr key={o.id} style={{ borderTop: "1px solid #eee" }}>
                         <td>
                           <span style={{ color: teamColor(o.teamId) }}>
-                            {o.first} {o.last} ({o.weight}) — {teamName(o.teamId)}
+                            {o.first} {o.last} ({teamName(o.teamId)})
                           </span>
                         </td>
-                        <td align="right">{Number(d.wDiff).toFixed(1)}</td>
-                        <td align="right">{Number(d.wPct).toFixed(1)}%</td>
-                        <td align="right">{(Number(d.ageGapDays) / daysPerYear).toFixed(1)}</td>
-                        <td align="right">{d.expGap}</td>
-                        <td align="right">{d.skillGap}</td>
+                        <td align="right">{o.weight}</td>
+                        <td align="right">{Number.isFinite(wDiff) ? wDiff.toFixed(1) : ""}</td>
+                        <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
+                        <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
+                        <td align="right">{Number.isFinite(expGap) ? expGap : ""}</td>
+                        <td align="right">{Number.isFinite(skillGap) ? skillGap : ""}</td>
                         <td>
                           <button onClick={() => forceMatch(target.id, o.id)} disabled={!canEdit}>Add</button>
                         </td>
@@ -497,7 +589,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
               {notAttending.map(w => (
                 <div key={w.id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
-                  <div>{w.first} {w.last} ({w.weight}) — {teamName(w.teamId)}</div>
+                  <div>{w.first} {w.last} ({teamName(w.teamId)})</div>
                   <div style={{ marginTop: 6 }}>
                     <button onClick={() => updateWrestlerStatus(w.id, null)} disabled={!canEdit}>
                       Mark Attending

@@ -31,12 +31,14 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(4);
   const [msg, setMsg] = useState("");
-  const [conflictGap, setConflictGap] = useState(6);
+  const [conflictGap, setConflictGap] = useState(3);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
 
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
+  const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
+  const dropIndexRef = useRef<{ mat: number; index: number } | null>(null);
 
   function updateLockState(next: LockState) {
     lockStatusRef.current = next.status;
@@ -137,14 +139,16 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   const conflictByWrestler = useMemo(() => {
     if (conflictGap <= 0) return new Map<string, Set<string>>();
     const byWrestler = new Map<string, { boutId: string; order: number }[]>();
-    for (const b of bouts) {
-      if (!b.order) continue;
-      const o = b.order;
-      for (const wid of [b.redId, b.greenId]) {
-        const list = byWrestler.get(wid) ?? [];
-        list.push({ boutId: b.id, order: o });
-        byWrestler.set(wid, list);
-      }
+    const matLists = Object.values(mats);
+    for (const list of matLists) {
+      list.forEach((b, idx) => {
+        const o = idx + 1;
+        for (const wid of [b.redId, b.greenId]) {
+          const entries = byWrestler.get(wid) ?? [];
+          entries.push({ boutId: b.id, order: o });
+          byWrestler.set(wid, entries);
+        }
+      });
     }
 
     const conflicts = new Map<string, Set<string>>();
@@ -162,7 +166,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
       }
     }
     return conflicts;
-  }, [bouts, conflictGap]);
+  }, [mats, conflictGap]);
 
   function moveBout(boutId: string, toMat: number, toIndex: number) {
     setBouts(prev => {
@@ -196,18 +200,19 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
     });
   }
 
-  function computeConflictCount(list: Bout[], gap: number) {
+  function computeConflictCount(matLists: Bout[][], gap: number) {
     if (gap <= 0) return 0;
     const byWrestler = new Map<string, number[]>();
-    for (const b of list) {
-      if (b.order == null) continue;
-      const o = b.order;
-      const red = byWrestler.get(b.redId) ?? [];
-      red.push(o);
-      byWrestler.set(b.redId, red);
-      const green = byWrestler.get(b.greenId) ?? [];
-      green.push(o);
-      byWrestler.set(b.greenId, green);
+    for (const list of matLists) {
+      list.forEach((b, idx) => {
+        const o = idx + 1;
+        const red = byWrestler.get(b.redId) ?? [];
+        red.push(o);
+        byWrestler.set(b.redId, red);
+        const green = byWrestler.get(b.greenId) ?? [];
+        green.push(o);
+        byWrestler.set(b.greenId, green);
+      });
     }
     let conflicts = 0;
     for (const orders of byWrestler.values()) {
@@ -223,16 +228,14 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
     return conflicts;
   }
 
-  function reorderBoutsForMat(list: Bout[], allBouts: Bout[], gap: number) {
-    const base = list.slice().sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+  function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
+    const base = list.slice();
     if (gap <= 0) return base;
-    const originalOrders = new Map(base.map(b => [b.id, b.order ?? null]));
 
     function scoreCandidate(candidate: Bout[]) {
-      candidate.forEach((b, idx) => { b.order = idx + 1; });
-      const score = computeConflictCount(allBouts, gap);
-      candidate.forEach(b => { b.order = originalOrders.get(b.id) ?? null; });
-      return score;
+      const matsCopy = allMats.map(m => m.slice());
+      if (matIndex >= 0) matsCopy[matIndex] = candidate;
+      return computeConflictCount(matsCopy, gap);
     }
 
     let best = base;
@@ -263,8 +266,11 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
         const m = b.mat ?? 1;
         byMat.set(m, [...(byMat.get(m) ?? []), b]);
       }
-      for (const [m, list] of byMat.entries()) {
-        const ordered = reorderBoutsForMat(list, next, conflictGap);
+      const matLists = Array.from(byMat.values());
+      const matEntries = Array.from(byMat.entries());
+      for (let idx = 0; idx < matEntries.length; idx++) {
+        const [m, list] = matEntries[idx];
+        const ordered = reorderBoutsForMat(list, matLists, idx, conflictGap);
         ordered.forEach((b, idx) => {
           b.mat = m;
           b.order = idx + 1;
@@ -306,22 +312,18 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
-    const rTxt = r ? `${r.first} ${r.last} — ${teamName(r.teamId)}` : b.redId;
-    const gTxt = g ? `${g.first} ${g.last} — ${teamName(g.teamId)}` : b.greenId;
+    const rTxt = r ? `${r.first} ${r.last} (${teamName(r.teamId)})` : b.redId;
+    const gTxt = g ? `${g.first} ${g.last} (${teamName(g.teamId)})` : b.greenId;
     const rColor = r ? teamColor(r.teamId) : "";
     const gColor = g ? teamColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
-  }
-
-  function toggleHighlight(wrestlerId: string) {
-    setHighlightWrestlerId(prev => (prev === wrestlerId ? null : wrestlerId));
   }
 
   return (
     <main style={{ padding: 16, fontFamily: "system-ui" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <a href={`/meets/${meetId}`}>← Back</a>
-        <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">Wall Chart</a>
+        <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
         <button onClick={autoReorder} disabled={!canEdit}>Auto Reorder</button>
         <button onClick={save} disabled={!canEdit}>Save Order</button>
         {msg && <span>{msg}</span>}
@@ -360,9 +362,15 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
-                if (!dragging || !canEdit) return;
-                moveBout(dragging.boutId, matNum, list.length);
+                const active = draggingRef.current;
+                if (!active || !canEdit) return;
+                const dropIndex = dropIndexRef.current?.mat === matNum
+                  ? dropIndexRef.current.index
+                  : list.length;
+                moveBout(active.boutId, matNum, dropIndex);
                 setDragging(null);
+                draggingRef.current = null;
+                dropIndexRef.current = null;
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -379,7 +387,6 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                   const isGreenHighlighted = highlightWrestlerId === b.greenId;
                   return (
                     <div key={b.id} draggable={canEdit}
-                      onClick={() => setHighlightWrestlerId(null)}
                       onDragStart={(e) => {
                         if (!canEdit) return;
                         const target = e.target as HTMLElement | null;
@@ -387,19 +394,31 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                           e.preventDefault();
                           return;
                         }
-                        setDragging({ boutId: b.id, fromMat: matNum });
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", b.id);
+                        const next = { boutId: b.id, fromMat: matNum };
+                        draggingRef.current = next;
+                        setDragging(next);
                       }}
-                      onDragEnd={() => setDragging(null)}
+                      onDragEnd={() => {
+                        draggingRef.current = null;
+                        setDragging(null);
+                        dropIndexRef.current = null;
+                      }}
                       onDragOver={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
+                        dropIndexRef.current = { mat: matNum, index: i };
                       }}
                       onDrop={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (!dragging || !canEdit) return;
-                        moveBout(dragging.boutId, matNum, i);
+                        const active = draggingRef.current;
+                        if (!active || !canEdit) return;
+                        moveBout(active.boutId, matNum, i);
                         setDragging(null);
+                        draggingRef.current = null;
+                        dropIndexRef.current = null;
                       }}
                       style={{
                         border: "1px solid #eee",
@@ -412,7 +431,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                       title="Drag to reorder or move to another mat"
                     >
                       <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr", gap: 8, fontSize: 12, opacity: 0.85 }}>
-                        <span>{b.order ?? i + 1}</span>
+                        <span>{i + 1}</span>
                         <span
                           data-role="wrestler"
                           style={{
@@ -430,8 +449,8 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                             display: "block",
                             cursor: "pointer",
                           }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => { e.stopPropagation(); toggleHighlight(b.redId); }}
+                          onMouseEnter={() => setHighlightWrestlerId(b.redId)}
+                          onMouseLeave={() => setHighlightWrestlerId(null)}
                         >
                           {rTxt}
                         </span>
@@ -452,8 +471,8 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                             display: "block",
                             cursor: "pointer",
                           }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => { e.stopPropagation(); toggleHighlight(b.greenId); }}
+                          onMouseEnter={() => setHighlightWrestlerId(b.greenId)}
+                          onMouseLeave={() => setHighlightWrestlerId(null)}
                         >
                           {gTxt}
                         </span>

@@ -3,14 +3,23 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 
+const boolFromQuery = z.preprocess((value) => {
+  if (typeof value === "string") {
+    if (value === "true" || value === "1") return true;
+    if (value === "false" || value === "0") return false;
+  }
+  if (typeof value === "boolean") return value;
+  return undefined;
+}, z.boolean());
+
 const QuerySchema = z.object({
   wrestlerId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 
   maxAgeGapDays: z.coerce.number().int().min(0).default(365),
   maxWeightDiffPct: z.coerce.number().min(0).default(12),
-  firstYearOnlyWithFirstYear: z.coerce.boolean().default(true),
-  allowSameTeamMatches: z.coerce.boolean().default(false),
+  firstYearOnlyWithFirstYear: boolFromQuery.default(true),
+  allowSameTeamMatches: boolFromQuery.default(false),
 });
 
 function daysBetween(a: Date, b: Date) {

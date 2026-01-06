@@ -84,12 +84,12 @@ export default async function PrintMeet({ params }: { params: Promise<{ meetId: 
                         <td>{b.order ?? ""}</td>
                         <td>
                           <span style={{ color: tColor.get(r?.teamId ?? "") ?? "#000000" }}>
-                            {r ? `${r.first} ${r.last} (${r.weight}) — ${tMap.get(r.teamId) ?? r.teamId}` : b.redId}
+                            {r ? `${r.first} ${r.last} (${tMap.get(r.teamId) ?? r.teamId})` : b.redId}
                           </span>
                         </td>
                         <td>
                           <span style={{ color: tColor.get(g?.teamId ?? "") ?? "#000000" }}>
-                            {g ? `${g.first} ${g.last} (${g.weight}) — ${tMap.get(g.teamId) ?? g.teamId}` : b.greenId}
+                            {g ? `${g.first} ${g.last} (${tMap.get(g.teamId) ?? g.teamId})` : b.greenId}
                           </span>
                         </td>
                         <td className="small">
@@ -118,10 +118,10 @@ export default async function PrintMeet({ params }: { params: Promise<{ meetId: 
                 {mats.get(0)!.map(b => (
                   <tr key={b.id}>
                     <td style={{ color: tColor.get(wMap.get(b.redId)?.teamId ?? "") ?? "#000000" }}>
-                      {wMap.get(b.redId)?.first} {wMap.get(b.redId)?.last}
+                      {wMap.get(b.redId)?.first} {wMap.get(b.redId)?.last} ({tMap.get(wMap.get(b.redId)?.teamId ?? "") ?? wMap.get(b.redId)?.teamId ?? ""})
                     </td>
                     <td style={{ color: tColor.get(wMap.get(b.greenId)?.teamId ?? "") ?? "#000000" }}>
-                      {wMap.get(b.greenId)?.first} {wMap.get(b.greenId)?.last}
+                      {wMap.get(b.greenId)?.first} {wMap.get(b.greenId)?.last} ({tMap.get(wMap.get(b.greenId)?.teamId ?? "") ?? wMap.get(b.greenId)?.teamId ?? ""})
                     </td>
                     <td className="small">{b.notes ?? ""}</td>
                   </tr>

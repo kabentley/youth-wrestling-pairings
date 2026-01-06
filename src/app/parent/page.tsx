@@ -153,8 +153,8 @@ export default function ParentPage() {
             {results.map(r => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "4px 0" }}>
                 <div>
-                  <b style={{ color: r.teamColor ?? "#000000" }}>{r.first} {r.last}</b>{" "}
-                  — {r.teamSymbol ?? r.teamName} ({new Date(r.birthdate).toISOString().slice(0, 10)})
+                  <b style={{ color: r.teamColor ?? "#000000" }}>{r.first} {r.last} ({r.teamSymbol ?? r.teamName})</b>{" "}
+                  — {new Date(r.birthdate).toISOString().slice(0, 10)}
                 </div>
                 <button onClick={() => addChild(r.id)}>Add</button>
               </div>
@@ -178,7 +178,7 @@ export default function ParentPage() {
           <tbody>
             {children.map(c => (
               <tr key={c.id} style={{ borderTop: "1px solid #ddd" }}>
-                <td><span style={{ color: c.teamColor ?? "#000000" }}>{c.first} {c.last}</span></td>
+                <td><span style={{ color: c.teamColor ?? "#000000" }}>{c.first} {c.last} ({c.teamSymbol ?? c.teamName})</span></td>
                 <td>{c.teamSymbol ?? c.teamName}</td>
                 <td>{c.active ? "Active" : "Inactive"}</td>
                 <td>
@@ -209,7 +209,7 @@ export default function ParentPage() {
             const list = matchesByChild.get(child.id) ?? [];
             return (
               <div key={child.id} style={{ marginBottom: 12, border: "1px solid #eee", borderRadius: 8, padding: 10 }}>
-                <h3 style={{ marginTop: 0 }}>{child.first} {child.last}</h3>
+                <h3 style={{ marginTop: 0 }}>{child.first} {child.last} ({child.teamSymbol ?? child.teamName})</h3>
                 {list.length === 0 && <div>No matches for this meet.</div>}
                 {list.length > 0 && (
                   <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -228,9 +228,8 @@ export default function ParentPage() {
                           <td>{match.order ?? ""}</td>
                           <td>
                             <span style={{ color: match.opponentTeamColor ?? "#000000" }}>
-                              {match.opponentName}
-                            </span>{" "}
-                            — {match.opponentTeam}
+                              {match.opponentName} ({match.opponentTeam})
+                            </span>
                           </td>
                           <td>
                             {match.result.type ? `${match.result.type} ${match.result.score ?? ""}`.trim() : ""}

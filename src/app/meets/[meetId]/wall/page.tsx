@@ -47,8 +47,8 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
     const rTeam = r ? (tMap.get(r.teamId) ?? r.teamId) : "";
     const gTeam = g ? (tMap.get(g.teamId) ?? g.teamId) : "";
     return {
-      red: r ? `${r.first} ${r.last} (${r.weight})` : b.redId,
-      green: g ? `${g.first} ${g.last} (${g.weight})` : b.greenId,
+      red: r ? `${r.first} ${r.last}${rTeam ? ` (${rTeam})` : ""}` : b.redId,
+      green: g ? `${g.first} ${g.last}${gTeam ? ` (${gTeam})` : ""}` : b.greenId,
       redColor: r ? (tColor.get(r.teamId) ?? "#000000") : "#000000",
       greenColor: g ? (tColor.get(g.teamId) ?? "#000000") : "#000000",
       teams: (rTeam || gTeam) ? `${rTeam} vs ${gTeam}` : "",
@@ -98,7 +98,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
       <body>
         <div className="noprint" style={{ marginBottom: 10 }}>
           <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
-          <a href={`/meets/${meetId}/matboard`} target="_blank" rel="noreferrer">Mat Board</a> &nbsp;|&nbsp;
+          <a href={`/meets/${meetId}/matboard`}>Mat Board</a> &nbsp;|&nbsp;
           <PrintButton />
         </div>
 
@@ -126,9 +126,6 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                     <div className="small">{t.teams}</div>
                     <div style={{ fontWeight: 650, marginTop: 4, color: t.redColor }}>{t.red}</div>
                     <div style={{ marginTop: 2, color: t.greenColor }}>{t.green}</div>
-                    <div style={{ marginTop: 6 }}>
-                      <div className="small">{b.notes ?? ""}</div>
-                    </div>
                   </div>
                 );
               })}

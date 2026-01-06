@@ -312,7 +312,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         <tbody>
           {wrestlers.filter(w => w.active).map(w => (
             <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last}</td>
+              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
               <td>{w.weight}</td>
               <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
               <td>{w.experienceYears}</td>
@@ -337,7 +337,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
             <tbody>
               {wrestlers.filter(w => !w.active).map(w => (
                 <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last}</td>
+              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
                   <td>{w.weight}</td>
                   <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
                   <td>{w.experienceYears}</td>
