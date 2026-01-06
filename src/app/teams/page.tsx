@@ -1,7 +1,8 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
 type Wrestler = {
@@ -88,6 +89,14 @@ export default function TeamsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
+  const daysPerYear = 365;
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   async function load() {
     const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
@@ -96,6 +105,14 @@ export default function TeamsPage() {
       const league = await lRes.json();
       setLeagueName(String(league.name ?? "").trim());
     }
+  }
+
+  function ageYears(birthdate: string) {
+    const bDate = new Date(birthdate);
+    if (Number.isNaN(bDate.getTime())) return null;
+    const now = new Date();
+    const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
+    return days / daysPerYear;
   }
 
   useEffect(() => { void load(); }, []);
@@ -378,7 +395,7 @@ export default function TeamsPage() {
         }
         .team-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          grid-template-columns: 1fr;
           gap: 12px;
         }
         .team-card {
@@ -393,6 +410,8 @@ export default function TeamsPage() {
           text-align: left;
           cursor: pointer;
           width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
         }
         .team-card-active {
           border-color: var(--accent);
@@ -485,16 +504,12 @@ export default function TeamsPage() {
           }
         }
       `}</style>
+      <AppHeader links={headerLinks} />
       <header className="mast">
         <div>
           <h1 className="title">Team Rosters</h1>
           <div className="tagline">League Directory</div>
         </div>
-        <nav className="nav">
-          <a href="/">Home</a>
-          <a href="/meets">Meets</a>
-          <button className="nav-btn" onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
-        </nav>
       </header>
 
       <div className="grid">
@@ -530,32 +545,40 @@ export default function TeamsPage() {
                     <div className="team-name">{t.name}</div>
                   </div>
                 </div>
-                <div className="team-link">
-                  <a href={`/teams/${t.id}`}>Open team</a>
-                </div>
               </div>
             ))}
           </div>
         </section>
 
         <section className="card">
-          <h2 className="card-title">Roster</h2>
+          <h2 className="card-title">
+            Roster
+            {selectedTeamId ? (() => {
+              const team = teams.find(t => t.id === selectedTeamId);
+              if (!team) return "";
+              return ` - ${team.name} (${team.symbol})`;
+            })() : ""}
+          </h2>
           {selectedTeamId ? (
             <>
               <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-                <div className="muted">Selected team: {teams.find(t => t.id === selectedTeamId)?.name ?? "Team"}</div>
-                {role === "ADMIN" && (
-                  <select
-                    className="select"
-                    value={importTeamId}
-                    onChange={e => { setImportTeamId(e.target.value); setSelectedTeamId(e.target.value); }}
-                  >
-                    <option value="">Select team</option>
-                    {teamOptions.map(t => (
-                      <option key={t.id} value={t.id}>{t.symbol}</option>
-                    ))}
-                  </select>
-                )}
+                <div className="team-head">
+                  {(() => {
+                    const team = teams.find(t => t.id === selectedTeamId);
+                    if (!team) return null;
+                    return team.hasLogo ? (
+                      <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
+                    ) : (
+                      <div className="color-dot" style={{ backgroundColor: team.color }} />
+                    );
+                  })()}
+                  <div className="team-meta">
+                    <span className="team-symbol">
+                      {teams.find(t => t.id === selectedTeamId)?.symbol ?? ""}
+                    </span>
+                    <div className="team-name">{teams.find(t => t.id === selectedTeamId)?.name ?? ""}</div>
+                  </div>
+                </div>
               </div>
               {rosterMsg && <div className="muted">{rosterMsg}</div>}
               <div className="roster-table">
@@ -565,9 +588,10 @@ export default function TeamsPage() {
                         <th>Name</th>
                         <th>Weight</th>
                         <th>Birthdate</th>
+                        <th>Age</th>
                         <th>Experience</th>
-                        <th>Skill</th>
-                        <th>Status</th>
+                        {(role === "ADMIN" || role === "COACH") && <th>Skill</th>}
+                        {(role === "ADMIN" || role === "COACH") && <th>Status</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -576,13 +600,18 @@ export default function TeamsPage() {
                           <td>{w.first} {w.last}</td>
                           <td>{w.weight}</td>
                           <td>{new Date(w.birthdate).toISOString().slice(0, 10)}</td>
+                          <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                           <td>{w.experienceYears}</td>
-                          <td>{w.skill}</td>
-                          <td>{w.active ? "Active" : "Inactive"}</td>
+                          {(role === "ADMIN" || role === "COACH") && <td>{w.skill}</td>}
+                          {(role === "ADMIN" || role === "COACH") && <td>{w.active ? "Active" : "Inactive"}</td>}
                         </tr>
                       ))}
                     {roster.length === 0 && (
-                      <tr><td colSpan={6}>No wrestlers yet.</td></tr>
+                      <tr>
+                        <td colSpan={(role === "ADMIN" || role === "COACH") ? 7 : 5}>
+                          No wrestlers yet.
+                        </td>
+                      </tr>
                     )}
                   </tbody>
                 </table>
@@ -596,34 +625,16 @@ export default function TeamsPage() {
             <>
               <div className="divider" />
               <h3 className="card-title" style={{ fontSize: 18, marginBottom: 10 }}>Import / Update CSV</h3>
-              <div className="two-col">
-                <div>
-                  <label className="muted">Team</label>
-                  <select
-                    className="select"
-                    value={importTeamId}
-                    onChange={e => { setImportTeamId(e.target.value); setSelectedTeamId(e.target.value); }}
-                    style={{ width: "100%" }}
-                    disabled={role === "COACH"}
-                  >
-                    <option value="">Select team</option>
-                    {teamOptions.map(t => (
-                      <option key={t.id} value={t.id}>{t.symbol}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={{ gridColumn: "1 / span 2" }}>
-                  <label className="muted">CSV file</label>
-                  <input
-                    className="input"
-                    type="file"
-                    accept=".csv,text/csv"
-                    onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
-                  />
-                  <div className="muted" style={{ marginTop: 6 }}>
+              <div>
+                <label className="muted">CSV file</label>
+                <input
+                  className="input"
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
+                />
+                <div className="muted" style={{ marginTop: 6 }}>
                   Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
-                </div>
                 </div>
               </div>
 

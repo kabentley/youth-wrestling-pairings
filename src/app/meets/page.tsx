@@ -1,8 +1,8 @@
 "use client";
-import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
-type Team = { id: string; name: string; symbol: string; color: string; address?: string | null };
+type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[]; homeTeamId?: string | null };
 
 export default function MeetsPage() {
@@ -13,14 +13,27 @@ export default function MeetsPage() {
   const [name, setName] = useState("");
   const [date, setDate] = useState("2026-01-15");
   const [location, setLocation] = useState("");
+  const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [homeTeamId, setHomeTeamId] = useState<string>("");
   const [numMats, setNumMats] = useState(4);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(1);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   async function load() {
-    const [t, m, l] = await Promise.all([fetch("/api/teams"), fetch("/api/meets"), fetch("/api/league")]);
+    const [t, m, l, me] = await Promise.all([
+      fetch("/api/teams"),
+      fetch("/api/meets"),
+      fetch("/api/league"),
+      fetch("/api/me"),
+    ]);
     if (t.ok) {
       const tJson = await t.json().catch(() => []);
       setTeams(Array.isArray(tJson) ? tJson : []);
@@ -39,13 +52,19 @@ export default function MeetsPage() {
       setLeagueName(name || "Wrestling Scheduler");
       setLeagueHasLogo(Boolean(lJson?.hasLogo));
     }
+    if (me.ok) {
+      const meJson = await me.json().catch(() => ({}));
+      setCurrentTeamId(meJson?.teamId ?? null);
+    }
   }
 
   function toggleTeam(id: string) {
     setTeamIds(prev => {
+      if (currentTeamId && id === currentTeamId) return prev;
       const has = prev.includes(id);
       if (has) return prev.filter(x => x !== id);
-      if (prev.length >= 4) return prev;
+      const otherCount = prev.filter(x => x !== currentTeamId).length;
+      if (otherCount >= 3) return prev;
       return [...prev, id];
     });
   }
@@ -78,10 +97,25 @@ export default function MeetsPage() {
   useEffect(() => { void load(); }, []);
   useEffect(() => {
     setHomeTeamId((prev) => {
+      if (currentTeamId) return currentTeamId;
       if (prev && teamIds.includes(prev)) return prev;
       return teamIds[0] ?? "";
     });
-  }, [teamIds]);
+  }, [teamIds, currentTeamId]);
+  useEffect(() => {
+    if (!currentTeamId) return;
+    setTeamIds(prev => (prev.includes(currentTeamId) ? prev : [currentTeamId, ...prev]));
+    setHomeTeamId(currentTeamId);
+    const team = teams.find(t => t.id === currentTeamId);
+    if (team?.address) setLocation(team.address);
+  }, [currentTeamId]);
+
+  const otherTeams = currentTeamId
+    ? teams.filter(t => t.id !== currentTeamId)
+    : teams;
+  const otherTeamIds = currentTeamId
+    ? teamIds.filter(id => id !== currentTeamId)
+    : teamIds;
   useEffect(() => {
     if (!homeTeamId || location.trim()) return;
     const home = teams.find(t => t.id === homeTeamId);
@@ -255,6 +289,7 @@ export default function MeetsPage() {
           }
         }
       `}</style>
+      <AppHeader links={headerLinks} />
       <header className="mast">
         <div className="brand">
           {leagueHasLogo ? (
@@ -265,16 +300,21 @@ export default function MeetsPage() {
             <div className="tagline">Meets</div>
           </div>
         </div>
-        <nav className="nav">
-          <a href="/">Home</a>
-          <a href="/teams">Teams</a>
-          <button className="nav-btn" onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
-        </nav>
       </header>
 
       <div className="grid">
         <section className="card">
-          <h2 className="card-title">Create Meet</h2>
+          <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>
+              Create New Meet for: {teams.find(t => t.id === currentTeamId)?.name ?? "Your Team"}
+              {teams.find(t => t.id === currentTeamId)?.symbol ? ` (${teams.find(t => t.id === currentTeamId)?.symbol})` : ""}
+            </span>
+            {(() => {
+              const t = teams.find(team => team.id === currentTeamId);
+              if (!t?.hasLogo) return null;
+              return <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />;
+            })()}
+          </h2>
           <div className="row" style={{ marginBottom: 10 }}>
             <input className="input" placeholder="Meet name" value={name} onChange={e => setName(e.target.value)} />
           </div>
@@ -316,22 +356,36 @@ export default function MeetsPage() {
           </label>
 
           <div className="team-box" style={{ marginTop: 12 }}>
-            <div style={{ marginBottom: 6 }}><b>Select teams (2-4)</b></div>
-            {teams.map(t => (
-              <label key={t.id} style={{ display: "block" }}>
-                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} />{" "}
-                <span style={{ color: t.color }}>{t.symbol}</span>
+            <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
+            {otherTeams.map(t => (
+              <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} />
+                <span style={{ flex: 1 }}>{t.name}</span>
+                {t.hasLogo ? (
+                  <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
+                ) : (
+                  <span style={{ color: t.color }}>{t.symbol}</span>
+                )}
               </label>
             ))}
             <div className="muted" style={{ marginTop: 6 }}>
-              Selected: {teamIds.length} (max 4)
+              Selected other teams: {otherTeamIds.length} (max 3)
             </div>
           </div>
 
           <div className="row" style={{ marginTop: 12 }}>
             <label className="row">
               <span className="muted">Home team</span>
-              <select className="select" value={homeTeamId} onChange={e => setHomeTeamId(e.target.value)}>
+              <select
+                className="select"
+                value={homeTeamId}
+                onChange={e => {
+                  const next = e.target.value;
+                  setHomeTeamId(next);
+                  const t = teams.find(team => team.id === next);
+                  if (t?.address) setLocation(t.address);
+                }}
+              >
                 {teamIds.length === 0 && <option value="">Select teams first</option>}
                 {teamIds.map(id => {
                   const t = teams.find(team => team.id === id);
@@ -341,7 +395,11 @@ export default function MeetsPage() {
                 })}
               </select>
             </label>
-            <button className="btn" onClick={addMeet} disabled={teamIds.length < 2 || teamIds.length > 4 || name.trim().length < 2}>
+            <button
+              className="btn"
+              onClick={addMeet}
+              disabled={otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
+            >
               Create Meet
             </button>
           </div>

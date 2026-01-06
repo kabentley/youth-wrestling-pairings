@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type TeamRow = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 
@@ -15,6 +16,7 @@ export default function AdminLeaguePage() {
   const [msg, setMsg] = useState("");
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
+  const [leagueWebsite, setLeagueWebsite] = useState("");
   const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string>>({});
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
@@ -25,8 +27,14 @@ export default function AdminLeaguePage() {
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
   const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorPopoverRef = useRef<HTMLDivElement | null>(null);
   const logoPopoverRef = useRef<HTMLDivElement | null>(null);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+  ];
 
   async function load() {
     const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
@@ -35,6 +43,7 @@ export default function AdminLeaguePage() {
       const league = await lRes.json();
       setLeagueName(league.name ?? "");
       setLeagueHasLogo(Boolean(league.hasLogo));
+      setLeagueWebsite(league.website ?? "");
     }
   }
 
@@ -149,11 +158,11 @@ export default function AdminLeaguePage() {
     return teamAddressEdits[team.id] ?? team.address ?? "";
   }
 
-  async function saveLeague() {
+  async function saveLeague(nextName = leagueName, nextWebsite = leagueWebsite) {
     const res = await fetch("/api/league", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: leagueName }),
+      body: JSON.stringify({ name: nextName, website: nextWebsite }),
     });
     if (!res.ok) {
       setMsg("Unable to save league.");
@@ -195,6 +204,13 @@ export default function AdminLeaguePage() {
     colorTimers.current[teamId] = setTimeout(() => {
       void updateTeamColor(teamId, color);
     }, 300);
+  }
+
+  function scheduleLeagueSave(nextName: string, nextWebsite: string) {
+    if (leagueTimers.current.league) clearTimeout(leagueTimers.current.league);
+    leagueTimers.current.league = setTimeout(() => {
+      void saveLeague(nextName, nextWebsite);
+    }, 500);
   }
 
   function setTeamColor(teamId: string, color: string) {
@@ -270,10 +286,7 @@ export default function AdminLeaguePage() {
     <main className="admin">
       <style>{adminStyles}</style>
       <div className="admin-shell">
-        <div className="admin-nav">
-          <a className="admin-link" href="/">Home</a>
-          <a className="admin-link" href="/admin/users">Users</a>
-        </div>
+        <AppHeader links={headerLinks} />
         <div className="admin-header">
           <h1 className="admin-title">League Setup</h1>
         </div>
@@ -284,10 +297,27 @@ export default function AdminLeaguePage() {
             <input
               id="league-name"
               value={leagueName}
-              onChange={(e) => setLeagueName(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLeagueName(next);
+                scheduleLeagueSave(next, leagueWebsite);
+              }}
               placeholder="League name"
             />
-            <button className="admin-btn" onClick={saveLeague}>Save</button>
+          </div>
+          <div className="admin-row">
+            <label className="admin-label" htmlFor="league-website">League Website</label>
+            <input
+              id="league-website"
+              value={leagueWebsite}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLeagueWebsite(next);
+                scheduleLeagueSave(leagueName, next);
+              }}
+              placeholder="https://league.example.com"
+              style={{ minWidth: 360 }}
+            />
           </div>
           <div className="admin-row admin-row-tight">
             <div className="logo-cell">

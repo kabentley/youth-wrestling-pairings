@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type MeetDetail = {
   id: string;
@@ -27,13 +28,17 @@ export default function ParentMeetDetail({ params }: { params: Promise<{ meetId:
   }
 
   useEffect(() => { void load(); }, [meetId]);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
-        <a href="/">Home</a>
-        <a href="/parent">My Wrestlers</a>
-      </div>
+      <AppHeader links={headerLinks} />
 
       <h2>Meet Details</h2>
       {msg && <div style={{ color: "crimson" }}>{msg}</div>}

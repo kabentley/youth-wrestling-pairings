@@ -2,16 +2,25 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import AppHeader from "@/components/AppHeader";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
-  const league = await db.league.findFirst({ select: { name: true, logoData: true } });
+  const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
   const teamName = session && (session.user as any)?.role === "COACH" && (session.user as any)?.teamId
     ? (await db.team.findUnique({ where: { id: (session.user as any).teamId }, select: { symbol: true, name: true } }))
     : null;
   const trimmedLeagueName = league?.name?.trim();
   const leagueName = trimmedLeagueName ?? "Wrestling Scheduler";
   const hasLeagueLogo = Boolean(league?.logoData);
+  const leagueWebsite = league?.website?.trim() || null;
+  const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
+  const headerLinks = [
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   return (
     <main className="home">
@@ -220,82 +229,30 @@ export default async function Home() {
             <div className="tagline">Wrestling scheduling and pairing control</div>
           </div>
         </div>
-        <nav className="nav">
-          <Link href="/teams">Teams</Link>
-          <Link href="/meets">Meets</Link>
-          <Link href="/parent">My Wrestlers</Link>
-          {(session?.user as any)?.role === "ADMIN" ? <Link href="/admin">Admin</Link> : null}
-          {session ? (
-            <form action="/api/auth/signout" method="post">
-              <input type="hidden" name="callbackUrl" value="/auth/signin" />
-              <button className="nav-btn" type="submit">Sign out</button>
-            </form>
-          ) : (
-            <>
-              <Link href="/auth/signin">Sign in</Link>
-              <Link href="/auth/signup">Create account</Link>
-            </>
-          )}
-        </nav>
+        {session ? (
+          <AppHeader links={headerLinks} />
+        ) : (
+          <nav className="nav">
+            <Link href="/teams">Teams</Link>
+            <Link href="/parent">My Wrestlers</Link>
+            <Link href="/auth/signin">Sign in</Link>
+            <Link href="/auth/signup">Create account</Link>
+          </nav>
+        )}
       </header>
 
       <section className="hero">
         <div className="hero-card">
-          <div className="status"><strong>LEAGUE NEWS</strong> Latest updates</div>
           <h2 className="hero-title">League News</h2>
-          <p className="hero-sub">
-            Post announcements, schedule updates, and meet reminders here.
-            Keep coaches, parents, and athletes aligned at a glance.
-          </p>
-          {session ? (
-            <div className="cta-row">
-              <Link className="btn" href="/meets">View Meets</Link>
-              <Link className="btn secondary" href="/teams">Teams</Link>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="side">
-          <div className="panel">
-            <h3>Pairings engine</h3>
-            <p>Smart candidate lists, first-year rules, and same-team fallbacks when needed.</p>
-          </div>
-          <div className="panel">
-            <h3>Mat control</h3>
-            <p>Drag, reorder, and highlight conflicts in real time with a clean board view.</p>
-          </div>
-          {session ? (
-            <div className="panel">
-              <h3>Signed in</h3>
-              <p>Account: <strong>{session.user?.username}</strong></p>
-              <p>
-                Role: <strong>{(session.user as any)?.role ?? "User"}</strong>
-                {(session.user as any)?.role === "COACH" ? (
-                  <> — Team: <strong>{teamName ? `${teamName.name ?? "Unassigned"} (${teamName.symbol ?? "?"})` : "Unassigned"}</strong></>
-                ) : null}
-              </p>
-            </div>
-          ) : (
-            <div className="panel">
-              <h3>Start here</h3>
-              <p>Create a league profile, then add teams and wrestlers.</p>
+          {leagueNewsUrl && (
+            <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+              <iframe
+                title="League news"
+                src={leagueNewsUrl}
+                style={{ width: "100%", height: 420, border: "none" }}
+              />
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="grid">
-        <div className="card">
-          <h4>Meet HQ</h4>
-          <p>Generate pairings, set constraints, and run match boards in one place.</p>
-        </div>
-        <div className="card">
-          <h4>Parents view</h4>
-          <p>Parents can see their child match lists and results without extra steps.</p>
-        </div>
-        <div className="card">
-          <h4>Print and wall</h4>
-          <p>Wall chart and print layouts are ready for the gym in seconds.</p>
         </div>
       </section>
     </main>

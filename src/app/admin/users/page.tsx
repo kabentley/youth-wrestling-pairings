@@ -1,6 +1,6 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import AppHeader from "@/components/AppHeader";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -98,24 +98,21 @@ export default function AdminUsersPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(total, page * pageSize);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   return (
     <main className="admin">
       <style>{adminStyles}</style>
       <div className="admin-shell">
+        <AppHeader links={headerLinks} />
         <div className="admin-header">
           <h1 className="admin-title">User Management</h1>
-          <div className="admin-nav">
-            <a className="admin-link" href="/">Home</a>
-            <a className="admin-link" href="/teams">Teams</a>
-            <a className="admin-link" href="/meets">Meets</a>
-            <button
-              className="admin-btn admin-btn-ghost"
-              onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}
-            >
-              Sign out
-            </button>
-          </div>
         </div>
 
         <div className="admin-card">
@@ -168,7 +165,7 @@ export default function AdminUsersPage() {
         </div>
 
         <div className="admin-card">
-          <h3>Create user</h3>
+          <h3>Create New User</h3>
           <div className="admin-grid">
             <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
             <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />

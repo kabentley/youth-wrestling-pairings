@@ -9,13 +9,14 @@ const PatchSchema = z.object({
   name: z.string().trim().min(2).optional(),
   symbol: z.string().trim().min(2).max(4).optional(),
   address: z.string().trim().optional(),
+  website: z.string().trim().url().optional().or(z.literal("")),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
   const team = await db.team.findUnique({
     where: { id: teamId },
-    select: { id: true, name: true, symbol: true, color: true, address: true, homeTeamPreferSameMat: true, logoData: true },
+    select: { id: true, name: true, symbol: true, color: true, address: true, website: true, homeTeamPreferSameMat: true, logoData: true },
   });
   if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
   return NextResponse.json({
@@ -24,6 +25,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
     symbol: team.symbol,
     color: team.color,
     address: team.address,
+    website: team.website,
     homeTeamPreferSameMat: team.homeTeamPreferSameMat,
     hasLogo: Boolean(team.logoData),
   });
@@ -49,16 +51,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     return NextResponse.json({ error: "Only admins can update name, symbol, or address" }, { status: 403 });
   }
 
-  const data: { color?: string; name?: string; symbol?: string; address?: string | null } = {};
+  const data: { color?: string; name?: string; symbol?: string; address?: string | null; website?: string | null } = {};
   if (body.color) data.color = body.color;
   if (body.name) data.name = body.name.trim();
   if (body.symbol) data.symbol = body.symbol.trim().toUpperCase();
   if (body.address !== undefined) data.address = body.address.trim() || null;
+  if (body.website !== undefined) data.website = body.website.trim() || null;
 
   const team = await db.team.update({
     where: { id: teamId },
     data,
-    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true },
+    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true, website: true },
   });
   return NextResponse.json({ ...team, hasLogo: Boolean(team.logoData) });
 }

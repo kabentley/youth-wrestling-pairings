@@ -10,6 +10,7 @@ export async function GET() {
     select: {
       username: true,
       name: true,
+      role: true,
       team: { select: { name: true, symbol: true } },
     },
   });
@@ -18,6 +19,7 @@ export async function GET() {
   return NextResponse.json({
     username: user.username,
     name: user.name ?? null,
+    role: user.role,
     team: user.team ? `${user.team.name} (${user.team.symbol ?? ""})`.trim() : null,
   });
 }

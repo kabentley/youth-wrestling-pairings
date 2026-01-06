@@ -1,7 +1,7 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { use, useEffect, useRef, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
@@ -43,6 +43,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetName, setMeetName] = useState("");
 
   const [msg, setMsg] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
+  const [editAllowed, setEditAllowed] = useState(true);
   const [matMsg, setMatMsg] = useState("");
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
@@ -67,6 +69,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [target, setTarget] = useState<Wrestler | null>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [showNotAttending, setShowNotAttending] = useState(true);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   function updateLockState(next: LockState) {
     lockStatusRef.current = next.status;
@@ -75,6 +84,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function acquireLock() {
     const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
+    if (res.status === 401) {
+      setAuthMsg("Please sign in to edit this meet.");
+      return;
+    }
+    if (res.status === 403) {
+      const json = await res.json().catch(() => ({}));
+      setAuthMsg(json?.error ?? "You are not authorized to edit this meet.");
+      setEditAllowed(false);
+      return;
+    }
     if (res.ok) {
       const json = await res.json();
       updateLockState({
@@ -141,6 +160,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
     return days / daysPerYear;
   }
+  function boutNumber(mat?: number | null, order?: number | null) {
+    if (!mat || !order) return "";
+    const suffix = String(order).padStart(2, "0");
+    return `${mat}${suffix}`;
+  }
   function weightPctDiff(a?: number, b?: number) {
     if (typeof a !== "number" || typeof b !== "number") return null;
     const diff = Math.abs(a - b);
@@ -160,6 +184,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       fetch(`/api/meets/${meetId}/wrestlers`),
       fetch(`/api/meets/${meetId}`),
     ]);
+    if ([bRes, wRes, mRes].some(r => r.status === 401)) {
+      setAuthMsg("Please sign in to view this meet.");
+      return;
+    }
+    if ([bRes, wRes, mRes].some(r => r.status === 403)) {
+      const json = await mRes.json().catch(() => ({}));
+      setAuthMsg(json?.error ?? "You are not authorized to view this meet.");
+      setEditAllowed(false);
+      return;
+    }
 
     const bJson: Bout[] = await bRes.json();
     const wJson = await wRes.json();
@@ -187,6 +221,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   useEffect(() => { void load(); }, [meetId]);
   useEffect(() => {
+    if (!editAllowed) return;
     void acquireLock();
     const interval = setInterval(() => {
       if (lockStatusRef.current === "acquired") {
@@ -200,9 +235,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       window.removeEventListener("beforeunload", onBeforeUnload);
       releaseLock();
     };
-  }, [meetId]);
+  }, [meetId, editAllowed]);
 
-  const canEdit = lockState.status === "acquired";
+  const canEdit = editAllowed && lockState.status === "acquired";
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
@@ -448,28 +483,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           outline-offset: 2px;
         }
       `}</style>
-      <div className="topbar">
-        <div className="nav">
-          <a href="/">Home</a>
-          <a href="/teams">Teams</a>
-          <a href="/meets">Meets</a>
-        </div>
-        <button
-          className="nav-btn"
-          onClick={async () => {
-            await signOut({ redirect: false });
-            window.location.href = "/auth/signin";
-          }}
-        >
-          Sign out
-        </button>
-      </div>
+      <AppHeader links={headerLinks} />
       <div className="subnav">
         <a href={`/meets/${meetId}/matboard`}>Mat Board</a>
         <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
       </div>
 
       <h2>{meetLabel || "this meet"}</h2>
+
+      {authMsg && (
+        <div className="notice">
+          {authMsg}
+        </div>
+      )}
 
       {lockState.status === "locked" && (
         <div className="notice">
@@ -479,27 +505,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} onChange={async e => {
+        <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
           const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
           setSettings(s => ({ ...s, maxAgeGapDays }));
           if (target) await loadCandidates(target.id, { maxAgeGapDays });
         }} /></label>
-        <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} onChange={async e => {
+        <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
           const maxWeightDiffPct = Number(e.target.value);
           setSettings(s => ({ ...s, maxWeightDiffPct }));
           if (target) await loadCandidates(target.id, { maxWeightDiffPct });
         }} /></label>
-        <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={async e => {
+        <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} disabled={!canEdit} onChange={async e => {
           const checked = e.target.checked;
           setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
           if (target) await loadCandidates(target.id, { firstYearOnlyWithFirstYear: checked });
         }} /> First-year only rule</label>
-        <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
+        <label><input type="checkbox" checked={settings.allowSameTeamMatches} disabled={!canEdit} onChange={async e => {
           const allowSameTeamMatches = e.target.checked;
           setSettings(s => ({ ...s, allowSameTeamMatches }));
           if (target) await loadCandidates(target.id, { allowSameTeamMatches });
         }} /> Include same team</label>
-        <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
+        <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} disabled={!canEdit} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
         {msg && <span>{msg}</span>}
       </div>
@@ -513,24 +539,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       </div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Mats: <input type="number" min={1} max={10} value={matSettings.numMats} onChange={e => setMatSettings(s => ({ ...s, numMats: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <label>Min rest: <input type="number" min={0} max={20} value={matSettings.minRestBouts} onChange={e => setMatSettings(s => ({ ...s, minRestBouts: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <label>Rest penalty: <input type="number" min={0} max={1000} value={matSettings.restPenalty} onChange={e => setMatSettings(s => ({ ...s, restPenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
+        <label>Mats: <input type="number" min={1} max={10} value={matSettings.numMats} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, numMats: Number(e.target.value) }))} style={{ width: 60 }} /></label>
+        <label>Min rest: <input type="number" min={0} max={20} value={matSettings.minRestBouts} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, minRestBouts: Number(e.target.value) }))} style={{ width: 60 }} /></label>
+        <label>Rest penalty: <input type="number" min={0} max={1000} value={matSettings.restPenalty} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, restPenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
         <button onClick={assignMats} disabled={!canEdit}>Assign Mats</button>
         {matMsg && <span>{matMsg}</span>}
       </div>
 
       <table cellPadding={2} style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: "5%"}} />
-          <col style={{ width: "5%" }} />
+          <col style={{ width: 60, minWidth: 60, maxWidth: 60 }} />
           <col style={{ width: "20%" }} />
           <col style={{ width: "20%" }} />
         </colgroup>
         <thead>
           <tr>
-            <th align="left" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>Mat</th>
-            <th align="left" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>Bout</th>
+            <th align="center" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", minWidth: 60, maxWidth: 60 }}>Bout #</th>
             <th align="left" style={{ width: "20%" }}>Wrestler 1</th>
             <th align="left" style={{ width: "20%" }}>Wrestler 2</th>
           </tr>
@@ -556,8 +580,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   : conflictBg;
             return (
             <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>{b.mat ?? ""}</td>
-              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden" }}>{b.order ?? ""}</td>
+              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", minWidth: 60, maxWidth: 60, textAlign: "center" }}>
+                {boutNumber(b.mat, b.order)}
+              </td>
               <td style={{ background: redBg }}>
                 <button className="wrestler-link" onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>
                   {wName(b.redId)}

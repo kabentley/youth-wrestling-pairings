@@ -6,7 +6,15 @@ import { requireRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  await requireRole("COACH");
+  try {
+    await requireRole("COACH");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "FORBIDDEN") {
+      return NextResponse.json({ error: "You are not authorized to edit meets." }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
   const now = new Date();
   const meet = await db.meet.findUnique({
     where: { id: meetId },
@@ -37,7 +45,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function POST(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "FORBIDDEN") {
+      return NextResponse.json({ error: "You are not authorized to edit meets." }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
   const now = new Date();
   const lockExpiresAt = new Date(now.getTime() + MEET_LOCK_TTL_MS);
 
@@ -84,7 +101,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "FORBIDDEN") {
+      return NextResponse.json({ error: "You are not authorized to edit meets." }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
   const where =
     user.role === "ADMIN"
       ? { id: meetId }

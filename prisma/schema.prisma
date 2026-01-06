@@ -15,6 +15,7 @@ model Team {
   symbol    String     @unique
   color     String     @default("#000000")
   address   String?
+  website   String?
   logoData  Bytes?
   logoType  String?
   createdAt DateTime   @default(now())
@@ -29,6 +30,7 @@ model Team {
 model League {
   id       String  @id @default(cuid())
   name     String?
+  website  String?
   logoData Bytes?
   logoType String?
 }

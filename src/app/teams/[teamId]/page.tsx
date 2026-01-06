@@ -1,6 +1,7 @@
 "use client";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { use, useEffect, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type Wrestler = {
   id: string;
@@ -28,8 +29,9 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const canEdit = role === "ADMIN" || (role === "COACH" && sessionTeamId === teamId);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
-  const [team, setTeam] = useState<{ name: string; symbol?: string; color?: string; hasLogo?: boolean } | null>(null);
+  const [team, setTeam] = useState<{ name: string; symbol?: string; color?: string; hasLogo?: boolean; website?: string | null } | null>(null);
   const [teamColor, setTeamColor] = useState("");
+  const [teamWebsite, setTeamWebsite] = useState("");
   const [teamLogoVersion, setTeamLogoVersion] = useState(0);
   const [showInactive, setShowInactive] = useState(true);
   const [matRules, setMatRules] = useState<MatRule[]>([]);
@@ -43,6 +45,13 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     experienceYears: 0,
     skill: 3,
   });
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   const matColors = ["Red", "Blue", "Green", "Yellow", "Orange", "Black", "White", "Gray", "Brown", "Pink"];
   function defaultMatRule(index: number): MatRule {
@@ -82,6 +91,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
       const tJson = await tRes.json();
       setTeam(tJson);
       setTeamColor(tJson.color ?? "");
+      setTeamWebsite(tJson.website ?? "");
     }
   }
 
@@ -179,14 +189,24 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     await load();
   }
 
+  async function saveTeamWebsite() {
+    if (!canEdit) return;
+    setRuleMsg("");
+    const res = await fetch(`/api/teams/${teamId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ website: teamWebsite }),
+    });
+    if (!res.ok) {
+      setRuleMsg("Unable to update team website.");
+      return;
+    }
+    await load();
+  }
+
   return (
     <main style={{ padding: 24, fontFamily: "system-ui" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
-        <a href="/">Home</a>
-        <a href="/teams">Teams</a>
-        <a href="/meets">Meets</a>
-        <button onClick={async () => { await signOut({ redirect: false }); window.location.href = "/auth/signin"; }}>Sign out</button>
-      </div>
+      <AppHeader links={headerLinks} />
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         {team?.hasLogo ? (
           <img src={`/api/teams/${teamId}/logo/file?v=${teamLogoVersion}`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
@@ -194,6 +214,11 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         <h2 style={{ margin: 0 }}>
           {team?.symbol ? `${team.symbol} — ${team.name}` : (team?.name ?? "Team")}
         </h2>
+        {team?.website && (
+          <a href={`${team.website.replace(/\\/$/, "")}/news`} target="_blank" rel="noreferrer">
+            Team News
+          </a>
+        )}
       </div>
 
       {canEdit && (
@@ -245,6 +270,16 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
               ))}
             </div>
             <button onClick={saveTeamColor} style={{ maxWidth: 160 }}>Save Team Color</button>
+          </div>
+          <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+            <label style={{ fontSize: 12, opacity: 0.7 }}>Team website (used for /news)</label>
+            <input
+              value={teamWebsite}
+              onChange={(e) => setTeamWebsite(e.target.value)}
+              placeholder="https://team.example.com"
+              style={{ maxWidth: 320 }}
+            />
+            <button onClick={saveTeamWebsite} style={{ maxWidth: 200 }}>Save Team Website</button>
           </div>
         </div>
       )}

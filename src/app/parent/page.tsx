@@ -1,7 +1,7 @@
 "use client";
 
-import { signOut } from "next-auth/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type Child = {
   id: string;
@@ -12,7 +12,10 @@ type Child = {
   teamName: string;
   teamSymbol?: string;
   teamColor?: string;
-  active: boolean;
+  active?: boolean;
+  birthdate?: string;
+  weight?: number;
+  experienceYears?: number;
 };
 
 type Match = {
@@ -54,6 +57,7 @@ type SearchResult = {
 type Profile = {
   username: string;
   name: string | null;
+  role: "ADMIN" | "COACH" | "PARENT";
   team: string | null;
 };
 
@@ -64,6 +68,7 @@ export default function ParentPage() {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [msg, setMsg] = useState("");
+  const searchTimerRef = useRef<number | null>(null);
 
   async function load() {
     const [profileRes, matchesRes] = await Promise.all([
@@ -77,13 +82,14 @@ export default function ParentPage() {
     setMeetGroups(matchesJson?.meets ?? []);
   }
 
-  async function findWrestlers() {
+  async function findWrestlers(query?: string) {
     setMsg("");
-    if (!search.trim()) {
+    const term = (query ?? search).trim();
+    if (!term) {
       setResults([]);
       return;
     }
-    const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(search.trim())}`);
+    const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(term)}`);
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       setMsg(json?.error ?? "Unable to search wrestlers.");
@@ -122,6 +128,21 @@ export default function ParentPage() {
 
   useEffect(() => { void load(); }, []);
 
+  useEffect(() => {
+    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    if (!search.trim()) {
+      setResults([]);
+      setMsg("");
+      return;
+    }
+    searchTimerRef.current = window.setTimeout(() => {
+      void findWrestlers(search);
+    }, 250);
+    return () => {
+      if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
+    };
+  }, [search]);
+
   const childMap = useMemo(() => new Map(children.map(c => [c.id, c])), [children]);
   const today = useMemo(() => {
     const d = new Date();
@@ -130,12 +151,39 @@ export default function ParentPage() {
   }, []);
   const upcomingMeets = meetGroups.filter(g => new Date(g.meet.date) >= today);
   const pastMeets = meetGroups.filter(g => new Date(g.meet.date) < today);
+  const daysPerYear = 365;
 
-  function formatResult(result: Match["result"]) {
-    if (!result.type) return "";
-    const score = result.score ? ` ${result.score}` : "";
-    return `${result.type}${score}`.trim();
+
+  function nameChip(label: string, team: string | undefined, color?: string) {
+    const teamLabel = team ? ` (${team})` : "";
+    return (
+      <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
+        <span>{label}{teamLabel}</span>
+        <span style={{ width: 12, height: 12, background: color ?? "#000000", display: "inline-block" }} />
+      </span>
+    );
   }
+
+  function ageYears(birthdate?: string) {
+    if (!birthdate) return null;
+    const bDate = new Date(birthdate);
+    if (Number.isNaN(bDate.getTime())) return null;
+    const days = Math.floor((today.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
+    return days / daysPerYear;
+  }
+
+  function boutNumber(mat?: number | null, order?: number | null) {
+    if (!mat || !order) return "";
+    const suffix = String(order).padStart(2, "0");
+    return `${mat}${suffix}`;
+  }
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    // Current page
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   return (
     <main className="parent">
@@ -218,31 +266,9 @@ export default function ParentPage() {
           padding: 6px 8px;
         }
       `}</style>
-      <div className="topbar">
-        <div className="nav">
-          <a href="/">Home</a>
-          <a href="/teams">Teams</a>
-          <a href="/meets">Meets</a>
-        </div>
-        <button
-          className="nav-btn"
-          onClick={async () => {
-            await signOut({ redirect: false });
-            window.location.href = "/auth/signin";
-          }}
-        >
-          Sign out
-        </button>
-      </div>
+      <AppHeader links={headerLinks} />
 
       <h2>My Wrestlers</h2>
-      {profile && (
-        <div className="panel" style={{ marginBottom: 16 }}>
-          <div><b>Username:</b> {profile.username}</div>
-          <div><b>Name:</b> {profile.name ?? "Not set"}</div>
-          <div><b>Team:</b> {profile.team ?? "Not assigned"}</div>
-        </div>
-      )}
 
       <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
         <div style={{ display: "flex", gap: 8 }}>
@@ -252,7 +278,7 @@ export default function ParentPage() {
             onChange={(e) => setSearch(e.target.value)}
             style={{ flex: 1 }}
           />
-          <button onClick={findWrestlers}>Search</button>
+          <button onClick={() => findWrestlers(search)}>Search</button>
         </div>
         {msg && <div style={{ color: "crimson" }}>{msg}</div>}
         {results.length > 0 && (
@@ -260,7 +286,7 @@ export default function ParentPage() {
             {results.map(r => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "4px 0" }}>
                 <div>
-                  <b style={{ color: r.teamColor ?? "#000000" }}>{r.first} {r.last} ({r.teamSymbol ?? r.teamName})</b>{" "}
+                  {nameChip(`${r.first} ${r.last}`, r.teamSymbol ?? r.teamName, r.teamColor ?? "#000000")}{" "}
                   — {new Date(r.birthdate).toISOString().slice(0, 10)}
                 </div>
                 <button onClick={() => addChild(r.id)}>Add</button>
@@ -270,24 +296,25 @@ export default function ParentPage() {
         )}
       </div>
 
-      <h3 style={{ marginTop: 20 }}>My Wrestlers</h3>
       {children.length === 0 && <div>No wrestlers linked yet.</div>}
       {children.length > 0 && (
-        <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table cellPadding={10} style={{ borderCollapse: "collapse"}}>
           <thead>
             <tr>
               <th align="left">Name</th>
-              <th align="left">Team</th>
-              <th align="left">Status</th>
+              <th align="right">Age</th>
+              <th align="right">Wt</th>
+              <th align="right">Exp</th>
               <th align="left">Actions</th>
             </tr>
           </thead>
           <tbody>
             {children.map(c => (
               <tr key={c.id} style={{ borderTop: "1px solid #ddd" }}>
-                <td><span style={{ color: c.teamColor ?? "#000000" }}>{c.first} {c.last} ({c.teamSymbol ?? c.teamName})</span></td>
-                <td>{c.teamSymbol ?? c.teamName}</td>
-                <td>{c.active ? "Active" : "Inactive"}</td>
+                <td>{nameChip(`${c.first} ${c.last}`, c.teamSymbol ?? c.teamName, c.teamColor ?? "#000000")}</td>
+                <td align="right">{ageYears(c.birthdate)?.toFixed(1) ?? ""}</td>
+                <td align="right">{c.weight ?? ""}</td>
+                <td align="right">{c.experienceYears ?? ""}</td>
                 <td>
                   <button onClick={() => removeChild(c.id)}>Remove</button>
                 </td>
@@ -301,9 +328,8 @@ export default function ParentPage() {
       {upcomingMeets.length === 0 && <div>No upcoming meets yet.</div>}
       {upcomingMeets.map(group => (
         <div key={group.meet.id} className="panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>{group.meet.name}</h3>
-            <a href={`/parent/meets/${group.meet.id}`}>Meet Details</a>
           </div>
           <div className="muted" style={{ marginBottom: 8 }}>
             {new Date(group.meet.date).toISOString().slice(0, 10)}{" "}
@@ -311,14 +337,12 @@ export default function ParentPage() {
           </div>
           {group.matches.length === 0 && <div>No scheduled matches yet.</div>}
           {group.matches.length > 0 && (
-            <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
+            <table cellPadding={10} style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th align="left">Wrestler</th>
-                  <th align="left">Mat</th>
-                  <th align="left">Bout</th>
+                  <th align="left">Bout #</th>
                   <th align="left">Opponent</th>
-                  <th align="left">Result</th>
                 </tr>
               </thead>
               <tbody>
@@ -327,18 +351,16 @@ export default function ParentPage() {
                   return (
                     <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
                       <td>
-                        <span style={{ color: child?.teamColor ?? "#000000" }}>
-                          {child?.first} {child?.last} ({child?.teamSymbol ?? child?.teamName})
-                        </span>
+                        {nameChip(
+                          `${child?.first ?? ""} ${child?.last ?? ""}`.trim(),
+                          child?.teamSymbol ?? child?.teamName,
+                          child?.teamColor ?? "#000000"
+                        )}
                       </td>
-                      <td>{match.mat ?? ""}</td>
-                      <td>{match.order ?? ""}</td>
+                      <td>{boutNumber(match.mat, match.order)}</td>
                       <td>
-                        <span style={{ color: match.opponentTeamColor ?? "#000000" }}>
-                          {match.opponentName} ({match.opponentTeam})
-                        </span>
+                        {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
                       </td>
-                      <td>{formatResult(match.result)}</td>
                     </tr>
                   );
                 })}
@@ -352,7 +374,7 @@ export default function ParentPage() {
       {pastMeets.length === 0 && <div>No past meets yet.</div>}
       {pastMeets.map(group => (
         <div key={group.meet.id} className="panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>{group.meet.name}</h3>
             <a href={`/parent/meets/${group.meet.id}`}>Meet Details</a>
           </div>
@@ -366,10 +388,8 @@ export default function ParentPage() {
               <thead>
                 <tr>
                   <th align="left">Wrestler</th>
-                  <th align="left">Mat</th>
-                  <th align="left">Bout</th>
+                  <th align="left">Bout #</th>
                   <th align="left">Opponent</th>
-                  <th align="left">Result</th>
                 </tr>
               </thead>
               <tbody>
@@ -378,18 +398,16 @@ export default function ParentPage() {
                   return (
                     <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
                       <td>
-                        <span style={{ color: child?.teamColor ?? "#000000" }}>
-                          {child?.first} {child?.last} ({child?.teamSymbol ?? child?.teamName})
-                        </span>
+                        {nameChip(
+                          `${child?.first ?? ""} ${child?.last ?? ""}`.trim(),
+                          child?.teamSymbol ?? child?.teamName,
+                          child?.teamColor ?? "#000000"
+                        )}
                       </td>
-                      <td>{match.mat ?? ""}</td>
-                      <td>{match.order ?? ""}</td>
+                      <td>{boutNumber(match.mat, match.order)}</td>
                       <td>
-                        <span style={{ color: match.opponentTeamColor ?? "#000000" }}>
-                          {match.opponentName} ({match.opponentTeam})
-                        </span>
+                        {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
                       </td>
-                      <td>{formatResult(match.result)}</td>
                     </tr>
                   );
                 })}

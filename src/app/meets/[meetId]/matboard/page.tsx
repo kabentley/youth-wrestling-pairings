@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "ABSENT" | null };
@@ -31,12 +32,20 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(4);
   const [msg, setMsg] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
   const [conflictGap, setConflictGap] = useState(3);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
+  const headerLinks = [
+    { href: "/", label: "Home" },
+    { href: "/teams", label: "Teams" },
+    { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+  ];
 
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
   const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
@@ -49,6 +58,15 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
 
   async function acquireLock() {
     const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
+    if (res.status === 401) {
+      setAuthMsg("Please sign in to edit this meet.");
+      return;
+    }
+    if (res.status === 403) {
+      const json = await res.json().catch(() => ({}));
+      setAuthMsg(json?.error ?? "You are not authorized to edit this meet.");
+      return;
+    }
     if (res.ok) {
       const json = await res.json();
       updateLockState({
@@ -80,6 +98,15 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
       fetch(`/api/meets/${meetId}/pairings`),
       fetch(`/api/meets/${meetId}/wrestlers`),
     ]);
+    if (bRes.status === 401 || wRes.status === 401) {
+      setAuthMsg("Please sign in to view this meet.");
+      return;
+    }
+    if (bRes.status === 403 || wRes.status === 403) {
+      const json = await bRes.json().catch(() => ({}));
+      setAuthMsg(json?.error ?? "You are not authorized to view this meet.");
+      return;
+    }
 
     const bJson: Bout[] = await bRes.json();
     setBouts(bJson);
@@ -454,22 +481,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
           letter-spacing: 0.5px;
         }
       `}</style>
-      <div className="topbar">
-        <div className="nav">
-          <a href="/">Home</a>
-          <a href="/teams">Teams</a>
-          <a href="/meets">Meets</a>
-        </div>
-        <button
-          className="nav-btn"
-          onClick={async () => {
-            await signOut({ redirect: false });
-            window.location.href = "/auth/signin";
-          }}
-        >
-          Sign out
-        </button>
-      </div>
+      <AppHeader links={headerLinks} />
       <div className="subnav">
         <a href={`/meets/${meetId}`}>Meet Pairings</a>
         <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
@@ -504,6 +516,12 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
         </label>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>Pink = too close</span>
       </div>
+
+      {authMsg && (
+        <div className="notice">
+          {authMsg}
+        </div>
+      )}
 
       {lockState.status === "locked" && (
         <div className="notice">

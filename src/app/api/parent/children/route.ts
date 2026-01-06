@@ -21,6 +21,9 @@ export async function GET() {
           last: true,
           teamId: true,
           active: true,
+          birthdate: true,
+          weight: true,
+          experienceYears: true,
           team: { select: { name: true, symbol: true, color: true } },
         },
       },
@@ -39,6 +42,9 @@ export async function GET() {
       teamSymbol: r.wrestler.team.symbol,
       teamColor: r.wrestler.team.color,
       active: r.wrestler.active,
+      birthdate: r.wrestler.birthdate,
+      weight: r.wrestler.weight,
+      experienceYears: r.wrestler.experienceYears,
     })),
   );
 }

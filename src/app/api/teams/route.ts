@@ -9,12 +9,13 @@ const TeamSchema = z.object({
   symbol: z.string().trim().min(2).max(4),
   color: z.string().trim().optional(),
   address: z.string().trim().optional(),
+  website: z.string().trim().url().optional().or(z.literal("")),
 });
 
 export async function GET() {
   const teams = await db.team.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true },
+    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true, website: true },
   });
   return NextResponse.json(
     teams.map((t) => ({
@@ -23,6 +24,7 @@ export async function GET() {
       symbol: t.symbol,
       color: t.color,
       address: t.address,
+      website: t.website,
       hasLogo: Boolean(t.logoData),
     })),
   );
@@ -38,6 +40,7 @@ export async function POST(req: Request) {
       symbol: parsed.symbol.trim().toUpperCase(),
       color: parsed.color?.trim() ?? "#000000",
       address: parsed.address?.trim() || null,
+      website: parsed.website?.trim() || null,
     },
   });
   return NextResponse.json(team);

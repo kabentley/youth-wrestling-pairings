@@ -37,16 +37,16 @@ export async function GET(req: Request) {
       ? {
           active: true,
           OR: [
-            { first: { contains: tokens[0], mode: "insensitive" } },
-            { last: { contains: tokens[0], mode: "insensitive" } },
+            { first: { contains: tokens[0] } },
+            { last: { contains: tokens[0] } },
           ],
         }
       : {
           active: true,
           AND: tokens.map((t) => ({
             OR: [
-              { first: { contains: t, mode: "insensitive" } },
-              { last: { contains: t, mode: "insensitive" } },
+              { first: { contains: t } },
+              { last: { contains: t } },
             ],
           })),
         };
