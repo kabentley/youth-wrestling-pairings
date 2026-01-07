@@ -72,12 +72,16 @@ async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) 
   return team;
 }
 
-async function createMeet(name: string, date: string, teamIds: string[]) {
+async function createMeet(name: string, date: string, teamIds: string[], updatedById: string) {
+  const now = new Date();
   return db.meet.create({
     data: {
       name,
       date: d(date),
       location: "Local Gym",
+      status: "PUBLISHED",
+      updatedAt: now,
+      updatedById,
       meetTeams: { create: teamIds.map(teamId => ({ teamId })) },
     },
   });
@@ -109,7 +113,7 @@ async function main() {
   }
 
   console.log("Seeding demo data...");
-  await ensureAdmin();
+  const admin = await ensureAdmin();
   await clearAll();
 
   const t1 = await createTeam("Tigers", "TIG", rosterA);
@@ -118,9 +122,9 @@ async function main() {
   const t4 = await createTeam("Wolves", "WOL", rosterD);
 
   // 2-team meet
-  await createMeet("Week 1 (Tigers vs Bears)", "2026-01-15", [t1.id, t2.id]);
+  await createMeet("Week 1 (Tigers vs Bears)", "2026-01-15", [t1.id, t2.id], admin.id);
   // 4-team quad meet
-  await createMeet("Quad Meet", "2026-01-22", [t1.id, t2.id, t3.id, t4.id]);
+  await createMeet("Quad Meet", "2026-01-22", [t1.id, t2.id, t3.id, t4.id], admin.id);
 
   console.log("Seed complete");
 }

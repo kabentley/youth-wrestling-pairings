@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { generatePairingsForMeet } from "@/lib/generatePairings";
+import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
@@ -28,5 +29,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const body = await req.json();
   const settings = SettingsSchema.parse(body);
   const result = await generatePairingsForMeet(meetId, settings);
+  await logMeetChange(meetId, user.id, "Generated pairings.");
   return NextResponse.json(result);
 }

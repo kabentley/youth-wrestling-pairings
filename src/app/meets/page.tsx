@@ -3,7 +3,20 @@ import { useEffect, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
-type Meet = { id: string; name: string; date: string; location?: string | null; meetTeams: { team: Team }[]; homeTeamId?: string | null };
+type Meet = {
+  id: string;
+  name: string;
+  date: string;
+  location?: string | null;
+  meetTeams: { team: Team }[];
+  homeTeamId?: string | null;
+  numMats?: number;
+  allowSameTeamMatches?: boolean;
+  matchesPerWrestler?: number;
+  status?: "DRAFT" | "PUBLISHED";
+  updatedAt?: string;
+  updatedBy?: { username?: string | null } | null;
+};
 
 export default function MeetsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -58,6 +71,23 @@ export default function MeetsPage() {
       const meJson = await me.json().catch(() => ({}));
       setCurrentTeamId(meJson?.teamId ?? null);
     }
+  }
+
+  function applyTemplate(meet: Meet) {
+    setName(`${meet.name} (Copy)`);
+    const date = new Date(meet.date);
+    date.setDate(date.getDate() + 7);
+    setDate(date.toISOString().slice(0, 10));
+    setLocation(meet.location ?? "");
+    const nextTeamIds = meet.meetTeams.map(mt => mt.team.id);
+    if (currentTeamId && !nextTeamIds.includes(currentTeamId)) {
+      nextTeamIds.unshift(currentTeamId);
+    }
+    setTeamIds(nextTeamIds);
+    setHomeTeamId(meet.homeTeamId ?? "");
+    setNumMats(meet.numMats ?? 4);
+    setAllowSameTeamMatches(Boolean(meet.allowSameTeamMatches));
+    setMatchesPerWrestler(meet.matchesPerWrestler ?? 1);
   }
 
   function toggleTeam(id: string) {
@@ -280,6 +310,45 @@ export default function MeetsPage() {
           padding: 10px 12px;
           background: #fff;
         }
+        .meet-item-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .badge {
+          font-size: 11px;
+          border-radius: 999px;
+          padding: 2px 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+          border: 1px solid var(--line);
+          background: #f7f9fb;
+        }
+        .badge.published {
+          background: #e8f4ff;
+          border-color: #b5d6f2;
+          color: #0d3b66;
+        }
+        .badge.draft {
+          background: #fff4dd;
+          border-color: #f2d3a6;
+          color: #845400;
+        }
+        .meet-actions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .meet-actions button {
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 6px 10px;
+          background: #fff;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 12px;
+        }
         .meet-item a {
           color: var(--accent);
           text-decoration: none;
@@ -412,12 +481,27 @@ export default function MeetsPage() {
           <div className="meet-list">
             {meets.map(m => (
               <div key={m.id} className="meet-item">
-                <a href={`/meets/${m.id}`}>{m.name}</a>{" "}
-                <span className="muted">
-                  — {new Date(m.date).toISOString().slice(0,10)}
-                  {m.location ? ` — ${m.location}` : ""} —{" "}
-                  {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
-                </span>
+                <div className="meet-item-header">
+                  <div>
+                    <a href={`/meets/${m.id}`}>{m.name}</a>
+                    <div className="muted">
+                      - {new Date(m.date).toISOString().slice(0, 10)}
+                      {m.location ? ` - ${m.location}` : ""} -{" "}
+                      {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
+                    </div>
+                  </div>
+                  <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
+                    {m.status === "PUBLISHED" ? "Published" : "Draft"}
+                  </span>
+                </div>
+                <div className="meet-actions" style={{ marginTop: 8 }}>
+                  <button onClick={() => applyTemplate(m)}>Use as template</button>
+                </div>
+                {m.updatedAt && (
+                  <div className="muted" style={{ marginTop: 6 }}>
+                    Last updated {new Date(m.updatedAt).toLocaleString()} by {m.updatedBy?.username ?? "unknown"}
+                  </div>
+                )}
               </div>
             ))}
             {meets.length === 0 && <div className="muted">No meets yet.</div>}

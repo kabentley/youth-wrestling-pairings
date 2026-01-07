@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
+type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
 type Wrestler = {
   id: string;
   teamId: string;
@@ -13,7 +14,7 @@ type Wrestler = {
   experienceYears: number;
   skill: number;
   birthdate?: string;
-  status?: "LATE" | "EARLY" | "ABSENT" | null;
+  status?: AttendanceStatus | null;
 };
 type Bout = {
   id: string;
@@ -31,6 +32,19 @@ type LockState = {
   lockedByUsername?: string | null;
   lockExpiresAt?: string | null;
 };
+type MeetChange = {
+  id: string;
+  message: string;
+  createdAt: string;
+  actor?: { username?: string | null } | null;
+};
+type MeetComment = {
+  id: string;
+  body: string;
+  section?: string | null;
+  createdAt: string;
+  author?: { username?: string | null } | null;
+};
 
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
@@ -41,6 +55,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [meetName, setMeetName] = useState("");
+  const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
+  const [changes, setChanges] = useState<MeetChange[]>([]);
+  const [comments, setComments] = useState<MeetComment[]>([]);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentSection, setCommentSection] = useState("General");
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
+  const [attendanceColWidths, setAttendanceColWidths] = useState([120, 120]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([140, 140, 90, 90, 70, 70, 90]);
+  const [currentMatchColWidths, setCurrentMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90, 90]);
+  const [availableMatchColWidths, setAvailableMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90]);
+  const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
+  const lastSavedNameRef = useRef("");
+  const nameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [pairingsTeamId, setPairingsTeamId] = useState<string | null>(null);
+  const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
 
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
@@ -65,10 +97,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     minRestBouts: 2,
     restPenalty: 10,
   });
+  const [showAttendance, setShowAttendance] = useState(false);
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
-  const [showNotAttending, setShowNotAttending] = useState(true);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
@@ -124,8 +156,43 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
   }
+  function teamSymbol(id: string) {
+    const team = teams.find(t => t.id === id);
+    return team?.symbol ?? team?.name ?? id;
+  }
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
+  }
+  function contrastText(color?: string) {
+    if (!color || !color.startsWith("#")) return "#ffffff";
+    const hex = color.slice(1);
+    if (hex.length !== 6) return "#ffffff";
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return "#ffffff";
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#111111" : "#ffffff";
+  }
+  function statusLabel(status: AttendanceStatus | string | null | undefined) {
+    if (!status || status === "NO_RESPONSE") return "Coming";
+    if (status === "NOT_COMING") return "Not Coming";
+    if (status === "COMING") return "Coming";
+    if (status === "LATE") return "Arrive Late";
+    if (status === "EARLY") return "Leave Early";
+    if (status === "ABSENT") return "Not Coming";
+    return status;
+  }
+  function statusColor(status: AttendanceStatus | null | undefined) {
+    if (!status) return "#e6f6ea";
+    if (status === "COMING") return "#e6f6ea";
+    if (status === "NOT_COMING" || (status as string) === "ABSENT") return "#f0f0f0";
+    if (status === "LATE") return "#dff1ff";
+    if (status === "EARLY") return "#f3eadf";
+    return "#ffffff";
+  }
+  function isNotAttending(status: AttendanceStatus | null | undefined) {
+    return status === "NOT_COMING" || (status as string) === "ABSENT";
   }
   function wName(id: string) {
     const w = wMap[id];
@@ -211,15 +278,101 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (mRes.ok) {
       const meetJson = await mRes.json();
       setMeetName(meetJson.name ?? "");
+      lastSavedNameRef.current = meetJson.name ?? "";
       setMatSettings(s => ({ ...s, numMats: meetJson.numMats ?? s.numMats }));
       setSettings(s => ({
         ...s,
         allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
+        matchesPerWrestler: meetJson.matchesPerWrestler ?? s.matchesPerWrestler,
       }));
+      setMeetStatus(meetJson.status ?? "DRAFT");
+      setLastUpdatedAt(meetJson.updatedAt ?? null);
+      setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
     }
   }
 
-  useEffect(() => { void load(); }, [meetId]);
+  async function loadActivity() {
+    const [changesRes, commentsRes] = await Promise.all([
+      fetch(`/api/meets/${meetId}/changes`),
+      fetch(`/api/meets/${meetId}/comments`),
+    ]);
+    if (changesRes.ok) {
+      const changesJson = await changesRes.json().catch(() => []);
+      setChanges(Array.isArray(changesJson) ? changesJson : []);
+    }
+    if (commentsRes.ok) {
+      const commentsJson = await commentsRes.json().catch(() => []);
+      setComments(Array.isArray(commentsJson) ? commentsJson : []);
+    }
+  }
+
+
+  const canEdit = editAllowed && lockState.status === "acquired";
+
+  useEffect(() => { void load(); void loadActivity(); }, [meetId]);
+  useEffect(() => {
+    if (teams.length === 0) {
+      if (activeTeamId) setActiveTeamId(null);
+      return;
+    }
+    if (!activeTeamId || !teams.some(t => t.id === activeTeamId)) {
+      setActiveTeamId(teams[0]?.id ?? null);
+    }
+  }, [teams, activeTeamId]);
+  useEffect(() => {
+    if (teams.length === 0) {
+      if (pairingsTeamId) setPairingsTeamId(null);
+      return;
+    }
+    if (!pairingsTeamId || !teams.some(t => t.id === pairingsTeamId)) {
+      setPairingsTeamId(teams[0]?.id ?? null);
+    }
+  }, [teams, pairingsTeamId]);
+
+  useEffect(() => {
+    if (!canEdit) return;
+    const trimmed = meetName.trim();
+    if (trimmed.length < 2) return;
+    if (trimmed === lastSavedNameRef.current) return;
+    if (nameSaveTimeoutRef.current) {
+      clearTimeout(nameSaveTimeoutRef.current);
+    }
+    nameSaveTimeoutRef.current = setTimeout(() => {
+      void saveMeetName();
+    }, 800);
+    return () => {
+      if (nameSaveTimeoutRef.current) {
+        clearTimeout(nameSaveTimeoutRef.current);
+        nameSaveTimeoutRef.current = null;
+      }
+    };
+  }, [meetName, canEdit]);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!resizeRef.current) return;
+      const { kind, index, startX, startWidth } = resizeRef.current;
+      const nextWidth = Math.max(140, startWidth + (e.clientX - startX));
+      if (kind === "attendance") {
+        setAttendanceColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+      } else if (kind === "pairings") {
+        setPairingsColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+      } else if (kind === "current") {
+        setCurrentMatchColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+      } else {
+        setAvailableMatchColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+      }
+    }
+    function onMouseUp() {
+      resizeRef.current = null;
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
   useEffect(() => {
     if (!editAllowed) return;
     void acquireLock();
@@ -237,16 +390,53 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
   }, [meetId, editAllowed]);
 
-  const canEdit = editAllowed && lockState.status === "acquired";
-
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   const unmatched = wrestlers
-    .filter(w => !matchedIds.has(w.id) && w.status !== "ABSENT")
+    .filter(w => !matchedIds.has(w.id) && !isNotAttending(w.status))
     .sort((a, b) => a.weight - b.weight);
-  const notAttending = wrestlers
-    .filter(w => w.status === "ABSENT")
-    .sort((a, b) => a.weight - b.weight);
+  const rosterSorted = [...wrestlers].sort((a, b) => {
+    const teamA = teamName(a.teamId);
+    const teamB = teamName(b.teamId);
+    if (teamA !== teamB) return teamA.localeCompare(teamB);
+    const last = a.last.localeCompare(b.last);
+    if (last !== 0) return last;
+    return a.first.localeCompare(b.first);
+  });
+  const rosterFiltered = activeTeamId ? rosterSorted.filter(w => w.teamId === activeTeamId) : rosterSorted;
+  const attendanceTeamId = pairingsTeamId ?? activeTeamId;
+  const attendanceRoster = attendanceTeamId
+    ? rosterSorted.filter(w => w.teamId === attendanceTeamId)
+    : rosterSorted;
+  const attendingByTeam = pairingsTeamId
+    ? rosterSorted.filter(w => w.teamId === pairingsTeamId && !isNotAttending(w.status))
+    : rosterSorted.filter(w => !isNotAttending(w.status));
+  const matchCounts = bouts.reduce((acc, bout) => {
+    acc[bout.redId] = (acc[bout.redId] ?? 0) + 1;
+    acc[bout.greenId] = (acc[bout.greenId] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  useEffect(() => {
+    if (attendingByTeam.length === 0) {
+      setSelectedPairingId(null);
+      return;
+    }
+    if (!selectedPairingId || !attendingByTeam.some(w => w.id === selectedPairingId)) {
+      const nextId = attendingByTeam[0].id;
+      setSelectedPairingId(nextId);
+      void loadCandidates(nextId);
+    }
+  }, [attendingByTeam, selectedPairingId]);
+  const attendanceCounts = attendanceRoster.reduce(
+    (acc, w) => {
+      const status = w.status ?? null;
+      if (status === "NOT_COMING") acc.notComing += 1;
+      else acc.coming += 1;
+      return acc;
+    },
+    { coming: 0, notComing: 0 }
+  );
   const teamList = teams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
   const meetLabel = [meetName, teamList].filter(Boolean).join(" - ");
 
@@ -299,6 +489,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const json = await res.json();
     setMsg(`Created ${json.created} bouts`);
     await load();
+    await loadActivity();
     setTimeout(() => setMsg(""), 1500);
   }
 
@@ -313,6 +504,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const json = await res.json();
     setMatMsg(`Assigned ${json.assigned} bouts across ${json.numMats} mats`);
     await load();
+    await loadActivity();
     setTimeout(() => setMatMsg(""), 1500);
   }
 
@@ -337,14 +529,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setCandidates(json.candidates ?? []);
   }
 
-  async function updateWrestlerStatus(wrestlerId: string, status: "LATE" | "EARLY" | "ABSENT" | null) {
+  async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
     await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wrestlerId, status }),
     });
     await load();
-    if (status === "ABSENT") {
+    await loadActivity();
+    if (isNotAttending(status)) {
       setTarget(null);
       setCandidates([]);
     } else if (target?.id === wrestlerId) {
@@ -360,6 +553,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       body: JSON.stringify({ redId, greenId }),
     });
     await load();
+    await loadActivity();
     await loadCandidates(redId);
   }
 
@@ -367,7 +561,58 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!canEdit) return;
     await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
     await load();
+    await loadActivity();
     if (target) await loadCandidates(target.id);
+  }
+
+  async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
+    if (!canEdit) return;
+    await fetch(`/api/meets/${meetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    await load();
+    await loadActivity();
+  }
+
+  async function saveMeetName() {
+    if (!canEdit) return;
+    const trimmed = meetName.trim();
+    if (trimmed.length < 2) return;
+    if (trimmed === lastSavedNameRef.current) return;
+    await fetch(`/api/meets/${meetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    lastSavedNameRef.current = trimmed;
+    await load();
+    await loadActivity();
+  }
+
+  async function submitComment() {
+    const body = commentBody.trim();
+    if (!body) return;
+    await fetch(`/api/meets/${meetId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body, section: commentSection }),
+    });
+    setCommentBody("");
+    await load();
+    await loadActivity();
+  }
+
+  async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null) {
+    if (!canEdit) return;
+    await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, status: status ?? null, teamId: activeTeamId }),
+    });
+    await load();
+    await loadActivity();
   }
 
   return (
@@ -465,6 +710,93 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           margin-bottom: 12px;
           color: var(--warn);
         }
+        .panel {
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 12px;
+        }
+        .panel.fill {
+          display: flex;
+          flex-direction: column;
+          height: 320px;
+        }
+        .panel-title {
+          margin: 0 0 8px;
+        }
+        .panel-scroll {
+          max-height: 260px;
+          overflow-y: scroll;
+          padding-right: 6px;
+        }
+        .panel-scroll.fill {
+          flex: 1;
+          max-height: none;
+          min-height: 0;
+        }
+        .attendance-table {
+          table-layout: fixed;
+          width: fit-content;
+          max-width: 100%;
+        }
+        .pairings-table {
+          table-layout: fixed;
+          width: fit-content;
+          max-width: 100%;
+        }
+        .pairings-table tbody tr:hover {
+          background: #f7f9fb;
+        }
+        .attendance-th {
+          position: relative;
+          padding-right: 18px;
+        }
+        .pairings-th {
+          position: relative;
+          padding-right: 18px;
+        }
+        .col-resizer {
+          position: absolute;
+          right: 2px;
+          top: 0;
+          width: 10px;
+          height: 100%;
+          cursor: col-resize;
+          user-select: none;
+          background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
+        }
+        .tab-bar {
+          display: flex;
+          gap: 6px;
+          align-items: flex-end;
+          border-bottom: 1px solid var(--line);
+          margin-top: 8px;
+        }
+        .tab {
+          border: 1px solid var(--line);
+          border-bottom: none;
+          border-radius: 8px 8px 0 0;
+          background: #eef1f4;
+          padding: 6px 12px;
+          font-weight: 600;
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .tab.active {
+          background: #ffffff;
+          color: var(--ink);
+          box-shadow: 0 -2px 0 #ffffff inset;
+        }
+        .tag {
+          display: inline-block;
+          padding: 2px 6px;
+          border-radius: 6px;
+          border: 1px solid var(--line);
+          background: #f7f9fb;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+        }
         .wrestler-link {
           border: none;
           background: transparent;
@@ -489,7 +821,59 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
       </div>
 
-      <h2>{meetLabel || "this meet"}</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {!isEditingName && <h2 style={{ margin: 0 }}>{meetLabel || "this meet"}</h2>}
+          {!isEditingName && (
+            <button
+              className="nav-btn"
+              onClick={() => setIsEditingName(true)}
+              disabled={!canEdit}
+            >
+              Edit Name
+            </button>
+          )}
+          {isEditingName && (
+            <>
+              <input
+                value={meetName}
+                onChange={(e) => setMeetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setIsEditingName(false);
+                  }
+                }}
+                placeholder=""
+                disabled={!canEdit}
+                style={{ minWidth: 220 }}
+              />
+              <button
+                className="nav-btn"
+                onClick={() => setIsEditingName(false)}
+                disabled={!canEdit}
+              >
+                Done
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+          <span>Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b></span>
+          {lastUpdatedAt && (
+            <span>
+              Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
+            </span>
+          )}
+          <button
+            className="nav-btn"
+            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+            disabled={!canEdit}
+          >
+            {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
+          </button>
+        </div>
+      </div>
 
       {authMsg && (
         <div className="notice">
@@ -533,9 +917,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12, fontSize: 12 }}>
         <span>Legend:</span>
         <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
-        <span style={{ background: "#e6f6ea", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
+        <span style={{ background: "#e6f6ea", padding: "2px 6px", borderRadius: 6 }}>Coming</span>
+        <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
         <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
-        <span style={{ background: "#f0f0f0", padding: "2px 6px", borderRadius: 6 }}>Not attending</span>
+        <span style={{ background: "#f0f0f0", padding: "2px 6px", borderRadius: 6 }}>Not coming</span>
       </div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
@@ -546,111 +931,297 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         {matMsg && <span>{matMsg}</span>}
       </div>
 
-      <table cellPadding={2} style={{ borderCollapse: "collapse", tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: 60, minWidth: 60, maxWidth: 60 }} />
-          <col style={{ width: "20%" }} />
-          <col style={{ width: "20%" }} />
-        </colgroup>
-        <thead>
-          <tr>
-            <th align="center" style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", minWidth: 60, maxWidth: 60 }}>Bout #</th>
-            <th align="left" style={{ width: "20%" }}>Wrestler 1</th>
-            <th align="left" style={{ width: "20%" }}>Wrestler 2</th>
-          </tr>
-        </thead>
-        <tbody>
-          {bouts.map(b => {
-            const red = wMap[b.redId];
-            const green = wMap[b.greenId];
-            const conflictBg = conflictBoutIds.has(b.id) ? "#ffd6df" : undefined;
-            const redBg = red?.status === "ABSENT"
-              ? "#f0f0f0"
-              : red?.status === "EARLY"
-                ? "#f3eadf"
-                : red?.status === "LATE"
-                  ? "#e6f6ea"
-                  : conflictBg;
-            const greenBg = green?.status === "ABSENT"
-              ? "#f0f0f0"
-              : green?.status === "EARLY"
-                ? "#f3eadf"
-                : green?.status === "LATE"
-                  ? "#e6f6ea"
-                  : conflictBg;
-            return (
-            <tr key={b.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", minWidth: 60, maxWidth: 60, textAlign: "center" }}>
-                {boutNumber(b.mat, b.order)}
-              </td>
-              <td style={{ background: redBg }}>
-                <button className="wrestler-link" onClick={() => loadCandidates(b.redId)} style={{ textAlign: "left" }}>
-                  {wName(b.redId)}
-                </button>
-              </td>
-              <td style={{ background: greenBg }}>
-                <button className="wrestler-link" onClick={() => loadCandidates(b.greenId)} style={{ textAlign: "left" }}>
-                  {wName(b.greenId)}
-                </button>
-              </td>
-            </tr>
-          )})}
-        </tbody>
-      </table>
-
-      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
-        <div style={{ flex: 2 }}>
-          <h3>Unmatched</h3>
-          <div style={{ display: "grid", gap: 6 }}>
-            {unmatched.map(w => (
-              <button key={w.id} className="wrestler-link" onClick={() => loadCandidates(w.id)} style={{ textAlign: "left" }}>
-                {wName(w.id)}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 20 }}>
+        <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0 }}>Pairings</h3>
+          </div>
+          <div className="tab-bar">
+            {teams.map(team => {
+              const isActive = pairingsTeamId === team.id;
+              const activeTextColor = contrastText(team.color);
+              return (
+              <button
+                key={team.id}
+                onClick={() => setPairingsTeamId(team.id)}
+                className={`tab ${pairingsTeamId === team.id ? "active" : ""}`}
+                style={{
+                  background: isActive
+                    ? (team.color ?? "#ffffff")
+                    : team.color ? `${team.color}22` : undefined,
+                  borderColor: team.color ?? undefined,
+                  color: isActive && team.color ? activeTextColor : team.color ?? undefined,
+                  borderWidth: isActive ? 2 : undefined,
+                  fontWeight: isActive ? 700 : undefined,
+                  boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
+                }}
+              >
+                {team.symbol ? `${team.symbol} - ${team.name}` : team.name}
               </button>
-            ))}
-            {unmatched.length === 0 && <div>None</div>}
+            );
+            })}
+          </div>
+        <div style={{ marginTop: 12, height: 320, overflowY: "auto" }}>
+        <table className="pairings-table" cellPadding={6} style={{ borderCollapse: "collapse" }}>
+            <colgroup>
+              <col style={{ width: pairingsColWidths[0] }} />
+              <col style={{ width: pairingsColWidths[1] }} />
+              <col style={{ width: pairingsColWidths[2] }} />
+              <col style={{ width: pairingsColWidths[3] }} />
+              <col style={{ width: pairingsColWidths[4] }} />
+              <col style={{ width: pairingsColWidths[5] }} />
+              <col style={{ width: pairingsColWidths[6] }} />
+            </colgroup>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                {["Last", "First", "Age", "Weight", "Exp", "Skill", "Matches"].map((label, index) => (
+                  <th key={label} className="pairings-th">
+                    {label}
+                    <span
+                      className="col-resizer"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        resizeRef.current = {
+                          kind: "pairings",
+                          index,
+                          startX: e.clientX,
+                          startWidth: pairingsColWidths[index],
+                        };
+                      }}
+                    />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+            {attendingByTeam
+              .sort((a, b) => {
+                const last = a.last.localeCompare(b.last);
+                if (last !== 0) return last;
+                return a.first.localeCompare(b.first);
+              })
+              .map(w => (
+                <tr
+                  key={w.id}
+                  onClick={() => {
+                    setSelectedPairingId(w.id);
+                    void loadCandidates(w.id);
+                  }}
+                  style={{
+                    borderTop: "1px solid #eee",
+                    background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
+                    outline: selectedPairingId === w.id ? "2px solid #1e88e5" : undefined,
+                    outlineOffset: selectedPairingId === w.id ? "-2px" : undefined,
+                    cursor: "pointer",
+                  }}
+                >
+                    <td>{w.last}</td>
+                    <td>{w.first}</td>
+                    <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
+                    <td>{w.weight}</td>
+                    <td>{w.experienceYears}</td>
+                    <td>{w.skill}</td>
+                    <td>{matchCounts[w.id] ?? 0}</td>
+                  </tr>
+                ))}
+              {attendingByTeam.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ color: "#666" }}>No attending wrestlers.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+          <div style={{ marginTop: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0 }}>
+                Attendance {attendanceTeamId ? `- ${teams.find(t => t.id === attendanceTeamId)?.name ?? ""}` : ""}
+              </h3>
+              <button className="nav-btn" onClick={() => setShowAttendance(s => !s)}>
+                {showAttendance ? "Hide" : "Show"}
+              </button>
+            </div>
+            {showAttendance && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  <button
+                    className="nav-btn"
+                    onClick={() => bulkAttendance("SET", null)}
+                    disabled={!canEdit}
+                  >
+                    Set all coming
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+                  Coming: {attendanceCounts.coming} - Not Coming: {attendanceCounts.notComing}
+                </div>
+                <table className="attendance-table" cellPadding={6} style={{ borderCollapse: "collapse" }}>
+                  <colgroup>
+                    <col style={{ width: attendanceColWidths[0] }} />
+                    <col style={{ width: attendanceColWidths[1] }} />
+                    <col style={{ width: "100%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                      {[
+                        { label: "Last", resizable: true },
+                        { label: "First", resizable: true },
+                        { label: "Status", resizable: false },
+                      ].map((col, index) => (
+                        <th key={col.label} className="attendance-th">
+                          {col.label}
+                          {col.resizable && (
+                            <span
+                              className="col-resizer"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                resizeRef.current = {
+                                  kind: "attendance",
+                                  index,
+                                  startX: e.clientX,
+                                  startWidth: attendanceColWidths[index],
+                                };
+                              }}
+                            />
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceRoster.map(w => {
+                      const isComing = !w.status || w.status === "COMING";
+                      const isNotComing = w.status === "NOT_COMING";
+                      const isLate = w.status === "LATE";
+                      const isEarly = w.status === "EARLY";
+                      const nameBg = w.status === "NOT_COMING"
+                        ? "#f0f0f0"
+                        : w.status === "LATE" || w.status === "EARLY"
+                          ? statusColor(w.status)
+                          : undefined;
+                      const nameColor = w.status === "NOT_COMING" ? "#8a8a8a" : undefined;
+                      const nameDecoration = w.status === "NOT_COMING" ? "line-through" : undefined;
+                      const activeStyle = (active: boolean, base: React.CSSProperties) => (
+                        active
+                          ? {
+                              ...base,
+                              fontWeight: 700,
+                              opacity: 1,
+                              color: "#1d232b",
+                              WebkitTextFillColor: "#1d232b",
+                            }
+                          : base
+                      );
+                      return (
+                        <tr key={w.id} style={{ borderTop: "1px solid #eee" }}>
+                          <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.last}</td>
+                          <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.first}</td>
+                          <td>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              <button
+                                onClick={() => updateWrestlerStatus(w.id, null)}
+                                disabled={!canEdit || isComing}
+                                style={activeStyle(isComing, { background: "#e6f6ea", borderColor: "#bcd8c1" })}
+                              >
+                                Coming
+                              </button>
+                              <button
+                                onClick={() => updateWrestlerStatus(w.id, "NOT_COMING")}
+                                disabled={!canEdit || isNotComing}
+                                style={activeStyle(isNotComing, { background: "#f0f0f0", borderColor: "#cfcfcf" })}
+                              >
+                                Not Coming
+                              </button>
+                              <button
+                                onClick={() => updateWrestlerStatus(w.id, "LATE")}
+                                disabled={!canEdit || isLate}
+                                style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
+                              >
+                                Arrive Late
+                              </button>
+                              <button
+                                onClick={() => updateWrestlerStatus(w.id, "EARLY")}
+                                disabled={!canEdit || isEarly}
+                                style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
+                              >
+                                Leave Early
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {attendanceRoster.length === 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ color: "#666" }}>No wrestlers on this team.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 
-        <div style={{ flex: 3, border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <h3>Current Matches For:</h3>
-          {!target && <div>Select a wrestler (from Unmatched or a bout) to see opponent options.</div>}
+        <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0 }}>Current Matches For</h3>
+              {target && (
+                <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 22, fontWeight: 600 }}>
+                  {target.first} {target.last} ({teamName(target.teamId)})
+                  <span style={{ width: 12, height: 12, background: teamColor(target.teamId), display: "inline-block" }} />
+                </span>
+              )}
+            </div>
+            {target && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => updateWrestlerStatus(target.id, "NOT_COMING")} disabled={!canEdit || target.status === "NOT_COMING"}>
+                  Not Coming
+                </button>
+                <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
+                  Arrive Late
+                </button>
+                <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
+                  Leave Early
+                </button>
+              </div>
+            )}
+          </div>
+          {!target && <div>Select a wrestler to see opponent options.</div>}
 
           {target && (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-                <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
-                  <b>{target.first} {target.last} ({teamName(target.teamId)})</b>
-                  <span style={{ width: 12, height: 12, background: teamColor(target.teamId), display: "inline-block" }} />
-                </span>{" "}
-                age {ageYears(target.birthdate)?.toFixed(1) ?? ""}, wt {target.weight}, exp {target.experienceYears}, skill {target.skill}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
-                    Arrive Late
-                  </button>
-                  <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
-                    Leave Early
-                  </button>
-                  <button onClick={() => updateWrestlerStatus(target.id, "ABSENT")} disabled={!canEdit || target.status === "ABSENT"}>
-                    Not Attending
-                  </button>
-                  <button onClick={() => updateWrestlerStatus(target.id, null)} disabled={!canEdit || !target.status}>
-                    Clear Status
-                  </button>
-                </div>
-              </div>
               <div style={{ marginBottom: 10 }}>
-                <table cellPadding={4} style={{ borderCollapse: "collapse", width: "100%" }}>
+                <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                  <colgroup>
+                    {currentMatchColWidths.map((w, idx) => (
+                      <col key={`current-col-${idx}`} style={{ width: w }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th align="left">Current Matches</th>
-                      <th align="right">Wt</th>
-                      <th align="right">Wt Δ</th>
-                      <th align="right">Wt %</th>
-                      <th align="right">Age</th>
-                      <th align="right">Age Δ</th>
-                      <th align="right">Exp Δ</th>
-                      <th align="right">Skill Δ</th>
-                      <th align="left">Actions</th>
+                      {["Last", "First", "Team", "Age", "Weight", "Exp", "Skill", "Matches", "Bout #"].map((label, index) => (
+                        <th
+                          key={label}
+                          align={label === "Last" || label === "First" || label === "Team" ? "left" : "right"}
+                          className="pairings-th"
+                        >
+                          {label}
+                          <span
+                            className="col-resizer"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              resizeRef.current = {
+                                kind: "current",
+                                index,
+                                startX: e.clientX,
+                                startWidth: currentMatchColWidths[index],
+                              };
+                            }}
+                          />
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -662,43 +1233,67 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     {currentMatches.map(b => {
                       const opponentId = b.redId === target.id ? b.greenId : b.redId;
                       const opponent = wMap[opponentId];
-                      const wDiff = opponent ? (target.weight - opponent.weight) : null;
-                      const wPct = opponent ? weightPctDiffSigned(opponent.weight, target.weight) : null;
-                      const opponentAge = ageYears(opponent?.birthdate);
-                      const ageGapDays = opponent ? signedDaysBetween(opponent.birthdate, target.birthdate) : null;
-                      const expGap = opponent ? (target.experienceYears - opponent.experienceYears) : null;
-                      const skillGap = opponent ? (target.skill - opponent.skill) : null;
                       return (
-                        <tr key={b.id} style={{ borderTop: "1px solid #eee" }}>
-                          <td>{wName(opponentId)}</td>
-                          <td align="right">{opponent?.weight ?? ""}</td>
-                          <td align="right">{wDiff == null ? "" : wDiff.toFixed(1)}</td>
-                          <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
-                          <td align="right">{opponentAge == null ? "" : opponentAge.toFixed(1)}</td>
-                          <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
-                          <td align="right">{expGap == null ? "" : expGap}</td>
-                          <td align="right">{skillGap == null ? "" : skillGap}</td>
+                        <tr
+                          key={b.id}
+                          onClick={() => {
+                            if (!canEdit) return;
+                            removeBout(b.id);
+                          }}
+                          style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                        >
+                          <td>{opponent?.last ?? ""}</td>
+                          <td>{opponent?.first ?? ""}</td>
                           <td>
-                            <button onClick={() => removeBout(b.id)} disabled={!canEdit}>Remove</button>
+                            {opponent && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ width: 10, height: 10, background: teamColor(opponent.teamId), display: "inline-block" }} />
+                                {teamSymbol(opponent.teamId)}
+                              </span>
+                            )}
                           </td>
+                          <td align="right">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
+                          <td align="right">{opponent?.weight ?? ""}</td>
+                          <td align="right">{opponent?.experienceYears ?? ""}</td>
+                          <td align="right">{opponent?.skill ?? ""}</td>
+                          <td align="right">{matchCounts[opponentId] ?? 0}</td>
+                          <td align="right">{boutNumber(b.mat, b.order)}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-              <table cellPadding={4} style={{ borderCollapse: "collapse", width: "100%" }}>
-                    <thead>
-                      <tr>
-                        <th align="left">Available Matches</th>
-                    <th align="right">Wt</th>
-                    <th align="right">Wt Δ</th>
-                    <th align="right">Wt %</th>
-                    <th align="right">Age (yr)</th>
-                    <th align="right">Age Δ(yr)</th>
-                    <th align="right">Exp Δ</th>
-                    <th align="right">Skill Δ</th>
-                    <th align="left">Actions</th>
+              <h3 style={{ margin: "10px 0 6px" }}>Possible additional matches:</h3>
+              <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                <colgroup>
+                  {availableMatchColWidths.map((w, idx) => (
+                    <col key={`available-col-${idx}`} style={{ width: w }} />
+                  ))}
+                </colgroup>
+                <thead>
+                  <tr>
+                    {["Last", "First", "Team", "Age", "Weight", "Exp", "Skill", "Matches"].map((label, index) => (
+                      <th
+                        key={label}
+                        align={label === "Last" || label === "First" || label === "Team" ? "left" : "right"}
+                        className="pairings-th"
+                      >
+                        {label}
+                        <span
+                          className="col-resizer"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            resizeRef.current = {
+                              kind: "available",
+                              index,
+                              startX: e.clientX,
+                              startWidth: availableMatchColWidths[index],
+                            };
+                          }}
+                        />
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -712,36 +1307,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       return tFirst === oFirst;
                     })
                     .map((c: any) => {
-                    const o = c.opponent as Wrestler;
-                    const wDiff = target.weight - o.weight;
-                    const wPct = weightPctDiffSigned(o.weight, target.weight);
-                    const opponentAge = ageYears(o.birthdate);
-                    const ageGapDays = signedDaysBetween(o.birthdate, target.birthdate);
-                    const expGap = target.experienceYears - o.experienceYears;
-                    const skillGap = target.skill - o.skill;
-                    return (
-                      <tr key={o.id} style={{ borderTop: "1px solid #eee" }}>
-                        <td>
-                          <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
-                            {o.first} {o.last} ({teamName(o.teamId)})
-                            <span style={{ width: 12, height: 12, background: teamColor(o.teamId), display: "inline-block" }} />
-                          </span>
-                        </td>
-                        <td align="right">{o.weight}</td>
-                        <td align="right">{Number.isFinite(wDiff) ? wDiff.toFixed(1) : ""}</td>
-                        <td align="right">{wPct == null ? "" : `${wPct.toFixed(1)}%`}</td>
-                        <td align="right">{opponentAge == null ? "" : opponentAge.toFixed(1)}</td>
-                        <td align="right">{ageGapDays == null ? "" : (ageGapDays / daysPerYear).toFixed(1)}</td>
-                        <td align="right">{Number.isFinite(expGap) ? expGap : ""}</td>
-                        <td align="right">{Number.isFinite(skillGap) ? skillGap : ""}</td>
-                        <td>
-                          <button onClick={() => forceMatch(target.id, o.id)} disabled={!canEdit}>Add</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      const o = c.opponent as Wrestler;
+                      return (
+                        <tr
+                          key={o.id}
+                          onClick={() => {
+                            if (!canEdit) return;
+                            forceMatch(target.id, o.id);
+                          }}
+                          style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                        >
+                          <td>{o.last}</td>
+                          <td>{o.first}</td>
+                          <td>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ width: 10, height: 10, background: teamColor(o.teamId), display: "inline-block" }} />
+                              {teamSymbol(o.teamId)}
+                            </span>
+                          </td>
+                          <td align="right">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
+                          <td align="right">{o.weight}</td>
+                          <td align="right">{o.experienceYears}</td>
+                          <td align="right">{o.skill}</td>
+                          <td align="right">{matchCounts[o.id] ?? 0}</td>
+                        </tr>
+                      );
+                    })}
                   {candidates.length === 0 && (
-                    <tr><td colSpan={9}>No candidates meet the current limits.</td></tr>
+                    <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -750,36 +1343,58 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
       </div>
 
-      <div style={{ marginTop: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <h3 style={{ margin: 0 }}>Not Attending</h3>
-          <label style={{ fontSize: 12 }}>
-            <input
-              type="checkbox"
-              checked={showNotAttending}
-              onChange={e => setShowNotAttending(e.target.checked)}
-            />{" "}
-            Show
-          </label>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12, marginTop: 20 }}>
+        <div className="panel fill">
+          <h3 className="panel-title">Change Log</h3>
+          <div className="panel-scroll fill" style={{ display: "grid", gap: 8, fontSize: 13 }}>
+            {changes.map(change => (
+              <div key={change.id}>
+                <div style={{ fontWeight: 600 }}>{change.actor?.username ?? "unknown"}</div>
+                <div>{change.message}</div>
+                <div style={{ fontSize: 11, color: "#666" }}>{new Date(change.createdAt).toLocaleString()}</div>
+              </div>
+            ))}
+            {changes.length === 0 && <div style={{ color: "#666", fontSize: 12 }}>No changes yet.</div>}
+          </div>
         </div>
-        {showNotAttending && (
-          notAttending.length > 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
-              {notAttending.map(w => (
-                <div key={w.id} style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8 }}>
-                  <div>{w.first} {w.last} ({teamName(w.teamId)})</div>
-                  <div style={{ marginTop: 6 }}>
-                    <button onClick={() => updateWrestlerStatus(w.id, null)} disabled={!canEdit}>
-                      Mark Attending
-                    </button>
-                  </div>
+
+        <div className="panel fill">
+          <h3 className="panel-title">Comments</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ fontSize: 12 }}>Section</label>
+            <select value={commentSection} onChange={(e) => setCommentSection(e.target.value)} disabled={!canEdit}>
+              <option value="General">General</option>
+              <option value="Schedule">Schedule</option>
+              <option value="Mat Rules">Mat Rules</option>
+              <option value="Roster">Roster</option>
+              <option value="Pairings">Pairings</option>
+              <option value="Suggestion">Suggestion</option>
+            </select>
+            <textarea
+              rows={3}
+              value={commentBody}
+              onChange={(e) => setCommentBody(e.target.value)}
+              placeholder="Leave a note for other coaches..."
+              disabled={!canEdit}
+            />
+            <button onClick={submitComment} disabled={!canEdit || !commentBody.trim()}>
+              Add Comment
+            </button>
+          </div>
+          <div className="panel-scroll fill" style={{ display: "grid", gap: 10, marginTop: 12, fontSize: 13 }}>
+            {comments.map(comment => (
+              <div key={comment.id} style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 600 }}>{comment.author?.username ?? "unknown"}</div>
+                  {comment.section && <span className="tag">{comment.section}</span>}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, color: "#666" }}>None</div>
-          )
-        )}
+                <div style={{ marginTop: 6 }}>{comment.body}</div>
+                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(comment.createdAt).toLocaleString()}</div>
+              </div>
+            ))}
+            {comments.length === 0 && <div style={{ color: "#666", fontSize: 12 }}>No comments yet.</div>}
+          </div>
+        </div>
       </div>
     </main>
   );

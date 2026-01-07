@@ -17,7 +17,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
     where: { meetId },
     select: { wrestlerId: true, status: true },
   });
-  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+  const absentIds = new Set(statuses.filter(s => s.status === "NOT_COMING" || s.status === "ABSENT").map(s => s.wrestlerId));
 
   const filteredBouts = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
 

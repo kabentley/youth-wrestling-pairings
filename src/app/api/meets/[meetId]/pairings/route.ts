@@ -9,7 +9,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
   });
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId, status: "ABSENT" },
+    where: { meetId, status: { in: ["NOT_COMING"] } },
     select: { wrestlerId: true },
   });
   const absentIds = new Set(statuses.map(s => s.wrestlerId));

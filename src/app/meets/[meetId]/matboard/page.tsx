@@ -4,7 +4,7 @@ import { use, useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
-type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "ABSENT" | null };
+type Wrestler = { id: string; first: string; last: string; weight: number; teamId: string; status?: "LATE" | "EARLY" | "NOT_COMING" | "ABSENT" | null };
 type Bout = {
   id: string;
   redId: string;
@@ -170,7 +170,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
     for (const b of bouts) {
       const r = wMap[b.redId];
       const g = wMap[b.greenId];
-      if (r?.status === "ABSENT" || g?.status === "ABSENT") continue;
+      if (r?.status === "NOT_COMING" || r?.status === "ABSENT" || g?.status === "NOT_COMING" || g?.status === "ABSENT") continue;
       const m = b.mat ?? 1;
       const k = keyMat(Math.min(Math.max(1, m), numMats));
       out[k] ??= [];

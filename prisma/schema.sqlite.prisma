@@ -51,6 +51,7 @@ model Wrestler {
 
   createdAt       DateTime @default(now())
   meetStatuses    MeetWrestlerStatus[]
+  meetStatusHistory MeetWrestlerStatusHistory[] @relation("WrestlerStatusHistory")
   parentLinks     UserChild[]
   wonBouts        Bout[]   @relation("BoutWinner")
 
@@ -71,6 +72,10 @@ model Meet {
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
   matchesPerWrestler Int @default(1)
+  status    String    @default("DRAFT")
+  updatedAt DateTime  @updatedAt
+  updatedById String?
+  updatedBy User?     @relation("MeetUpdatedBy", fields: [updatedById], references: [id])
 
   lockedById    String?
   lockedBy      User?    @relation("MeetLock", fields: [lockedById], references: [id])
@@ -81,6 +86,9 @@ model Meet {
   bouts     Bout[]
   excluded  ExcludedPair[]
   wrestlerStatuses MeetWrestlerStatus[]
+  meetChanges MeetChange[]
+  meetComments MeetComment[]
+  meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
 }
 
 model MeetWrestlerStatus {
@@ -97,6 +105,52 @@ model MeetWrestlerStatus {
   @@unique([meetId, wrestlerId])
   @@index([meetId])
   @@index([wrestlerId])
+}
+
+model MeetWrestlerStatusHistory {
+  id         String   @id @default(cuid())
+  meetId     String
+  wrestlerId String
+  status     String
+  changedById String
+  createdAt  DateTime @default(now())
+
+  meet     Meet     @relation("MeetStatusHistory", fields: [meetId], references: [id], onDelete: Cascade)
+  wrestler Wrestler @relation("WrestlerStatusHistory", fields: [wrestlerId], references: [id], onDelete: Cascade)
+  changedBy User    @relation("MeetStatusChangedBy", fields: [changedById], references: [id], onDelete: Cascade)
+
+  @@index([meetId])
+  @@index([wrestlerId])
+  @@index([changedById])
+}
+
+model MeetChange {
+  id        String   @id @default(cuid())
+  meetId    String
+  actorId   String
+  message   String
+  createdAt DateTime @default(now())
+
+  meet  Meet @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  actor User @relation("MeetChangeActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([meetId])
+  @@index([actorId])
+}
+
+model MeetComment {
+  id        String   @id @default(cuid())
+  meetId    String
+  authorId  String
+  body      String
+  section   String?
+  createdAt DateTime @default(now())
+
+  meet   Meet @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  author User @relation("MeetCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([meetId])
+  @@index([authorId])
 }
 
 model TeamMatRule {
@@ -190,6 +244,10 @@ model User {
   accounts      Account[]
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
+  updatedMeets  Meet[]   @relation("MeetUpdatedBy")
+  meetChanges   MeetChange[] @relation("MeetChangeActor")
+  meetComments  MeetComment[] @relation("MeetCommentAuthor")
+  meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   children      UserChild[]
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]

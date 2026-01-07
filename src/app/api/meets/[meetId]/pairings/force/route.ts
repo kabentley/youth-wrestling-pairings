@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
@@ -19,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const body = BodySchema.parse(await req.json());
   const absent = await db.meetWrestlerStatus.findMany({
-    where: { meetId, status: "ABSENT", wrestlerId: { in: [body.redId, body.greenId] } },
+    where: { meetId, status: { in: ["NOT_COMING"] }, wrestlerId: { in: [body.redId, body.greenId] } },
     select: { wrestlerId: true },
   });
   if (absent.length > 0) {
@@ -48,5 +49,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     },
   });
 
+  const [red, green] = await db.wrestler.findMany({
+    where: { id: { in: [body.redId, body.greenId] } },
+    select: { id: true, first: true, last: true },
+  });
+  const redName = red ? `${red.first} ${red.last}` : "wrestler 1";
+  const greenName = green ? `${green.first} ${green.last}` : "wrestler 2";
+  await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
   return NextResponse.json(bout);
 }

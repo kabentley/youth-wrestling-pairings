@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
 
 const MeetSchema = z.object({
@@ -18,13 +19,16 @@ const MeetSchema = z.object({
 export async function GET() {
   const meets = await db.meet.findMany({
     orderBy: { date: "desc" },
-    include: { meetTeams: { include: { team: true } } },
+    include: {
+      meetTeams: { include: { team: true } },
+      updatedBy: { select: { username: true } },
+    },
   });
   return NextResponse.json(meets);
 }
 
 export async function POST(req: Request) {
-  await requireRole("COACH");
+  const { user } = await requireRole("COACH");
   const body = await req.json();
   const parsed = MeetSchema.parse(body);
   if (parsed.homeTeamId && !parsed.teamIds.includes(parsed.homeTeamId)) {
@@ -40,10 +44,13 @@ export async function POST(req: Request) {
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
       matchesPerWrestler: parsed.matchesPerWrestler,
+      updatedById: user.id,
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },
     include: { meetTeams: { include: { team: true } } },
   });
+
+  await logMeetChange(meet.id, user.id, "Meet created.");
 
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });

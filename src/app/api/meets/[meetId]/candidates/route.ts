@@ -46,7 +46,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
     select: { wrestlerId: true, status: true },
   });
   const statusById = new Map(statuses.map(s => [s.wrestlerId, s.status]));
-  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+  const absentIds = new Set(
+    statuses
+      .filter(s => s.status === "NOT_COMING")
+      .map(s => s.wrestlerId)
+  );
 
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({

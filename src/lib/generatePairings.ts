@@ -32,7 +32,11 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     where: { meetId },
     select: { wrestlerId: true, status: true },
   });
-  const absentIds = new Set(statuses.filter(s => s.status === "ABSENT").map(s => s.wrestlerId));
+  const absentIds = new Set(
+    statuses
+      .filter(s => s.status === "NOT_COMING")
+      .map(s => s.wrestlerId)
+  );
   const wrestlers = meetTeams
     .flatMap(mt => mt.team.wrestlers)
     .filter(w => w.active && !absentIds.has(w.id));

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assignMatsForMeet } from "@/lib/assignMats";
+import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
@@ -23,5 +24,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const body = BodySchema.parse(await req.json());
   const result = await assignMatsForMeet(meetId, body);
+  await logMeetChange(meetId, user.id, "Assigned mats.");
   return NextResponse.json(result);
 }

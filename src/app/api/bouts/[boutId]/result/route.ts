@@ -27,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
 
   const absent = await db.meetWrestlerStatus.findMany({
-    where: { meetId: bout.meetId, status: "ABSENT" },
+    where: { meetId: bout.meetId, status: { in: ["NOT_COMING"] } },
     select: { wrestlerId: true },
   });
   const absentIds = new Set(absent.map(a => a.wrestlerId));
