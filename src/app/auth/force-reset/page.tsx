@@ -1,21 +1,28 @@
 "use client";
 
-import Link from "next/link";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-export default function ResetPasswordPage() {
+export default function ForceResetPage() {
+  const { status, data: session } = useSession();
+  const router = useRouter();
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [hasLogo, setHasLogo] = useState(false);
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [method, setMethod] = useState<"email" | "sms">("email");
-  const [code, setCode] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const isDev = process.env.NODE_ENV !== "production";
+
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.mustResetPassword === false) {
+      router.replace("/auth/post-login");
+    }
+  }, [status, session, router]);
 
   useEffect(() => {
     let active = true;
@@ -34,24 +41,8 @@ export default function ResetPasswordPage() {
   async function submit() {
     setErr("");
     setMsg("");
-    if (!username.trim()) {
-      setErr("Enter your username.");
-      return;
-    }
-    if (method === "email" && !email.trim()) {
-      setErr("Enter your email.");
-      return;
-    }
-    if (method === "sms" && !phone.trim()) {
-      setErr("Enter your phone.");
-      return;
-    }
-    if (!code.trim()) {
-      setErr("Enter the reset code.");
-      return;
-    }
-    if (password.length < 8) {
-      setErr("Password must be at least 8 characters and include a symbol.");
+    if (!password.trim()) {
+      setErr("Enter a new password.");
       return;
     }
     if (!isStrongPassword(password)) {
@@ -63,22 +54,23 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    const res = await fetch("/api/auth/reset-password", {
+    const res = await fetch("/api/auth/force-reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, code, password }),
+      body: JSON.stringify({ username, currentPassword, password }),
     });
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setErr(json?.error ?? "Unable to reset password.");
+      const message = json?.error ?? "Unable to reset password. Please sign in again.";
+      setErr(message);
+      if (res.status === 401) {
+        window.location.href = "/auth/signin?callbackUrl=/auth/force-reset";
+      }
       return;
     }
 
-    setMsg("Password updated. You can sign in now.");
-    setEmail("");
-    setCode("");
-    setPassword("");
-    setConfirm("");
+    setMsg("Password updated. Please sign in again.");
+    await signOut({ callbackUrl: "/auth/signin" });
   }
 
   return (
@@ -90,8 +82,10 @@ export default function ResetPasswordPage() {
           <h1 className="auth-title">{leagueName}</h1>
         </div>
         <div className="auth-card">
-          <h2>Reset Password</h2>
-
+          <h2>Update Password</h2>
+          <p className="auth-muted">
+            You must update your password before continuing.
+          </p>
           <form
             className="auth-form"
             onSubmit={(e) => {
@@ -99,53 +93,17 @@ export default function ResetPasswordPage() {
               void submit();
             }}
           >
-            <label className="auth-radio">
-              <input
-                type="radio"
-                name="method"
-                value="email"
-                checked={method === "email"}
-                onChange={() => setMethod("email")}
-              />{" "}
-              Email
-            </label>
-            <label className="auth-radio">
-              <input
-                type="radio"
-                name="method"
-                value="sms"
-                checked={method === "sms"}
-                onChange={() => setMethod("sms")}
-              />{" "}
-              SMS
-            </label>
-
             <input
               type="text"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
-            {method === "email" ? (
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            ) : (
-              <input
-                type="tel"
-                placeholder="Phone (E.164)"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            )}
             <input
-              type="text"
-              placeholder="Reset code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
+              type={showPassword ? "text" : "password"}
+              placeholder="Current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
             />
             <input
               type={showPassword ? "text" : "password"}
@@ -176,21 +134,29 @@ export default function ResetPasswordPage() {
               />{" "}
               Show password
             </label>
-
-            <button className="auth-btn" type="submit">Reset Password</button>
-
+            <button className="auth-btn" type="submit">
+              Update Password
+            </button>
+            <div className="auth-muted">
+              Enter your username and current password to continue.
+            </div>
+            {status === "loading" && (
+              <div className="auth-muted">Signing you in...</div>
+            )}
+            {status === "unauthenticated" && (
+              <a className="auth-link" href="/auth/signin">Back to sign in</a>
+            )}
             {err && <div className="auth-error">{err}</div>}
             {msg && <div className="auth-success">{msg}</div>}
-
-            <div className="auth-links">
-              <Link href="/auth/forgot-password">Send a new code</Link> ·{" "}
-              <Link href="/auth/signin">Back to sign in</Link>
-            </div>
           </form>
         </div>
       </div>
     </main>
   );
+}
+
+function isStrongPassword(password: string) {
+  return password.length >= 8 && /[^A-Za-z0-9]/.test(password);
 }
 
 function passwordStrength(password: string) {
@@ -201,10 +167,6 @@ function passwordStrength(password: string) {
   if (!longEnough) return { pct: 40, color: "#e57373", label: "Too short" };
   if (!hasSymbol) return { pct: 75, color: "#f2b705", label: "Add a symbol" };
   return { pct: 100, color: "#2e7d32", label: "Strong" };
-}
-
-function isStrongPassword(password: string) {
-  return password.length >= 8 && /[^A-Za-z0-9]/.test(password);
 }
 
 const authStyles = `
@@ -256,10 +218,15 @@ const authStyles = `
     box-shadow: 0 12px 24px rgba(29, 35, 43, 0.08);
   }
   .auth-card h2 {
-    margin: 0 0 10px;
+    margin: 0 0 6px;
     font-family: "Oswald", Arial, sans-serif;
     letter-spacing: 0.6px;
     text-transform: uppercase;
+  }
+  .auth-muted {
+    margin: 0 0 14px;
+    color: var(--muted);
+    font-size: 13px;
   }
   .auth-form {
     display: grid;
@@ -297,11 +264,7 @@ const authStyles = `
     color: var(--success);
     font-size: 12px;
   }
-  .auth-links {
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .auth-links a {
+  .auth-link {
     color: var(--accent);
     text-decoration: none;
     font-weight: 600;

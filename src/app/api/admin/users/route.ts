@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -6,11 +7,10 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 
 const CreateSchema = z.object({
-  username: z.string().trim().min(3),
+  username: z.string().trim().min(6),
   email: z.string().trim().email(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   name: z.string().optional(),
-  password: z.string().min(6),
   role: z.enum(["ADMIN", "COACH", "PARENT"]).default("COACH"),
   teamId: z.string().nullable().optional(),
 });
@@ -50,7 +50,7 @@ export async function GET(req: Request) {
   const [items, total] = await Promise.all([
     db.user.findMany({
       where,
-      select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
+      select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true, lastLoginAt: true },
       orderBy: { username: "asc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -79,19 +79,82 @@ export async function POST(req: Request) {
   if (body.role === "PARENT" && !body.teamId) {
     return NextResponse.json({ error: "Parents must be assigned a team" }, { status: 400 });
   }
-  const passwordHash = await bcrypt.hash(body.password, 10);
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 10);
   const user = await db.user.create({
     data: {
       username: body.username.toLowerCase(),
       email,
-      phone,
+      phone: phone === "" ? "" : phone,
       name: body.name,
       passwordHash,
       role: body.role,
-      teamId: body.role === "ADMIN" ? null : body.teamId,
-      phone: phone === "" ? "" : phone,
+      ...(body.role === "ADMIN"
+        ? {}
+        : body.teamId
+          ? { team: { connect: { id: body.teamId } } }
+          : {}),
+      mustResetPassword: true,
     },
-    select: { id: true, username: true, email: true, name: true, role: true, teamId: true },
+    select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
   });
+  try {
+    const team = body.teamId
+      ? await db.team.findUnique({ where: { id: body.teamId }, select: { name: true, symbol: true } })
+      : null;
+    await sendWelcomeEmail(req, {
+      email,
+      username: user.username,
+      tempPassword,
+      teamLabel: team ? `${team.name} (${team.symbol ?? ""})`.trim() : null,
+    });
+  } catch (err) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "User created, but the welcome email could not be sent." }, { status: 201 });
+    }
+  }
   return NextResponse.json(user);
+}
+
+function generateTempPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 6; i += 1) {
+    out += chars[crypto.randomInt(0, chars.length)];
+  }
+  return out;
+}
+
+async function sendWelcomeEmail(
+  req: Request,
+  {
+    email,
+    username,
+    tempPassword,
+    teamLabel,
+  }: { email: string; username: string; tempPassword: string; teamLabel: string | null },
+) {
+  const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const link = `${origin}/auth/signin`;
+  const league = await db.league.findFirst({ select: { name: true } });
+  const leagueName = league?.name?.trim() || "the league";
+  const teamLine = teamLabel ? `Team: ${teamLabel}\n` : "";
+  const key = process.env.SENDGRID_API_KEY;
+  const from = process.env.SENDGRID_FROM;
+  if (!key || !from) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`Temp password for ${email} (${username}): ${tempPassword}`);
+      return;
+    }
+    throw new Error("WELCOME_DELIVERY_FAILED");
+  }
+
+  const sgMail = await import("@sendgrid/mail");
+  sgMail.default.setApiKey(key);
+  await sgMail.default.send({
+    to: email,
+    from,
+    subject: `Welcome to ${leagueName}`,
+    text: `Welcome! Your account has been created.\n\nUsername: ${username}\nTemporary password: ${tempPassword}\n${teamLine}\nSign in here: ${link}\nYou will be prompted to reset your password after signing in.`,
+  });
 }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/rbac";
+import { requireAdmin, requireSession } from "@/lib/rbac";
 
 const PatchSchema = z.object({
   color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),

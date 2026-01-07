@@ -119,11 +119,22 @@ export default function SignUpPage() {
           max-width: 980px;
           margin: 0 auto;
         }
+        .signup-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
         .signup-title {
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.6px;
           text-transform: uppercase;
-          margin: 0 0 16px;
+          margin: 0;
+        }
+        .signup-logo {
+          width: 48px;
+          height: 48px;
+          object-fit: contain;
         }
         .signup-card {
           display: grid;
@@ -200,7 +211,10 @@ export default function SignUpPage() {
         }
       `}</style>
       <div className="signup-shell">
-        <h1 className="signup-title">{leagueName}</h1>
+        <div className="signup-brand">
+          <img className="signup-logo" src="/api/league/logo/file" alt="League logo" />
+          <h1 className="signup-title">{leagueName}</h1>
+        </div>
         <div className="signup-card">
           <div className="signup-left">
             <h2>Welcome</h2>

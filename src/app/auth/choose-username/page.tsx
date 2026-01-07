@@ -111,11 +111,22 @@ export default function ChooseUsernamePage() {
           max-width: 780px;
           margin: 0 auto;
         }
+        .signin-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
         .signin-title {
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.6px;
           text-transform: uppercase;
-          margin: 0 0 16px;
+          margin: 0;
+        }
+        .signin-logo {
+          width: 48px;
+          height: 48px;
+          object-fit: contain;
         }
         .signin-card {
           border: 1px solid var(--line);
@@ -154,7 +165,10 @@ export default function ChooseUsernamePage() {
         .muted { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
       `}</style>
       <div className="signin-shell">
-        <h1 className="signin-title">{leagueName}</h1>
+        <div className="signin-brand">
+          <img className="signin-logo" src="/api/league/logo/file" alt="League logo" />
+          <h1 className="signin-title">{leagueName}</h1>
+        </div>
         <div className="signin-card">
           <img className="logo" src="/api/league/logo/file" alt="League logo" />
           <h2>Choose your username</h2>

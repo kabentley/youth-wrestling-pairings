@@ -4,7 +4,7 @@ import AppHeader from "@/components/AppHeader";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; teamId: string | null };
+type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; teamId: string | null; lastLoginAt?: string | null };
 type TeamRow = { id: string; name: string; symbol: string };
 
 export default function AdminUsersPage() {
@@ -19,7 +19,6 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT">("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
@@ -46,15 +45,15 @@ export default function AdminUsersPage() {
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, name, password, role, teamId: teamId || null }),
+      body: JSON.stringify({ username, email, phone, name, role, teamId: teamId || null }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       setMsg(formatError(data?.error) ?? "Unable to create user.");
       return;
     }
-    setUsername(""); setEmail(""); setPhone(""); setName(""); setPassword(""); setRole("COACH"); setTeamId("");
-    setMsg("User created.");
+    setUsername(""); setEmail(""); setPhone(""); setName(""); setRole("COACH"); setTeamId("");
+    setMsg(formatError(data?.error) ?? "User created. Temporary password sent by email.");
     await load();
   }
 
@@ -87,6 +86,20 @@ export default function AdminUsersPage() {
     setMsg("Password reset.");
   }
 
+  async function deleteUser(id: string, label: string) {
+    setMsg("");
+    const ok = confirm(`Remove ${label}? This deletes the account and active sessions.`);
+    if (!ok) return;
+    const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to delete user.");
+      return;
+    }
+    setMsg("User removed.");
+    await load();
+  }
+
   function onSearchSubmit(e: FormEvent) {
     e.preventDefault();
     if (page !== 1) {
@@ -98,6 +111,12 @@ export default function AdminUsersPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(total, page * pageSize);
+  function formatLastLogin(value?: string | null) {
+    if (!value) return "Never";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown";
+    return date.toLocaleString();
+  }
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
@@ -113,6 +132,10 @@ export default function AdminUsersPage() {
         <AppHeader links={headerLinks} />
         <div className="admin-header">
           <h1 className="admin-title">User Management</h1>
+        </div>
+        <div className="admin-nav">
+          <span className="admin-link admin-link-active" aria-current="page">Users</span>
+          <a className="admin-link" href="/admin/league">League & Teams</a>
         </div>
 
         <div className="admin-card">
@@ -169,9 +192,8 @@ export default function AdminUsersPage() {
           <div className="admin-grid">
             <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} />
             <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
-            <input placeholder="Phone (E.164)" value={phone} onChange={e => setPhone(e.target.value)} />
+            <input placeholder="Phone (optional)" value={phone} onChange={e => setPhone(e.target.value)} />
             <input placeholder="Name (optional)" value={name} onChange={e => setName(e.target.value)} />
-            <input placeholder="Temp password" value={password} onChange={e => setPassword(e.target.value)} />
           <select value={role} onChange={e => setRole(e.target.value as any)}>
             <option value="ADMIN">ADMIN</option>
             <option value="COACH">COACH</option>
@@ -198,6 +220,7 @@ export default function AdminUsersPage() {
                 <th>Name</th>
                 <th>Role</th>
                 <th>Team</th>
+                <th>Last Login</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -227,14 +250,16 @@ export default function AdminUsersPage() {
                       ))}
                     </select>
                   </td>
+                  <td>{formatLastLogin(u.lastLoginAt)}</td>
                   <td className="admin-actions">
                     <button className="admin-btn admin-btn-ghost" onClick={() => resetPassword(u.id)}>Reset Password</button>
+                    <button className="admin-btn admin-btn-danger" onClick={() => deleteUser(u.id, u.username)}>Delete</button>
                   </td>
                 </tr>
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={7}>No users found.</td>
+                  <td colSpan={8}>No users found.</td>
                 </tr>
               )}
             </tbody>
@@ -270,6 +295,7 @@ const adminStyles = `
     --muted: #5a6673;
     --accent: #1e88e5;
     --line: #d5dbe2;
+    --danger: #c62828;
   }
   .admin {
     min-height: 100vh;
@@ -338,10 +364,27 @@ const adminStyles = `
     color: var(--ink);
     border: 1px solid var(--line);
   }
+  .admin-btn-danger {
+    background: var(--danger);
+  }
   .admin-link {
     color: var(--accent);
     text-decoration: none;
     font-weight: 600;
+  }
+  .admin-link-active {
+    color: var(--ink);
+    background: #f2f5f8;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+  .admin-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
   }
   .admin-info {
     margin-top: 8px;

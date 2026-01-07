@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
 
 const BodySchema = z.object({
-  username: z.string().trim().min(3).max(32),
+  username: z.string().trim().min(6).max(32),
   teamId: z.string().trim().optional(),
 });
 

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 
 const BodySchema = z.object({
-  username: z.string().trim().min(3).max(32),
+  username: z.string().trim().min(6).max(32),
   email: z.string().trim().email(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   teamId: z.string().trim().min(1),

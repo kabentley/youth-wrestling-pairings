@@ -13,19 +13,26 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/me")
-      .then(res => (res.ok ? res.json() : null))
-      .then(json => {
-        if (!active || !json?.username || !json?.role) return;
-        setUser({
-          username: json.username,
-          role: json.role,
-          team: json.team ?? null,
-          teamLogoUrl: json.teamLogoUrl ?? null,
-        });
-      })
-      .catch(() => {});
-    return () => { active = false; };
+    async function load() {
+      const res = await fetch("/api/me");
+      const json = res.ok ? await res.json() : null;
+      if (!active || !json?.username || !json?.role) return;
+      setUser({
+        username: json.username,
+        role: json.role,
+        team: json.team ?? null,
+        teamLogoUrl: json.teamLogoUrl ?? null,
+      });
+    }
+    void load();
+    function handleRefresh() {
+      void load();
+    }
+    window.addEventListener("user:refresh", handleRefresh);
+    return () => {
+      active = false;
+      window.removeEventListener("user:refresh", handleRefresh);
+    };
   }, []);
 
   if (!user) return null;
@@ -34,6 +41,8 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
     if (!link.minRole) return true;
     return roleOrder[user.role] >= roleOrder[link.minRole];
   });
+  const accountLink = visibleLinks.find(link => link.href === "/account");
+  const mainLinks = visibleLinks.filter(link => link.href !== "/account");
 
   return (
     <div
@@ -50,7 +59,7 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginRight: "auto" }}>
-        {visibleLinks.map(link => (
+        {mainLinks.map(link => (
           <a key={link.href} href={link.href} style={{ fontWeight: 600, textDecoration: "none", color: "var(--ink, #1d232b)" }}>
             {link.label}
           </a>
@@ -67,6 +76,23 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
             />
           ) : null}
         </div>
+        {accountLink ? (
+          <a
+            href={accountLink.href}
+            style={{
+              fontWeight: 600,
+              textDecoration: "none",
+              color: "var(--ink, #1d232b)",
+              border: "1px solid var(--line, #d5dbe2)",
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontSize: 14,
+              letterSpacing: "0.5px",
+            }}
+          >
+            {accountLink.label}
+          </a>
+        ) : null}
         <button
           onClick={async () => {
             await signOut({ redirect: false });

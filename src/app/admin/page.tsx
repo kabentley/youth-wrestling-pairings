@@ -114,5 +114,5 @@ export default async function AdminHome() {
     );
   }
 
-  redirect("/admin/league");
+  redirect("/admin/users");
 }

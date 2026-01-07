@@ -19,6 +19,7 @@ export default async function Home() {
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/parent", label: "My Wrestlers" },
+    { href: "/account", label: "Account" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
@@ -233,8 +234,6 @@ export default async function Home() {
           <AppHeader links={headerLinks} />
         ) : (
           <nav className="nav">
-            <Link href="/teams">Teams</Link>
-            <Link href="/parent">My Wrestlers</Link>
             <Link href="/auth/signin">Sign in</Link>
             <Link href="/auth/signup">Create account</Link>
           </nav>

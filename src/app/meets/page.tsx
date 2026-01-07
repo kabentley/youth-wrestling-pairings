@@ -42,7 +42,9 @@ export default function MeetsPage() {
     }
     if (m.ok) {
       const mJson = await m.json().catch(() => []);
-      setMeets(Array.isArray(mJson) ? mJson : []);
+      const list = Array.isArray(mJson) ? mJson : [];
+      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setMeets(list);
     } else {
       setMeets([]);
     }

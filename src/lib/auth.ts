@@ -10,6 +10,10 @@ import GoogleProvider from "next-auth/providers/google";
 
 import { db } from "@/lib/db";
 
+const TWO_FACTOR_WINDOW_MS = 10 * 60 * 1000;
+const MAX_TWO_FACTOR_SENDS = 5;
+const MAX_TWO_FACTOR_ATTEMPTS = 5;
+
 
 function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
@@ -93,10 +97,12 @@ export const authOptions: NextAuthOptions = {
             name: true,
             role: true,
             teamId: true,
+            sessionVersion: true,
             passwordHash: true,
             email: true,
             phone: true,
             emailVerified: true,
+            mustResetPassword: true,
           },
         });
         if (!user?.passwordHash) return null;
@@ -116,6 +122,8 @@ export const authOptions: NextAuthOptions = {
               name: user.name ?? undefined,
               role: user.role,
               teamId: user.teamId,
+              sessionVersion: user.sessionVersion,
+              mustResetPassword: user.mustResetPassword,
             };
           }
           const method = twoFactorMethod === "sms" ? "sms" : "email";
@@ -135,12 +143,24 @@ export const authOptions: NextAuthOptions = {
           name: user.name ?? undefined,
           role: user.role,
           teamId: user.teamId,
+          sessionVersion: user.sessionVersion,
+          mustResetPassword: user.mustResetPassword,
         };
       },
     }),
   ],
   callbacks: {
     async signIn({ user, account }) {
+      if (account?.provider === "credentials" && (user as any)?.mustResetPassword) {
+        const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+        return `${baseUrl}/auth/force-reset`;
+      }
+      if (user?.id) {
+        await db.user.updateMany({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
+      }
       if (account?.provider && account.provider !== "credentials") {
         if (user?.email) {
           await db.user.updateMany({
@@ -166,6 +186,15 @@ export const authOptions: NextAuthOptions = {
         token.username = (user as any).username;
         token.role = (user as any).role ?? "COACH";
         token.teamId = (user as any).teamId ?? null;
+        token.sessionVersion = (user as any).sessionVersion ?? 1;
+        token.mustResetPassword = (user as any).mustResetPassword ?? false;
+      } else if (token.sessionVersion === undefined && token.id) {
+        const dbUser = await db.user.findUnique({
+          where: { id: token.id as string },
+          select: { sessionVersion: true, mustResetPassword: true },
+        });
+        token.sessionVersion = dbUser?.sessionVersion ?? 1;
+        token.mustResetPassword = dbUser?.mustResetPassword ?? false;
       }
       return token;
     },
@@ -175,6 +204,8 @@ export const authOptions: NextAuthOptions = {
         (session.user).username = token.username as string | undefined;
         (session.user).role = (token.role as "ADMIN" | "COACH" | "PARENT" | undefined) ?? "COACH";
         (session.user).teamId = token.teamId as string | null | undefined;
+        (session.user).sessionVersion = token.sessionVersion as number | undefined;
+        (session.user).mustResetPassword = token.mustResetPassword as boolean | undefined;
       }
       return session;
     },
@@ -189,13 +220,24 @@ async function sendTwoFactorCode(user: { id: string; email: string; phone: strin
     throw new Error("EMAIL_REQUIRED");
   }
 
+  const windowStart = new Date(Date.now() - TWO_FACTOR_WINDOW_MS);
+  const sentCount = await db.twoFactorCode.count({
+    where: { userId: user.id, createdAt: { gt: windowStart } },
+  });
+  if (sentCount >= MAX_TWO_FACTOR_SENDS) {
+    throw new Error("2FA_RATE_LIMITED");
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const hash = crypto.createHash("sha256").update(code).digest("hex");
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-  await db.twoFactorCode.deleteMany({ where: { userId: user.id } });
+  await db.twoFactorCode.updateMany({
+    where: { userId: user.id, expiresAt: { gt: new Date() } },
+    data: { expiresAt: new Date() },
+  });
   await db.twoFactorCode.create({
-    data: { userId: user.id, method, codeHash: hash, expiresAt },
+    data: { userId: user.id, method, codeHash: hash, expiresAt, attempts: 0 },
   });
 
   if (method === "sms") {
@@ -245,9 +287,16 @@ async function verifyTwoFactorCode(userId: string, method: "email" | "sms", code
     orderBy: { createdAt: "desc" },
   });
   if (!entry || entry.expiresAt.getTime() < Date.now()) return false;
+  if (entry.attempts >= MAX_TWO_FACTOR_ATTEMPTS) return false;
 
   const hash = crypto.createHash("sha256").update(code).digest("hex");
-  if (hash !== entry.codeHash) return false;
+  if (hash !== entry.codeHash) {
+    await db.twoFactorCode.update({
+      where: { id: entry.id },
+      data: { attempts: { increment: 1 } },
+    });
+    return false;
+  }
 
   await db.twoFactorCode.deleteMany({ where: { userId } });
   return true;

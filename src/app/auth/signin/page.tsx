@@ -52,6 +52,8 @@ export default function SignInPage() {
   async function submit() {
     setErr("");
     setInfo("");
+    const base = window.location.origin;
+    const callbackUrl = postLoginUrl.startsWith("http") ? postLoginUrl : `${base}${postLoginUrl}`;
     const res = await signIn("credentials", {
       redirect: false,
       username,
@@ -59,7 +61,7 @@ export default function SignInPage() {
       twoFactorMethod,
       twoFactorCode: twoFactorRequired ? twoFactorCode : "",
       bypassEmailVerification: bypassEmailVerification ? "true" : "false",
-      callbackUrl: postLoginUrl,
+      callbackUrl,
     });
 
     if (res?.error) {
@@ -84,10 +86,14 @@ export default function SignInPage() {
         setErr("Unable to send a verification code. Try again later.");
         return;
       }
+      if (res.error === "2FA_RATE_LIMITED") {
+        setErr("Too many verification codes requested. Please wait a bit.");
+        return;
+      }
       setErr("Sign-in failed. Check username/password.");
       return;
     }
-    window.location.href = postLoginUrl;
+    window.location.href = res?.url ?? postLoginUrl;
   }
 
   async function resendVerification() {
@@ -134,11 +140,22 @@ export default function SignInPage() {
           max-width: 980px;
           margin: 0 auto;
         }
+        .signin-brand {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
         .signin-title {
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.6px;
           text-transform: uppercase;
-          margin: 0 0 16px;
+          margin: 0;
+        }
+        .signin-logo {
+          width: 48px;
+          height: 48px;
+          object-fit: contain;
         }
         .signin-card {
           display: grid;
@@ -213,7 +230,10 @@ export default function SignInPage() {
         }
       `}</style>
       <div className="signin-shell">
-        <h1 className="signin-title">{leagueName}</h1>
+        <div className="signin-brand">
+          <img className="signin-logo" src="/api/league/logo/file" alt="League logo" />
+          <h1 className="signin-title">{leagueName}</h1>
+        </div>
         <div className="signin-card">
           <div className="signin-left">
             <h2>Welcome</h2>

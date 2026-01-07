@@ -5,8 +5,10 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 
+const MAX_RESET_ATTEMPTS = 5;
+
 const BodySchema = z.object({
-  username: z.string().trim().min(3).max(32),
+  username: z.string().trim().min(6).max(32),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
   code: z.string().trim().min(4).max(20),
@@ -52,16 +54,23 @@ export async function POST(req: Request) {
   if (!latest) {
     return NextResponse.json({ error: "Invalid or expired reset code." }, { status: 400 });
   }
+  if (latest.attempts >= MAX_RESET_ATTEMPTS) {
+    return NextResponse.json({ error: "Reset code locked. Request a new code." }, { status: 400 });
+  }
 
   const hash = createHash("sha256").update(code).digest("hex");
   if (hash !== latest.codeHash) {
+    await db.passwordResetCode.update({
+      where: { id: latest.id },
+      data: { attempts: { increment: 1 } },
+    });
     return NextResponse.json({ error: "Invalid or expired reset code." }, { status: 400 });
   }
 
   const passwordHash = await bcrypt.hash(body.password, 10);
   await db.user.update({
     where: { id: user.id },
-    data: { passwordHash },
+    data: { passwordHash, mustResetPassword: false, sessionVersion: { increment: 1 } },
   });
 
   await db.passwordResetCode.update({

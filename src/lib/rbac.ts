@@ -9,13 +9,20 @@ export async function requireSession() {
   const session = await getServerSession(authOptions);
   const userId = (session?.user as any)?.id as string | undefined;
   if (!userId) throw new Error("UNAUTHORIZED");
-  return { session, userId };
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, username: true, teamId: true, sessionVersion: true },
+  });
+  if (!user) throw new Error("UNAUTHORIZED");
+  const tokenVersion = (session?.user as any)?.sessionVersion as number | undefined;
+  if (tokenVersion === undefined || tokenVersion !== user.sessionVersion) {
+    throw new Error("UNAUTHORIZED");
+  }
+  return { session, userId, user };
 }
 
 export async function requireRole(minRole: Role) {
-  const { session, userId } = await requireSession();
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true, username: true, teamId: true } });
-  if (!user) throw new Error("UNAUTHORIZED");
+  const { session, user } = await requireSession();
 
   const order: Record<Role, number> = { PARENT: 0, COACH: 1, ADMIN: 2 };
   if (order[user.role as Role] < order[minRole]) throw new Error("FORBIDDEN");

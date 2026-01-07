@@ -51,3 +51,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   return NextResponse.json(user);
 }
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { user } = await requireAdmin();
+  if (user.id === id) {
+    return NextResponse.json({ error: "Admins cannot delete themselves" }, { status: 400 });
+  }
+  const target = await db.user.findUnique({ where: { id }, select: { id: true, role: true } });
+  if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (target.role === "ADMIN") {
+    const adminCount = await db.user.count({ where: { role: "ADMIN" } });
+    if (adminCount <= 1) {
+      return NextResponse.json({ error: "Cannot delete the last admin" }, { status: 400 });
+    }
+  }
+
+  await db.meet.updateMany({
+    where: { lockedById: id },
+    data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
+  });
+  await db.user.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}

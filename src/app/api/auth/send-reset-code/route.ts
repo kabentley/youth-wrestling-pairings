@@ -5,8 +5,11 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 
+const RESET_WINDOW_MS = 15 * 60 * 1000;
+const MAX_RESET_SENDS = 5;
+
 const BodySchema = z.object({
-  username: z.string().trim().min(3).max(32),
+  username: z.string().trim().min(6).max(32),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
   method: z.enum(["email", "sms"]).optional(),
@@ -32,6 +35,14 @@ export async function POST(req: Request) {
   if (email && user.email.toLowerCase() !== email) return NextResponse.json({ ok: true });
   if (phone && user.phone !== phone) return NextResponse.json({ ok: true });
 
+  const windowStart = new Date(Date.now() - RESET_WINDOW_MS);
+  const recentCount = await db.passwordResetCode.count({
+    where: { userId: user.id, createdAt: { gt: windowStart } },
+  });
+  if (recentCount >= MAX_RESET_SENDS) {
+    return NextResponse.json({ error: "Too many reset requests. Please wait." }, { status: 429 });
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(code));
   const hash = Buffer.from(hashBuffer).toString("hex");
@@ -42,6 +53,7 @@ export async function POST(req: Request) {
       userId: user.id,
       codeHash: hash,
       expiresAt,
+      attempts: 0,
     },
   });
 

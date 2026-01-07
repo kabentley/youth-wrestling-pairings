@@ -289,7 +289,10 @@ export default function AdminLeaguePage() {
         <AppHeader links={headerLinks} />
         <div className="admin-header">
           <h1 className="admin-title">League Setup</h1>
-          <a className="admin-btn admin-btn-ghost" href="/admin/users">User Management</a>
+        </div>
+        <div className="admin-nav">
+          <a className="admin-link" href="/admin/users">Users</a>
+          <span className="admin-link admin-link-active" aria-current="page">League & Teams</span>
         </div>
         <div className="admin-card">
           <h3>League</h3>
@@ -566,20 +569,18 @@ const adminStyles = `
   }
   .admin-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 16px;
+    flex-wrap: wrap;
   }
   .admin-nav {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
     flex-wrap: wrap;
     margin-bottom: 12px;
-  }
-  .admin-nav .admin-link {
-    padding: 6px 8px;
-    border-radius: 6px;
   }
   .admin-card {
     background: var(--card);
@@ -716,6 +717,13 @@ const adminStyles = `
     color: var(--accent);
     text-decoration: none;
     font-weight: 600;
+  }
+  .admin-link-active {
+    color: var(--ink);
+    background: #f2f5f8;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 10px;
   }
   .admin-error {
     color: #b00020;

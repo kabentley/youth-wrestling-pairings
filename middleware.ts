@@ -1,6 +1,28 @@
+import { NextResponse } from "next/server";
 import { withAuth } from "next-auth/middleware";
 
-export default withAuth(function middleware() {}, {
+export default withAuth(function middleware(req) {
+  const pathname = req.nextUrl.pathname;
+  const token = req.nextauth?.token;
+  if (pathname.startsWith("/auth/force-reset") && !token) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/auth/signin";
+    url.searchParams.set("callbackUrl", "/auth/force-reset");
+    return NextResponse.redirect(url);
+  }
+  if (token?.mustResetPassword) {
+    const allowed =
+      pathname.startsWith("/auth/force-reset") ||
+      pathname.startsWith("/api/auth/force-reset") ||
+      pathname.startsWith("/api/auth");
+    if (!allowed) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/auth/force-reset";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+}, {
   callbacks: {
     authorized: ({ token, req }) => {
       const pathname = req.nextUrl.pathname;

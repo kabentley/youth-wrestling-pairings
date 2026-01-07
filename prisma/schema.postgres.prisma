@@ -182,6 +182,7 @@ model ExcludedPair {
 // --- NextAuth.js models ---
 model User {
   role          Role     @default(PARENT)
+  sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
   username      String   @unique
@@ -193,6 +194,8 @@ model User {
   team          Team?    @relation(fields: [teamId], references: [id])
 
   passwordHash  String?
+  mustResetPassword Boolean @default(false)
+  lastLoginAt  DateTime?
 
   accounts      Account[]
   sessions      Session[]
@@ -211,6 +214,7 @@ model PasswordResetCode {
   codeHash  String
   expiresAt DateTime
   usedAt    DateTime?
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -225,6 +229,7 @@ model TwoFactorCode {
   method    String
   codeHash  String
   expiresAt DateTime
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

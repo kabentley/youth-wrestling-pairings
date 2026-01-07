@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   await db.user.update({
     where: { id },
-    data: { passwordHash },
+    data: { passwordHash, sessionVersion: { increment: 1 } },
   });
 
   return NextResponse.json({ ok: true });

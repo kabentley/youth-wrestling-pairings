@@ -8,6 +8,8 @@ declare module "next-auth" {
       name?: string | null;
       role?: "ADMIN" | "COACH" | "PARENT";
       teamId?: string | null;
+      sessionVersion?: number;
+      mustResetPassword?: boolean;
     };
   }
 }

@@ -212,10 +212,10 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
           <img src={`/api/teams/${teamId}/logo/file?v=${teamLogoVersion}`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
         ) : null}
         <h2 style={{ margin: 0 }}>
-          {team?.symbol ? `${team.symbol} — ${team.name}` : (team?.name ?? "Team")}
+          {team?.symbol ? `${team.symbol} ${team.name}` : (team?.name ?? "Team")}
         </h2>
         {team?.website && (
-          <a href={`${team.website.replace(/\\/$/, "")}/news`} target="_blank" rel="noreferrer">
+          <a href={`${team.website.replace(/\/$/, "")}/news`} target="_blank" rel="noreferrer">
             Team News
           </a>
         )}
