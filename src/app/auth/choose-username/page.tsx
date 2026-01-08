@@ -65,7 +65,7 @@ export default function ChooseUsernamePage() {
       return;
     }
     const role = session?.user?.role;
-    if ((role === "PARENT" || role === "COACH") && !teamId) {
+    if ((role === "PARENT" || role === "COACH" || role === "TABLE_WORKER") && !teamId) {
       setErr("Select a team.");
       return;
     }
@@ -189,7 +189,7 @@ export default function ChooseUsernamePage() {
                 autoFocus
               />
             </div>
-            {(session?.user?.role === "PARENT" || session?.user?.role === "COACH") && (
+            {(session?.user?.role === "PARENT" || session?.user?.role === "COACH" || session?.user?.role === "TABLE_WORKER") && (
               <div className="form-group">
                 <label htmlFor="team">Team</label>
                 <select

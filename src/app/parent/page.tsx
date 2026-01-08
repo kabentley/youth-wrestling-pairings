@@ -57,7 +57,7 @@ type SearchResult = {
 type Profile = {
   username: string;
   name: string | null;
-  role: "ADMIN" | "COACH" | "PARENT";
+  role: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
   team: string | null;
 };
 
@@ -181,6 +181,7 @@ export default function ParentPage() {
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     // Current page
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];

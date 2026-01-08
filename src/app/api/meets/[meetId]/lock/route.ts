@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
-import { requireRole } from "@/lib/rbac";
+import { requireAnyRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   try {
-    await requireRole("COACH");
+    await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]);
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {
@@ -45,9 +45,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function POST(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requireAnyRole>>["user"];
   try {
-    ({ user } = await requireRole("COACH"));
+    ({ user } = await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]));
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {
@@ -101,9 +101,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let user: Awaited<ReturnType<typeof requireAnyRole>>["user"];
   try {
-    ({ user } = await requireRole("COACH"));
+    ({ user } = await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]));
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {

@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-export type Role = "ADMIN" | "COACH" | "PARENT";
+export type Role = "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
 
 export async function requireSession() {
   const session = await getServerSession(authOptions);
@@ -24,9 +24,15 @@ export async function requireSession() {
 export async function requireRole(minRole: Role) {
   const { session, user } = await requireSession();
 
-  const order: Record<Role, number> = { PARENT: 0, COACH: 1, ADMIN: 2 };
+  const order: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
   if (order[user.role as Role] < order[minRole]) throw new Error("FORBIDDEN");
 
+  return { session, user };
+}
+
+export async function requireAnyRole(roles: Role[]) {
+  const { session, user } = await requireSession();
+  if (!roles.includes(user.role as Role)) throw new Error("FORBIDDEN");
   return { session, user };
 }
 

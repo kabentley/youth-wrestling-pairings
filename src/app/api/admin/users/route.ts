@@ -11,7 +11,7 @@ const CreateSchema = z.object({
   email: z.string().trim().email(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   name: z.string().optional(),
-  role: z.enum(["ADMIN", "COACH", "PARENT"]).default("COACH"),
+  role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).default("COACH"),
   teamId: z.string().nullable().optional(),
 });
 
@@ -76,8 +76,8 @@ export async function POST(req: Request) {
   if (body.role === "COACH" && !body.teamId) {
     return NextResponse.json({ error: "Coaches must be assigned a team" }, { status: 400 });
   }
-  if (body.role === "PARENT" && !body.teamId) {
-    return NextResponse.json({ error: "Parents must be assigned a team" }, { status: 400 });
+  if ((body.role === "PARENT" || body.role === "TABLE_WORKER") && !body.teamId) {
+    return NextResponse.json({ error: "Parents and table workers must be assigned a team" }, { status: 400 });
   }
   const tempPassword = generateTempPassword();
   const passwordHash = await bcrypt.hash(tempPassword, 10);

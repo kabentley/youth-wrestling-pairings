@@ -27,6 +27,7 @@ export default function MeetsPage() {
   const [date, setDate] = useState("2026-01-15");
   const [location, setLocation] = useState("");
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [homeTeamId, setHomeTeamId] = useState<string>("");
   const [numMats, setNumMats] = useState(4);
@@ -36,6 +37,7 @@ export default function MeetsPage() {
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
@@ -70,24 +72,8 @@ export default function MeetsPage() {
     if (me.ok) {
       const meJson = await me.json().catch(() => ({}));
       setCurrentTeamId(meJson?.teamId ?? null);
+      setRole(meJson?.role ?? null);
     }
-  }
-
-  function applyTemplate(meet: Meet) {
-    setName(`${meet.name} (Copy)`);
-    const date = new Date(meet.date);
-    date.setDate(date.getDate() + 7);
-    setDate(date.toISOString().slice(0, 10));
-    setLocation(meet.location ?? "");
-    const nextTeamIds = meet.meetTeams.map(mt => mt.team.id);
-    if (currentTeamId && !nextTeamIds.includes(currentTeamId)) {
-      nextTeamIds.unshift(currentTeamId);
-    }
-    setTeamIds(nextTeamIds);
-    setHomeTeamId(meet.homeTeamId ?? "");
-    setNumMats(meet.numMats ?? 4);
-    setAllowSameTeamMatches(Boolean(meet.allowSameTeamMatches));
-    setMatchesPerWrestler(meet.matchesPerWrestler ?? 1);
   }
 
   function toggleTeam(id: string) {
@@ -148,6 +134,7 @@ export default function MeetsPage() {
   const otherTeamIds = currentTeamId
     ? teamIds.filter(id => id !== currentTeamId)
     : teamIds;
+  const canManageMeets = role === "COACH" || role === "ADMIN";
   useEffect(() => {
     if (!homeTeamId || location.trim()) return;
     const home = teams.find(t => t.id === homeTeamId);
@@ -340,15 +327,6 @@ export default function MeetsPage() {
           gap: 8px;
           flex-wrap: wrap;
         }
-        .meet-actions button {
-          border: 1px solid var(--line);
-          border-radius: 6px;
-          padding: 6px 10px;
-          background: #fff;
-          cursor: pointer;
-          font-weight: 600;
-          font-size: 12px;
-        }
         .meet-item a {
           color: var(--accent);
           text-decoration: none;
@@ -386,12 +364,23 @@ export default function MeetsPage() {
               return <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />;
             })()}
           </h2>
+          {!canManageMeets && (
+            <div className="muted" style={{ marginBottom: 10 }}>
+              You do not have permission to create or edit meets.
+            </div>
+          )}
           <div className="row" style={{ marginBottom: 10 }}>
-            <input className="input" placeholder="Meet name" value={name} onChange={e => setName(e.target.value)} />
+            <input
+              className="input"
+              placeholder="Meet name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              disabled={!canManageMeets}
+            />
           </div>
           <div className="row">
-            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} />
-            <input className="input" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} />
+            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
+            <input className="input" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
           </div>
           <div className="row" style={{ marginTop: 10 }}>
             <label className="row">
@@ -403,6 +392,7 @@ export default function MeetsPage() {
                 max={10}
                 value={numMats}
                 onChange={e => setNumMats(Number(e.target.value))}
+                disabled={!canManageMeets}
               />
             </label>
             <label className="row">
@@ -414,6 +404,7 @@ export default function MeetsPage() {
                 max={5}
                 value={matchesPerWrestler}
                 onChange={e => setMatchesPerWrestler(Number(e.target.value))}
+                disabled={!canManageMeets}
               />
             </label>
           </div>
@@ -422,6 +413,7 @@ export default function MeetsPage() {
               type="checkbox"
               checked={allowSameTeamMatches}
               onChange={e => setAllowSameTeamMatches(e.target.checked)}
+              disabled={!canManageMeets}
             />
             <span className="muted">Attempt same-team matches</span>
           </label>
@@ -430,7 +422,7 @@ export default function MeetsPage() {
             <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
             {otherTeams.map(t => (
               <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} />
+                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} disabled={!canManageMeets} />
                 <span style={{ flex: 1 }}>{t.name}</span>
                 {t.hasLogo ? (
                   <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
@@ -456,6 +448,7 @@ export default function MeetsPage() {
                   const t = teams.find(team => team.id === next);
                   if (t?.address) setLocation(t.address);
                 }}
+                disabled={!canManageMeets}
               >
                 {teamIds.length === 0 && <option value="">Select teams first</option>}
                 {teamIds.map(id => {
@@ -469,7 +462,7 @@ export default function MeetsPage() {
             <button
               className="btn"
               onClick={addMeet}
-              disabled={otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
+              disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
             >
               Create Meet
             </button>
@@ -493,9 +486,6 @@ export default function MeetsPage() {
                   <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
                     {m.status === "PUBLISHED" ? "Published" : "Draft"}
                   </span>
-                </div>
-                <div className="meet-actions" style={{ marginTop: 8 }}>
-                  <button onClick={() => applyTemplate(m)}>Use as template</button>
                 </div>
                 {m.updatedAt && (
                   <div className="muted" style={{ marginTop: 6 }}>

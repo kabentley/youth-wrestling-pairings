@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/rbac";
+import { requireAdmin, requireSession } from "@/lib/rbac";
 
 const TeamSchema = z.object({
   name: z.string().trim().min(2),
@@ -12,7 +12,19 @@ const TeamSchema = z.object({
   website: z.string().trim().url().optional().or(z.literal("")),
 });
 
+async function ensureSession() {
+  try {
+    await requireSession();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
+  if (!(await ensureSession())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const teams = await db.team.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true, website: true },

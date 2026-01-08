@@ -65,7 +65,9 @@ export async function POST(req: Request) {
   }
 
   if (plan.toCreate.length) {
-    await db.wrestler.createMany({ data: plan.toCreate.map(w => ({ ...w, active: true })) });
+    await db.wrestler.createMany({
+      data: plan.toCreate.map(w => ({ ...w, active: true })),
+    });
   }
 
   return NextResponse.json({

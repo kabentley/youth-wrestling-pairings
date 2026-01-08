@@ -12,6 +12,7 @@ enum Role {
   ADMIN
   COACH
   PARENT
+  TABLE_WORKER
 }
 
 enum MeetWrestlerStatusType {

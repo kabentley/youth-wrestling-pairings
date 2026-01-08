@@ -6,7 +6,7 @@ declare module "next-auth" {
       username?: string | null;
       email?: string | null;
       name?: string | null;
-      role?: "ADMIN" | "COACH" | "PARENT";
+      role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
       teamId?: string | null;
       sessionVersion?: number;
       mustResetPassword?: boolean;

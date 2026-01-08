@@ -49,6 +49,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];

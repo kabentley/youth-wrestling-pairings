@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireTeamCoach } from "@/lib/rbac";
+import { requireSession, requireTeamCoach } from "@/lib/rbac";
 
 const WrestlerSchema = z.object({
   first: z.string().min(1),
@@ -13,12 +13,25 @@ const WrestlerSchema = z.object({
   skill: z.number().int().min(0).max(5),
 });
 
+async function respondUnauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
+  try {
+    await requireSession();
+  } catch {
+    return respondUnauthorized();
+  }
   const url = new URL(_.url);
   const includeInactive = url.searchParams.get("includeInactive") === "1";
+
   const wrestlers = await db.wrestler.findMany({
-    where: { teamId, ...(includeInactive ? {} : { active: true }) },
+    where: {
+      teamId,
+      ...(includeInactive ? {} : { active: true }),
+    },
     orderBy: [{ last: "asc" }, { first: "asc" }],
   });
   return NextResponse.json(wrestlers);
@@ -26,7 +39,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ teamId: st
 
 export async function POST(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
-  await requireTeamCoach(teamId);
+  try {
+    await requireTeamCoach(teamId);
+  } catch {
+    return respondUnauthorized();
+  }
   const body = await req.json();
   const parsed = WrestlerSchema.parse(body);
 

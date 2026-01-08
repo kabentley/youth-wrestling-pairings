@@ -173,7 +173,7 @@ export const authOptions: NextAuthOptions = {
             where: { id: user.id },
             select: { username: true, role: true, teamId: true },
           });
-          if (dbUser?.username.startsWith("oauth-") || ((dbUser?.role === "PARENT" || dbUser?.role === "COACH") && !dbUser?.teamId)) {
+          if (dbUser?.username.startsWith("oauth-") || ((dbUser?.role === "PARENT" || dbUser?.role === "COACH" || dbUser?.role === "TABLE_WORKER") && !dbUser?.teamId)) {
             return "/auth/choose-username";
           }
         }
@@ -202,7 +202,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user).id = token.id as string | undefined;
         (session.user).username = token.username as string | undefined;
-        (session.user).role = (token.role as "ADMIN" | "COACH" | "PARENT" | undefined) ?? "COACH";
+        (session.user).role = (token.role as "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER" | undefined) ?? "COACH";
         (session.user).teamId = token.teamId as string | null | undefined;
         (session.user).sessionVersion = token.sessionVersion as number | undefined;
         (session.user).mustResetPassword = token.mustResetPassword as boolean | undefined;

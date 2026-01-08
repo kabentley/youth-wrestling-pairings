@@ -22,10 +22,12 @@ export default function AccountPage() {
   const [passwordMsg, setPasswordMsg] = useState("");
   const [passwordErr, setPasswordErr] = useState("");
   const [accountErr, setAccountErr] = useState("");
+  const canChangeTeam = role === "PARENT";
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/account", label: "Account" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
@@ -168,19 +170,22 @@ export default function AccountPage() {
             <select
               value={teamId}
               onChange={(e) => setTeamId(e.target.value)}
-              disabled={role === "ADMIN"}
+              disabled={!canChangeTeam}
             >
               <option value="">Select a team</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>
               ))}
             </select>
-            <button className="account-btn" onClick={saveTeam} disabled={role === "ADMIN"}>
+            <button className="account-btn" onClick={saveTeam} disabled={!canChangeTeam}>
               Save Team
             </button>
           </div>
           {role === "ADMIN" && (
             <div className="account-muted">Admins cannot be assigned a team.</div>
+          )}
+          {role !== "PARENT" && role !== "ADMIN" && (
+            <div className="account-muted">Only parents can change their team assignment.</div>
           )}
           {teamMsg && <div className="account-muted">{teamMsg}</div>}
         </div>

@@ -18,6 +18,7 @@ export default async function Home() {
   const headerLinks = [
     { href: "/teams", label: "Teams" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/account", label: "Account" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },

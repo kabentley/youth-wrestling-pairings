@@ -35,7 +35,7 @@ export async function PATCH(req: Request) {
   if (user.role === "ADMIN" && teamId) {
     return NextResponse.json({ error: "Admins cannot be assigned a team." }, { status: 400 });
   }
-  if ((user.role === "PARENT" || user.role === "COACH") && !user.teamId && !teamId) {
+  if ((user.role === "PARENT" || user.role === "COACH" || user.role === "TABLE_WORKER") && !user.teamId && !teamId) {
     return NextResponse.json({ error: "Select a team." }, { status: 400 });
   }
   if (teamId) {

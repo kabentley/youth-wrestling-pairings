@@ -22,14 +22,12 @@ export default function AdminLeaguePage() {
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
   const [teamAddressEdits, setTeamAddressEdits] = useState<Record<string, string>>({});
   const [openPicker, setOpenPicker] = useState<string | null>(null);
-  const [openLogoMenu, setOpenLogoMenu] = useState<string | null>(null);
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
   const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorPopoverRef = useRef<HTMLDivElement | null>(null);
-  const logoPopoverRef = useRef<HTMLDivElement | null>(null);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/teams", label: "Teams" },
@@ -88,16 +86,6 @@ export default function AdminLeaguePage() {
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       setMsg(json?.error ?? "Logo upload failed.");
-      return;
-    }
-    setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
-    await load();
-  }
-
-  async function clearLogo(teamId: string) {
-    const res = await fetch(`/api/teams/${teamId}/logo`, { method: "DELETE" });
-    if (!res.ok) {
-      setMsg("Unable to clear logo.");
       return;
     }
     setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
@@ -213,19 +201,10 @@ export default function AdminLeaguePage() {
     }, 500);
   }
 
-  function setTeamColor(teamId: string, color: string) {
+  function setTeamColor(teamId: string, color: string, closePicker = true) {
     setColorEdits((prev) => ({ ...prev, [teamId]: color }));
     scheduleColorSave(teamId, color);
-  }
-
-  async function clearLeagueLogo() {
-    const res = await fetch("/api/league/logo", { method: "DELETE" });
-    if (!res.ok) {
-      setMsg("Unable to clear league logo.");
-      return;
-    }
-    setLeagueLogoVersion(Date.now());
-    await load();
+    if (closePicker) setOpenPicker(null);
   }
 
   useEffect(() => { void load(); }, []);
@@ -240,18 +219,6 @@ export default function AdminLeaguePage() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [openPicker]);
-  useEffect(() => {
-    if (!openLogoMenu) return;
-    function handleClick(e: MouseEvent) {
-      if (!logoPopoverRef.current) return;
-      if (!logoPopoverRef.current.contains(e.target as Node)) {
-        setOpenLogoMenu(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [openLogoMenu]);
-
   if (!session) {
     return (
       <main className="admin">
@@ -325,43 +292,23 @@ export default function AdminLeaguePage() {
           </div>
           <div className="admin-row admin-row-tight">
             <div className="logo-cell">
-              <button
-                type="button"
-                className="logo-button"
-                onClick={() => setOpenLogoMenu(openLogoMenu === "league" ? null : "league")}
-              >
+              <input
+                id="league-logo-file"
+                className="file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={(e) => {
+                  void uploadLeagueLogo(e.target.files?.[0] ?? null);
+                  e.currentTarget.value = "";
+                }}
+              />
+              <label className="logo-button" htmlFor="league-logo-file">
                 {leagueHasLogo ? (
                   <img src={`/api/league/logo/file?v=${leagueLogoVersion}`} alt="League logo" className="admin-logo" />
                 ) : (
                   <span className="admin-muted">Set Logo</span>
                 )}
-              </button>
-              {openLogoMenu === "league" && (
-                <div className="logo-popover" ref={logoPopoverRef}>
-                  <label className="admin-label">Upload Logo File</label>
-                  <input
-                    id="league-logo-file"
-                    className="file-input"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    onChange={(e) => {
-                      void uploadLeagueLogo(e.target.files?.[0] ?? null);
-                      setOpenLogoMenu(null);
-                    }}
-                  />
-                  <label className="admin-btn admin-btn-ghost" htmlFor="league-logo-file">
-                    Upload Logo File
-                  </label>
-                  <button
-                    type="button"
-                    className="admin-btn admin-btn-ghost"
-                    onClick={() => { void clearLeagueLogo(); setOpenLogoMenu(null); }}
-                    disabled={!leagueHasLogo}
-                  >
-                    Clear Logo
-                  </button>
-                </div>
-              )}
+              </label>
             </div>
           </div>
         </div>
@@ -393,43 +340,23 @@ export default function AdminLeaguePage() {
                   <tr key={t.id}>
                     <td>
                       <div className="logo-cell">
-                        <button
-                          type="button"
-                          className="logo-button"
-                          onClick={() => setOpenLogoMenu(openLogoMenu === t.id ? null : t.id)}
-                        >
+                        <input
+                          id={`team-logo-file-${t.id}`}
+                          className="file-input"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          onChange={(e) => {
+                            void uploadLogo(t.id, e.target.files?.[0] ?? null);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <label className="logo-button" htmlFor={`team-logo-file-${t.id}`}>
                           {t.hasLogo ? (
                             <img src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`} alt={`${t.name} logo`} className="admin-team-logo" />
                           ) : (
                             <span className="admin-muted">Set Logo</span>
                           )}
-                        </button>
-                        {openLogoMenu === t.id && (
-                          <div className="logo-popover" ref={logoPopoverRef}>
-                            <label className="admin-label">Upload Logo File</label>
-                            <input
-                              id={`team-logo-file-${t.id}`}
-                              className="file-input"
-                              type="file"
-                              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                              onChange={(e) => {
-                                void uploadLogo(t.id, e.target.files?.[0] ?? null);
-                                setOpenLogoMenu(null);
-                              }}
-                            />
-                            <label className="admin-btn admin-btn-ghost" htmlFor={`team-logo-file-${t.id}`}>
-                              Upload Logo File
-                            </label>
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn-ghost"
-                              onClick={() => { void clearLogo(t.id); setOpenLogoMenu(null); }}
-                              disabled={!t.hasLogo}
-                            >
-                              Clear Logo
-                            </button>
-                          </div>
-                        )}
+                        </label>
                       </div>
                     </td>
                     <td>
@@ -469,14 +396,14 @@ export default function AdminLeaguePage() {
                               id={`color-${t.id}`}
                               type="text"
                               value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                              onChange={(e) => setTeamColor(t.id, e.target.value, false)}
                               placeholder="#1e88e5"
                             />
                             <label className="admin-label" htmlFor={`color-preset-${t.id}`}>Named colors</label>
                             <select
                               id={`color-preset-${t.id}`}
                               value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                              onChange={(e) => setTeamColor(t.id, e.target.value, true)}
                             >
                               {!NAMED_COLORS.some(c => c.value.toLowerCase() === (colorEdits[t.id] ?? t.color).toLowerCase()) && (
                                 <option value={colorEdits[t.id] ?? t.color}>Custom</option>
@@ -490,7 +417,7 @@ export default function AdminLeaguePage() {
                               id={`color-custom-${t.id}`}
                               type="color"
                               value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value)}
+                              onChange={(e) => setTeamColor(t.id, e.target.value, false)}
                               className="color-input"
                             />
                             <div className="swatch-grid">
@@ -501,7 +428,7 @@ export default function AdminLeaguePage() {
                                   className="swatch"
                                   style={{ backgroundColor: c.value }}
                                   title={`${c.name} (${c.value})`}
-                                  onClick={() => setTeamColor(t.id, c.value)}
+                                  onClick={() => setTeamColor(t.id, c.value, true)}
                                 />
                               ))}
                             </div>

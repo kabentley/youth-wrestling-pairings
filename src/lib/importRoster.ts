@@ -68,7 +68,12 @@ export function planRosterUpsert(args: {
 
   const existingMap = new Map<string, ExistingWrestler>();
   for (const w of args.existing) {
-    const k = key(teamId, normalizeName(w.first), normalizeName(w.last), toISODateOnly(w.birthdate));
+    const k = key(
+      teamId,
+      normalizeName(w.first),
+      normalizeName(w.last),
+      toISODateOnly(w.birthdate),
+    );
     existingMap.set(k, w);
   }
 

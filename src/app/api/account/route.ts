@@ -46,17 +46,15 @@ export async function PATCH(req: Request) {
   }
   if (teamId !== undefined) {
     const nextTeamId = teamId.trim() || null;
-    if (user.role === "ADMIN" && nextTeamId) {
-      return NextResponse.json({ error: "Admins cannot be assigned a team." }, { status: 400 });
+    if (user.role !== "PARENT") {
+      return NextResponse.json({ error: "Only parents can change their team." }, { status: 403 });
     }
-    if ((user.role === "PARENT" || user.role === "COACH") && !nextTeamId) {
+    if (!nextTeamId) {
       return NextResponse.json({ error: "Select a team." }, { status: 400 });
     }
-    if (nextTeamId) {
-      const team = await db.team.findUnique({ where: { id: nextTeamId }, select: { id: true } });
-      if (!team) {
-        return NextResponse.json({ error: "Team not found." }, { status: 404 });
-      }
+    const team = await db.team.findUnique({ where: { id: nextTeamId }, select: { id: true } });
+    if (!team) {
+      return NextResponse.json({ error: "Team not found." }, { status: 404 });
     }
     data.teamId = nextTeamId;
   }

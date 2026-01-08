@@ -71,7 +71,7 @@ export async function POST(req: Request) {
   if (!wrestler?.active) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
-  if (user.role === "PARENT" && wrestler.teamId !== user.teamId) {
+  if ((user.role === "PARENT" || user.role === "TABLE_WORKER") && wrestler.teamId !== user.teamId) {
     return NextResponse.json({ error: "You can only add wrestlers from your team." }, { status: 403 });
   }
 

@@ -4,7 +4,7 @@ import AppHeader from "@/components/AppHeader";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"; teamId: string | null; lastLoginAt?: string | null };
+type UserRow = { id: string; username: string; email: string; phone?: string | null; name: string | null; role: "ADMIN"|"COACH"|"PARENT"|"TABLE_WORKER"; teamId: string | null; lastLoginAt?: string | null };
 type TeamRow = { id: string; name: string; symbol: string };
 
 export default function AdminUsersPage() {
@@ -19,7 +19,7 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT">("COACH");
+  const [role, setRole] = useState<"ADMIN"|"COACH"|"PARENT"|"TABLE_WORKER">("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
 
@@ -198,9 +198,10 @@ export default function AdminUsersPage() {
             <option value="ADMIN">ADMIN</option>
             <option value="COACH">COACH</option>
             <option value="PARENT">PARENT</option>
+            <option value="TABLE_WORKER">TABLE_WORKER</option>
           </select>
           <select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={role === "ADMIN"}>
-            <option value="">Select team (coach/parent)</option>
+            <option value="">Select team (coach/parent/table worker)</option>
             {teams.map(t => (
               <option key={t.id} value={t.id}>{t.symbol}</option>
             ))}
@@ -236,6 +237,7 @@ export default function AdminUsersPage() {
                       <option value="ADMIN">ADMIN</option>
                       <option value="COACH">COACH</option>
                       <option value="PARENT">PARENT</option>
+                      <option value="TABLE_WORKER">TABLE_WORKER</option>
                     </select>
                   </td>
                   <td>

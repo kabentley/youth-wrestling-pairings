@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 
 const PatchSchema = z.object({
-  role: z.enum(["ADMIN", "COACH", "PARENT"]).optional(),
+  role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).optional(),
   teamId: z.string().nullable().optional(),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (!existing) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const data: { role?: "ADMIN" | "COACH" | "PARENT"; teamId?: string | null; email?: string; phone?: string | null } = {};
+  const data: { role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER"; teamId?: string | null; email?: string; phone?: string | null } = {};
   const finalRole = body.role ?? existing.role;
   const finalTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
   if (body.email) {
@@ -40,8 +40,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     data.teamId = body.teamId;
   }
-  if ((finalRole === "COACH" || finalRole === "PARENT") && !finalTeamId) {
-    return NextResponse.json({ error: `${finalRole === "COACH" ? "Coaches" : "Parents"} must be assigned a team` }, { status: 400 });
+  if ((finalRole === "COACH" || finalRole === "PARENT" || finalRole === "TABLE_WORKER") && !finalTeamId) {
+    const label = finalRole === "COACH" ? "Coaches" : finalRole === "PARENT" ? "Parents" : "Table workers";
+    return NextResponse.json({ error: `${label} must be assigned a team` }, { status: 400 });
   }
 
   const user = await db.user.update({
