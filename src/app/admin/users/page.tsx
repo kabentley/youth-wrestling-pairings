@@ -15,6 +15,7 @@ export default function AdminUsersPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
+  const [adminCount, setAdminCount] = useState(0);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -35,6 +36,7 @@ export default function AdminUsersPage() {
     const data = await uRes.json();
     setUsers(data.items ?? []);
     setTotal(Number(data.total ?? 0));
+    setAdminCount(Number(data.adminCount ?? 0));
     if (tRes.ok) setTeams(await tRes.json());
   }
 
@@ -255,7 +257,14 @@ export default function AdminUsersPage() {
                   <td>{formatLastLogin(u.lastLoginAt)}</td>
                   <td className="admin-actions">
                     <button className="admin-btn admin-btn-ghost" onClick={() => resetPassword(u.id)}>Reset Password</button>
-                    <button className="admin-btn admin-btn-danger" onClick={() => deleteUser(u.id, u.username)}>Delete</button>
+                    <button
+                      className="admin-btn admin-btn-danger"
+                      onClick={() => deleteUser(u.id, u.username)}
+                      disabled={u.role === "ADMIN" && adminCount <= 1}
+                      title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot delete the last admin" : undefined}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

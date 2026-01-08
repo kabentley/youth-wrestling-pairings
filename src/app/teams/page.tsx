@@ -310,8 +310,22 @@ export default function TeamsPage() {
     void loadRoster(selectedTeamId);
   }, [selectedTeamId]);
   useEffect(() => {
-    const adminCols = role === "ADMIN" || role === "COACH";
-    setRosterColWidths(adminCols ? [140, 140, 90, 90, 70, 70, 90, 120] : [140, 140, 90, 90, 70]);
+    const updateWidths = () => {
+      const adminCols = role === "ADMIN" || role === "COACH";
+      const narrow = window.innerWidth <= 900;
+      if (adminCols) {
+        setRosterColWidths(
+          narrow ? [110, 110, 70, 65, 55, 60, 70, 85] : [140, 140, 90, 90, 70, 70, 90, 120],
+        );
+      } else {
+        setRosterColWidths(narrow ? [110, 110, 70, 65, 70] : [140, 140, 90, 90, 70]);
+      }
+    };
+    updateWidths();
+    window.addEventListener("resize", updateWidths);
+    return () => {
+      window.removeEventListener("resize", updateWidths);
+    };
   }, [role]);
 
   const rosterColumns = useMemo(() => {
@@ -406,7 +420,7 @@ export default function TeamsPage() {
           color: var(--ink);
           background: var(--bg);
           min-height: 100vh;
-          padding: 28px 22px 40px;
+          padding: 18px 12px 30px;
         }
         .mast {
           display: flex;
@@ -472,7 +486,7 @@ export default function TeamsPage() {
           background: var(--card);
           border: 1px solid var(--line);
           border-radius: 8px;
-          padding: 18px;
+          padding: 14px;
           box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
         .card-title {
@@ -513,10 +527,14 @@ export default function TeamsPage() {
           cursor: pointer;
         }
         .btn-small {
-          padding: 6px 10px;
-          font-size: 12px;
+          padding: 4px 10px;
+          font-size: 11px;
           text-transform: none;
           letter-spacing: 0.4px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 72px;
         }
         .btn:disabled {
           opacity: 0.45;
@@ -535,11 +553,11 @@ export default function TeamsPage() {
         .team-card {
           border: 1px solid var(--line);
           border-radius: 8px;
-          padding: 10px 12px;
+          padding: 8px 10px;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
+          gap: 10px;
           background: #fff;
           text-align: left;
           cursor: pointer;
@@ -657,9 +675,7 @@ export default function TeamsPage() {
           background: #fff;
         }
         .roster-table table {
-          table-layout: fixed;
-          width: fit-content;
-          max-width: 100%;
+          table-layout: auto;
           border-collapse: collapse;
         }
         .roster-table tbody tr:hover {
@@ -667,9 +683,16 @@ export default function TeamsPage() {
         }
         .roster-table th,
         .roster-table td {
-          padding: 8px 6px;
+          padding: 6px 5px;
           border-bottom: 1px solid var(--line);
           text-align: left;
+          font-size: 13px;
+        }
+        .roster-table td:last-child {
+          white-space: nowrap;
+        }
+        .roster-table td:last-child .btn {
+          width: auto;
         }
         .roster-th {
           position: relative;
@@ -695,6 +718,32 @@ export default function TeamsPage() {
           .mast {
             flex-direction: column;
             align-items: flex-start;
+          }
+          .grid {
+            gap: 14px;
+          }
+          .team-card {
+            gap: 8px;
+          }
+        }
+        @media (max-width: 640px) {
+          .card {
+            padding: 10px;
+          }
+          .card-title {
+            font-size: 16px;
+          }
+          .roster-table th,
+          .roster-table td {
+            padding: 4px 6px;
+            font-size: 12px;
+          }
+          .row {
+            gap: 6px;
+          }
+          .btn {
+            padding: 8px 10px;
+            font-size: 12px;
           }
         }
       `}</style>

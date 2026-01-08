@@ -571,6 +571,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const oFirst = o.experienceYears <= 0;
       return tFirst === oFirst;
     })
+    .filter((c: any) => {
+      if (!target) return true;
+      const opponent = c.opponent as Wrestler;
+      return !bouts.some(b =>
+        (b.redId === target.id && b.greenId === opponent.id) ||
+        (b.greenId === target.id && b.redId === opponent.id)
+      );
+    })
     .map((c: any) => ({ opponent: c.opponent as Wrestler, score: c.score as number }));
   const availableSorted = [...availableFiltered].sort((a, b) => {
     const getValue = (row: { opponent: Wrestler; score: number }) => {
@@ -732,6 +740,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
     await load();
     await loadActivity();
+    setSelectedPairingId(null);
   }
 
   async function submitAddWrestler() {

@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       : {}),
   };
 
-  const [items, total] = await Promise.all([
+  const [items, total, adminCount] = await Promise.all([
     db.user.findMany({
       where,
       select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true, lastLoginAt: true },
@@ -56,9 +56,10 @@ export async function GET(req: Request) {
       take: pageSize,
     }),
     db.user.count({ where }),
+    db.user.count({ where: { role: "ADMIN" } }),
   ]);
 
-  return NextResponse.json({ items, total, page, pageSize });
+  return NextResponse.json({ items, total, page, pageSize, adminCount });
 }
 
 export async function POST(req: Request) {
