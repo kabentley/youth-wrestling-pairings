@@ -37,6 +37,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const [matRules, setMatRules] = useState<MatRule[]>([]);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
   const [ruleMsg, setRuleMsg] = useState("");
+  const [formError, setFormError] = useState("");
   const [form, setForm] = useState({
     first: "",
     last: "",
@@ -96,20 +97,62 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     }
   }
 
+  const updateFormFields = (updates: Partial<typeof form>) => {
+    setForm(prev => ({ ...prev, ...updates }));
+    setFormError(prev => (prev ? "" : prev));
+  };
+
+  const validateNewWrestler = () => {
+    if (!form.first.trim()) return "First name is required.";
+    if (!form.last.trim()) return "Last name is required.";
+    const weight = Number(form.weight);
+    if (!Number.isFinite(weight) || weight < 35 || weight > 300) {
+      return "Weight must be between 35 and 300.";
+    }
+    if (!form.birthdate || !/^\d{4}-\d{2}-\d{2}$/.test(form.birthdate)) {
+      return "Birthdate must be a valid YYYY-MM-DD date.";
+    }
+    if (Number.isNaN(new Date(form.birthdate).getTime())) {
+      return "Birthdate must be a real date.";
+    }
+    const exp = Number(form.experienceYears);
+    if (!Number.isFinite(exp) || exp < 0) {
+      return "Experience years must be zero or greater.";
+    }
+    const skill = Number(form.skill);
+    if (!Number.isFinite(skill) || skill < 0 || skill > 5) {
+      return "Skill must be between 0 and 5.";
+    }
+    return "";
+  };
+
   async function add() {
     if (!canEdit) return;
-    if (!form.first.trim() || !form.last.trim()) return;
-    await fetch(`/api/teams/${teamId}/wrestlers`, {
+    const validationMessage = validateNewWrestler();
+    if (validationMessage) {
+      setFormError(validationMessage);
+      return;
+    }
+
+    const payload = {
+      ...form,
+      weight: Number(form.weight),
+      experienceYears: Number(form.experienceYears),
+      skill: Number(form.skill),
+    };
+
+    const res = await fetch(`/api/teams/${teamId}/wrestlers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        weight: Number(form.weight),
-        experienceYears: Number(form.experienceYears),
-        skill: Number(form.skill),
-      }),
+      body: JSON.stringify(payload),
     });
-    setForm({ ...form, first: "", last: "" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      setFormError(json?.error ?? "Unable to add wrestler.");
+      return;
+    }
+    setForm(prev => ({ ...prev, first: "", last: "" }));
+    setFormError("");
     await load();
   }
 
@@ -292,23 +335,28 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
-        <input placeholder="First" value={form.first} onChange={e => setForm({ ...form, first: e.target.value })} disabled={!canEdit} />
-        <input placeholder="Last" value={form.last} onChange={e => setForm({ ...form, last: e.target.value })} disabled={!canEdit} />
-        <input type="number" placeholder="Weight" value={form.weight} onChange={e => setForm({ ...form, weight: Number(e.target.value) })} disabled={!canEdit} />
-        <input type="date" value={form.birthdate} onChange={e => setForm({ ...form, birthdate: e.target.value })} disabled={!canEdit} />
-        <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => setForm({ ...form, experienceYears: Number(e.target.value) })} disabled={!canEdit} />
+        <input placeholder="First" value={form.first} onChange={e => updateFormFields({ first: e.target.value })} disabled={!canEdit} />
+        <input placeholder="Last" value={form.last} onChange={e => updateFormFields({ last: e.target.value })} disabled={!canEdit} />
+        <input type="number" placeholder="Weight" value={form.weight} onChange={e => updateFormFields({ weight: Number(e.target.value) })} disabled={!canEdit} />
+        <input type="date" value={form.birthdate} onChange={e => updateFormFields({ birthdate: e.target.value })} disabled={!canEdit} />
+        <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => updateFormFields({ experienceYears: Number(e.target.value) })} disabled={!canEdit} />
         <input
           type="number"
           placeholder="Skill 0-5"
           value={form.skill}
           min={0}
           max={5}
-          onChange={e => setForm({ ...form, skill: Number(e.target.value) })}
+          onChange={e => updateFormFields({ skill: Number(e.target.value) })}
           disabled={!canEdit}
         />
       </div>
 
       <button onClick={add} disabled={!canEdit}>Add Wrestler</button>
+      {formError && (
+        <div role="alert" style={{ color: "#b71c1c", marginTop: 6, fontSize: 13 }}>
+          {formError}
+        </div>
+      )}
 
       <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginTop: 16 }}>
         <h3 style={{ marginTop: 0 }}>Home Team Mat Rules</h3>

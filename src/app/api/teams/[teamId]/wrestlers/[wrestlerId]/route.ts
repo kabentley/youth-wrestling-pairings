@@ -5,25 +5,59 @@ import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
 
 const BodySchema = z.object({
-  active: z.boolean(),
+  first: z.string().trim().min(1).optional(),
+  last: z.string().trim().min(1).optional(),
+  birthdate: z.string().min(1).regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  weight: z.number().positive().optional(),
+  experienceYears: z.number().int().min(0).optional(),
+  skill: z.number().int().min(0).max(5).optional(),
+  active: z.boolean().optional(),
 });
+
+const formatZodIssues = (issues: z.ZodIssue[]) =>
+  issues
+    .map(issue => {
+      const path = issue.path.map(segment => String(segment)).filter(Boolean).join(".");
+      return path ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join(" ");
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ teamId: string; wrestlerId: string }> }) {
   const { teamId, wrestlerId } = await params;
   await requireTeamCoach(teamId);
-  const body = BodySchema.parse(await req.json());
+  const parsed = BodySchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodIssues(parsed.error.issues) || "Invalid wrestler updates." },
+      { status: 400 },
+    );
+  }
+  const body = parsed.data;
 
   const wrestler = await db.wrestler.findUnique({
     where: { id: wrestlerId },
     select: { id: true, teamId: true },
   });
-  if (wrestler?.teamId !== teamId) {
+  if (!wrestler || wrestler.teamId !== teamId) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (body.first) updates.first = body.first;
+  if (body.last) updates.last = body.last;
+  if (body.birthdate) updates.birthdate = new Date(body.birthdate);
+  if (body.weight !== undefined) updates.weight = body.weight;
+  if (body.experienceYears !== undefined) updates.experienceYears = body.experienceYears;
+  if (body.skill !== undefined) updates.skill = body.skill;
+  if (body.active !== undefined) updates.active = body.active;
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ ok: true });
   }
 
   await db.wrestler.update({
     where: { id: wrestlerId },
-    data: { active: body.active },
+    data: updates,
   });
 
   return NextResponse.json({ ok: true });

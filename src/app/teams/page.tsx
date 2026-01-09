@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
@@ -15,6 +16,17 @@ type Wrestler = {
   experienceYears: number;
   skill: number;
   active: boolean;
+};
+type EditableWrestler = {
+  id: string;
+  first: string;
+  last: string;
+  weight: string;
+  birthdate: string;
+  experienceYears: string;
+  skill: string;
+  active: boolean;
+  isNew?: boolean;
 };
 
 function parseCsv(text: string) {
@@ -87,11 +99,20 @@ export default function TeamsPage() {
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [rosterMsg, setRosterMsg] = useState("");
-  const [updatingWrestlerId, setUpdatingWrestlerId] = useState<string | null>(null);
-  const [rosterColWidths, setRosterColWidths] = useState<number[]>([140, 140, 90, 90, 70, 70, 90, 120]);
+  const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
+  const [savingAll, setSavingAll] = useState(false);
+  const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 80, 80, 90, 90]);
+  const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(new Set());
+  const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
   const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
-  const [rosterSort, setRosterSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
+  const originalRowsRef = useRef<Record<string, EditableWrestler>>({});
   const [showInactive, setShowInactive] = useState(false);
+  const hasDirtyChanges = dirtyRowIds.size > 0;
+  const hasFieldValidationErrors = useMemo(
+    () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId]?.size ?? 0) > 0),
+    [dirtyRowIds, fieldErrors],
+  );
   // Import state
   const [importTeamId, setImportTeamId] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
@@ -286,22 +307,6 @@ export default function TeamsPage() {
     setRoster(await res.json());
   }
 
-  async function toggleWrestlerActive(teamId: string, wrestlerId: string, nextActive: boolean) {
-    setUpdatingWrestlerId(wrestlerId);
-    const res = await fetch(`/api/teams/${teamId}/wrestlers/${wrestlerId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: nextActive }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setRosterMsg(json?.error ?? "Unable to update wrestler.");
-    } else {
-      await loadRoster(teamId);
-    }
-    setUpdatingWrestlerId(null);
-  }
-
   useEffect(() => {
     if (!selectedTeamId) {
       setRoster([]);
@@ -309,46 +314,188 @@ export default function TeamsPage() {
     }
     void loadRoster(selectedTeamId);
   }, [selectedTeamId]);
-  useEffect(() => {
-    const updateWidths = () => {
-      const adminCols = role === "ADMIN" || role === "COACH";
-      const narrow = window.innerWidth <= 900;
-      if (adminCols) {
-        setRosterColWidths(
-          narrow ? [110, 110, 70, 65, 55, 60, 70, 85] : [140, 140, 90, 90, 70, 70, 90, 120],
-        );
+
+  const updateDirtyState = (rowId: string, dirty: boolean) => {
+    setDirtyRowIds(prev => {
+      const next = new Set(prev);
+      if (dirty) {
+        next.add(rowId);
       } else {
-        setRosterColWidths(narrow ? [110, 110, 70, 65, 70] : [140, 140, 90, 90, 70]);
+        next.delete(rowId);
       }
-    };
-    updateWidths();
-    window.addEventListener("resize", updateWidths);
-    return () => {
-      window.removeEventListener("resize", updateWidths);
-    };
-  }, [role]);
-
-  const rosterColumns = useMemo(() => {
-    const adminCols = role === "ADMIN" || role === "COACH";
-    return [
-      { label: "Last", key: "last", sortable: true, show: true },
-      { label: "First", key: "first", sortable: true, show: true },
-      { label: "Age", key: "age", sortable: true, show: true },
-      { label: "Weight", key: "weight", sortable: true, show: true },
-      { label: "Exp", key: "experienceYears", sortable: true, show: true },
-      { label: "Skill", key: "skill", sortable: true, show: adminCols },
-      { label: "Status", key: "status", sortable: true, show: adminCols },
-      { label: "Actions", key: "actions", sortable: false, show: adminCols },
-    ].filter(col => col.show);
-  }, [role]);
-
-  const rosterSortIndicator = (key: string) => {
-    if (rosterSort.key !== key) return "";
-    return rosterSort.dir === "asc" ? " ▲" : " ▼";
+      return next;
+    });
   };
 
-  const toggleRosterSort = (key: string) => {
-    setRosterSort(prev => {
+  const isRowDirty = (row: EditableWrestler) => {
+    if (row.isNew) {
+      return Boolean(
+        row.first.trim() ||
+        row.last.trim() ||
+        row.weight.trim() ||
+        row.birthdate ||
+        row.experienceYears.trim() ||
+        row.skill.trim()
+      );
+    }
+    const original = originalRowsRef.current[row.id];
+    if (!original) return true;
+    return (
+      row.first !== original.first ||
+      row.last !== original.last ||
+      row.birthdate !== original.birthdate ||
+      row.weight !== original.weight ||
+      row.experienceYears !== original.experienceYears ||
+      row.skill !== original.skill ||
+      row.active !== original.active
+    );
+  };
+
+  const markRowDirtyState = (row: EditableWrestler) => {
+    updateDirtyState(row.id, isRowDirty(row));
+  };
+
+  const setRowFieldErrors = (rowId: string, errors: Set<keyof EditableWrestler>) => {
+    setFieldErrors(prev => {
+      const next = { ...prev };
+      if (errors.size === 0) {
+        delete next[rowId];
+      } else {
+        next[rowId] = errors;
+      }
+      return next;
+    });
+  };
+
+  const hasFieldError = (rowId: string, field: keyof EditableWrestler) => {
+    return fieldErrors[rowId]?.has(field) ?? false;
+  };
+
+  const validateRow = (row: EditableWrestler) => {
+    const errors = new Set<keyof EditableWrestler>();
+    if (!row.first.trim()) errors.add("first");
+    if (!row.last.trim()) errors.add("last");
+    const weight = Number(row.weight);
+    if (!Number.isFinite(weight) || weight < 35 || weight > 300) errors.add("weight");
+    if (!row.birthdate) {
+      errors.add("birthdate");
+    } else if (!/^\d{4}-\d{2}-\d{2}$/.test(row.birthdate)) {
+      errors.add("birthdate");
+    } else {
+      const age = ageYears(row.birthdate);
+      if (typeof age !== "number" || age < 3 || age > 20) {
+        errors.add("birthdate");
+      }
+    }
+    const exp = Number(row.experienceYears);
+    if (!Number.isFinite(exp) || exp < 0) errors.add("experienceYears");
+    const skill = Number(row.skill);
+    if (!Number.isFinite(skill) || skill < 0 || skill > 5) errors.add("skill");
+
+    setRowFieldErrors(row.id, errors);
+    return errors.size === 0;
+  };
+
+  const persistRow = async (row: EditableWrestler) => {
+    if (!selectedTeamId) return false;
+    if (!validateRow(row)) return false;
+    const payload = {
+      first: row.first.trim(),
+      last: row.last.trim(),
+      weight: Number(row.weight),
+      birthdate: row.birthdate,
+      experienceYears: Math.floor(Number(row.experienceYears)),
+      skill: Math.floor(Number(row.skill)),
+      active: row.active,
+    };
+    if (row.isNew) {
+      const res = await fetch(`/api/teams/${selectedTeamId}/wrestlers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (handleUnauthorized(res)) return false;
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({} as { error?: string }));
+        setRosterMsg(json?.error ?? "Unable to add wrestler.");
+        return false;
+      }
+      return true;
+    }
+    const res = await fetch(`/api/teams/${selectedTeamId}/wrestlers/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (handleUnauthorized(res)) return false;
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      setRosterMsg(json?.error ?? "Unable to update wrestler.");
+      return false;
+    }
+    return true;
+  };
+
+  const saveAllChanges = async () => {
+    if (!selectedTeamId || dirtyRowIds.size === 0) return;
+    if (hasFieldValidationErrors) {
+      setRosterMsg("Please fix highlighted fields.");
+      return;
+    }
+    setSavingAll(true);
+    try {
+      const rowsToSave = editableRows.filter(row => dirtyRowIds.has(row.id));
+      for (const row of rowsToSave) {
+        const ok = await persistRow(row);
+        if (!ok) return;
+      }
+      await loadRoster(selectedTeamId);
+      setDirtyRowIds(new Set());
+      setRosterMsg("Roster saved.");
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
+  const cancelChanges = async () => {
+    if (!selectedTeamId) return;
+    setDirtyRowIds(new Set());
+    setFieldErrors({});
+    setRosterMsg("Changes discarded.");
+    await loadRoster(selectedTeamId);
+  };
+
+  const handleFieldChange = (rowId: string, field: keyof EditableWrestler, value: string | boolean) => {
+    setRosterMsg("");
+    setEditableRows(rows =>
+      rows.map(r => {
+        if (r.id !== rowId) return r;
+        const updated = { ...r, [field]: value };
+        markRowDirtyState(updated);
+        validateRow(updated);
+        return updated;
+      }),
+    );
+  };
+
+  const rosterSheetColumns = [
+    { key: "last", label: "Last" },
+    { key: "first", label: "First" },
+    { key: "birthdate", label: "Birthday" },
+    { key: "age", label: "Age" },
+    { key: "weight", label: "Weight" },
+    { key: "experienceYears", label: "Exp" },
+    { key: "skill", label: "Skill" },
+    { key: "active", label: "Status" },
+  ];
+
+  const renderSortArrow = (key: string) => {
+    if (sortConfig.key !== key) return null;
+    return <span className="sort-arrow">{sortConfig.dir === "asc" ? "?-?" : "?-?"}</span>;
+  };
+
+  const handleSortColumn = (key: string) => {
+    setSortConfig(prev => {
       if (prev.key === key) {
         return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
       }
@@ -356,40 +503,89 @@ export default function TeamsPage() {
     });
   };
 
-  const rosterValue = (w: Wrestler, key: string) => {
-    if (key === "age") {
-      return ageYears(w.birthdate) ?? 0;
+  const getSortValue = (row: EditableWrestler, key: string) => {
+    switch (key) {
+      case "last":
+        return row.last.toLowerCase();
+      case "first":
+        return row.first.toLowerCase();
+      case "birthdate":
+        return row.birthdate || "";
+      case "age":
+        return row.birthdate ? ageYears(row.birthdate) ?? 0 : 0;
+      case "weight":
+        return Number(row.weight);
+      case "experienceYears":
+        return Number(row.experienceYears);
+      case "skill":
+        return Number(row.skill);
+      case "active":
+        return row.active ? "Active" : "Inactive";
+      default:
+        return row.last.toLowerCase();
     }
-    if (key === "status") {
-      return w.active ? "Active" : "Inactive";
-    }
-    if (key === "actions") {
-      return "";
-    }
-    return (w as any)[key] ?? "";
   };
 
-  const sortedRoster = useMemo(() => {
-    const list = roster.filter(w => showInactive || w.active);
-    list.sort((a, b) => {
-      const aValue = rosterValue(a, rosterSort.key);
-      const bValue = rosterValue(b, rosterSort.key);
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        if (aValue === bValue) return 0;
-        return rosterSort.dir === "asc" ? aValue - bValue : bValue - aValue;
+  const newEditableRow = editableRows.find(r => r.isNew);
+  const savedEditableRows = editableRows.filter(r => !r.isNew);
+  const filteredEditableRows = savedEditableRows.filter(row => showInactive || row.active);
+
+  const sortedEditableRows = useMemo(() => {
+    const rows = [...filteredEditableRows];
+    rows.sort((a, b) => {
+      const aVal = getSortValue(a, sortConfig.key);
+      const bVal = getSortValue(b, sortConfig.key);
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return sortConfig.dir === "asc" ? aVal - bVal : bVal - aVal;
       }
-      const aStr = String(aValue ?? "");
-      const bStr = String(bValue ?? "");
-      return rosterSort.dir === "asc" ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortConfig.dir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return 0;
     });
-    return list;
-  }, [roster, rosterSort, showInactive]);
+    return rows;
+  }, [filteredEditableRows, sortConfig]);
+
+  useEffect(() => {
+    const rows: EditableWrestler[] = roster.map(w => ({
+      id: w.id,
+      first: w.first,
+      last: w.last,
+      weight: String(w.weight),
+      birthdate: w.birthdate.slice(0, 10),
+      experienceYears: String(w.experienceYears),
+      skill: String(w.skill),
+      active: w.active,
+    }));
+    const originals: Record<string, EditableWrestler> = {};
+    rows.forEach(r => {
+      originals[r.id] = r;
+    });
+    originalRowsRef.current = originals;
+    setDirtyRowIds(new Set());
+    setEditableRows([
+      {
+        id: "new",
+        first: "",
+        last: "",
+        weight: "",
+        birthdate: "",
+        experienceYears: "0",
+        skill: "0",
+        active: true,
+        isNew: true,
+      },
+      ...rows,
+    ]);
+    setFieldErrors({});
+  }, [roster]);
+
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!rosterResizeRef.current) return;
       const { index, startX, startWidth } = rosterResizeRef.current;
-      const nextWidth = Math.max(70, startWidth + (e.clientX - startX));
-      setRosterColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+      const nextWidth = Math.max(60, startWidth + (e.clientX - startX));
+      setSpreadsheetColWidths(widths => widths.map((w, idx) => (idx === index ? nextWidth : w)));
     }
     function onMouseUp() {
       rosterResizeRef.current = null;
@@ -401,6 +597,130 @@ export default function TeamsPage() {
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, []);
+
+  const handleColMouseDown = (index: number, e: ReactMouseEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    rosterResizeRef.current = {
+      index,
+      startX: e.clientX,
+      startWidth: spreadsheetColWidths[index],
+    };
+  };
+
+  const getAgeLabel = (birthdate: string) => {
+    if (!birthdate) return "";
+    const yrs = ageYears(birthdate);
+    return typeof yrs === "number" ? yrs.toFixed(1) : "";
+  };
+
+  const canEditRoster = role === "ADMIN" || role === "COACH";
+
+  const renderEditableRow = (row: EditableWrestler, isNewRow = false) => {
+    const ageDisplay = row.birthdate ? getAgeLabel(row.birthdate) : "";
+    const lastClass = `spreadsheet-input${hasFieldError(row.id, "last") ? " field-error" : ""}`;
+    const firstClass = `spreadsheet-input${hasFieldError(row.id, "first") ? " field-error" : ""}`;
+    const birthdateClass = `spreadsheet-input${hasFieldError(row.id, "birthdate") ? " field-error" : ""}`;
+    const weightClass = `spreadsheet-input${hasFieldError(row.id, "weight") ? " field-error" : ""}`;
+    const expClass = `spreadsheet-input${hasFieldError(row.id, "experienceYears") ? " field-error" : ""}`;
+    const skillClass = `spreadsheet-input${hasFieldError(row.id, "skill") ? " field-error" : ""}`;
+    const statusClass = `spreadsheet-select${hasFieldError(row.id, "active") ? " field-error" : ""}`;
+    const rowDirty = dirtyRowIds.has(row.id);
+    const hasErrors = (fieldErrors[row.id]?.size ?? 0) > 0;
+
+    return (
+      <tr
+        key={row.id}
+        className={`spreadsheet-row${isNewRow ? " new-row" : ""}${rowDirty ? " dirty-row" : ""}${row.active ? "" : " inactive-row"}${hasErrors ? " error-row" : ""}`}
+      >
+        <td>
+          <input
+            className={lastClass}
+            value={row.last}
+            onChange={e => handleFieldChange(row.id, "last", e.target.value)}
+            placeholder="Last"
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <input
+            className={firstClass}
+            value={row.first}
+            onChange={e => handleFieldChange(row.id, "first", e.target.value)}
+            placeholder="First"
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <input
+            type="date"
+            className={birthdateClass}
+            value={row.birthdate}
+            onChange={e => handleFieldChange(row.id, "birthdate", e.target.value)}
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <div className="spreadsheet-age">{ageDisplay || "?"}</div>
+        </td>
+        <td>
+          <input
+            type="number"
+            min={35}
+            max={300}
+            step={1}
+            className={weightClass}
+            value={row.weight}
+            onChange={e => handleFieldChange(row.id, "weight", e.target.value)}
+            placeholder="Weight"
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            className={expClass}
+            value={row.experienceYears}
+            onChange={e => handleFieldChange(row.id, "experienceYears", e.target.value)}
+            placeholder="Exp"
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            max={5}
+            className={skillClass}
+            value={row.skill}
+            onChange={e => handleFieldChange(row.id, "skill", e.target.value)}
+            placeholder="Skill"
+            disabled={!canEditRoster}
+          />
+        </td>
+        <td>
+          <select
+            className={statusClass}
+            value={row.active ? "active" : "inactive"}
+            onChange={e => handleFieldChange(row.id, "active", e.target.value === "active")}
+            disabled={!canEditRoster}
+          >
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </td>
+      </tr>
+    );
+  };
+
+  const displayRoster = useMemo(() => {
+    return [...roster]
+      .filter(w => showInactive || w.active)
+      .sort((a, b) => {
+        if (a.last === b.last) return a.first.localeCompare(b.first);
+        return a.last.localeCompare(b.last);
+      });
+  }, [roster, showInactive]);
 
   return (
     <main className="teams">
@@ -570,16 +890,26 @@ export default function TeamsPage() {
           box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.15);
         }
         .card-header {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          justify-content: space-between;
-          flex-wrap: wrap;
+          display: block;
         }
         .header-left {
+          display: block;
+        }
+        .header-main {
           display: flex;
           align-items: center;
           gap: 16px;
+        }
+        .header-title-group {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .header-left-controls {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
         }
         .header-team {
           gap: 12px;
@@ -746,6 +1076,118 @@ export default function TeamsPage() {
             font-size: 12px;
           }
         }
+
+        .header-checkbox {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 13px;
+        }
+        .header-checkbox input {
+          margin: 0;
+        }
+        .roster-wrapper {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          overflow: hidden;
+          background: #fff;
+        }
+        .roster-grid {
+          overflow-x: auto;
+        }
+        .spreadsheet-table {
+          border-collapse: collapse;
+        }
+        .spreadsheet-table th,
+        .spreadsheet-table td {
+          padding: 4px 6px;
+          border-bottom: 1px solid var(--line);
+          text-align: left;
+          line-height: 1.2;
+        }
+        .spreadsheet-table th {
+          background: #f7f9fb;
+          position: relative;
+          font-weight: 700;
+        }
+        .sortable-header {
+          border: none;
+          background: none;
+          font-weight: 600;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 0;
+        }
+        .sortable-header.active {
+          color: var(--accent);
+        }
+        .sort-arrow {
+          font-size: 13px;
+          line-height: 1;
+        }
+        .col-resizer {
+          position: absolute;
+          top: 0;
+          right: 2px;
+          width: 10px;
+          height: 100%;
+          cursor: col-resize;
+        }
+        .spreadsheet-input,
+        .spreadsheet-select {
+          width: 100%;
+          padding: 6px 8px;
+          border: 0;
+          font-size: 13px;
+          background: transparent;
+          border-radius: 0;
+        }
+        .spreadsheet-select {
+          appearance: none;
+          background-image: linear-gradient(45deg, transparent 50%, #111 50%), linear-gradient(135deg, #111 50%, transparent 50%);
+          background-position: calc(100% - 16px) calc(50% - 2px), calc(100% - 10px) calc(50% - 2px);
+          background-size: 5px 5px, 5px 5px;
+          background-repeat: no-repeat;
+        }
+        .field-error {
+          box-shadow: inset 0 0 0 1px #b71c1c;
+          background: rgba(183, 28, 28, 0.08);
+        }
+        .spreadsheet-input:focus,
+        .spreadsheet-select:focus {
+          outline: none;
+          box-shadow: inset 0 -1px 0 0 var(--accent);
+        }
+        .spreadsheet-row.new-row {
+          background: #f8fff5;
+        }
+        .spreadsheet-row.inactive-row {
+          opacity: 0.65;
+        }
+        .spreadsheet-row.dirty-row {
+          background: rgba(30, 136, 229, 0.07);
+        }
+        .error-row {
+          animation: shake 0.2s linear;
+        }
+        .spreadsheet-age {
+          padding: 6px 8px;
+          color: var(--muted);
+        }
+        .full-row-placeholder {
+          text-align: center;
+          color: var(--muted);
+        }
+        @keyframes shake {
+          0% { transform: translateX(0); }
+          25% { transform: translateX(-2px); }
+          50% { transform: translateX(2px); }
+          75% { transform: translateX(-2px); }
+          100% { transform: translateX(0); }
+        }
+
       `}</style>
       <AppHeader links={headerLinks} />
       <header className="mast">
@@ -770,7 +1212,7 @@ export default function TeamsPage() {
                   tabIndex={0}
                   className={`team-card ${selectedTeamId === t.id ? "team-card-active" : ""}`}
                   onClick={() => { setSelectedTeamId(t.id); setImportTeamId(t.id); }}
-                  onKeyDown={(e) => {
+                  onKeyDown={e => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       setSelectedTeamId(t.id);
@@ -800,102 +1242,162 @@ export default function TeamsPage() {
         <section className="card">
           <div className="card-header">
             <div className="header-left">
-              <h2 className="card-title">Roster</h2>
-              {selectedTeamId && (() => {
-                const team = teams.find(t => t.id === selectedTeamId);
-                if (!team) return null;
-                return (
-                  <div className="team-head header-team">
-                    {team.hasLogo ? (
-                      <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
-                    ) : (
-                      <div className="color-dot" style={{ backgroundColor: team.color }} />
-                    )}
-                    <div className="team-meta">
-                      <span className="team-symbol" style={{ color: team.color }}>{team.symbol}</span>
-                      <div className="team-name">{team.name}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className={`header-team-button${showInactive ? " active" : ""}`}
-                      onClick={() => setShowInactive(prev => !prev)}
-                      aria-pressed={showInactive}
-                    >
-                      {showInactive ? "Hide Inactive" : "Show Inactive"}
-                    </button>
-                  </div>
-                );
-              })()}
+              <div className="header-main">
+                <div className="header-title-group">
+                  <h2 className="card-title">Roster</h2>
+                  {selectedTeamId && (() => {
+                    const team = teams.find(t => t.id === selectedTeamId);
+                    if (!team) return null;
+                    return (
+                      <div className="team-head header-team">
+                        {team.hasLogo ? (
+                          <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
+                        ) : (
+                          <div className="color-dot" style={{ backgroundColor: team.color }} />
+                        )}
+                        <div className="team-meta">
+                          <span className="team-symbol" style={{ color: team.color }}>{team.symbol}</span>
+                          <div className="team-name">{team.name}</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="header-left-controls">
+                  <label className="header-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={showInactive}
+                      onChange={e => setShowInactive(e.target.checked)}
+                    />
+                    <span>{showInactive ? "Showing Inactive" : "Show Inactive"}</span>
+                  </label>
+                  {canEditRoster && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-small header-cancel"
+                        onClick={cancelChanges}
+                        disabled={!hasDirtyChanges || savingAll}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-small header-save"
+                        onClick={saveAllChanges}
+                        disabled={!hasDirtyChanges || savingAll || hasFieldValidationErrors}
+                      >
+                        {savingAll ? "Saving..." : "Save Changes"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
           {selectedTeamId ? (
             <>
-            {rosterMsg && <div className="muted">{rosterMsg}</div>}
-              <div className="roster-table">
-                <table>
-                  <colgroup>
-                    {rosterColWidths.map((w, idx) => (
-                      <col key={`roster-col-${idx}`} style={{ width: w }} />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {rosterColumns.map((col, index) => (
-                        <th
-                          key={col.label}
-                          className={`roster-th ${col.sortable ? "sortable-th" : ""}`}
-                          onClick={col.sortable ? () => toggleRosterSort(col.key) : undefined}
-                        >
-                          {col.label}
-                          {col.sortable && rosterSortIndicator(col.key)}
-                          <span
-                            className="col-resizer"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              rosterResizeRef.current = {
-                                index,
-                                startX: e.clientX,
-                                startWidth: rosterColWidths[index],
-                              };
-                            }}
-                          />
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRoster.map(w => (
-                      <tr key={w.id} style={w.active ? undefined : { color: "#8a8a8a", textDecoration: "line-through" }}>
-                        <td>{w.last}</td>
-                        <td>{w.first}</td>
-                        <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
-                        <td>{w.weight}</td>
-                        <td>{w.experienceYears}</td>
-                        {(role === "ADMIN" || role === "COACH") && <td>{w.skill}</td>}
-                        {(role === "ADMIN" || role === "COACH") && <td>{w.active ? "Active" : "Inactive"}</td>}
-                        {(role === "ADMIN" || role === "COACH") && (
-                          <td>
-                            <button
-                              className="btn btn-small"
-                              onClick={() => toggleWrestlerActive(selectedTeamId, w.id, !w.active)}
-                              disabled={!selectedTeamId || updatingWrestlerId === w.id}
-                            >
-                              {w.active ? "Deactivate" : "Activate"}
-                            </button>
-                          </td>
+              {hasFieldValidationErrors ? (
+                <div className="error-msg">Please fix highlighted fields.</div>
+              ) : (
+                rosterMsg && <div className="error-msg">{rosterMsg}</div>
+              )}
+              <div className="roster-wrapper">
+                {canEditRoster ? (
+                  <div className="roster-grid">
+                    <table className="spreadsheet-table">
+                      <colgroup>
+                        {spreadsheetColWidths.map((width, idx) => (
+                          <col key={`spreadsheet-col-${idx}`} style={{ width }} />
+                        ))}
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          {rosterSheetColumns.map((col, idx) => (
+                            <th key={col.key}>
+                              <button
+                                type="button"
+                                className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
+                                onClick={() => handleSortColumn(col.key)}
+                              >
+                                {col.label}
+                                {renderSortArrow(col.key)}
+                              </button>
+                              <span
+                                className="col-resizer"
+                                onMouseDown={e => handleColMouseDown(idx, e)}
+                              />
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {newEditableRow ? (
+                          renderEditableRow(newEditableRow, true)
+                        ) : (
+                          <tr>
+                            <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
+                              Loading roster...
+                            </td>
+                          </tr>
                         )}
-                      </tr>
-                    ))}
-                    {sortedRoster.length === 0 && (
-                      <tr>
-                        <td colSpan={Math.max(rosterColumns.length, 1)}>
-                          No wrestlers yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                        {sortedEditableRows.length === 0 ? (
+                          <tr>
+                            <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
+                              No wrestlers yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortedEditableRows.map(row => renderEditableRow(row))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="roster-table">
+                    <table>
+                      <colgroup>
+                        <col style={{ width: 120 }} />
+                        <col style={{ width: 120 }} />
+                        <col style={{ width: 120 }} />
+                        <col style={{ width: 90 }} />
+                        <col style={{ width: 90 }} />
+                        <col style={{ width: 110 }} />
+                        <col style={{ width: 110 }} />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th>Last</th>
+                          <th>First</th>
+                          <th>Age</th>
+                          <th>Weight</th>
+                          <th>Exp</th>
+                          <th>Skill</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayRoster.map(w => (
+                          <tr key={w.id} className={w.active ? "" : "inactive-row"}>
+                            <td>{w.last}</td>
+                            <td>{w.first}</td>
+                            <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td>{w.weight}</td>
+                            <td>{w.experienceYears}</td>
+                            <td>{w.skill}</td>
+                            <td>{w.active ? "Active" : "Inactive"}</td>
+                          </tr>
+                        ))}
+                        {displayRoster.length === 0 && (
+                          <tr>
+                            <td colSpan={7}>No wrestlers yet.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -920,9 +1422,9 @@ export default function TeamsPage() {
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={importCsv} disabled={!file || !importTeamId}>
-                Import / Update CSV
-              </button>
+                <button className="btn" onClick={importCsv} disabled={!file || !importTeamId}>
+                  Import / Update CSV
+                </button>
                 {importMsg && <span className="muted">{importMsg}</span>}
               </div>
 

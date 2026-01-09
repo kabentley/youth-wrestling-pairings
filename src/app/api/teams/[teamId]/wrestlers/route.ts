@@ -17,6 +17,18 @@ async function respondUnauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
 
+function formatZodIssues(issues: z.ZodIssue[]) {
+  return issues
+    .map(issue => {
+      const path = issue.path.map(segment => String(segment)).filter(Boolean).join(".");
+      if (path) {
+        return `${path}: ${issue.message}`;
+      }
+      return issue.message;
+    })
+    .join(" ");
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
   try {
@@ -45,17 +57,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ teamId:
     return respondUnauthorized();
   }
   const body = await req.json();
-  const parsed = WrestlerSchema.parse(body);
+  const parsed = WrestlerSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodIssues(parsed.error.issues) || "Invalid wrestler data." },
+      { status: 400 },
+    );
+  }
 
   const w = await db.wrestler.create({
     data: {
       teamId,
-      first: parsed.first,
-      last: parsed.last,
-      weight: parsed.weight,
-      birthdate: new Date(parsed.birthdate),
-      experienceYears: parsed.experienceYears,
-      skill: parsed.skill,
+      first: parsed.data.first,
+      last: parsed.data.last,
+      weight: parsed.data.weight,
+      birthdate: new Date(parsed.data.birthdate),
+      experienceYears: parsed.data.experienceYears,
+      skill: parsed.data.skill,
       active: true,
     },
   });
