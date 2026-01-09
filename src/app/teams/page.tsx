@@ -107,7 +107,7 @@ export default function TeamsPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
   const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
   const originalRowsRef = useRef<Record<string, EditableWrestler>>({});
-  const [showInactive, setShowInactive] = useState(false);
+  const [showInactive, setShowInactive] = useState(true);
   const hasDirtyChanges = dirtyRowIds.size > 0;
   const hasFieldValidationErrors = useMemo(
     () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId]?.size ?? 0) > 0),
@@ -118,6 +118,7 @@ export default function TeamsPage() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
+  const [showImportModal, setShowImportModal] = useState(false);
   const daysPerYear = 365;
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -286,6 +287,7 @@ export default function TeamsPage() {
     setPreview(null);
     await load();
     await loadRoster(teamId);
+    setShowImportModal(false);
     setTimeout(() => setImportMsg(""), 2000);
   }
 
@@ -491,7 +493,7 @@ export default function TeamsPage() {
 
   const renderSortArrow = (key: string) => {
     if (sortConfig.key !== key) return null;
-    return <span className="sort-arrow">{sortConfig.dir === "asc" ? "?-?" : "?-?"}</span>;
+    return <span className="sort-arrow">{sortConfig.dir === "asc" ? "▲" : "▼"}</span>;
   };
 
   const handleSortColumn = (key: string) => {
@@ -721,6 +723,42 @@ export default function TeamsPage() {
         return a.last.localeCompare(b.last);
       });
   }, [roster, showInactive]);
+
+  const downloadRosterCsv = () => {
+    if (!selectedTeamId) return;
+    if (displayRoster.length === 0) return;
+
+    const escape = (value: string | number | boolean) => {
+      const text = String(value ?? "");
+      if (text.includes(",") || text.includes("\n") || text.includes("\"")) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    };
+
+    const rows = displayRoster.map(row => {
+      const birthdateValue = row.birthdate ? row.birthdate.split("T")[0] : "";
+      return [
+        escape(row.last),
+        escape(row.first),
+        escape(birthdateValue),
+        escape(row.weight),
+        escape(row.experienceYears),
+        escape(row.skill),
+      ];
+    });
+
+    const csvContent = rows.map(r => r.join(",")).join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const team = teams.find(t => t.id === selectedTeamId);
+    const nameSlug = team ? team.name.replace(/[^a-z0-9]+/gi, "_") : "roster";
+    link.href = url;
+    link.download = `${nameSlug}_roster.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className="teams">
@@ -1166,6 +1204,13 @@ export default function TeamsPage() {
         .spreadsheet-row.inactive-row {
           opacity: 0.65;
         }
+        .spreadsheet-row.inactive-row td {
+          text-decoration: line-through;
+        }
+        .spreadsheet-row.inactive-row td input,
+        .spreadsheet-row.inactive-row td select {
+          text-decoration: line-through;
+        }
         .spreadsheet-row.dirty-row {
           background: rgba(30, 136, 229, 0.07);
         }
@@ -1179,6 +1224,62 @@ export default function TeamsPage() {
         .full-row-placeholder {
           text-align: center;
           color: var(--muted);
+        }
+        .import-modal-backdrop {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 12px;
+          z-index: 20;
+        }
+        .import-modal {
+          background: #fff;
+          border-radius: 10px;
+          max-width: 520px;
+          width: 100%;
+          padding: 16px;
+          box-shadow: 0 24px 40px rgba(0,0,0,0.25);
+          position: relative;
+        }
+        .import-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 12px;
+        }
+        .import-modal-body {
+          max-height: 60vh;
+          overflow: auto;
+        }
+        .import-modal-footer {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 14px;
+        }
+        .modal-close {
+          border: none;
+          background: transparent;
+          font-size: 20px;
+          line-height: 1;
+          cursor: pointer;
+          color: var(--muted);
+        }
+        .import-preview table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .import-preview th,
+        .import-preview td {
+          padding: 6px 6px;
+          border-bottom: 1px solid var(--line);
+          text-align: left;
+          font-size: 13px;
         }
         @keyframes shake {
           0% { transform: translateX(0); }
@@ -1289,6 +1390,22 @@ export default function TeamsPage() {
                         disabled={!hasDirtyChanges || savingAll || hasFieldValidationErrors}
                       >
                         {savingAll ? "Saving..." : "Save Changes"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-small header-import"
+                        onClick={() => setShowImportModal(true)}
+                        disabled={hasDirtyChanges}
+                      >
+                        Import Roster
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-small header-download"
+                        onClick={downloadRosterCsv}
+                        disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
+                      >
+                        Download Roster
                       </button>
                     </>
                   )}
@@ -1404,32 +1521,42 @@ export default function TeamsPage() {
             <div className="muted">Select a team above to view its roster.</div>
           )}
 
-          {(role === "ADMIN" || role === "COACH") && (
-            <>
-              <div className="divider" />
-              <h3 className="card-title" style={{ fontSize: 18, marginBottom: 10 }}>Import / Update CSV</h3>
-              <div>
-                <label className="muted">CSV file</label>
-                <input
-                  className="input"
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
-                />
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
-                </div>
+        </section>
+      </div>
+      {canEditRoster && showImportModal && (
+        <div
+          className="import-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-title"
+          onClick={() => setShowImportModal(false)}
+        >
+          <div className="import-modal" onClick={event => event.stopPropagation()}>
+            <div className="import-modal-header">
+              <h3 id="import-title">Import / Update CSV</h3>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="Close import dialog"
+                onClick={() => setShowImportModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="import-modal-body">
+              <label className="muted">CSV file</label>
+              <input
+                className="input"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="muted" style={{ marginTop: 6 }}>
+                Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
               </div>
-
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn" onClick={importCsv} disabled={!file || !importTeamId}>
-                  Import / Update CSV
-                </button>
-                {importMsg && <span className="muted">{importMsg}</span>}
-              </div>
-
+              {importMsg && <div className="muted" style={{ marginTop: 8 }}>{importMsg}</div>}
               {preview && (
-                <div style={{ marginTop: 12 }}>
+                <div className="import-preview">
                   <div className="muted" style={{ marginBottom: 8 }}>
                     Preview (first {preview.rows.length} rows). Headers: {preview.headers.join(", ")}
                   </div>
@@ -1453,7 +1580,6 @@ export default function TeamsPage() {
                   </table>
                 </div>
               )}
-
               <details style={{ marginTop: 12 }}>
                 <summary>Example CSV</summary>
                 <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
@@ -1461,10 +1587,20 @@ Ben,Askren,52,2015-03-11,1,3
 John,Smith,55,2014-11-02,0,2
 `}</pre>
               </details>
-            </>
-          )}
-        </section>
-      </div>
+            </div>
+            <div className="import-modal-footer">
+              <button
+                className="btn"
+                type="button"
+                onClick={importCsv}
+                disabled={!file || !importTeamId}
+              >
+                Import / Update CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

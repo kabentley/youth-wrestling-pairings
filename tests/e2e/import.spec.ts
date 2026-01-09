@@ -28,7 +28,7 @@ Jason,Nolf,52,2015-03-11,1,3
     buffer: Buffer.from(csv1),
   });
 
-  await page.getByRole("button", { name: "Import CSV" }).click();
+  await page.getByRole("button", { name: "Import Roster" }).click();
   await expect(page.getByText(/Imported 1 wrestlers/i)).toBeVisible();
 
   // Re-import with different weight/exp/skill for same name+bday -> should update not duplicate
@@ -40,7 +40,7 @@ Jason,Nolf,60,2015-03-11,2,5
     mimeType: "text/csv",
     buffer: Buffer.from(csv2),
   });
-  await page.getByRole("button", { name: "Import CSV" }).click();
+  await page.getByRole("button", { name: "Import Roster" }).click();
   await expect(page.getByText(/Imported/i)).toBeVisible();
 
   // Check team roster reflects updated fields
