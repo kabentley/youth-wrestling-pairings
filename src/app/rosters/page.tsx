@@ -510,7 +510,6 @@ export default function RostersPage() {
       }),
     );
   };
-
   const rosterSheetColumns = [
     { key: "last", label: "Last" },
     { key: "first", label: "First" },
@@ -521,6 +520,14 @@ export default function RostersPage() {
     { key: "skill", label: "Skill" },
     { key: "active", label: "Status" },
   ];
+
+  const renderColGroup = () => (
+    <colgroup>
+      {spreadsheetColWidths.map((width, idx) => (
+        <col key={`spreadsheet-col-${idx}`} style={{ width }} />
+      ))}
+    </colgroup>
+  );
 
   const renderSortArrow = (key: string) => {
     if (sortConfig.key !== key) return null;
@@ -1286,8 +1293,20 @@ export default function RostersPage() {
           background: #fff;
         }
         .roster-grid {
-          overflow: auto;
+          display: flex;
+          flex-direction: column;
+        }
+        .static-roster {
+          border-bottom: 1px solid var(--line);
+          background: #fff;
+        }
+        .static-roster table {
+          border-collapse: collapse;
+        }
+        .roster-scroll {
           max-height: calc(20 * 40px);
+          overflow-y: auto;
+          background: #fff;
         }
         .spreadsheet-table {
           border-collapse: collapse;
@@ -1301,7 +1320,6 @@ export default function RostersPage() {
         }
         .spreadsheet-table th {
           background: #f7f9fb;
-          position: relative;
           font-weight: 700;
         }
         .sortable-header {
@@ -1479,7 +1497,7 @@ export default function RostersPage() {
                         setShowTeamSelector(prev => !prev);
                       }}
                       aria-expanded={showTeamSelector}
-                      disabled={teams.length === 0}
+                      disabled={teams.length === 0 || hasDirtyChanges}
                     >
                       {currentTeam ? (
                         <>
@@ -1581,53 +1599,58 @@ export default function RostersPage() {
               <div className="roster-wrapper">
                 {canEditRoster ? (
                   <div className="roster-grid">
-                    <table className="spreadsheet-table">
-                      <colgroup>
-                        {spreadsheetColWidths.map((width, idx) => (
-                          <col key={`spreadsheet-col-${idx}`} style={{ width }} />
-                        ))}
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          {rosterSheetColumns.map((col, idx) => (
-                            <th key={col.key}>
-                              <button
-                                type="button"
-                                className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
-                                onClick={() => handleSortColumn(col.key)}
-                              >
-                                {col.label}
-                                {renderSortArrow(col.key)}
-                              </button>
-                              <span
-                                className="col-resizer"
-                                onMouseDown={e => handleColMouseDown(idx, e)}
-                              />
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {newRows.length === 0 ? (
+                    <div className="static-roster">
+                      <table className="spreadsheet-table">
+                        {renderColGroup()}
+                        <thead>
                           <tr>
-                            <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
-                              Loading roster...
-                            </td>
+                            {rosterSheetColumns.map((col, idx) => (
+                              <th key={col.key}>
+                                <button
+                                  type="button"
+                                  className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
+                                  onClick={() => handleSortColumn(col.key)}
+                                >
+                                  {col.label}
+                                  {renderSortArrow(col.key)}
+                                </button>
+                                <span
+                                  className="col-resizer"
+                                  onMouseDown={e => handleColMouseDown(idx, e)}
+                                />
+                              </th>
+                            ))}
                           </tr>
-                        ) : (
-                          newRows.map(row => renderEditableRow(row, true))
-                        )}
-                        {sortedEditableRows.length === 0 ? (
-                          <tr>
-                            <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
-                              No wrestlers yet.
-                            </td>
-                          </tr>
-                        ) : (
-                          sortedEditableRows.map(row => renderEditableRow(row))
-                        )}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {newRows.length === 0 ? (
+                            <tr>
+                              <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
+                                Loading roster...
+                              </td>
+                            </tr>
+                          ) : (
+                            newRows.map(row => renderEditableRow(row, true))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="roster-scroll">
+                      <table className="spreadsheet-table">
+                        {renderColGroup()}
+                        <tbody>
+                          {sortedEditableRows.length === 0 ? (
+                            <tr>
+                              <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
+                                No wrestlers yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            sortedEditableRows.map(row => renderEditableRow(row))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : (
                   <div className="roster-table">
