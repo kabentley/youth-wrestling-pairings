@@ -107,7 +107,7 @@ export default function TeamsPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
   const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
   const originalRowsRef = useRef<Record<string, EditableWrestler>>({});
-  const [showInactive, setShowInactive] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
   const hasFieldValidationErrors = useMemo(
     () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId]?.size ?? 0) > 0),
@@ -615,7 +615,8 @@ export default function TeamsPage() {
     return typeof yrs === "number" ? yrs.toFixed(1) : "";
   };
 
-  const canEditRoster = role === "ADMIN" || role === "COACH";
+  const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
+  const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
 
   const renderEditableRow = (row: EditableWrestler, isNewRow = false) => {
     const ageDisplay = row.birthdate ? getAgeLabel(row.birthdate) : "";
@@ -724,9 +725,11 @@ export default function TeamsPage() {
       });
   }, [roster, showInactive]);
 
+  const downloadableRoster = useMemo(() => displayRoster.filter(row => row.active), [displayRoster]);
+
   const downloadRosterCsv = () => {
     if (!selectedTeamId) return;
-    if (displayRoster.length === 0) return;
+    if (downloadableRoster.length === 0) return;
 
     const escape = (value: string | number | boolean) => {
       const text = String(value ?? "");
@@ -858,7 +861,7 @@ export default function TeamsPage() {
         }
         .row {
           display: flex;
-          gap: 10px;
+          gap: 6px;
           align-items: center;
           flex-wrap: wrap;
         }
@@ -1107,7 +1110,7 @@ export default function TeamsPage() {
             font-size: 12px;
           }
           .row {
-            gap: 6px;
+            gap: 3px;
           }
           .btn {
             padding: 8px 10px;
@@ -1131,7 +1134,8 @@ export default function TeamsPage() {
           background: #fff;
         }
         .roster-grid {
-          overflow-x: auto;
+          overflow: auto;
+          max-height: calc(20 * 40px);
         }
         .spreadsheet-table {
           border-collapse: collapse;
