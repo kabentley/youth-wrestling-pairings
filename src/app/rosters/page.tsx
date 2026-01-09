@@ -1156,12 +1156,21 @@ export default function RostersPage() {
           width: 40px;
           height: 40px;
         }
-        .team-head {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 0;
-        }
+          .team-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            padding: 10px 16px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #fff;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            width: 100%;
+            max-width: 280px;
+            justify-content: flex-start;
+          }
         .team-logo {
           width: 44px;
           height: 44px;
@@ -1510,7 +1519,7 @@ export default function RostersPage() {
             <div className="header-left">
               <div className="header-main">
                 <div className="header-title-group">
-                  <h2 className="card-title">Roster</h2>
+                  <h2 className="card-title">Roster for:</h2>
                   <div className="team-selector-wrapper">
                     <button
                       type="button"

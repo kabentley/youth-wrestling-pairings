@@ -10,13 +10,25 @@ const PatchSchema = z.object({
   symbol: z.string().trim().min(2).max(4).optional(),
   address: z.string().trim().optional(),
   website: z.string().trim().url().optional().or(z.literal("")),
+  headCoachId: z.string().trim().optional().or(z.literal("")),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
   const team = await db.team.findUnique({
     where: { id: teamId },
-    select: { id: true, name: true, symbol: true, color: true, address: true, website: true, homeTeamPreferSameMat: true, logoData: true },
+    select: {
+      id: true,
+      name: true,
+      symbol: true,
+      color: true,
+      address: true,
+      website: true,
+      homeTeamPreferSameMat: true,
+      logoData: true,
+      headCoachId: true,
+      headCoach: { select: { id: true, username: true } },
+    },
   });
   if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
   return NextResponse.json({
@@ -47,23 +59,54 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
   if (!isAdmin && !isTeamCoach) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!isAdmin && (body.name || body.symbol || body.address)) {
-    return NextResponse.json({ error: "Only admins can update name, symbol, or address" }, { status: 403 });
+  if (!isAdmin && (body.name || body.symbol || body.address || body.headCoachId !== undefined)) {
+    return NextResponse.json({ error: "Only admins can update name, symbol, address, or head coach" }, { status: 403 });
   }
 
-  const data: { color?: string; name?: string; symbol?: string; address?: string | null; website?: string | null } = {};
+  const data: {
+    color?: string;
+    name?: string;
+    symbol?: string;
+    address?: string | null;
+    website?: string | null;
+    headCoachId?: string | null;
+  } = {};
   if (body.color) data.color = body.color;
   if (body.name) data.name = body.name.trim();
   if (body.symbol) data.symbol = body.symbol.trim().toUpperCase();
   if (body.address !== undefined) data.address = body.address.trim() || null;
   if (body.website !== undefined) data.website = body.website.trim() || null;
+  if (body.headCoachId !== undefined) {
+    const trimmed = body.headCoachId.trim();
+    data.headCoachId = trimmed === "" ? null : trimmed;
+  }
 
   const team = await db.team.update({
     where: { id: teamId },
     data,
-    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true, website: true },
+    select: {
+      id: true,
+      name: true,
+      symbol: true,
+      color: true,
+      logoData: true,
+      address: true,
+      website: true,
+      headCoachId: true,
+      headCoach: { select: { id: true, username: true } },
+    },
   });
-  return NextResponse.json({ ...team, hasLogo: Boolean(team.logoData) });
+  return NextResponse.json({
+    id: team.id,
+    name: team.name,
+    symbol: team.symbol,
+    color: team.color,
+    address: team.address,
+    website: team.website,
+    hasLogo: Boolean(team.logoData),
+    headCoachId: team.headCoachId ?? null,
+    headCoach: team.headCoach ? { id: team.headCoach.id, username: team.headCoach.username } : null,
+  });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {

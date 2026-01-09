@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import AppHeader from "@/components/AppHeader";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const session = await getServerSession(authOptions);
+  if (!session) {
+    redirect("/auth/signin");
+  }
   const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
   const teamName = session && (session.user as any)?.role === "COACH" && (session.user as any)?.teamId
     ? (await db.team.findUnique({ where: { id: (session.user as any).teamId }, select: { symbol: true, name: true } }))

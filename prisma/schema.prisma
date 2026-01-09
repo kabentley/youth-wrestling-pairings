@@ -24,6 +24,8 @@ model Team {
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
   homeTeamPreferSameMat Boolean @default(false)
+  headCoachId String?   @unique
+  headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
   coaches   User[]
 }
 
@@ -236,6 +238,7 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
+  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)

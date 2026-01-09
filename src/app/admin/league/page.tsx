@@ -4,7 +4,17 @@ import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
-type TeamRow = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
+type TeamRow = {
+  id: string;
+  name: string;
+  symbol: string;
+  color: string;
+  address?: string | null;
+  hasLogo?: boolean;
+  headCoachId?: string | null;
+  headCoach?: { id: string; username: string } | null;
+  coaches: { id: string; username: string }[];
+};
 
 export default function AdminLeaguePage() {
   const { data: session } = useSession();
@@ -20,7 +30,7 @@ export default function AdminLeaguePage() {
   const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string>>({});
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
-  const [teamAddressEdits, setTeamAddressEdits] = useState<Record<string, string>>({});
+  const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string>>({});
   const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
@@ -105,11 +115,11 @@ export default function AdminLeaguePage() {
     await load();
   }
 
-  async function updateTeamDetails(teamId: string, name: string, symbol: string, address: string) {
+  async function updateTeamDetails(teamId: string, name: string, symbol: string, headCoachId: string | null) {
     const res = await fetch(`/api/teams/${teamId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol, address }),
+      body: JSON.stringify({ name, symbol, headCoachId }),
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
@@ -126,7 +136,7 @@ export default function AdminLeaguePage() {
       delete next[teamId];
       return next;
     });
-    setTeamAddressEdits((prev) => {
+    setTeamHeadCoachEdits((prev) => {
       const next = { ...prev };
       delete next[teamId];
       return next;
@@ -142,9 +152,16 @@ export default function AdminLeaguePage() {
     return teamSymbolEdits[team.id] ?? team.symbol;
   }
 
-  function getTeamAddress(team: TeamRow) {
-    return teamAddressEdits[team.id] ?? team.address ?? "";
+  function getTeamHeadCoachId(team: TeamRow) {
+    return teamHeadCoachEdits[team.id] ?? team.headCoachId ?? "";
   }
+
+  function normalizeHeadCoachId(value: string | null | undefined) {
+    if (!value) return null;
+    const trimmed = value.trim();
+    return trimmed === "" ? null : trimmed;
+  }
+
 
   async function saveLeague(nextName = leagueName, nextWebsite = leagueWebsite) {
     const res = await fetch("/api/league", {
@@ -176,13 +193,13 @@ export default function AdminLeaguePage() {
     await load();
   }
 
-  function scheduleTeamDetailsSave(teamId: string, name: string, symbol: string, address: string) {
+  function scheduleTeamDetailsSave(teamId: string, name: string, symbol: string, headCoachId: string | null) {
     const cleanName = name.trim();
     const cleanSymbol = symbol.trim();
     if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) return;
     if (detailTimers.current[teamId]) clearTimeout(detailTimers.current[teamId]);
     detailTimers.current[teamId] = setTimeout(() => {
-      void updateTeamDetails(teamId, cleanName, cleanSymbol, address);
+      void updateTeamDetails(teamId, cleanName, cleanSymbol, headCoachId);
     }, 500);
   }
 
@@ -331,7 +348,7 @@ export default function AdminLeaguePage() {
                   <th>Symbol</th>
                   <th>Team</th>
                   <th>Color</th>
-                  <th>Address</th>
+                  <th>Head Coach</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -365,7 +382,12 @@ export default function AdminLeaguePage() {
                         onChange={(e) => {
                           const nextSymbol = e.target.value;
                           setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
-                          scheduleTeamDetailsSave(t.id, getTeamName(t), nextSymbol, getTeamAddress(t));
+                          scheduleTeamDetailsSave(
+                            t.id,
+                            getTeamName(t),
+                            nextSymbol,
+                            normalizeHeadCoachId(getTeamHeadCoachId(t)),
+                          );
                         }}
                         className="admin-input-sm"
                       />
@@ -376,7 +398,12 @@ export default function AdminLeaguePage() {
                         onChange={(e) => {
                           const nextName = e.target.value;
                           setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
-                          scheduleTeamDetailsSave(t.id, nextName, getTeamSymbol(t), getTeamAddress(t));
+                          scheduleTeamDetailsSave(
+                            t.id,
+                            nextName,
+                            getTeamSymbol(t),
+                            normalizeHeadCoachId(getTeamHeadCoachId(t)),
+                          );
                         }}
                       />
                     </td>
@@ -437,15 +464,34 @@ export default function AdminLeaguePage() {
                       </div>
                     </td>
                     <td>
-                      <input
-                        value={getTeamAddress(t)}
+                      <select
+                        value={getTeamHeadCoachId(t)}
                         onChange={(e) => {
-                          const nextAddress = e.target.value;
-                          setTeamAddressEdits((prev) => ({ ...prev, [t.id]: nextAddress }));
-                          scheduleTeamDetailsSave(t.id, getTeamName(t), getTeamSymbol(t), nextAddress);
+                          const nextHeadCoachId = e.target.value;
+                          setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
+                          scheduleTeamDetailsSave(
+                            t.id,
+                            getTeamName(t),
+                            getTeamSymbol(t),
+                            normalizeHeadCoachId(nextHeadCoachId),
+                          );
                         }}
-                        placeholder="Street, City, State"
-                      />
+                      >
+                        <option value="">Select head coach</option>
+                        {t.coaches.map((coach) => (
+                          <option key={coach.id} value={coach.id}>
+                            {coach.username}
+                          </option>
+                        ))}
+                        {t.headCoach && !t.coaches.some(coach => coach.id === t.headCoach?.id) && (
+                          <option value={t.headCoach.id}>{t.headCoach.username}</option>
+                        )}
+                      </select>
+                      {!t.coaches.length && (
+                        <div className="admin-muted" style={{ marginTop: 4 }}>
+                          No coaches assigned yet.
+                        </div>
+                      )}
                     </td>
                     <td className="admin-actions">
                       <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>Delete Team</button>

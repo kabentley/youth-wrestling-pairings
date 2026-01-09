@@ -14,11 +14,12 @@ export default async function PostLoginPage({
 
   const params = await searchParams;
   const role = (session.user as any)?.role as string | undefined;
-  const raw = typeof params?.callbackUrl === "string" ? params.callbackUrl : "/teams";
-  const safe = raw.startsWith("/") ? raw : "/teams";
+  const defaultPath = "/rosters";
+  const raw = typeof params?.callbackUrl === "string" ? params.callbackUrl : defaultPath;
+  const safe = raw.startsWith("/") ? raw : defaultPath;
 
-  if (role === "ADMIN" && (safe === "/teams" || safe === "/" || safe.startsWith("/auth/"))) {
-    redirect("/admin");
+  if (role === "COACH" || role === "ADMIN") {
+    redirect("/");
   }
 
   redirect(safe);

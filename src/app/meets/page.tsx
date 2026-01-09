@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
@@ -135,11 +135,36 @@ export default function MeetsPage() {
     ? teamIds.filter(id => id !== currentTeamId)
     : teamIds;
   const canManageMeets = role === "COACH" || role === "ADMIN";
+  const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
+  const visibleMeets = useMemo(() => {
+    if (role !== "COACH") return meets;
+    if (!currentTeamId) return meets;
+    return meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId));
+  }, [meets, role, currentTeamId]);
   useEffect(() => {
     if (!homeTeamId || location.trim()) return;
     const home = teams.find(t => t.id === homeTeamId);
     if (home?.address) setLocation(home.address);
   }, [homeTeamId, teams, location]);
+
+  const renderTeamLabel = (team?: Team | null, fallback?: string) => {
+    if (!team) {
+      return <span className="team-name-muted">{fallback ?? "No team selected"}</span>;
+    }
+    return (
+      <span className="team-head meets-team-head">
+        {team.hasLogo ? (
+          <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
+        ) : (
+          <span className="color-dot" style={{ backgroundColor: team.color ?? "#ddd" }} />
+        )}
+        <span className="team-meta">
+          <span className="team-symbol" style={{ color: team.color ?? "#000" }}>{team.symbol}</span>
+          <span className="team-name">{team.name}</span>
+        </span>
+      </span>
+    );
+  };
 
   return (
     <main className="meets">
@@ -226,6 +251,48 @@ export default function MeetsPage() {
           border-color: var(--line);
           background: #f7f9fb;
         }
+        .team-head {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .team-head.meets-team-head {
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 6px 10px;
+          background: #fff;
+          gap: 10px;
+          width: 100%;
+        }
+        .team-logo {
+          width: 40px;
+          height: 40px;
+          object-fit: contain;
+          border-radius: 6px;
+        }
+        .color-dot {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          display: inline-block;
+        }
+        .team-meta {
+          display: flex;
+          flex-direction: column;
+          line-height: 1.1;
+        }
+        .team-symbol {
+          font-weight: 700;
+          font-size: 12px;
+        }
+        .team-name {
+          font-weight: 600;
+          font-size: 14px;
+        }
+        .team-name-muted {
+          font-weight: 600;
+          color: var(--muted);
+        }
         .grid {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
@@ -243,6 +310,18 @@ export default function MeetsPage() {
           font-family: "Oswald", Arial, sans-serif;
           margin: 0 0 10px;
           text-transform: uppercase;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .card-title-text {
+          flex: 0 1 auto;
+        }
+        .team-label-slot {
+          flex: 1 1 auto;
+          min-width: 0;
+          display: flex;
         }
         .row {
           display: flex;
@@ -353,16 +432,11 @@ export default function MeetsPage() {
 
       <div className="grid">
         <section className="card">
-          <h2 className="card-title" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span>
-              Create New Meet for: {teams.find(t => t.id === currentTeamId)?.name ?? "Your Team"}
-              {teams.find(t => t.id === currentTeamId)?.symbol ? ` (${teams.find(t => t.id === currentTeamId)?.symbol})` : ""}
+          <h2 className="card-title">
+            <span className="card-title-text">Create New Meet for:</span>
+            <span className="team-label-slot">
+              {renderTeamLabel(selectedTeam, "Your Team")}
             </span>
-            {(() => {
-              const t = teams.find(team => team.id === currentTeamId);
-              if (!t?.hasLogo) return null;
-              return <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />;
-            })()}
           </h2>
           {!canManageMeets && (
             <div className="muted" style={{ marginBottom: 10 }}>
@@ -472,7 +546,7 @@ export default function MeetsPage() {
         <section className="card">
           <h2 className="card-title">Existing Meets</h2>
           <div className="meet-list">
-            {meets.map(m => (
+            {visibleMeets.map(m => (
               <div key={m.id} className="meet-item">
                 <div className="meet-item-header">
                   <div>

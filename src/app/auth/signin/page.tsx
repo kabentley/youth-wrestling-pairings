@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 export default function SignInPage() {
   const sp = useSearchParams();
-  const rawCallbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const rawCallbackUrl = sp.get("callbackUrl") ?? "/rosters";
   const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
     ? rawCallbackUrl
     : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;
@@ -21,7 +21,7 @@ export default function SignInPage() {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState("");
   const [resendEmail, setResendEmail] = useState("");
-  const [bypassEmailVerification, setBypassEmailVerification] = useState(false);
+  const [bypassEmailVerification, setBypassEmailVerification] = useState(process.env.NODE_ENV !== "production");
   const [oauthProviders, setOauthProviders] = useState<Record<string, { id: string }>>({});
 
   useEffect(() => {

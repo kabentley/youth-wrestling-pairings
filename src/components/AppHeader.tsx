@@ -9,7 +9,12 @@ type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
 
 export default function AppHeader({ links }: { links: LinkItem[] }) {
-  const [user, setUser] = useState<{ username: string; role: Role; team?: string | null; teamLogoUrl?: string | null } | null>(null);
+  const [user, setUser] = useState<{
+    username: string;
+    role: Role;
+    team?: { name?: string | null; symbol?: string | null; color?: string | null } | null;
+    teamLogoUrl?: string | null;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -17,12 +22,12 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
       const res = await fetch("/api/me");
       const json = res.ok ? await res.json() : null;
       if (!active || !json?.username || !json?.role) return;
-      setUser({
-        username: json.username,
-        role: json.role,
-        team: json.team ?? null,
-        teamLogoUrl: json.teamLogoUrl ?? null,
-      });
+        setUser({
+          username: json.username,
+          role: json.role,
+          team: json.team ?? null,
+          teamLogoUrl: json.teamLogoUrl ?? null,
+        });
     }
     void load();
     function handleRefresh() {
@@ -41,7 +46,14 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
         if (!link.minRole) return true;
         return roleOrder[user.role] >= roleOrder[link.minRole];
       })
-    : links.filter(link => !link.minRole && !link.roles);
+    : links.filter(
+        link =>
+          !link.minRole &&
+          !link.roles &&
+          link.href !== "/rosters" &&
+          link.href !== "/account" &&
+          link.href !== "/parent",
+      );
   const accountLink = user ? visibleLinks.find(link => link.href === "/account") : null;
   const myWrestlersLink = user ? visibleLinks.find(link => link.href === "/parent") : null;
   const mainLinks = accountLink
@@ -73,13 +85,40 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
         {user ? (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 600 }}>
-              <span>User: {user.username}, Role: {user.role}{user.team ? `, Team: ${user.team}` : ""}</span>
-              {user.teamLogoUrl ? (
-                <img
-                  src={user.teamLogoUrl}
-                  alt="Team logo"
-                  style={{ width: 18, height: 18, objectFit: "contain" }}
-                />
+              <span>User: {user.username}, Role: {user.role}</span>
+              {user.team ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 8px",
+                    border: "1px solid var(--line, #d5dbe2)",
+                    borderRadius: 8,
+                  }}
+                >
+                  {user.teamLogoUrl ? (
+                    <img
+                      src={user.teamLogoUrl}
+                      alt={`${user.team.name ?? "Team"} logo`}
+                      style={{ width: 22, height: 22, objectFit: "contain", borderRadius: 4 }}
+                    />
+                  ) : (
+                    <span
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 6,
+                        background: user.team.color ?? "#ccc",
+                        display: "inline-block",
+                      }}
+                    />
+                  )}
+                  <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+                    <span style={{ fontWeight: 700, fontSize: 12 }}>{user.team.symbol ?? ""}</span>
+                    <span style={{ fontWeight: 600, fontSize: 12 }}>{user.team.name}</span>
+                  </span>
+                </span>
               ) : null}
             </div>
             {myWrestlersLink ? (

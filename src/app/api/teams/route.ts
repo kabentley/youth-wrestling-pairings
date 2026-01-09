@@ -27,7 +27,18 @@ export async function GET() {
   }
   const teams = await db.team.findMany({
     orderBy: { name: "asc" },
-    select: { id: true, name: true, symbol: true, color: true, logoData: true, address: true, website: true },
+    select: {
+      id: true,
+      name: true,
+      symbol: true,
+      color: true,
+      logoData: true,
+      address: true,
+      website: true,
+      headCoachId: true,
+      headCoach: { select: { id: true, username: true } },
+      coaches: { where: { role: "COACH" }, select: { id: true, username: true } },
+    },
   });
   return NextResponse.json(
     teams.map((t) => ({
@@ -38,6 +49,9 @@ export async function GET() {
       address: t.address,
       website: t.website,
       hasLogo: Boolean(t.logoData),
+      headCoachId: t.headCoachId ?? null,
+      headCoach: t.headCoach ? { id: t.headCoach.id, username: t.headCoach.username } : null,
+      coaches: t.coaches.map((c) => ({ id: c.id, username: c.username })),
     })),
   );
 }
