@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
@@ -48,6 +49,7 @@ type MeetComment = {
 
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
+  const router = useRouter();
   const daysPerYear = 365;
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -1272,10 +1274,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   {canAddWrestler && (
                     <button
                       className="nav-btn"
-                      onClick={() => setShowAddWrestler(true)}
+                      onClick={() => {
+                        if (!attendanceTeamId) return;
+                        router.push(`/rosters?team=${attendanceTeamId}`);
+                      }}
                       disabled={!canEdit || !attendanceTeamId}
                     >
-                      Add Wrestler
+                      Edit Roster
                     </button>
                   )}
                 </div>

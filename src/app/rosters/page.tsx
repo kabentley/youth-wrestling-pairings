@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useSession } from "next-auth/react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import AppHeader from "@/components/AppHeader";
@@ -92,6 +92,8 @@ export default function RostersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const teamQueryParam = searchParams.get("team");
   const role = (session?.user as any)?.role as string | undefined;
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const [teams, setTeams] = useState<Team[]>([]);
@@ -142,7 +144,6 @@ export default function RostersPage() {
   }, [showTeamSelector]);
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
@@ -208,6 +209,16 @@ export default function RostersPage() {
       setImportTeamId(sessionTeamId);
     }
   }, [role, sessionTeamId, selectedTeamId]);
+
+  useEffect(() => {
+    if (!teamQueryParam) return;
+    if (hasDirtyChanges) return;
+    if (selectedTeamId === teamQueryParam) return;
+    if (!teams.some(t => t.id === teamQueryParam)) return;
+    setSelectedTeamId(teamQueryParam);
+    setImportTeamId(teamQueryParam);
+    setShowTeamSelector(false);
+  }, [teamQueryParam, teams, selectedTeamId, hasDirtyChanges]);
 
   async function onChooseFile(f: File | null) {
     setFile(f);
@@ -1032,28 +1043,28 @@ export default function RostersPage() {
           border-color: var(--accent);
           box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.15);
         }
-        .league-banner {
+        .mast-title {
           display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px;
-          border: 1px solid var(--line);
-          border-radius: 10px;
-          background: #fff;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .mast-logo {
+          display: inline-flex;
+          width: 78px;
+          height: 78px;
+          margin-left: 12px;
+          vertical-align: middle;
         }
         .league-logo {
-          width: 56px;
-          height: 56px;
+          width: 100%;
+          height: 100%;
           object-fit: contain;
-          border-radius: 8px;
+          border-radius: 10px;
         }
-        .league-name {
-          font-size: 20px;
-          font-weight: 700;
-        }
-        .league-subtitle {
-          font-size: 14px;
-          color: var(--muted);
+        .mast .title {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
         }
         .team-selector-wrapper {
           position: relative;
@@ -1068,6 +1079,17 @@ export default function RostersPage() {
           box-shadow: 0 20px 30px rgba(0, 0, 0, 0.12);
           min-width: 220px;
           z-index: 5;
+        }
+        .team-select-logo {
+          width: 34px;
+          height: 34px;
+          object-fit: contain;
+          border-radius: 6px;
+        }
+        .team-select-item .team-symbol {
+          min-width: 32px;
+          font-weight: 700;
+          text-align: center;
         }
         .team-placeholder {
           font-weight: 600;
@@ -1466,20 +1488,22 @@ export default function RostersPage() {
       `}</style>
       <AppHeader links={headerLinks} />
       <header className="mast">
-        <div>
-          <h1 className="title">Team Rosters</h1>
+        <div className="mast-title">
+          <h1 className="title">
+            <span>Team Rosters for {leagueName || "League Directory"}</span>
+            <span className="mast-logo">
+              <img
+                src="/api/league/logo/file"
+                alt={`${leagueName || "League"} logo`}
+                className="league-logo"
+              />
+            </span>
+          </h1>
           <div className="tagline">League Directory</div>
         </div>
       </header>
 
       <div className="grid">
-        <div className="league-banner">
-          <img src="/api/league/logo/file" alt={`${leagueName || "League"} logo`} className="league-logo" />
-          <div>
-            <div className="league-name">{leagueName || "League Directory"}</div>
-            <div className="league-subtitle">Team Rosters</div>
-          </div>
-        </div>
 
         <section className="card">
           <div className="card-header">
@@ -1528,7 +1552,16 @@ export default function RostersPage() {
                             className={`team-select-item ${selectedTeamId === t.id ? "active" : ""}`}
                             onClick={() => selectTeam(t.id)}
                           >
-                            <span className="team-symbol" style={{ color: t.color }}>{t.symbol}</span>
+                            {t.hasLogo && (
+                              <img
+                                src={`/api/teams/${t.id}/logo/file`}
+                                alt={`${t.name} logo`}
+                                className="team-select-logo"
+                              />
+                            )}
+                            <span className="team-symbol" style={{ color: t.color }}>
+                              {t.symbol}
+                            </span>
                             <span className="team-name">{t.name}</span>
                           </button>
                         ))}

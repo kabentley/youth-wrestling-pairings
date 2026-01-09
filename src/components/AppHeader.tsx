@@ -43,7 +43,10 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
       })
     : links.filter(link => !link.minRole && !link.roles);
   const accountLink = user ? visibleLinks.find(link => link.href === "/account") : null;
-  const mainLinks = accountLink ? visibleLinks.filter(link => link.href !== "/account") : visibleLinks;
+  const myWrestlersLink = user ? visibleLinks.find(link => link.href === "/parent") : null;
+  const mainLinks = accountLink
+    ? visibleLinks.filter(link => link.href !== "/account" && link.href !== "/parent")
+    : visibleLinks.filter(link => link.href !== "/parent");
 
   return (
     <div
@@ -79,6 +82,23 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
                 />
               ) : null}
             </div>
+            {myWrestlersLink ? (
+              <a
+                href={myWrestlersLink.href}
+                style={{
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  color: "var(--ink, #1d232b)",
+                  border: "1px solid var(--line, #d5dbe2)",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  fontSize: 14,
+                  letterSpacing: "0.5px",
+                }}
+              >
+                {myWrestlersLink.label}
+              </a>
+            ) : null}
             {accountLink ? (
               <a
                 href={accountLink.href}
