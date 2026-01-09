@@ -16,7 +16,7 @@ export default async function Home() {
   const leagueWebsite = league?.website?.trim() || null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
   const headerLinks = [
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },

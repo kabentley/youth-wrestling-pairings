@@ -118,7 +118,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [candidates, setCandidates] = useState<any[]>([]);
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
@@ -940,6 +940,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           color: var(--accent);
           background: #f7f9fb;
         }
+        .pairings-table-wrapper {
+          margin-top: 12px;
+          max-height: calc(20 * 40px);
+          overflow-y: auto;
+        }
         .col-resizer {
           position: absolute;
           right: 2px;
@@ -1173,7 +1178,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             );
             })}
           </div>
-        <div style={{ marginTop: 12, height: 320, overflowY: "auto" }}>
+        <div className="pairings-table-wrapper">
         <table className="pairings-table" cellPadding={6} style={{ borderCollapse: "collapse" }}>
             <colgroup>
               <col style={{ width: pairingsColWidths[0] }} />
@@ -1222,13 +1227,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     setSelectedPairingId(w.id);
                     void loadCandidates(w.id);
                   }}
-                  style={{
-                    borderTop: "1px solid #eee",
-                    background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
-                    outline: selectedPairingId === w.id ? "2px solid #1e88e5" : undefined,
-                    outlineOffset: selectedPairingId === w.id ? "-2px" : undefined,
-                    cursor: "pointer",
-                  }}
+                    style={{
+                      borderTop: "1px solid #eee",
+                      background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
+                      cursor: "pointer",
+                    }}
                 >
                     <td>{w.last}</td>
                     <td>{w.first}</td>

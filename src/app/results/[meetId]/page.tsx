@@ -38,7 +38,7 @@ export default function EnterResultsPage() {
 
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/account", label: "Account" },

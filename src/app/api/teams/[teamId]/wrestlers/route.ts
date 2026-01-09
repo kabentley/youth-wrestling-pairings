@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { Prisma } from "@prisma/client";
+
 import { db } from "@/lib/db";
 import { requireSession, requireTeamCoach } from "@/lib/rbac";
 
@@ -65,18 +67,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ teamId:
     );
   }
 
-  const w = await db.wrestler.create({
-    data: {
-      teamId,
-      first: parsed.data.first,
-      last: parsed.data.last,
-      weight: parsed.data.weight,
-      birthdate: new Date(parsed.data.birthdate),
-      experienceYears: parsed.data.experienceYears,
-      skill: parsed.data.skill,
-      active: true,
-    },
-  });
-
-  return NextResponse.json(w);
+  try {
+    const w = await db.wrestler.create({
+      data: {
+        teamId,
+        first: parsed.data.first,
+        last: parsed.data.last,
+        weight: parsed.data.weight,
+        birthdate: new Date(parsed.data.birthdate),
+        experienceYears: parsed.data.experienceYears,
+        skill: parsed.data.skill,
+        active: true,
+      },
+    });
+    return NextResponse.json(w);
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "A wrestler with that name already exists on this team." },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 }

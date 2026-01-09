@@ -41,7 +41,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
   const dirtyRef = useRef(false);
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },

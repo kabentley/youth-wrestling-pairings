@@ -9,7 +9,7 @@ test.beforeEach(async () => {
 test("CSV import creates and then re-import overwrites existing by name+birthday", async ({ page }) => {
   await login(page);
 
-  await page.goto("/teams");
+  await page.goto("/rosters");
 
   // Create team
   await page.getByPlaceholder("Team name").fill("Tigers");

@@ -1,6 +1,6 @@
 "use client";
 import { useSession } from "next-auth/react";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, type FormEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Wrestler = {
@@ -48,7 +48,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   });
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
@@ -100,6 +100,12 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const updateFormFields = (updates: Partial<typeof form>) => {
     setForm(prev => ({ ...prev, ...updates }));
     setFormError(prev => (prev ? "" : prev));
+  };
+
+  const handleNewWrestlerSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canEdit) return;
+    await add();
   };
 
   const validateNewWrestler = () => {
@@ -334,24 +340,39 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
-        <input placeholder="First" value={form.first} onChange={e => updateFormFields({ first: e.target.value })} disabled={!canEdit} />
-        <input placeholder="Last" value={form.last} onChange={e => updateFormFields({ last: e.target.value })} disabled={!canEdit} />
-        <input type="number" placeholder="Weight" value={form.weight} onChange={e => updateFormFields({ weight: Number(e.target.value) })} disabled={!canEdit} />
-        <input type="date" value={form.birthdate} onChange={e => updateFormFields({ birthdate: e.target.value })} disabled={!canEdit} />
-        <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => updateFormFields({ experienceYears: Number(e.target.value) })} disabled={!canEdit} />
-        <input
-          type="number"
-          placeholder="Skill 0-5"
-          value={form.skill}
-          min={0}
-          max={5}
-          onChange={e => updateFormFields({ skill: Number(e.target.value) })}
-          disabled={!canEdit}
-        />
-      </div>
+      <form
+        onSubmit={handleNewWrestlerSubmit}
+        style={{ display: "grid", gap: 8, marginBottom: 12 }}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 }}>
+          <input placeholder="First" value={form.first} onChange={e => updateFormFields({ first: e.target.value })} disabled={!canEdit} />
+          <input placeholder="Last" value={form.last} onChange={e => updateFormFields({ last: e.target.value })} disabled={!canEdit} />
+          <input type="number" placeholder="Weight" value={form.weight} onChange={e => updateFormFields({ weight: Number(e.target.value) })} disabled={!canEdit} />
+          <input type="date" value={form.birthdate} onChange={e => updateFormFields({ birthdate: e.target.value })} disabled={!canEdit} />
+          <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => updateFormFields({ experienceYears: Number(e.target.value) })} disabled={!canEdit} />
+          <input
+            type="number"
+            placeholder="Skill 0-5"
+            value={form.skill}
+            min={0}
+            max={5}
+            onChange={e => updateFormFields({ skill: Number(e.target.value) })}
+            disabled={!canEdit}
+          />
+          <button
+            type="submit"
+            disabled={!canEdit}
+            className="btn btn-small"
+            style={{ alignSelf: "stretch" }}
+          >
+            Add
+          </button>
+        </div>
 
-      <button onClick={add} disabled={!canEdit}>Add Wrestler</button>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <span className="muted" style={{ fontSize: 12 }}>Press Enter or tap Add</span>
+        </div>
+      </form>
       {formError && (
         <div role="alert" style={{ color: "#b71c1c", marginTop: 6, fontSize: 13 }}>
           {formError}
@@ -543,7 +564,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         </>
       )}
 
-      <p style={{ marginTop: 16 }}><a href="/teams">Back to Teams</a></p>
+      <p style={{ marginTop: 16 }}><a href="/rosters">Back to Rosters</a></p>
     </main>
   );
 }

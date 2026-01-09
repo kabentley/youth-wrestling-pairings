@@ -30,7 +30,7 @@ export default function AdminLeaguePage() {
   const colorPopoverRef = useRef<HTMLDivElement | null>(null);
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
   ];
 

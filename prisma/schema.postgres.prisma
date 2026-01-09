@@ -69,7 +69,7 @@ model Wrestler {
   @@index([teamId])
   @@index([last, first])
 
-  @@unique([teamId, first, last, birthdate])
+  @@unique([teamId, first, last])
 }
 
 model Meet {

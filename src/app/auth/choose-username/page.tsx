@@ -8,7 +8,7 @@ import { useSession } from "next-auth/react";
 export default function ChooseUsernamePage() {
   const router = useRouter();
   const sp = useSearchParams();
-  const rawCallbackUrl = sp.get("callbackUrl") ?? "/teams";
+  const rawCallbackUrl = sp.get("callbackUrl") ?? "/rosters";
   const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
     ? rawCallbackUrl
     : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;

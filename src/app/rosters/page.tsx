@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
@@ -88,7 +88,7 @@ function parseCsv(text: string) {
   return { headers, data };
 }
 
-export default function TeamsPage() {
+export default function RostersPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -101,7 +101,7 @@ export default function TeamsPage() {
   const [rosterMsg, setRosterMsg] = useState("");
   const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
   const [savingAll, setSavingAll] = useState(false);
-  const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 80, 80, 90, 90]);
+  const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 80, 80, 90, 90, 90]);
   const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
@@ -119,10 +119,30 @@ export default function TeamsPage() {
   const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showTeamSelector, setShowTeamSelector] = useState(false);
+  const headerTeamButtonRef = useRef<HTMLButtonElement | null>(null);
+  const teamSelectRef = useRef<HTMLDivElement | null>(null);
   const daysPerYear = 365;
+  useEffect(() => {
+    if (!showTeamSelector) return undefined;
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        target &&
+        !teamSelectRef.current?.contains(target) &&
+        !headerTeamButtonRef.current?.contains(target)
+      ) {
+        setShowTeamSelector(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showTeamSelector]);
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
@@ -130,7 +150,7 @@ export default function TeamsPage() {
   ];
 
   const redirectToLogin = () => {
-    const callbackUrl = pathname ?? "/teams";
+    const callbackUrl = pathname ?? "/rosters";
     router.replace(`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   };
 
@@ -142,6 +162,17 @@ export default function TeamsPage() {
       return true;
     }
     return false;
+  };
+
+  const selectTeam = (teamId: string) => {
+    if (hasDirtyChanges) {
+      setRosterMsg("Save or discard your edits before switching teams.");
+      setShowTeamSelector(false);
+      return;
+    }
+    setSelectedTeamId(teamId);
+    setImportTeamId(teamId);
+    setShowTeamSelector(false);
   };
 
   async function load() {
@@ -528,7 +559,7 @@ export default function TeamsPage() {
     }
   };
 
-  const newEditableRow = editableRows.find(r => r.isNew);
+  const newRows = editableRows.filter(r => r.isNew);
   const savedEditableRows = editableRows.filter(r => !r.isNew);
   const filteredEditableRows = savedEditableRows.filter(row => showInactive || row.active);
 
@@ -565,20 +596,7 @@ export default function TeamsPage() {
     });
     originalRowsRef.current = originals;
     setDirtyRowIds(new Set());
-    setEditableRows([
-      {
-        id: "new",
-        first: "",
-        last: "",
-        weight: "",
-        birthdate: "",
-        experienceYears: "0",
-        skill: "0",
-        active: true,
-        isNew: true,
-      },
-      ...rows,
-    ]);
+    setEditableRows([createEmptyRow("new"), ...rows]);
     setFieldErrors({});
   }, [roster]);
 
@@ -617,6 +635,69 @@ export default function TeamsPage() {
 
   const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
   const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
+  const currentTeam = teams.find(t => t.id === selectedTeamId);
+
+  const createEmptyRow = (id?: string): EditableWrestler => ({
+    id: id ?? `new-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    first: "",
+    last: "",
+    weight: "",
+    birthdate: "",
+    experienceYears: "0",
+    skill: "0",
+    active: true,
+    isNew: true,
+  });
+
+  const handleNewRowInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>, row: EditableWrestler) => {
+    if (event.key !== "Enter" || !row.isNew) return;
+    event.preventDefault();
+    addEmptyRow();
+  };
+
+  const fieldRefs = useRef<Map<string, HTMLInputElement | HTMLSelectElement>>(new Map());
+
+  const registerFieldRef = (rowId: string, field: keyof EditableWrestler, el: HTMLInputElement | HTMLSelectElement | null) => {
+    const key = `${rowId}-${field}`;
+    if (el) {
+      fieldRefs.current.set(key, el);
+    } else {
+      fieldRefs.current.delete(key);
+    }
+  };
+
+  const focusField = (rowId: string, field: keyof EditableWrestler) => {
+    const key = `${rowId}-${field}`;
+    const target = fieldRefs.current.get(key);
+    target?.focus();
+  };
+
+  const addEmptyRow = () => {
+    setEditableRows(rows => [createEmptyRow(), ...rows]);
+  };
+
+  const focusAdjacentRow = (rowId: string, field: keyof EditableWrestler, direction: "up" | "down") => {
+    const allRows = [...newRows, ...sortedEditableRows];
+    const idx = allRows.findIndex(r => r.id === rowId);
+    if (idx === -1) return;
+    const nextIdx = direction === "down" ? Math.min(allRows.length - 1, idx + 1) : Math.max(0, idx - 1);
+    const nextRow = allRows[nextIdx];
+    if (nextRow) {
+      focusField(nextRow.id, field);
+    }
+  };
+
+  const handleInputKeyDown = (
+    event: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    row: EditableWrestler,
+    field: keyof EditableWrestler,
+  ) => {
+    handleNewRowInputKeyDown(event as unknown as Event, row);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      focusAdjacentRow(row.id, field, event.key === "ArrowDown" ? "down" : "up");
+    }
+  };
 
   const renderEditableRow = (row: EditableWrestler, isNewRow = false) => {
     const ageDisplay = row.birthdate ? getAgeLabel(row.birthdate) : "";
@@ -642,6 +723,8 @@ export default function TeamsPage() {
             onChange={e => handleFieldChange(row.id, "last", e.target.value)}
             placeholder="Last"
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "last", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "last")}
           />
         </td>
         <td>
@@ -651,6 +734,8 @@ export default function TeamsPage() {
             onChange={e => handleFieldChange(row.id, "first", e.target.value)}
             placeholder="First"
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "first", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "first")}
           />
         </td>
         <td>
@@ -660,6 +745,8 @@ export default function TeamsPage() {
             value={row.birthdate}
             onChange={e => handleFieldChange(row.id, "birthdate", e.target.value)}
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "birthdate", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "birthdate")}
           />
         </td>
         <td>
@@ -676,6 +763,8 @@ export default function TeamsPage() {
             onChange={e => handleFieldChange(row.id, "weight", e.target.value)}
             placeholder="Weight"
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "weight", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "weight")}
           />
         </td>
         <td>
@@ -687,6 +776,8 @@ export default function TeamsPage() {
             onChange={e => handleFieldChange(row.id, "experienceYears", e.target.value)}
             placeholder="Exp"
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "experienceYears", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "experienceYears")}
           />
         </td>
         <td>
@@ -699,6 +790,8 @@ export default function TeamsPage() {
             onChange={e => handleFieldChange(row.id, "skill", e.target.value)}
             placeholder="Skill"
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "skill", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "skill")}
           />
         </td>
         <td>
@@ -707,6 +800,8 @@ export default function TeamsPage() {
             value={row.active ? "active" : "inactive"}
             onChange={e => handleFieldChange(row.id, "active", e.target.value === "active")}
             disabled={!canEditRoster}
+            ref={el => registerFieldRef(row.id, "active", el)}
+            onKeyDown={e => handleInputKeyDown(e, row, "active")}
           >
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -861,7 +956,7 @@ export default function TeamsPage() {
         }
         .row {
           display: flex;
-          gap: 6px;
+          gap: 4px;
           align-items: center;
           flex-wrap: wrap;
         }
@@ -929,6 +1024,63 @@ export default function TeamsPage() {
         .team-card-active {
           border-color: var(--accent);
           box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.15);
+        }
+        .league-banner {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: #fff;
+        }
+        .league-logo {
+          width: 56px;
+          height: 56px;
+          object-fit: contain;
+          border-radius: 8px;
+        }
+        .league-name {
+          font-size: 20px;
+          font-weight: 700;
+        }
+        .league-subtitle {
+          font-size: 14px;
+          color: var(--muted);
+        }
+        .team-selector-wrapper {
+          position: relative;
+        }
+        .team-select-menu {
+          position: absolute;
+          top: calc(100% + 8px);
+          left: 0;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          box-shadow: 0 20px 30px rgba(0, 0, 0, 0.12);
+          min-width: 220px;
+          z-index: 5;
+        }
+        .team-placeholder {
+          font-weight: 600;
+          color: var(--muted);
+          letter-spacing: 0.4px;
+        }
+        .team-select-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 12px;
+          width: 100%;
+          border: none;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+          font-weight: 500;
+        }
+        .team-select-item.active {
+          background: #e8f4ff;
         }
         .card-header {
           display: block;
@@ -1054,7 +1206,7 @@ export default function TeamsPage() {
         }
         .roster-table th,
         .roster-table td {
-          padding: 6px 5px;
+          padding: 4px 5px;
           border-bottom: 1px solid var(--line);
           text-align: left;
           font-size: 13px;
@@ -1106,11 +1258,11 @@ export default function TeamsPage() {
           }
           .roster-table th,
           .roster-table td {
-            padding: 4px 6px;
+            padding: 2px 4px;
             font-size: 12px;
           }
           .row {
-            gap: 3px;
+            gap: 2px;
           }
           .btn {
             padding: 8px 10px;
@@ -1142,10 +1294,10 @@ export default function TeamsPage() {
         }
         .spreadsheet-table th,
         .spreadsheet-table td {
-          padding: 4px 6px;
+          padding: 2px 4px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          line-height: 1.2;
+          line-height: 1.1;
         }
         .spreadsheet-table th {
           background: #f7f9fb;
@@ -1218,9 +1370,6 @@ export default function TeamsPage() {
         .spreadsheet-row.dirty-row {
           background: rgba(30, 136, 229, 0.07);
         }
-        .error-row {
-          animation: shake 0.2s linear;
-        }
         .spreadsheet-age {
           padding: 6px 8px;
           color: var(--muted);
@@ -1228,6 +1377,9 @@ export default function TeamsPage() {
         .full-row-placeholder {
           text-align: center;
           color: var(--muted);
+        }
+        .error-msg-placeholder {
+          min-height: 24px;
         }
         .import-modal-backdrop {
           position: fixed;
@@ -1303,46 +1455,13 @@ export default function TeamsPage() {
       </header>
 
       <div className="grid">
-        <section className="card">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h2 className="card-title">Teams{leagueName ? ` for ${leagueName}` : ""}</h2>
-            {role !== "ADMIN" && <span className="muted">Team management is handled by league admins.</span>}
+        <div className="league-banner">
+          <img src="/api/league/logo/file" alt={`${leagueName || "League"} logo`} className="league-logo" />
+          <div>
+            <div className="league-name">{leagueName || "League Directory"}</div>
+            <div className="league-subtitle">Team Rosters</div>
           </div>
-          {session?.user ? (
-            <div className="team-grid">
-              {teams.map(t => (
-                <div
-                  key={t.id}
-                  role="button"
-                  tabIndex={0}
-                  className={`team-card ${selectedTeamId === t.id ? "team-card-active" : ""}`}
-                  onClick={() => { setSelectedTeamId(t.id); setImportTeamId(t.id); }}
-                  onKeyDown={e => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setSelectedTeamId(t.id);
-                      setImportTeamId(t.id);
-                    }
-                  }}
-                >
-                  <div className="team-head">
-                    {t.hasLogo ? (
-                      <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} className="team-logo" />
-                    ) : (
-                      <div className="color-dot" style={{ backgroundColor: t.color }} />
-                    )}
-                    <div className="team-meta">
-                      <span className="team-symbol" style={{ color: t.color }}>{t.symbol}</span>
-                      <div className="team-name">{t.name}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted">Sign in to view teams.</div>
-          )}
-        </section>
+        </div>
 
         <section className="card">
           <div className="card-header">
@@ -1350,23 +1469,54 @@ export default function TeamsPage() {
               <div className="header-main">
                 <div className="header-title-group">
                   <h2 className="card-title">Roster</h2>
-                  {selectedTeamId && (() => {
-                    const team = teams.find(t => t.id === selectedTeamId);
-                    if (!team) return null;
-                    return (
-                      <div className="team-head header-team">
-                        {team.hasLogo ? (
-                          <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
-                        ) : (
-                          <div className="color-dot" style={{ backgroundColor: team.color }} />
-                        )}
-                        <div className="team-meta">
-                          <span className="team-symbol" style={{ color: team.color }}>{team.symbol}</span>
-                          <div className="team-name">{team.name}</div>
-                        </div>
+                  <div className="team-selector-wrapper">
+                    <button
+                      type="button"
+                      className="team-head header-team"
+                      ref={headerTeamButtonRef}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setShowTeamSelector(prev => !prev);
+                      }}
+                      aria-expanded={showTeamSelector}
+                      disabled={teams.length === 0}
+                    >
+                      {currentTeam ? (
+                        <>
+                          {currentTeam.hasLogo ? (
+                            <img
+                              src={`/api/teams/${currentTeam.id}/logo/file`}
+                              alt={`${currentTeam.name} logo`}
+                              className="team-logo"
+                            />
+                          ) : (
+                            <div className="color-dot" style={{ backgroundColor: currentTeam.color }} />
+                          )}
+                          <div className="team-meta">
+                            <span className="team-symbol" style={{ color: currentTeam.color }}>{currentTeam.symbol}</span>
+                            <div className="team-name">{currentTeam.name}</div>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="team-placeholder">Select a team</span>
+                      )}
+                    </button>
+                    {showTeamSelector && teams.length > 0 && (
+                      <div className="team-select-menu" ref={teamSelectRef}>
+                        {teams.map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className={`team-select-item ${selectedTeamId === t.id ? "active" : ""}`}
+                            onClick={() => selectTeam(t.id)}
+                          >
+                            <span className="team-symbol" style={{ color: t.color }}>{t.symbol}</span>
+                            <span className="team-name">{t.name}</span>
+                          </button>
+                        ))}
                       </div>
-                    );
-                  })()}
+                    )}
+                  </div>
                 </div>
                 <div className="header-left-controls">
                   <label className="header-checkbox">
@@ -1419,11 +1569,15 @@ export default function TeamsPage() {
           </div>
           {selectedTeamId ? (
             <>
-              {hasFieldValidationErrors ? (
-                <div className="error-msg">Please fix highlighted fields.</div>
-              ) : (
-                rosterMsg && <div className="error-msg">{rosterMsg}</div>
-              )}
+              <div className="error-msg-placeholder">
+                {hasFieldValidationErrors ? (
+                  <div className="error-msg">Please fix highlighted fields.</div>
+                ) : rosterMsg ? (
+                  <div className="error-msg">{rosterMsg}</div>
+                ) : (
+                  <span aria-hidden="true">&nbsp;</span>
+                )}
+              </div>
               <div className="roster-wrapper">
                 {canEditRoster ? (
                   <div className="roster-grid">
@@ -1454,14 +1608,14 @@ export default function TeamsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {newEditableRow ? (
-                          renderEditableRow(newEditableRow, true)
-                        ) : (
+                        {newRows.length === 0 ? (
                           <tr>
                             <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
                               Loading roster...
                             </td>
                           </tr>
+                        ) : (
+                          newRows.map(row => renderEditableRow(row, true))
                         )}
                         {sortedEditableRows.length === 0 ? (
                           <tr>

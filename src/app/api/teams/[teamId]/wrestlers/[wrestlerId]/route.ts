@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { Prisma } from "@prisma/client";
+
 import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
 
@@ -55,10 +57,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     return NextResponse.json({ ok: true });
   }
 
-  await db.wrestler.update({
-    where: { id: wrestlerId },
-    data: updates,
-  });
+  try {
+    await db.wrestler.update({
+      where: { id: wrestlerId },
+      data: updates,
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "Another wrestler on this team already uses that name and birthday." },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   return NextResponse.json({ ok: true });
 }

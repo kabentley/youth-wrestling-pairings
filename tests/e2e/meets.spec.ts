@@ -7,7 +7,7 @@ test.beforeEach(async () => {
 });
 
 async function createTeamWith2(page: any, name: string, w1: any, w2: any) {
-  await page.goto("/teams");
+  await page.goto("/rosters");
   await page.getByPlaceholder("Team name").fill(name);
   await page.getByRole("button", { name: "Add" }).click();
   await page.getByRole("link", { name }).click();

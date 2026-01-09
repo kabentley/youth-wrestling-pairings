@@ -107,7 +107,7 @@ export default async function AdminHome() {
           <h1 className="admin-title">Admin</h1>
           <div className="admin-card">
             <p>Access denied.</p>
-            <Link href="/teams">Back</Link>
+            <Link href="/rosters">Back</Link>
           </div>
         </div>
       </main>

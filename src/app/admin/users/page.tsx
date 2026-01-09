@@ -121,7 +121,7 @@ export default function AdminUsersPage() {
   }
   const headerLinks = [
     { href: "/", label: "Home" },
-    { href: "/teams", label: "Teams" },
+    { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },

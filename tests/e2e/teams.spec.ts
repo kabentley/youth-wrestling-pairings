@@ -9,7 +9,7 @@ test.beforeEach(async () => {
 test("create a team and add wrestlers", async ({ page }) => {
   await login(page);
 
-  await page.goto("/teams");
+  await page.goto("/rosters");
 
   await page.getByPlaceholder("Team name").fill("Tigers");
   await page.getByRole("button", { name: "Add" }).click();
