@@ -7,6 +7,7 @@ type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
+const coachNavLink: LinkItem = { href: "/coach/parents", label: "Team Parents", minRole: "COACH" };
 
 export default function AppHeader({ links }: { links: LinkItem[] }) {
   const [user, setUser] = useState<{
@@ -40,13 +41,17 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
     };
   }, []);
 
+  const allLinks = links.some((link) => link.href === coachNavLink.href)
+    ? links
+    : [...links, coachNavLink];
+
   const visibleLinks = user
-    ? links.filter(link => {
+    ? allLinks.filter(link => {
         if (link.roles && !link.roles.includes(user.role)) return false;
         if (!link.minRole) return true;
         return roleOrder[user.role] >= roleOrder[link.minRole];
       })
-    : links.filter(
+    : allLinks.filter(
         link =>
           !link.minRole &&
           !link.roles &&

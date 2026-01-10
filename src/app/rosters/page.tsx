@@ -28,6 +28,8 @@ type EditableWrestler = {
   active: boolean;
   isNew?: boolean;
 };
+type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
+type ViewerColumn = { key: ViewerColumnKey; label: string; width: number };
 
 function parseCsv(text: string) {
   // Basic CSV parser that supports commas and quoted values.
@@ -204,7 +206,7 @@ export default function RostersPage() {
     void load();
   }, [status]);
   useEffect(() => {
-    if (role === "COACH" && sessionTeamId && !selectedTeamId) {
+    if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER") && sessionTeamId && !selectedTeamId) {
       setSelectedTeamId(sessionTeamId);
       setImportTeamId(sessionTeamId);
     }
@@ -577,9 +579,14 @@ export default function RostersPage() {
     }
   };
 
+  const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
+  const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
+  const hideSkillAndStatus = role === "PARENT" || role === "TABLE_WORKER";
+  const allowInactiveView = !hideSkillAndStatus;
   const newRows = editableRows.filter(r => r.isNew);
   const savedEditableRows = editableRows.filter(r => !r.isNew);
-  const filteredEditableRows = savedEditableRows.filter(row => showInactive || row.active);
+  const includeInactiveRows = allowInactiveView && showInactive;
+  const filteredEditableRows = savedEditableRows.filter(row => includeInactiveRows || row.active);
 
   const sortedEditableRows = useMemo(() => {
     const rows = [...filteredEditableRows];
@@ -651,9 +658,43 @@ export default function RostersPage() {
     return typeof yrs === "number" ? yrs.toFixed(1) : "";
   };
 
-  const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
-  const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
+  const rosterViewerColumns: ViewerColumn[] = [
+    { key: "last", label: "Last", width: 120 },
+    { key: "first", label: "First", width: 120 },
+    { key: "age", label: "Age", width: 120 },
+    { key: "weight", label: "Weight", width: 90 },
+    { key: "experienceYears", label: "Exp", width: 90 },
+    { key: "skill", label: "Skill", width: 110 },
+    { key: "active", label: "Status", width: 110 },
+  ];
+  const spectatorColumns = hideSkillAndStatus
+    ? rosterViewerColumns.filter(col => col.key !== "skill" && col.key !== "active")
+    : rosterViewerColumns;
+  const renderSpectatorCell = (key: ViewerColumnKey, wrestler: Wrestler) => {
+    switch (key) {
+      case "last":
+        return wrestler.last;
+      case "first":
+        return wrestler.first;
+      case "age":
+        return ageYears(wrestler.birthdate)?.toFixed(1) ?? "";
+      case "weight":
+        return wrestler.weight;
+      case "experienceYears":
+        return wrestler.experienceYears;
+      case "skill":
+        return wrestler.skill;
+      case "active":
+        return wrestler.active ? "Active" : "Inactive";
+    }
+  };
   const currentTeam = teams.find(t => t.id === selectedTeamId);
+
+  useEffect(() => {
+    if (!allowInactiveView && showInactive) {
+      setShowInactive(false);
+    }
+  }, [allowInactiveView, showInactive]);
 
   const createEmptyRow = (id?: string): EditableWrestler => ({
     id: id ?? `new-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
@@ -831,12 +872,12 @@ export default function RostersPage() {
 
   const displayRoster = useMemo(() => {
     return [...roster]
-      .filter(w => showInactive || w.active)
+      .filter(w => includeInactiveRows || w.active)
       .sort((a, b) => {
         if (a.last === b.last) return a.first.localeCompare(b.first);
         return a.last.localeCompare(b.last);
       });
-  }, [roster, showInactive]);
+  }, [roster, includeInactiveRows]);
 
   const downloadableRoster = useMemo(() => displayRoster.filter(row => row.active), [displayRoster]);
 
@@ -1579,14 +1620,16 @@ export default function RostersPage() {
                   </div>
                 </div>
                 <div className="header-left-controls">
-                  <label className="header-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={showInactive}
-                      onChange={e => setShowInactive(e.target.checked)}
-                    />
-                    <span>{showInactive ? "Showing Inactive" : "Show Inactive"}</span>
-                  </label>
+                  {allowInactiveView && (
+                    <label className="header-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={showInactive}
+                        onChange={e => setShowInactive(e.target.checked)}
+                      />
+                      <span>{showInactive ? "Showing Inactive" : "Show Inactive"}</span>
+                    </label>
+                  )}
                   {canEditRoster && (
                     <>
                       <button
@@ -1698,40 +1741,28 @@ export default function RostersPage() {
                   <div className="roster-table">
                     <table>
                       <colgroup>
-                        <col style={{ width: 120 }} />
-                        <col style={{ width: 120 }} />
-                        <col style={{ width: 120 }} />
-                        <col style={{ width: 90 }} />
-                        <col style={{ width: 90 }} />
-                        <col style={{ width: 110 }} />
-                        <col style={{ width: 110 }} />
+                        {spectatorColumns.map(col => (
+                          <col key={col.key} style={{ width: col.width }} />
+                        ))}
                       </colgroup>
                       <thead>
                         <tr>
-                          <th>Last</th>
-                          <th>First</th>
-                          <th>Age</th>
-                          <th>Weight</th>
-                          <th>Exp</th>
-                          <th>Skill</th>
-                          <th>Status</th>
+                          {spectatorColumns.map(col => (
+                            <th key={col.key}>{col.label}</th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
                         {displayRoster.map(w => (
                           <tr key={w.id} className={w.active ? "" : "inactive-row"}>
-                            <td>{w.last}</td>
-                            <td>{w.first}</td>
-                            <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
-                            <td>{w.weight}</td>
-                            <td>{w.experienceYears}</td>
-                            <td>{w.skill}</td>
-                            <td>{w.active ? "Active" : "Inactive"}</td>
+                            {spectatorColumns.map(col => (
+                              <td key={col.key}>{renderSpectatorCell(col.key, w)}</td>
+                            ))}
                           </tr>
                         ))}
                         {displayRoster.length === 0 && (
                           <tr>
-                            <td colSpan={7}>No wrestlers yet.</td>
+                            <td colSpan={spectatorColumns.length}>No wrestlers yet.</td>
                           </tr>
                         )}
                       </tbody>

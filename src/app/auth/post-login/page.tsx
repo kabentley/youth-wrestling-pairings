@@ -22,5 +22,9 @@ export default async function PostLoginPage({
     redirect("/");
   }
 
+  if (role === "PARENT") {
+    redirect("/parent");
+  }
+
   redirect(safe);
 }

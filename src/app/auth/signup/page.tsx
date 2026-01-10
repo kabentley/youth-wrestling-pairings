@@ -32,7 +32,7 @@ export default function SignUpPage() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/teams")
+    fetch("/api/public/teams")
       .then(res => res.ok ? res.json() : [])
       .then(json => {
         if (!active) return;
