@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
@@ -48,13 +48,17 @@ export default function CoachMyTeamPage() {
   const [staff, setStaff] = useState<TeamMember[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [, setMessage] = useState<string | null>(null);
   const [savingTeam, setSavingTeam] = useState(false);
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
   const [logoLoading, setLogoLoading] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [role, setRole] = useState<UserRole | null>(null);
+  const [initialInfo, setInitialInfo] = useState({ website: "", location: "" });
+  const [infoLoaded, setInfoLoaded] = useState(false);
+  const [infoDirty, setInfoDirty] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageStatus, setMessageStatus] = useState<"success" | "error" | null>(null);
 
   const sortStaff = (members: TeamMember[], headId: string | null) =>
     [...members].sort((a, b) => {
@@ -77,11 +81,10 @@ export default function CoachMyTeamPage() {
 
   const load = async () => {
     setLoading(true);
-    setMessage(null);
     try {
       const meRes = await fetch("/api/me");
       if (!meRes.ok) {
-        setMessage("Sign in required.");
+        console.warn("Sign in required.");
         setLoading(false);
         return;
       }
@@ -89,7 +92,7 @@ export default function CoachMyTeamPage() {
       setRole(profile.role ?? null);
       setTeamSymbol(profile.team?.symbol ?? null);
       if (!profile.teamId && profile.role !== "ADMIN") {
-        setMessage("You must be assigned to a team to use this page.");
+        console.warn("You must be assigned to a team to use this page.");
         setLoading(false);
         return;
       }
@@ -107,7 +110,7 @@ export default function CoachMyTeamPage() {
         }
       }
     } catch {
-      setMessage("Unable to load team settings.");
+      console.error("Unable to load team settings.");
     } finally {
       setLoading(false);
     }
@@ -145,10 +148,15 @@ export default function CoachMyTeamPage() {
     setTeamName(team.name ?? "Team");
     setTeamSymbol(team.symbol ?? null);
     setTeamColor(team.color ?? "#000000");
-    setTeamWebsite(team.website ?? "");
-    setTeamLocation(team.address ?? "");
+    const websiteVal = team.website ?? "";
+    const locationVal = team.address ?? "";
+    setTeamWebsite(websiteVal);
+    setTeamLocation(locationVal);
     setHomeTeamPreferSameMat(Boolean(team.homeTeamPreferSameMat));
     setTeamHasLogo(Boolean(team.hasLogo));
+    setInitialInfo({ website: websiteVal, location: locationVal });
+    setInfoDirty(false);
+    setInfoLoaded(true);
   };
 
   const teamSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,21 +180,28 @@ export default function CoachMyTeamPage() {
 
   const handleTeamWebsiteChange = (value: string) => {
     setTeamWebsite(value);
-    scheduleTeamSave();
+    setInfoDirty(true);
+    setMessage(null);
+    setMessageStatus(null);
   };
 
   const handleTeamLocationChange = (value: string) => {
     setTeamLocation(value);
-    scheduleTeamSave();
+    setInfoDirty(true);
+    setMessage(null);
+    setMessageStatus(null);
   };
 
   const handleTeamColorChange = (value: string) => {
     setTeamColor(value);
     scheduleTeamSave();
+    setMessage(null);
+    setMessageStatus(null);
   };
 
   useEffect(() => {
     if (!teamId) return;
+    setInfoLoaded(false);
     void loadTeamDetails(teamId);
     void loadMatRules(teamId);
     if (role === "COACH") {
@@ -197,24 +212,56 @@ export default function CoachMyTeamPage() {
   const updateTeam = async () => {
     if (!teamId) return;
     setSavingTeam(true);
-    setMessage(null);
-    const res = await fetch(`/api/teams/${teamId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        color: teamColor,
-        website: teamWebsite,
-        address: teamLocation,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => null);
-      setMessage(err?.error ?? "Unable to save team settings.");
-    } else {
-    setMessage("Team settings saved.");
+    setInfoDirty(false);
+    try {
+      const res = await fetch(`/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          color: teamColor,
+          website: teamWebsite,
+          address: teamLocation,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        const detail = err?.error ?? err?.message ?? "Unable to save team settings.";
+        console.error(detail);
+        setMessage(detail);
+        setMessageStatus("error");
+      } else {
+        setInitialInfo({ website: teamWebsite, location: teamLocation });
+        setInfoDirty(false);
+        setMessage("Team info saved.");
+        setMessageStatus("success");
+      }
+    } catch (error) {
+        console.error("Team settings save failed", error);
+        setMessage("Unable to save team settings.");
+        setMessageStatus("error");
+    } finally {
+      setSavingTeam(false);
     }
-    setSavingTeam(false);
   };
+
+  const handleFieldKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void updateTeam();
+      event.currentTarget.blur();
+    }
+  };
+
+  const cancelTeamInfoEdits = () => {
+    setTeamWebsite(initialInfo.website);
+    setTeamLocation(initialInfo.location);
+    setInfoDirty(false);
+    setMessage(null);
+    setMessageStatus(null);
+  };
+
+  const messageIsError = messageStatus === "error";
+  const canSaveTeamInfo = infoDirty && !savingTeam;
 
   const uploadLogo = async (file: File | null) => {
     if (!file || !teamId) return;
@@ -225,9 +272,9 @@ export default function CoachMyTeamPage() {
     if (res.ok) {
       setLogoVersion((v) => v + 1);
       setTeamHasLogo(true);
-      setMessage("Logo uploaded.");
+      console.info("Logo uploaded.");
     } else {
-      setMessage("Unable to upload logo.");
+      console.error("Unable to upload logo.");
     }
     setLogoLoading(false);
   };
@@ -235,7 +282,6 @@ export default function CoachMyTeamPage() {
   const handleMatSave = async () => {
     if (!teamId) return;
     setSavingMat(true);
-    setMessage(null);
     const payload = {
       homeTeamPreferSameMat,
       rules: rules.map(rule => ({
@@ -254,9 +300,9 @@ export default function CoachMyTeamPage() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      setMessage(err?.error ?? "Unable to save mat rules.");
+      console.error(err?.error ?? "Unable to save mat rules.");
     } else {
-      setMessage("Mat setup saved.");
+      console.info("Mat setup saved.");
     }
     setSavingMat(false);
   };
@@ -309,7 +355,7 @@ export default function CoachMyTeamPage() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
-      setMessage(err?.error ?? "Unable to update role.");
+      console.error(err?.error ?? "Unable to update role.");
       return;
     }
     const payload = await res.json().catch(() => null);
@@ -487,6 +533,7 @@ export default function CoachMyTeamPage() {
                 placeholder="https://yourteam.example.com"
                 value={teamWebsite}
                 onChange={e => handleTeamWebsiteChange(e.target.value)}
+                onKeyDown={handleFieldKeyDown}
               />
             </label>
             <label className="location-field">
@@ -496,8 +543,34 @@ export default function CoachMyTeamPage() {
                 placeholder="Schoolname, address"
                 value={teamLocation}
                 onChange={e => handleTeamLocationChange(e.target.value)}
+                onKeyDown={handleFieldKeyDown}
               />
             </label>
+            <div className="info-actions">
+              <div className="info-actions-row">
+                <button
+                  type="button"
+                  className="coach-btn coach-btn-ghost"
+                  onClick={() => void updateTeam()}
+                  disabled={!canSaveTeamInfo}
+                >
+                  Save Info
+                </button>
+                <button
+                  type="button"
+                  className="coach-btn coach-btn-secondary"
+                  onClick={cancelTeamInfoEdits}
+                  disabled={!canSaveTeamInfo}
+                >
+                  Cancel
+                </button>
+              </div>
+              {message && (
+                <p className={`info-message ${messageIsError ? "error" : "success"}`} role="status">
+                  {message}
+                </p>
+              )}
+            </div>
           </div>
         </section>
 
@@ -757,6 +830,41 @@ const coachStyles = `
     column-gap: 16px;
     row-gap: 12px;
     margin-top: 16px;
+  }
+  .info-actions {
+    grid-column: 2 / span 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .info-actions-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .info-actions .coach-btn-ghost {
+    padding: 8px 14px;
+  }
+  .info-actions .coach-btn-ghost:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .info-actions .coach-btn-secondary:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .info-message {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .info-message.success {
+    color: var(--accent);
+  }
+  .info-message.error {
+    color: #d32f2f;
   }
   .logo-field {
     display: flex;

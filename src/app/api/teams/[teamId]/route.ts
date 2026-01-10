@@ -46,7 +46,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
 export async function PATCH(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
   const { userId } = await requireSession();
-  const body = PatchSchema.parse(await req.json());
+  const payload = await req.json();
+  const parsed = PatchSchema.safeParse(payload);
+  if (!parsed.success) {
+    const detail = parsed.error.issues.map((issue) => issue.message).join("; ");
+    return NextResponse.json({ error: detail || "Invalid team data." }, { status: 400 });
+  }
+  const body = parsed.data;
 
   const user = await db.user.findUnique({
     where: { id: userId },

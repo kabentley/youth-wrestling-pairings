@@ -23,7 +23,6 @@ export default function AdminLeaguePage() {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [address, setAddress] = useState("");
   const [msg, setMsg] = useState("");
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
@@ -60,7 +59,7 @@ export default function AdminLeaguePage() {
     const res = await fetch("/api/teams", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol, address }),
+      body: JSON.stringify({ name, symbol }),
     });
     if (!res.ok) {
       setMsg("Unable to add team.");
@@ -322,7 +321,6 @@ export default function AdminLeaguePage() {
           <div className="admin-row">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
             <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" className="admin-input-sm" />
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address" style={{ minWidth: 260 }} />
             <button className="admin-btn" onClick={addTeam}>Add Team</button>
           </div>
           {msg && <div className="admin-error">{msg}</div>}
