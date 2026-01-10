@@ -3,6 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import ColorPicker from "@/components/ColorPicker";
 
 type TeamRow = {
   id: string;
@@ -31,13 +32,11 @@ export default function AdminLeaguePage() {
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string>>({});
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
   const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string>>({});
-  const [openPicker, setOpenPicker] = useState<string | null>(null);
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
   const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const colorPopoverRef = useRef<HTMLDivElement | null>(null);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -218,24 +217,12 @@ export default function AdminLeaguePage() {
     }, 500);
   }
 
-  function setTeamColor(teamId: string, color: string, closePicker = true) {
+  function setTeamColor(teamId: string, color: string) {
     setColorEdits((prev) => ({ ...prev, [teamId]: color }));
     scheduleColorSave(teamId, color);
-    if (closePicker) setOpenPicker(null);
   }
 
   useEffect(() => { void load(); }, []);
-  useEffect(() => {
-    if (!openPicker) return;
-    function handleClick(e: MouseEvent) {
-      if (!colorPopoverRef.current) return;
-      if (!colorPopoverRef.current.contains(e.target as Node)) {
-        setOpenPicker(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [openPicker]);
   if (!session) {
     return (
       <main className="admin">
@@ -409,58 +396,14 @@ export default function AdminLeaguePage() {
                     </td>
                     <td>
                       <div className="color-cell">
-                        <button
-                          type="button"
-                          className="color-swatch"
-                          style={{ backgroundColor: colorEdits[t.id] ?? t.color }}
-                          onClick={() => setOpenPicker(openPicker === t.id ? null : t.id)}
-                          aria-label={`Choose color for ${t.name}`}
+                        <ColorPicker
+                          value={colorEdits[t.id] ?? t.color}
+                          onChange={(next) => setTeamColor(t.id, next)}
+                          idPrefix={`team-color-${t.id}`}
+                          buttonClassName="color-swatch"
+                          buttonStyle={{ backgroundColor: colorEdits[t.id] ?? t.color }}
+                          buttonAriaLabel={`Choose color for ${t.name}`}
                         />
-                        {openPicker === t.id && (
-                          <div className="color-popover" ref={colorPopoverRef}>
-                            <label className="admin-label" htmlFor={`color-${t.id}`}>Hex color</label>
-                            <input
-                              id={`color-${t.id}`}
-                              type="text"
-                              value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value, false)}
-                              placeholder="#1e88e5"
-                            />
-                            <label className="admin-label" htmlFor={`color-preset-${t.id}`}>Named colors</label>
-                            <select
-                              id={`color-preset-${t.id}`}
-                              value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value, true)}
-                            >
-                              {!NAMED_COLORS.some(c => c.value.toLowerCase() === (colorEdits[t.id] ?? t.color).toLowerCase()) && (
-                                <option value={colorEdits[t.id] ?? t.color}>Custom</option>
-                              )}
-                              {NAMED_COLORS.map((c) => (
-                                <option key={c.value} value={c.value}>{c.name}</option>
-                              ))}
-                            </select>
-                            <label className="admin-label" htmlFor={`color-custom-${t.id}`}>Custom color</label>
-                            <input
-                              id={`color-custom-${t.id}`}
-                              type="color"
-                              value={colorEdits[t.id] ?? t.color}
-                              onChange={(e) => setTeamColor(t.id, e.target.value, false)}
-                              className="color-input"
-                            />
-                            <div className="swatch-grid">
-                              {NAMED_COLORS.map((c) => (
-                                <button
-                                  key={`${t.id}-${c.value}`}
-                                  type="button"
-                                  className="swatch"
-                                  style={{ backgroundColor: c.value }}
-                                  title={`${c.name} (${c.value})`}
-                                  onClick={() => setTeamColor(t.id, c.value, true)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </td>
                     <td>
@@ -591,27 +534,6 @@ const adminStyles = `
   .color-cell {
     position: relative;
   }
-  .color-swatch {
-    width: 38px;
-    height: 24px;
-    border-radius: 4px;
-    border: 1px solid var(--line);
-    cursor: pointer;
-  }
-  .color-popover {
-    position: absolute;
-    z-index: 20;
-    top: 30px;
-    left: 0;
-    background: #ffffff;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 10px;
-    min-width: 200px;
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
-    display: grid;
-    gap: 8px;
-  }
   .logo-cell {
     position: relative;
   }
@@ -653,18 +575,6 @@ const adminStyles = `
     border: 1px solid var(--line);
     border-radius: 4px;
     background: transparent;
-  }
-  .swatch-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-  }
-  .swatch {
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.18);
-    cursor: pointer;
   }
   .admin-input-sm {
     width: 120px;
@@ -755,27 +665,3 @@ const adminStyles = `
     }
   }
 `;
-
-const NAMED_COLORS = [
-  { name: "Navy", value: "#0d3b66" },
-  { name: "Royal Blue", value: "#1e88e5" },
-  { name: "Sky Blue", value: "#64b5f6" },
-  { name: "Teal", value: "#00897b" },
-  { name: "Turquoise", value: "#00acc1" },
-  { name: "Green", value: "#2e7d32" },
-  { name: "Forest", value: "#1b5e20" },
-  { name: "Lime", value: "#9ccc65" },
-  { name: "Gold", value: "#f2b705" },
-  { name: "Amber", value: "#ffb300" },
-  { name: "Orange", value: "#f57c00" },
-  { name: "Deep Orange", value: "#e64a19" },
-  { name: "Red", value: "#c62828" },
-  { name: "Crimson", value: "#d32f2f" },
-  { name: "Maroon", value: "#8e1037" },
-  { name: "Purple", value: "#5e35b1" },
-  { name: "Indigo", value: "#3949ab" },
-  { name: "Magenta", value: "#ad1457" },
-  { name: "Gray", value: "#546e7a" },
-  { name: "Slate", value: "#455a64" },
-  { name: "Black", value: "#1d232b" },
-];

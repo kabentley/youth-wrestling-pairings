@@ -59,7 +59,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
   if (!isAdmin && !isTeamCoach) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!isAdmin && (body.name || body.symbol || body.address || body.headCoachId !== undefined)) {
+  if (!isAdmin && (body.name || body.symbol || body.headCoachId !== undefined)) {
     return NextResponse.json({ error: "Only admins can update name, symbol, address, or head coach" }, { status: 403 });
   }
 

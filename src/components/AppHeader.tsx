@@ -7,7 +7,7 @@ type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
-const coachNavLink: LinkItem = { href: "/coach/parents", label: "Team Parents", minRole: "COACH" };
+const coachNavLink: LinkItem = { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" };
 
 export default function AppHeader({ links }: { links: LinkItem[] }) {
   const [user, setUser] = useState<{
