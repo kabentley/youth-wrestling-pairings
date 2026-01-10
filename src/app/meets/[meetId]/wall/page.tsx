@@ -39,7 +39,69 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
   }
   for (const m of mats) perMat.get(m)!.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 
-  const maxRows = Math.max(0, ...mats.map(m => perMat.get(m)!.length));
+  type MatchInfo = {
+    boutNumber: string;
+    opponent: string;
+    opponentTeam: string;
+  };
+  const wrestlerMatches = new Map<string, MatchInfo[]>();
+  for (const mat of mats) {
+    const boutsForMat = perMat.get(mat) ?? [];
+    boutsForMat.forEach((bout, idx) => {
+      const boutNumber = String(mat * 100 + idx + 1).padStart(3, "0");
+      const red = wMap.get(bout.redId);
+      const green = wMap.get(bout.greenId);
+      const redName = red ? `${red.first} ${red.last}`.trim() : bout.redId;
+      const greenName = green ? `${green.first} ${green.last}`.trim() : bout.greenId;
+      const redTeamSymbol = red ? (tMap.get(red.teamId) ?? "") : "";
+      const greenTeamSymbol = green ? (tMap.get(green.teamId) ?? "") : "";
+      const redTeamColor = red ? (tColor.get(red.teamId) ?? "#000") : "#000";
+      const greenTeamColor = green ? (tColor.get(green.teamId) ?? "#000") : "#000";
+
+      if (bout.redId) {
+        const list = wrestlerMatches.get(bout.redId) ?? [];
+        list.push({
+          boutNumber,
+          opponent: greenName ?? "TBD",
+          opponentTeam: greenTeamSymbol ?? "",
+          opponentColor: greenTeamColor,
+        });
+        wrestlerMatches.set(bout.redId, list);
+      }
+      if (bout.greenId) {
+        const list = wrestlerMatches.get(bout.greenId) ?? [];
+        list.push({
+          boutNumber,
+          opponent: redName ?? "TBD",
+          opponentTeam: redTeamSymbol ?? "",
+          opponentColor: redTeamColor,
+        });
+        wrestlerMatches.set(bout.greenId, list);
+      }
+    });
+  }
+
+  const teamsList = meet?.meetTeams.map(mt => mt.team) ?? [];
+  const teamCharts = teamsList.map(team => {
+    const members = wrestlers
+      .filter(w => w.teamId === team.id)
+      .map(w => {
+        const matches = (wrestlerMatches.get(w.id) ?? []).slice().sort((a, b) => Number(a.boutNumber) - Number(b.boutNumber));
+        return {
+          id: w.id,
+          name: `${w.first} ${w.last}`.trim(),
+          matches,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      id: team.id,
+      name: team.name,
+      symbol: team.symbol,
+      color: team.color ?? "#000000",
+      members,
+    };
+  });
 
   function cellText(b: any) {
     const r = wMap.get(b.redId);
@@ -60,39 +122,143 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
       <head>
         <title>Wall Chart</title>
         <style>{`
-          @media print { .noprint { display: none; } }
+          @media print {
+            .noprint { display: none; }
+            .chart-page { page-break-after: always; }
+            .chart-page:last-of-type { page-break-after: auto; }
+            .mat-block { page-break-after: always; }
+            .mat-block:last-of-type { page-break-after: auto; }
+          }
           body { font-family: system-ui; padding: 14px; }
           h1 { margin: 0 0 6px 0; }
+          h2 { margin: 24px 0 12px 0; font-weight: 600; }
           .meta { font-size: 12px; opacity: 0.75; margin-bottom: 10px; }
-          .grid {
-            display: grid;
-            grid-template-columns: 90px repeat(${maxMat}, minmax(240px, 1fr));
-            gap: 8px;
-            align-items: stretch;
+          .chart-page {
+            page-break-after: always;
+            break-after: page;
+            margin-bottom: 18px;
           }
-          .hdr {
-            font-weight: 700;
+          .chart-page:last-of-type {
+            page-break-after: auto;
+          }
+          .mat-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .mat-block {
             border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 10px;
-            background: #fafafa;
-          }
-          .rowlbl {
-            border: 1px solid #eee;
-            border-radius: 10px;
-            padding: 10px;
+            border-radius: 12px;
+            padding: 12px;
             background: #fff;
+            page-break-inside: avoid;
+            break-inside: avoid;
+            page-break-after: always;
+          }
+          .mat-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
             font-weight: 600;
-            text-align: center;
           }
-          .cell {
+          .mat-count {
+            font-size: 12px;
+            color: #777;
+          }
+          .mat-block:last-of-type {
+            page-break-after: auto;
+          }
+          .mat-table {
+            border-collapse: collapse;
+            font-size: 14px;
+          }
+          .mat-table th,
+          .mat-table td {
+            border: 1px solid #eee;
+            padding: 6px 8px;
+            text-align: left;
+          }
+          .mat-table th {
+            background: #f7f9fb;
+          }
+          .mat-empty {
+            margin: 0;
+            font-size: 14px;
+            color: #555;
+          }
+          .per-team {
+            margin-top: 20px;
+          }
+          .team-block {
             border: 1px solid #eee;
             border-radius: 10px;
-            padding: 10px;
+            padding: 12px;
             background: #fff;
-            min-height: 88px;
+            margin-bottom: 18px;
+            page-break-inside: avoid;
           }
-          .small { font-size: 12px; opacity: 0.75; }
+          .team-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+          }
+          .team-name {
+            font-weight: 700;
+            font-size: 16px;
+          }
+          .team-symbol {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            font-weight: 700;
+            color: #fff;
+          }
+          .team-table {
+            border-collapse: collapse;
+            font-size: 14px;
+          }
+          .team-table th,
+          .team-table td {
+            border: 1px solid #eee;
+            padding: 6px 8px;
+            text-align: left;
+          }
+          .team-table td:first-child span {
+            font-weight: 700;
+          }
+          .match-line {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 18px;
+            font-size: 14px;
+          }
+          .match-chip {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 0;
+          }
+          .match-bout {
+            font-weight: 700;
+            margin-right: 6px;
+          }
+          .match-opponent {
+            font-weight: 600;
+          }
+          .match-separator {
+            color: #999;
+            margin: 0 8px;
+          }
+          .team-empty {
+            font-size: 14px;
+            color: #555;
+            margin: 0 0 12px 0;
+          }
         `}</style>
       </head>
       <body>
@@ -102,36 +268,123 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           <PrintButton />
         </div>
 
-        <h1>{meet?.name ?? "Meet"} — Wall Chart</h1>
-        <div className="meta">
-          {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""} {meet?.location ? `— ${meet.location}` : ""}
-          <br />
-          Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
-        </div>
-
-        <div className="grid">
-          <div className="hdr">Bout</div>
-          {mats.map(m => (<div key={m} className="hdr">Mat {m}</div>))}
-
-          {Array.from({ length: maxRows }, (_, idx) => idx + 1).map(row => (
-            <div key={`row-${row}`} style={{ display: "contents" }}>
-              <div className="rowlbl">{row}</div>
-              {mats.map(m => {
-                const b = perMat.get(m)![row - 1];
-                if (!b) return <div key={`c-${m}-${row}`} className="cell" />;
-
-                const t = cellText(b);
-                return (
-                  <div key={`c-${m}-${row}`} className="cell">
-                    <div className="small">{t.teams}</div>
-                    <div style={{ fontWeight: 650, marginTop: 4, color: t.redColor }}>{t.red}</div>
-                    <div style={{ marginTop: 2, color: t.greenColor }}>{t.green}</div>
+        <section className="chart-page per-mat">
+          <h1>{meet?.name ?? "Meet"} - Wall Chart</h1>
+          <div className="meta">
+            {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""} {meet?.location ? `- ${meet.location}` : ""}
+            <br />
+            Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
+          </div>
+          <div className="mat-grid">
+            {mats.map((mat) => {
+              const boutsForMat = perMat.get(mat) ?? [];
+              return (
+                <article key={mat} className="mat-block">
+                  <div className="mat-header">
+                    <span>Mat {mat}</span>
+                    <span className="mat-count">{boutsForMat.length} bout{boutsForMat.length === 1 ? "" : "s"}</span>
                   </div>
-                );
-              })}
-            </div>
+                  {boutsForMat.length === 0 ? (
+                    <p className="mat-empty">No bouts scheduled for this mat.</p>
+                  ) : (
+                    <table className="mat-table">
+                      <thead>
+                        <tr>
+                          <th>Bout #</th>
+                          <th>Wrestler 1</th>
+                          <th>Wrestler 2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {boutsForMat.map((bout, index) => {
+                          const boutNumber = String(mat * 100 + index + 1).padStart(3, "0");
+                          const t = cellText(bout);
+                          return (
+                            <tr key={bout.id}>
+                              <td>{boutNumber}</td>
+                              <td style={{ color: t.redColor }}>{t.red}</td>
+                              <td style={{ color: t.greenColor }}>{t.green}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="chart-page per-team">
+          <h2>Team Wall Charts</h2>
+          {teamCharts.length === 0 && (
+            <p className="team-empty">No wrestlers found for this meet.</p>
+          )}
+          {teamCharts.map(team => (
+            <article key={team.id} className="team-block">
+              <div className="team-header">
+                <div className="team-name">
+                  {team.symbol ? `${team.symbol} · ` : ""}
+                  {team.name}
+                </div>
+                <span
+                  className="team-symbol"
+                  style={{ background: team.color }}
+                >
+                  {team.symbol ?? team.name.charAt(0)}
+                </span>
+              </div>
+              {team.members.length === 0 ? (
+                <p className="team-empty">No wrestlers recorded.</p>
+              ) : (
+                <table className="team-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Matches</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.members.map(member => (
+                <tr key={member.id}>
+                        <td>
+                          <span style={{ color: "#000" }}>{member.name}</span>
+                        </td>
+                        <td>
+                          {member.matches.length === 0 ? (
+                            <span className="team-empty">No matches scheduled.</span>
+                          ) : (
+                            <div className="match-line">
+                              {member.matches.map((match, idx) => (
+                                <span
+                                  key={`${member.id}-${match.boutNumber}`}
+                                  className="match-chip"
+                                >
+                                  <span className="match-bout">#{match.boutNumber}</span>
+                                  <span
+                                    className="match-opponent"
+                                    style={{ color: match.opponentColor || "#000" }}
+                                  >
+                                    {match.opponent}
+                                    {match.opponentTeam ? ` (${match.opponentTeam})` : ""}
+                                  </span>
+                                  {idx < member.matches.length - 1 && (
+                                    <span className="match-separator">·</span>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </article>
           ))}
-        </div>
+        </section>
       </body>
     </html>
   );
