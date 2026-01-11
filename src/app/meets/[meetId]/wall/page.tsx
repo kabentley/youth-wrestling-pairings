@@ -2,6 +2,25 @@ import Head from "next/head";
 import { db } from "@/lib/db";
 import ControlBar from "./ControlBar";
 
+export const dynamic = "force-dynamic";
+
+type Params = { params: { meetId: string } };
+
+export async function generateMetadata({ params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
+  if (!meetId) {
+    return { title: "Wall Charts" };
+  }
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    include: { meetTeams: { include: { team: true } } },
+  });
+  const meetDate = meet?.date ? new Date(meet.date).toISOString().slice(0, 10) : null;
+  const titleParts = [meet?.name ?? "Meet", meetDate].filter(Boolean);
+  const title = titleParts.join(" · ");
+  return { title: `${title} - Wall Charts` };
+}
+
 export default async function WallChart({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const meet = await db.meet.findUnique({
@@ -211,7 +230,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           .chart-controls {
             display: flex;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: flex-start;
             gap: 12px;
             margin-bottom: 16px;
             padding: 12px 18px;
@@ -263,6 +282,23 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             text-transform: uppercase;
             cursor: pointer;
             box-shadow: 0 8px 20px rgba(14, 57, 96, 0.25);
+          }
+          .chart-controls button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            box-shadow: none;
+            background: #b0b5be;
+          }
+          .chart-controls .refresh-btn {
+            padding: 8px 18px;
+            background: #92979d;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            cursor: pointer;
           }
           @media print {
             .chart-controls {
@@ -332,11 +368,11 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
     meet && meetDate
       ? `${meet.name ?? "Meet"} · ${meetDate}`
       : meet?.name ?? "Meet";
-
+  const tabTitle = cardLabel;
   return (
     <>
       <Head>
-        <title>Wall Chart</title>
+        <title>{tabTitle} - Wall Charts</title>
       </Head>
       <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div>

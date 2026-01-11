@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { revalidatePath } from "next/cache";
 
 const PatchSchema = z.object({
   name: z.string().min(2).optional(),
@@ -124,6 +125,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       : (nameChangeMessage || otherMessage);
     await logMeetChange(meetId, user.id, message);
   }
+
+  await revalidatePath(`/meets/${meetId}/wall`);
 
   return NextResponse.json(updated);
 }

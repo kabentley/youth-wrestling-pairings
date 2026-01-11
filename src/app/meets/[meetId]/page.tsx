@@ -1037,7 +1037,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       <AppHeader links={headerLinks} />
       <div className="subnav">
         <a href={`/meets/${meetId}/matboard`}>Mat Board</a>
-        <a href={`/meets/${meetId}/wall`}>Wall Chart</a>
+        <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">
+          Wall Chart
+        </a>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>

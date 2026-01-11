@@ -11,6 +11,14 @@ export default function ControlBar({ label }: ControlBarProps) {
   const [scheme, setScheme] = useState<"color" | "black-and-white">("color");
 
   useEffect(() => {
+    const pending = sessionStorage.getItem("wallChartsPrint");
+    if (pending) {
+      sessionStorage.removeItem("wallChartsPrint");
+      window.print();
+    }
+  }, []);
+
+  useEffect(() => {
     const root = document.documentElement;
     if (scheme === "black-and-white") {
       root.classList.add("black-and-white");
@@ -22,9 +30,16 @@ export default function ControlBar({ label }: ControlBarProps) {
     };
   }, [scheme]);
 
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
   return (
     <div className="chart-controls">
       <div className="meet-heading">{label}</div>
+      <button type="button" className="refresh-btn" onClick={handleRefresh}>
+        Refresh
+      </button>
       <label htmlFor="color-scheme" className="select-label">
         <span className="sr-only">Color mode</span>
         <select
