@@ -78,6 +78,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
   const [comments, setComments] = useState<MeetComment[]>([]);
+  const [showComments, setShowComments] = useState(true);
   const [commentBody, setCommentBody] = useState("");
   const [commentSection, setCommentSection] = useState("General");
   const [showChangeLog, setShowChangeLog] = useState(false);
@@ -914,36 +915,38 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .tab-bar {
           display: flex;
-          gap: 4px;
+          gap: 8px;
           margin-bottom: 0;
-          padding: 0 8px;
-          background: #f1f3f4;
-          border: 1px solid #dfe3ea;
-          border-bottom: none;
-          border-radius: 10px 10px 0 0;
-          box-shadow: inset 0 -1px 0 #cfd4dc;
+          padding: 4px;
+          background: #ffffff;
+          border: 1px solid #d0d5df;
+          border-radius: 16px;
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
         }
         .tab-button {
-          background: #f5f7fb;
+          background: transparent;
           border: 1px solid transparent;
-          border-bottom: 1px solid transparent;
-          border-radius: 8px 8px 0 0;
-          padding: 10px 18px;
-          font-size: 14px;
+          border-radius: 12px;
+          padding: 10px 24px;
+          font-size: 15px;
           font-weight: 600;
-          color: #5b6472;
+          color: #5f6772;
           cursor: pointer;
-          transition: background 0.2s, border-color 0.2s, color 0.2s;
+          transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
         }
         .tab-button + .tab-button {
-          margin-left: 4px;
+          margin-left: 0;
+        }
+        .tab-button:hover:not(.active) {
+          background: #f1f4fb;
+          color: #1e3a82;
+          transform: translateY(-1px);
         }
         .tab-button.active {
-          background: #ffffff;
-          color: var(--ink);
-          border-color: #cfd4dc;
-          border-bottom-color: #ffffff;
-          box-shadow: 0 3px 6px rgba(13, 59, 102, 0.12);
+          background: linear-gradient(135deg, #1e88e5, #4dabf5);
+          color: #ffffff;
+          border-color: #1e88e5;
+          box-shadow: 0 10px 20px rgba(30, 136, 229, 0.35);
         }
         .tab-button:focus-visible {
           outline: 2px solid var(--accent);
@@ -962,6 +965,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           align-items: center;
           gap: 10px;
           flex-wrap: wrap;
+        }
+        .meet-heading-actions {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 6px;
+          text-align: right;
+        }
+        .meet-status {
+          font-size: 13px;
+          color: #5b6472;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .meet-last-updated {
+          font-size: 11px;
+          color: #7a8290;
         }
         .meet-name-btn {
           font-size: 20px;
@@ -1075,14 +1096,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           user-select: none;
           background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
         }
-        .tab-bar {
+        .pairings-tab-bar {
           display: flex;
           gap: 6px;
           align-items: flex-end;
           border-bottom: 1px solid var(--line);
           margin-top: 8px;
         }
-        .tab {
+        .pairing-tab {
           border: 1px solid var(--line);
           border-bottom: none;
           border-radius: 8px 8px 0 0;
@@ -1092,7 +1113,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           font-size: 12px;
           cursor: pointer;
         }
-        .tab.active {
+        .pairing-tab.active {
           background: #ffffff;
           color: var(--ink);
           box-shadow: 0 -2px 0 #ffffff inset;
@@ -1207,6 +1228,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </>
           )}
         </div>
+        <div className="meet-heading-actions">
+          <div className="meet-status">
+            <span>
+              Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
+            </span>
+            {lastUpdatedAt && (
+              <span className="meet-last-updated">
+                Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
+              </span>
+            )}
+          </div>
+          <button
+            className="nav-btn"
+            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+            disabled={!canEdit}
+          >
+            {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
+          </button>
+        </div>
       </div>
       {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
       <div className="tab-bar">
@@ -1232,34 +1272,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       {activeTab === "setup" && (
         <>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-            <span>Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b></span>
-            {lastUpdatedAt && (
-              <span>
-                Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
-              </span>
-            )}
-            <button
-              className="nav-btn"
-              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-              disabled={!canEdit}
-            >
-              {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
-            </button>
-          </div>
+          {authMsg && (
+            <div className="notice">
+              {authMsg}
+            </div>
+          )}
 
-        {authMsg && (
-          <div className="notice">
-            {authMsg}
-          </div>
-      )}
-
-      {lockState.status === "locked" && (
-        <div className="notice">
-          Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
-          <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
-        </div>
-      )}
+          {lockState.status === "locked" && (
+            <div className="notice">
+              Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
+              <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
+            </div>
+          )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
@@ -1297,7 +1321,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>Pairings</h3>
           </div>
-          <div className="tab-bar">
+          <div className="pairings-tab-bar">
             {teams.map(team => {
               const isActive = pairingsTeamId === team.id;
               const activeTextColor = contrastText(team.color);
@@ -1305,7 +1329,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <button
                 key={team.id}
                 onClick={() => setPairingsTeamId(team.id)}
-                className={`tab ${pairingsTeamId === team.id ? "active" : ""}`}
+                className={`pairing-tab ${pairingsTeamId === team.id ? "active" : ""}`}
                 style={{
                   background: isActive
                     ? (team.color ?? "#ffffff")
@@ -1751,47 +1775,54 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       </div>
 
       <div style={{ marginTop: 20 }}>
-        <div className="panel fill">
-          <h3 className="panel-title">Comments</h3>
-          <div style={{ display: "grid", gap: 8 }}>
-            <label style={{ fontSize: 12 }}>Section</label>
-            <select value={commentSection} onChange={(e) => setCommentSection(e.target.value)} disabled={!canEdit}>
-              <option value="General">General</option>
-              <option value="Schedule">Schedule</option>
-              <option value="Mat Rules">Mat Rules</option>
-              <option value="Roster">Roster</option>
-              <option value="Pairings">Pairings</option>
-              <option value="Suggestion">Suggestion</option>
-            </select>
-            <textarea
-              rows={3}
-              value={commentBody}
-              onChange={(e) => setCommentBody(e.target.value)}
-              placeholder="Leave a note for other coaches..."
-              disabled={!canEdit}
-            />
-            <button onClick={submitComment} disabled={!canEdit || !commentBody.trim()}>
-              Add Comment
+        {showComments && (
+          <div className="panel fill">
+            <h3 className="panel-title">Comments</h3>
+            <div style={{ display: "grid", gap: 8 }}>
+              <label style={{ fontSize: 12 }}>Section</label>
+              <select value={commentSection} onChange={(e) => setCommentSection(e.target.value)} disabled={!canEdit}>
+                <option value="General">General</option>
+                <option value="Schedule">Schedule</option>
+                <option value="Mat Rules">Mat Rules</option>
+                <option value="Roster">Roster</option>
+                <option value="Pairings">Pairings</option>
+                <option value="Suggestion">Suggestion</option>
+              </select>
+              <textarea
+                rows={3}
+                value={commentBody}
+                onChange={(e) => setCommentBody(e.target.value)}
+                placeholder="Leave a note for other coaches..."
+                disabled={!canEdit}
+              />
+              <button onClick={submitComment} disabled={!canEdit || !commentBody.trim()}>
+                Add Comment
+              </button>
+            </div>
+            <div className="panel-scroll fill" style={{ display: "grid", gap: 10, marginTop: 12, fontSize: 13 }}>
+              {comments.map(comment => (
+                <div key={comment.id} style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 600 }}>{comment.author?.username ?? "unknown"}</div>
+                    {comment.section && <span className="tag">{comment.section}</span>}
+                  </div>
+                  <div style={{ marginTop: 6 }}>{comment.body}</div>
+                  <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(comment.createdAt).toLocaleString()}</div>
+                </div>
+              ))}
+              {comments.length === 0 && <div style={{ color: "#666", fontSize: 12 }}>No comments yet.</div>}
+            </div>
+          </div>
+        )}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="nav-btn" onClick={() => setShowComments(prev => !prev)}>
+              {showComments ? "Hide Comments" : "Show Comments"}
+            </button>
+            <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
+              {showChangeLog ? "Hide Change Log" : "Show Change Log"}
             </button>
           </div>
-          <div className="panel-scroll fill" style={{ display: "grid", gap: 10, marginTop: 12, fontSize: 13 }}>
-            {comments.map(comment => (
-              <div key={comment.id} style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 600 }}>{comment.author?.username ?? "unknown"}</div>
-                  {comment.section && <span className="tag">{comment.section}</span>}
-                </div>
-                <div style={{ marginTop: 6 }}>{comment.body}</div>
-                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(comment.createdAt).toLocaleString()}</div>
-              </div>
-            ))}
-            {comments.length === 0 && <div style={{ color: "#666", fontSize: 12 }}>No comments yet.</div>}
-          </div>
-        </div>
-        <div style={{ marginTop: 10 }}>
-          <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
-            {showChangeLog ? "Hide Change Log" : "Show Change Log"}
-          </button>
         </div>
         {showChangeLog && (
           <div className="panel fill" style={{ marginTop: 10 }}>

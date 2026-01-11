@@ -547,6 +547,14 @@ export default function CoachMyTeamPage() {
               />
             </label>
             <div className="info-actions">
+              <div className="info-message-slot" aria-live="polite">
+                <p
+                  className={`info-message ${messageIsError ? "error" : "success"}${message ? "" : " empty"}`}
+                  role={message ? "status" : undefined}
+                >
+                  {message ?? "\u00A0"}
+                </p>
+              </div>
               <div className="info-actions-row">
                 <button
                   type="button"
@@ -565,13 +573,8 @@ export default function CoachMyTeamPage() {
                   Cancel
                 </button>
               </div>
-              {message && (
-                <p className={`info-message ${messageIsError ? "error" : "success"}`} role="status">
-                  {message}
-                </p>
-              )}
             </div>
-          </div>
+        </div>
         </section>
 
         <section className="coach-card">
@@ -855,16 +858,29 @@ const coachStyles = `
     opacity: 0.35;
     cursor: not-allowed;
   }
+  .info-message-slot {
+    width: 100%;
+    min-height: 20px;
+    display: flex;
+    justify-content: flex-end;
+  }
   .info-message {
     margin: 0;
     font-size: 14px;
     font-weight: 600;
+    min-height: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
   }
   .info-message.success {
     color: var(--accent);
   }
   .info-message.error {
     color: #d32f2f;
+  }
+  .info-message.empty {
+    visibility: hidden;
   }
   .logo-field {
     display: flex;

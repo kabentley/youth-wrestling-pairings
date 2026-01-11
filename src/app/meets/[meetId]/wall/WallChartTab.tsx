@@ -81,6 +81,8 @@ export default function WallChartTab({
             .wall-chart-root .chart-page:last-of-type { page-break-after: auto; }
             .wall-chart-root .mat-block { page-break-after: always; }
             .wall-chart-root .mat-block:last-of-type { page-break-after: auto; }
+            .wall-chart-root .team-block { page-break-after: always; break-after: page; }
+            .wall-chart-root .team-block:last-of-type { page-break-after: auto; break-after: auto; }
           }
           .wall-chart-root {
             font-family: system-ui;

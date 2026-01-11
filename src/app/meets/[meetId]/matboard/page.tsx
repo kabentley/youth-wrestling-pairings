@@ -181,6 +181,17 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
     return out;
   }, [bouts, numMats]);
 
+  const matchCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const list of Object.values(mats)) {
+      for (const bout of list) {
+        counts.set(bout.redId, (counts.get(bout.redId) ?? 0) + 1);
+        counts.set(bout.greenId, (counts.get(bout.greenId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [mats]);
+
   const conflictByWrestler = useMemo(() => {
     if (conflictGap <= 0) return new Map<string, Set<string>>();
     const byWrestler = new Map<string, { boutId: string; order: number }[]>();
@@ -476,6 +487,9 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
           border-radius: 6px;
           padding: 6px 8px;
         }
+        .wrestler-name.single-match {
+          font-style: italic;
+        }
         h2 {
           font-family: "Oswald", Arial, sans-serif;
           text-transform: uppercase;
@@ -517,7 +531,9 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
             style={{ width: 60 }}
           />
         </label>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>Pink = too close</span>
+        <span style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600 }}>
+          Pink = too close · Wrestlers with only one match appear in italics.
+        </span>
       </div>
 
       {authMsg && (
@@ -613,8 +629,10 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                       <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr", gap: 8, fontSize: 12, opacity: 0.85 }}>
                         <span>{i + 1}</span>
                         <span
+                          className={`wrestler-name${(matchCounts.get(b.redId) ?? 0) === 1 ? " single-match" : ""}`}
                           data-role="wrestler"
                           style={{
+                            fontStyle: (matchCounts.get(b.redId) ?? 0) === 1 ? "italic" : undefined,
                             color: rColor || undefined,
                             background: redConflict
                               ? "#ffd6df"
@@ -635,8 +653,10 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
                           {rTxt}
                         </span>
                         <span
+                          className={`wrestler-name${(matchCounts.get(b.greenId) ?? 0) === 1 ? " single-match" : ""}`}
                           data-role="wrestler"
                           style={{
+                            fontStyle: (matchCounts.get(b.greenId) ?? 0) === 1 ? "italic" : undefined,
                             color: gColor || undefined,
                             background: greenConflict
                               ? "#ffd6df"

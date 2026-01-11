@@ -190,6 +190,17 @@ export default function MatBoardTab({
     return out;
   }, [bouts, numMats, wMap]);
 
+  const matchCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const list of Object.values(mats)) {
+      for (const bout of list) {
+        counts.set(bout.redId, (counts.get(bout.redId) ?? 0) + 1);
+        counts.set(bout.greenId, (counts.get(bout.greenId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [mats]);
+
   const conflictSeverity = useMemo(() => {
     if (conflictGap <= 0) return new Map<string, number>();
     const byWrestler = new Map<string, { boutId: string; order: number }[]>();
@@ -545,6 +556,9 @@ export default function MatBoardTab({
           border-radius: 4px;
           padding: 2px 4px;
         }
+        .bout-row span.single-match {
+          font-style: italic;
+        }
         .bout-row span[data-role="wrestler"].highlight {
           outline: 2px solid #111;
         }
@@ -584,6 +598,9 @@ export default function MatBoardTab({
             onChange={e => setConflictGap(Number(e.target.value))}
           />
         </label>
+        <span style={{ fontSize: 14, color: "#5a6673", fontWeight: 600 }}>
+          Pink = too close · Wrestlers with only one match appear in italics.
+        </span>
       </div>
       {authMsg && <div className="notice">{authMsg}</div>}
       {lockState.status === "locked" && (
@@ -633,6 +650,8 @@ export default function MatBoardTab({
                   const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);
                   const severityRed = getSeverity(b.redId);
                   const severityGreen = getSeverity(b.greenId);
+                  const singleMatchRed = (matchCounts.get(b.redId) ?? 0) === 1;
+                  const singleMatchGreen = (matchCounts.get(b.greenId) ?? 0) === 1;
                   const normalized = (value?: number) =>
                     value === undefined
                       ? 0
@@ -688,7 +707,12 @@ export default function MatBoardTab({
                           <span className="number">{formatBoutNumber(matNum, b.order, index + 1)}</span>
                         <span
                           data-role="wrestler"
-                          className={isRedHighlighted ? "highlight" : ""}
+                          className={[
+                            isRedHighlighted ? "highlight" : "",
+                            singleMatchRed ? "single-match" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                           style={{
                             color: rColor || undefined,
                             background:
@@ -706,7 +730,12 @@ export default function MatBoardTab({
                         </span>
                         <span
                           data-role="wrestler"
-                          className={isGreenHighlighted ? "highlight" : ""}
+                          className={[
+                            isGreenHighlighted ? "highlight" : "",
+                            singleMatchGreen ? "single-match" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
                           style={{
                             color: gColor || undefined,
                             background:

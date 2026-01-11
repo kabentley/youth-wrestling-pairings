@@ -28,7 +28,7 @@ type EditableWrestler = {
   active: boolean;
   isNew?: boolean;
 };
-w type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
+type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
 type ViewerColumn = { key: ViewerColumnKey; label: string; width: number };
 
 function parseCsv(text: string) {
