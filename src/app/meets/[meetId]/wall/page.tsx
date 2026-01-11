@@ -1,3 +1,4 @@
+import Head from "next/head";
 import { db } from "@/lib/db";
 import PrintButton from "./PrintButton";
 
@@ -117,11 +118,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
     };
   }
 
-  return (
-    <html>
-      <head>
-        <title>Wall Chart</title>
-        <style>{`
+  const styles = `
           @media print {
             .noprint { display: none; }
             .chart-page { page-break-after: always; }
@@ -161,10 +158,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             justify-content: space-between;
             margin-bottom: 8px;
             font-weight: 600;
-          }
-          .mat-count {
-            font-size: 12px;
-            color: #777;
+            gap: 8px;
           }
           .mat-block:last-of-type {
             page-break-after: auto;
@@ -203,20 +197,17 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             align-items: center;
             justify-content: space-between;
             margin-bottom: 8px;
+            gap: 8px;
           }
           .team-name {
             font-weight: 700;
             font-size: 16px;
           }
-          .team-symbol {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            border-radius: 6px;
-            font-weight: 700;
-            color: #fff;
+          .card-meet-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            white-space: nowrap;
           }
           .team-table {
             border-collapse: collapse;
@@ -227,9 +218,6 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             border: 1px solid #eee;
             padding: 6px 8px;
             text-align: left;
-          }
-          .team-table td:first-child span {
-            font-weight: 700;
           }
           .match-line {
             display: flex;
@@ -244,24 +232,33 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             gap: 0;
           }
           .match-bout {
-            font-weight: 700;
+            font-weight: 400;
             margin-right: 6px;
           }
           .match-opponent {
-            font-weight: 600;
-          }
-          .match-separator {
-            color: #999;
-            margin: 0 8px;
+            font-weight: 400;
           }
           .team-empty {
             font-size: 14px;
             color: #555;
             margin: 0 0 12px 0;
           }
-        `}</style>
-      </head>
-      <body>
+          .wrestler-name {
+            font-weight: 400;
+          }
+        `;
+  const meetLabel =
+    meet && meet.date
+      ? `${meet.name ?? "Meet"} · ${new Date(meet.date).toISOString().slice(0, 10)}`
+      : meet?.name ?? "Meet";
+
+  return (
+    <>
+      <Head>
+        <title>Wall Chart</title>
+      </Head>
+      <style dangerouslySetInnerHTML={{ __html: styles }} />
+      <div>
         <div className="noprint" style={{ marginBottom: 10 }}>
           <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
           <a href={`/meets/${meetId}/matboard`}>Mat Board</a> &nbsp;|&nbsp;
@@ -282,7 +279,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                 <article key={mat} className="mat-block">
                   <div className="mat-header">
                     <span>Mat {mat}</span>
-                    <span className="mat-count">{boutsForMat.length} bout{boutsForMat.length === 1 ? "" : "s"}</span>
+                    <span className="card-meet-label">{meetLabel}</span>
                   </div>
                   {boutsForMat.length === 0 ? (
                     <p className="mat-empty">No bouts scheduled for this mat.</p>
@@ -325,15 +322,10 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             <article key={team.id} className="team-block">
               <div className="team-header">
                 <div className="team-name">
-                  {team.symbol ? `${team.symbol} · ` : ""}
                   {team.name}
+                  {team.symbol ? ` (${team.symbol})` : ""}
                 </div>
-                <span
-                  className="team-symbol"
-                  style={{ background: team.color }}
-                >
-                  {team.symbol ?? team.name.charAt(0)}
-                </span>
+                <span className="card-meet-label">{meetLabel}</span>
               </div>
               {team.members.length === 0 ? (
                 <p className="team-empty">No wrestlers recorded.</p>
@@ -347,9 +339,9 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                   </thead>
                   <tbody>
                     {team.members.map(member => (
-                <tr key={member.id}>
+                    <tr key={member.id}>
                         <td>
-                          <span style={{ color: "#000" }}>{member.name}</span>
+                          <span className="wrestler-name" style={{ color: "#000" }}>{member.name}</span>
                         </td>
                         <td>
                           {member.matches.length === 0 ? (
@@ -369,9 +361,6 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                                     {match.opponent}
                                     {match.opponentTeam ? ` (${match.opponentTeam})` : ""}
                                   </span>
-                                  {idx < member.matches.length - 1 && (
-                                    <span className="match-separator">·</span>
-                                  )}
                                 </span>
                               ))}
                             </div>
@@ -385,7 +374,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             </article>
           ))}
         </section>
-      </body>
-    </html>
+      </div>
+    </>
   );
 }
