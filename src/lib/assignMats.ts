@@ -9,10 +9,11 @@ export type MatRule = {
 };
 
 export type MatSettings = {
-  numMats: number;
-  minRestBouts: number;
-  restPenalty: number;
+  numMats?: number;
 };
+
+export const DEFAULT_MAT_COUNT = 4;
+export const MIN_MATS = 1;
 
 const DEFAULT_RULE: MatRule = {
   minExperience: 0,
@@ -36,7 +37,7 @@ function rangePenalty(value: number, min: number, max: number) {
   return 0;
 }
 
-export async function assignMatsForMeet(meetId: string, s: MatSettings) {
+export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: { date: true, meetTeams: { select: { teamId: true } }, homeTeamId: true },
@@ -55,6 +56,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
   const wMap = new Map(wrestlers.map(w => [w.id, w]));
 
   await db.bout.updateMany({ where: { meetId }, data: { mat: null, order: null } });
+
+  const numMats = Math.max(MIN_MATS, s.numMats ?? meet?.numMats ?? DEFAULT_MAT_COUNT);
 
   const teamRules = meet?.homeTeamId
     ? await db.teamMatRule.findMany({
@@ -77,15 +80,14 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
     color: rule.color ?? undefined,
   }));
 
-  let rules: MatRule[] = baseRules.length > 0 ? baseRules.slice(0, s.numMats) : [];
-  if (rules.length < s.numMats) {
-    for (let i = rules.length; i < s.numMats; i++) {
+  let rules: MatRule[] = baseRules.length > 0 ? baseRules.slice(0, numMats) : [];
+  if (rules.length < numMats) {
+    for (let i = rules.length; i < numMats; i++) {
       rules.push({ ...DEFAULT_RULE });
     }
   }
 
   const mats: { boutIds: string[]; rule: MatRule }[] = rules.map(rule => ({ boutIds: [], rule }));
-  const lastOnMat = new Map<string, { matIdx: number; order: number }>();
   let homeTeamMatIdx: number | null = null;
   const meetDate = meet?.date ?? new Date();
 
@@ -120,15 +122,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
     const rule = mats[matIdx].rule;
     const nextOrder = mats[matIdx].boutIds.length + 1;
     let p = 0;
-
-    for (const wid of [bout.redId, bout.greenId]) {
-      const last = lastOnMat.get(wid);
-      if (!last) continue;
-      if (last.matIdx === matIdx) {
-        const gap = nextOrder - last.order;
-        if (gap <= s.minRestBouts) p += s.restPenalty * (s.minRestBouts - gap + 1);
-      }
-    }
 
     const red = getWrestler(bout.redId);
     const green = getWrestler(bout.greenId);
@@ -166,7 +159,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
     let bestMat = 0;
     let best = Number.POSITIVE_INFINITY;
 
-    for (let m = 0; m < s.numMats; m++) {
+    for (let m = 0; m < numMats; m++) {
       const p = matPenalty(b, m, anyEligible);
       if (p < best) { best = p; bestMat = m; }
     }
@@ -175,9 +168,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
     mats[bestMat].boutIds.push(b.id);
 
     await db.bout.update({ where: { id: b.id }, data: { mat: bestMat + 1, order } });
-
-    lastOnMat.set(b.redId, { matIdx: bestMat, order });
-    lastOnMat.set(b.greenId, { matIdx: bestMat, order });
 
     if (homeTeamPrefs?.homeTeamPreferSameMat && meet?.homeTeamId) {
       const red = getWrestler(b.redId);
@@ -189,5 +179,5 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings) {
     }
   }
 
-  return { assigned: bouts.length, numMats: s.numMats };
+  return { assigned: bouts.length, numMats };
 }

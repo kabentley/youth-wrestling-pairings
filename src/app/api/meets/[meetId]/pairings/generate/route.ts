@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { assignMatsForMeet } from "@/lib/assignMats";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
@@ -30,5 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const settings = SettingsSchema.parse(body);
   const result = await generatePairingsForMeet(meetId, settings);
   await logMeetChange(meetId, user.id, "Generated pairings.");
-  return NextResponse.json(result);
+  const assignResult = await assignMatsForMeet(meetId);
+  await logMeetChange(meetId, user.id, "Assigned mats.");
+  return NextResponse.json({ ...result, ...assignResult });
 }

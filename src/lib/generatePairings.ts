@@ -22,7 +22,6 @@ function weightPctDiff(a: number, b: number) {
 }
 
 export async function generatePairingsForMeet(meetId: string, settings: PairingSettings) {
-  await db.bout.deleteMany({ where: { meetId } });
 
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
@@ -40,6 +39,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   const wrestlers = meetTeams
     .flatMap(mt => mt.team.wrestlers)
     .filter(w => w.active && !absentIds.has(w.id));
+  const wrestlerMap = new Map(wrestlers.map(w => [w.id, w]));
 
   const excluded = await db.excludedPair.findMany({ where: { meetId } });
   const excludedSet = new Set(excluded.map(e => `${e.aId}|${e.bId}`));
@@ -61,6 +61,21 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   }
   function getPairCount(t1: string, t2: string) {
     return pairCount.get(teamPairKey(t1, t2)) ?? 0;
+  }
+
+  const existingBouts = await db.bout.findMany({
+    where: { meetId },
+    select: { redId: true, greenId: true },
+  });
+  for (const bout of existingBouts) {
+    matchCounts.set(bout.redId, (matchCounts.get(bout.redId) ?? 0) + 1);
+    matchCounts.set(bout.greenId, (matchCounts.get(bout.greenId) ?? 0) + 1);
+    paired.add(pairKey(bout.redId, bout.greenId));
+    const red = wrestlerMap.get(bout.redId);
+    const green = wrestlerMap.get(bout.greenId);
+    if (red && green) {
+      bumpPair(red.teamId, green.teamId);
+    }
   }
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);

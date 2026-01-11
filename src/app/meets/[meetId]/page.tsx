@@ -31,6 +31,18 @@ type Bout = {
   order?: number | null;
 };
 
+type Candidate = {
+  opponent: Wrestler;
+  score: number;
+  details?: {
+    wDiff: number;
+    wPct: number;
+    ageGapDays: number;
+    expGap: number;
+    skillGap: number;
+  };
+};
+
 type LockState = {
   status: "loading" | "acquired" | "locked";
   lockedByUsername?: string | null;
@@ -84,13 +96,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [pairingsSort, setPairingsSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [currentSort, setCurrentSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [availableSort, setAvailableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "score", dir: "asc" });
-
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [editAllowed, setEditAllowed] = useState(true);
-  const [matMsg, setMatMsg] = useState("");
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const candidatesReqIdRef = useRef(0);
 
   const [settings, setSettings] = useState({
@@ -103,11 +114,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     matchesPerWrestler: 1,
   });
 
-  const [matSettings, setMatSettings] = useState({
-    numMats: 4,
-    minRestBouts: 2,
-    restPenalty: 10,
-  });
   const [showAttendance, setShowAttendance] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
@@ -123,7 +129,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
 
   const [target, setTarget] = useState<Wrestler | null>(null);
-  const [candidates, setCandidates] = useState<any[]>([]);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -317,14 +322,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
-    const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
-    if (maxMat > 0) setMatSettings(s => ({ ...s, numMats: maxMat }));
-      if (mRes.ok) {
-        const meetJson = await mRes.json();
-        setMeetName(meetJson.name ?? "");
-        lastSavedNameRef.current = meetJson.name ?? "";
-        setMeetDate(meetJson.date ?? null);
-      setMatSettings(s => ({ ...s, numMats: meetJson.numMats ?? s.numMats }));
+    if (mRes.ok) {
+      const meetJson = await mRes.json();
+      setMeetName(meetJson.name ?? "");
+      lastSavedNameRef.current = meetJson.name ?? "";
+      setMeetDate(meetJson.date ?? null);
       setSettings(s => ({
         ...s,
         allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
@@ -489,6 +491,35 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return acc;
   }, {} as Record<string, number>);
 
+  async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
+    if (!wrestlerId) {
+      setCandidates([]);
+      return;
+    }
+    const effectiveSettings = { ...settings, ...overrides };
+    const qs = new URLSearchParams({
+      wrestlerId,
+      limit: "20",
+      maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
+      maxWeightDiffPct: String(effectiveSettings.maxWeightDiffPct),
+      firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
+      allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
+    });
+    const reqId = candidatesReqIdRef.current + 1;
+    candidatesReqIdRef.current = reqId;
+    const res = await fetch(`/api/meets/${meetId}/candidates?${qs.toString()}`);
+    if (reqId !== candidatesReqIdRef.current) return;
+    if (!res.ok) return;
+    const json = await res.json();
+    setCandidates(json.candidates ?? []);
+  }
+
+  function refreshAfterMatAssignments() {
+    void load();
+    void loadActivity();
+    setWallRefreshIndex(idx => idx + 1);
+  }
+
   useEffect(() => {
     if (attendingByTeam.length === 0) {
       setSelectedPairingId(null);
@@ -497,9 +528,38 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!selectedPairingId || !attendingByTeam.some(w => w.id === selectedPairingId)) {
       const nextId = attendingByTeam[0].id;
       setSelectedPairingId(nextId);
-      void loadCandidates(nextId);
     }
   }, [attendingByTeam, selectedPairingId]);
+
+  useEffect(() => {
+    if (!selectedPairingId) {
+      setTarget(null);
+      return;
+    }
+    setTarget(wMap[selectedPairingId] ?? null);
+  }, [selectedPairingId, wMap]);
+
+  useEffect(() => {
+    if (!selectedPairingId) {
+      setCandidates([]);
+      return;
+    }
+    void loadCandidates(
+      selectedPairingId,
+      {
+        maxAgeGapDays: settings.maxAgeGapDays,
+        maxWeightDiffPct: settings.maxWeightDiffPct,
+        firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
+        allowSameTeamMatches: settings.allowSameTeamMatches,
+      },
+    );
+  }, [
+    selectedPairingId,
+    settings.maxAgeGapDays,
+    settings.maxWeightDiffPct,
+    settings.firstYearOnlyWithFirstYear,
+    settings.allowSameTeamMatches,
+  ]);
   const attendanceCounts = attendanceRoster.reduce(
     (acc, w) => {
       const status = w.status ?? null;
@@ -514,11 +574,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     ? new Date(meetDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
     : null;
   const metadataParts = [formattedDate, teamList].filter(Boolean);
-  const canAddWrestler = currentUserRole === "ADMIN"
-    || (currentUserRole === "COACH" && attendanceTeamId && attendanceTeamId === currentUserTeamId);
   const addWrestlerTeamLabel = attendanceTeamId
     ? teams.find(t => t.id === attendanceTeamId)?.name ?? "Selected Team"
     : "Selected Team";
+  const isAttendanceTeamCoach =
+    currentUserRole === "COACH" &&
+    attendanceTeamId !== null &&
+    currentUserTeamId !== null &&
+    currentUserTeamId === attendanceTeamId;
+  const canEditRoster = currentUserRole === "ADMIN" || isAttendanceTeamCoach;
 
   const conflictBoutIds = (() => {
     const gap = 6;
@@ -575,23 +639,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), currentSort.dir);
   });
   const availableFiltered = candidates
-    .filter((c: any) => settings.allowSameTeamMatches || c.opponent?.teamId !== target?.teamId)
-    .filter((c: any) => {
+    .filter((c) => settings.allowSameTeamMatches || c.opponent.teamId !== target?.teamId)
+    .filter((c) => {
       if (!settings.firstYearOnlyWithFirstYear) return true;
-      const o = c.opponent as Wrestler;
+      const o = c.opponent;
       const tFirst = (target?.experienceYears ?? 0) <= 0;
       const oFirst = o.experienceYears <= 0;
       return tFirst === oFirst;
     })
-    .filter((c: any) => {
+    .filter((c) => {
       if (!target) return true;
-      const opponent = c.opponent as Wrestler;
+      const opponent = c.opponent;
       return !bouts.some(b =>
         (b.redId === target.id && b.greenId === opponent.id) ||
         (b.greenId === target.id && b.redId === opponent.id)
       );
     })
-    .map((c: any) => ({ opponent: c.opponent as Wrestler, score: c.score as number }));
+    .map((c) => ({ opponent: c.opponent, score: c.score }));
   const availableSorted = [...availableFiltered].sort((a, b) => {
     const getValue = (row: { opponent: Wrestler; score: number }) => {
       const w = row.opponent;
@@ -608,64 +672,50 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
-
   async function generate() {
     if (!canEdit) return;
     setMsg("Generating...");
-    const res = await fetch(`/api/meets/${meetId}/pairings/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        maxAgeGapDays: Number(settings.maxAgeGapDays),
-        maxWeightDiffPct: Number(settings.maxWeightDiffPct),
-        firstYearOnlyWithFirstYear: Boolean(settings.firstYearOnlyWithFirstYear),
-        allowSameTeamMatches: Boolean(settings.allowSameTeamMatches),
-        balanceTeamPairs: Boolean(settings.balanceTeamPairs),
-        balancePenalty: Number(settings.balancePenalty),
-        matchesPerWrestler: Number(settings.matchesPerWrestler),
-      }),
-    });
-    const json = await res.json();
-    setMsg(`Created ${json.created} bouts`);
-    await load();
-    await loadActivity();
-    setTimeout(() => setMsg(""), 1500);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/pairings/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          maxAgeGapDays: Number(settings.maxAgeGapDays),
+          maxWeightDiffPct: Number(settings.maxWeightDiffPct),
+          firstYearOnlyWithFirstYear: Boolean(settings.firstYearOnlyWithFirstYear),
+          allowSameTeamMatches: Boolean(settings.allowSameTeamMatches),
+          balanceTeamPairs: Boolean(settings.balanceTeamPairs),
+          balancePenalty: Number(settings.balancePenalty),
+          matchesPerWrestler: Number(settings.matchesPerWrestler),
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || "Failed to generate pairings");
+      }
+      const json = await res.json();
+      setMsg(`Created ${json.created} bouts and assigned mats`);
+      await load();
+      await loadActivity();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to generate pairings");
+    } finally {
+      setTimeout(() => setMsg(""), 1500);
+    }
   }
 
-  async function assignMats() {
+  async function addMatch(redId: string, greenId: string) {
     if (!canEdit) return;
-    setMatMsg("Assigning mats...");
-    const res = await fetch(`/api/meets/${meetId}/mats/assign`, {
+    await fetch(`/api/meets/${meetId}/pairings/add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(matSettings),
+      body: JSON.stringify({ redId, greenId }),
     });
-    const json = await res.json();
-    setMatMsg(`Assigned ${json.assigned} bouts across ${json.numMats} mats`);
     await load();
     await loadActivity();
-    setTimeout(() => setMatMsg(""), 1500);
-  }
-
-  async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
-    const effectiveSettings = { ...settings, ...overrides };
-    const qs = new URLSearchParams({
-      wrestlerId,
-      limit: "20",
-      maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
-      maxWeightDiffPct: String(effectiveSettings.maxWeightDiffPct),
-      firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
-      allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
-    });
-
-    const reqId = candidatesReqIdRef.current + 1;
-    candidatesReqIdRef.current = reqId;
-    const res = await fetch(`/api/meets/${meetId}/candidates?${qs.toString()}`);
-    if (reqId !== candidatesReqIdRef.current) return;
-    const json = await res.json();
-    if (!res.ok) return;
-    setTarget(json.target);
-    setCandidates(json.candidates ?? []);
+    if (selectedPairingId) {
+      await loadCandidates(selectedPairingId);
+    }
   }
 
   async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
@@ -682,18 +732,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     } else if (target?.id === wrestlerId) {
       await loadCandidates(wrestlerId);
     }
-  }
-
-  async function forceMatch(redId: string, greenId: string) {
-    if (!canEdit) return;
-    await fetch(`/api/meets/${meetId}/pairings/force`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ redId, greenId }),
-    });
-    await load();
-    await loadActivity();
-    await loadCandidates(redId);
   }
 
   async function removeBout(boutId: string) {
@@ -1227,22 +1265,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
           const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
           setSettings(s => ({ ...s, maxAgeGapDays }));
-          if (target) await loadCandidates(target.id, { maxAgeGapDays });
         }} /></label>
         <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
           const maxWeightDiffPct = Number(e.target.value);
           setSettings(s => ({ ...s, maxWeightDiffPct }));
-          if (target) await loadCandidates(target.id, { maxWeightDiffPct });
         }} /></label>
         <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} disabled={!canEdit} onChange={async e => {
           const checked = e.target.checked;
           setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
-          if (target) await loadCandidates(target.id, { firstYearOnlyWithFirstYear: checked });
         }} /> First-year only rule</label>
         <label><input type="checkbox" checked={settings.allowSameTeamMatches} disabled={!canEdit} onChange={async e => {
           const allowSameTeamMatches = e.target.checked;
           setSettings(s => ({ ...s, allowSameTeamMatches }));
-          if (target) await loadCandidates(target.id, { allowSameTeamMatches });
         }} /> Include same team</label>
         <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} disabled={!canEdit} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
@@ -1256,14 +1290,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
         <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
         <span style={{ background: "#f0f0f0", padding: "2px 6px", borderRadius: 6 }}>Not coming</span>
-      </div>
-
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Mats: <input type="number" min={1} max={10} value={matSettings.numMats} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, numMats: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <label>Min rest: <input type="number" min={0} max={20} value={matSettings.minRestBouts} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, minRestBouts: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <label>Rest penalty: <input type="number" min={0} max={1000} value={matSettings.restPenalty} disabled={!canEdit} onChange={e => setMatSettings(s => ({ ...s, restPenalty: Number(e.target.value) }))} style={{ width: 70 }} /></label>
-        <button onClick={assignMats} disabled={!canEdit}>Assign Mats</button>
-        {matMsg && <span>{matMsg}</span>}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 20 }}>
@@ -1343,7 +1369,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   key={w.id}
                   onClick={() => {
                     setSelectedPairingId(w.id);
-                    void loadCandidates(w.id);
                   }}
                     style={{
                       borderTop: "1px solid #eee",
@@ -1369,14 +1394,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </table>
         </div>
           <div style={{ marginTop: 18 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0 }}>
-                Attendance {attendanceTeamId ? `- ${teams.find(t => t.id === attendanceTeamId)?.name ?? ""}` : ""}
-              </h3>
-              <button className="nav-btn" onClick={() => setShowAttendance(s => !s)}>
-                {showAttendance ? "Hide" : "Show"}
-              </button>
-            </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <h3 style={{ margin: 0 }}>
+                  Attendance {attendanceTeamId ? `- ${teams.find(t => t.id === attendanceTeamId)?.name ?? ""}` : ""}
+                </h3>
+                <button className="nav-btn" onClick={() => setShowAttendance(s => !s)}>
+                  {showAttendance ? "Hide" : "Show"}
+                </button>
+              </div>
             {showAttendance && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -1387,14 +1412,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   >
                     Set all coming
                   </button>
-                  {canAddWrestler && (
+                  {attendanceTeamId && (
                     <button
                       className="nav-btn"
                       onClick={() => {
                         if (!attendanceTeamId) return;
                         router.push(`/rosters?team=${attendanceTeamId}`);
                       }}
-                      disabled={!canEdit || !attendanceTeamId}
+                      disabled={!canEdit || !attendanceTeamId || !canEditRoster}
+                      style={!canEditRoster ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
                     >
                       Edit Roster
                     </button>
@@ -1555,170 +1581,172 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
           {!target && <div>Select a wrestler to see opponent options.</div>}
 
-          {target && (
-            <>
-              <div style={{ marginBottom: 10 }}>
-                <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                  <colgroup>
-                    {currentMatchColWidths.map((w, idx) => (
-                      <col key={`current-col-${idx}`} style={{ width: w }} />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {[
-                        { label: "Last", key: "last" },
-                        { label: "First", key: "first" },
-                        { label: "Team", key: "team" },
-                        { label: "Age", key: "age" },
-                        { label: "Weight", key: "weight" },
-                        { label: "Exp", key: "exp" },
-                        { label: "Skill", key: "skill" },
-                        { label: "Matches", key: "matches" },
-                        { label: "Bout #", key: "bout" },
-                      ].map((col, index) => (
-                        <th
-                          key={col.label}
-                          align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
-                          className="pairings-th"
-                        >
-                          {col.label}
-                          <span
-                            className="col-resizer"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              resizeRef.current = {
-                                kind: "current",
-                                index,
-                                startX: e.clientX,
-                                startWidth: currentMatchColWidths[index],
-                              };
-                            }}
-                          />
-                        </th>
+              {target && (
+                <>
+                  <div style={{ marginBottom: 10 }}>
+                    <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                      <colgroup>
+                        {currentMatchColWidths.map((w, idx) => (
+                          <col key={`current-col-${idx}`} style={{ width: w }} />
+                        ))}
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          {[
+                            { label: "Last", key: "last" },
+                            { label: "First", key: "first" },
+                            { label: "Team", key: "team" },
+                            { label: "Age", key: "age" },
+                            { label: "Weight", key: "weight" },
+                            { label: "Exp", key: "exp" },
+                            { label: "Skill", key: "skill" },
+                            { label: "Matches", key: "matches" },
+                            { label: "Bout #", key: "bout" },
+                          ].map((col, index) => (
+                            <th
+                              key={col.label}
+                              align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
+                              className="pairings-th"
+                            >
+                              {col.label}
+                              <span
+                                className="col-resizer"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  resizeRef.current = {
+                                    kind: "current",
+                                    index,
+                                    startX: e.clientX,
+                                    startWidth: currentMatchColWidths[index],
+                                  };
+                                }}
+                              />
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentMatches.length === 0 && (
+                          <tr>
+                            <td colSpan={9} style={{ color: "#666" }}>None</td>
+                          </tr>
+                        )}
+                        {currentSorted.map(({ bout, opponentId, opponent }) => {
+                          return (
+                            <tr
+                              key={bout.id}
+                              className="match-row-hover"
+                              onClick={() => {
+                                if (!canEdit) return;
+                                removeBout(bout.id);
+                              }}
+                              style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                            >
+                              <td>{opponent?.last ?? ""}</td>
+                              <td>{opponent?.first ?? ""}</td>
+                              <td>
+                                {opponent && (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ width: 10, height: 10, background: teamColor(opponent.teamId), display: "inline-block" }} />
+                                    {teamSymbol(opponent.teamId)}
+                                  </span>
+                                )}
+                              </td>
+                              <td align="right">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
+                              <td align="right">{opponent?.weight ?? ""}</td>
+                              <td align="right">{opponent?.experienceYears ?? ""}</td>
+                              <td align="right">{opponent?.skill ?? ""}</td>
+                              <td align="right">{matchCounts[opponentId] ?? 0}</td>
+                              <td align="right">{boutNumber(bout.mat, bout.order)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <h3 style={{ margin: "10px 0 6px" }}>Possible additional matches:</h3>
+                  <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
+                    <colgroup>
+                      {availableMatchColWidths.map((w, idx) => (
+                        <col key={`available-col-${idx}`} style={{ width: w }} />
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentMatches.length === 0 && (
+                    </colgroup>
+                    <thead>
                       <tr>
-                        <td colSpan={9} style={{ color: "#666" }}>None</td>
+                        {[
+                          { label: "Last", key: "last" },
+                          { label: "First", key: "first" },
+                          { label: "Team", key: "team" },
+                          { label: "Age", key: "age" },
+                          { label: "Weight", key: "weight" },
+                          { label: "Exp", key: "exp" },
+                          { label: "Skill", key: "skill" },
+                          { label: "Matches", key: "matches" },
+                        ].map((col, index) => (
+                          <th
+                            key={col.label}
+                            align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
+                            className="pairings-th sortable-th"
+                            onClick={() => toggleSort(setAvailableSort, col.key)}
+                          >
+                            {col.label}
+                            {sortIndicator(availableSort, col.key)}
+                            <span
+                              className="col-resizer"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                resizeRef.current = {
+                                  kind: "available",
+                                  index,
+                                  startX: e.clientX,
+                                  startWidth: availableMatchColWidths[index],
+                                };
+                              }}
+                            />
+                          </th>
+                        ))}
                       </tr>
-                    )}
-                    {currentSorted.map(({ bout, opponentId, opponent }) => {
-                      return (
-                        <tr
-                          key={bout.id}
-                          className="match-row-hover"
-                          onClick={() => {
-                            if (!canEdit) return;
-                            removeBout(bout.id);
-                          }}
-                          style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
-                        >
-                          <td>{opponent?.last ?? ""}</td>
-                          <td>{opponent?.first ?? ""}</td>
-                          <td>
-                            {opponent && (
+                    </thead>
+                    <tbody>
+                      {availableSorted.map(({ opponent: o }) => {
+                        return (
+                          <tr
+                            key={o.id}
+                            className="match-row-hover"
+                            onClick={() => {
+                              if (!canEdit || !target) return;
+                              addMatch(target.id, o.id);
+                            }}
+                            style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                          >
+                            <td>{o.last}</td>
+                            <td>{o.first}</td>
+                            <td>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ width: 10, height: 10, background: teamColor(opponent.teamId), display: "inline-block" }} />
-                                {teamSymbol(opponent.teamId)}
+                                <span style={{ width: 10, height: 10, background: teamColor(o.teamId), display: "inline-block" }} />
+                                {teamSymbol(o.teamId)}
                               </span>
-                            )}
-                          </td>
-                          <td align="right">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
-                          <td align="right">{opponent?.weight ?? ""}</td>
-                          <td align="right">{opponent?.experienceYears ?? ""}</td>
-                          <td align="right">{opponent?.skill ?? ""}</td>
-                          <td align="right">{matchCounts[opponentId] ?? 0}</td>
-                          <td align="right">{boutNumber(bout.mat, bout.order)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <h3 style={{ margin: "10px 0 6px" }}>Possible additional matches:</h3>
-              <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                <colgroup>
-                  {availableMatchColWidths.map((w, idx) => (
-                    <col key={`available-col-${idx}`} style={{ width: w }} />
-                  ))}
-                </colgroup>
-                <thead>
-                  <tr>
-                    {[
-                      { label: "Last", key: "last" },
-                      { label: "First", key: "first" },
-                      { label: "Team", key: "team" },
-                      { label: "Age", key: "age" },
-                      { label: "Weight", key: "weight" },
-                      { label: "Exp", key: "exp" },
-                      { label: "Skill", key: "skill" },
-                      { label: "Matches", key: "matches" },
-                    ].map((col, index) => (
-                      <th
-                        key={col.label}
-                        align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
-                        className="pairings-th"
-                      >
-                        {col.label}
-                        <span
-                          className="col-resizer"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            resizeRef.current = {
-                              kind: "available",
-                              index,
-                              startX: e.clientX,
-                              startWidth: availableMatchColWidths[index],
-                            };
-                          }}
-                        />
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {availableSorted.map(({ opponent: o }) => {
-                      return (
-                        <tr
-                          key={o.id}
-                          className="match-row-hover"
-                          onClick={() => {
-                            if (!canEdit) return;
-                            forceMatch(target.id, o.id);
-                          }}
-                          style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
-                        >
-                          <td>{o.last}</td>
-                          <td>{o.first}</td>
-                          <td>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ width: 10, height: 10, background: teamColor(o.teamId), display: "inline-block" }} />
-                              {teamSymbol(o.teamId)}
-                            </span>
-                          </td>
-                          <td align="right">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
-                          <td align="right">{o.weight}</td>
-                          <td align="right">{o.experienceYears}</td>
-                          <td align="right">{o.skill}</td>
-                          <td align="right">{matchCounts[o.id] ?? 0}</td>
-                        </tr>
-                      );
-                    })}
-                  {candidates.length === 0 && (
-                    <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
-                  )}
-                </tbody>
-              </table>
-              <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-                Note: Click on wrestler name to add or remove.
-              </div>
-            </>
-          )}
+                            </td>
+                            <td align="right">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td align="right">{o.weight}</td>
+                            <td align="right">{o.experienceYears}</td>
+                            <td align="right">{o.skill}</td>
+                            <td align="right">{matchCounts[o.id] ?? 0}</td>
+                          </tr>
+                        );
+                      })}
+                      {availableSorted.length === 0 && (
+                        <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+                    Note: Click on wrestler name to add or remove.
+                  </div>
+                </>
+              )}
         </div>
       </div>
 
@@ -1829,7 +1857,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       {activeTab === "matboard" && (
         <section className="matboard-tab">
-          <MatBoardTab meetId={meetId} />
+          <MatBoardTab
+            meetId={meetId}
+            onMatAssignmentsChange={refreshAfterMatAssignments}
+          />
         </section>
       )}
 

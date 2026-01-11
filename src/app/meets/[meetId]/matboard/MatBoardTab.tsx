@@ -28,7 +28,13 @@ type LockState = {
 
 const keyMat = (m: number) => String(m);
 
-export default function MatBoardTab({ meetId }: { meetId: string }) {
+export default function MatBoardTab({
+  meetId,
+  onMatAssignmentsChange,
+}: {
+  meetId: string;
+  onMatAssignmentsChange?: () => void;
+}) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
@@ -379,6 +385,7 @@ export default function MatBoardTab({ meetId }: { meetId: string }) {
       await load();
       setTimeout(() => setMsg(""), 1200);
     }
+    onMatAssignmentsChange?.();
   }
 
   async function save() {
@@ -407,6 +414,13 @@ export default function MatBoardTab({ meetId }: { meetId: string }) {
     const gColor = g ? teamColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
   }
+
+  const formatBoutNumber = (matNum: number, order?: number | null, fallback?: number) => {
+    const ordValue = order ?? fallback ?? 0;
+    const ordStr = String(ordValue);
+    const paddedOrder = ordStr.length >= 2 ? ordStr : ordStr.padStart(2, "0");
+    return `${matNum}${paddedOrder}`;
+  };
 
   return (
     <section className="matboard-tab">
@@ -509,10 +523,17 @@ export default function MatBoardTab({ meetId }: { meetId: string }) {
         }
         .bout-row {
           display: grid;
-          grid-template-columns: 40px 1fr 1fr;
-          gap: 8px;
-          font-size: 12px;
-          opacity: 0.85;
+          grid-template-columns: 54px 1fr 1fr;
+          gap: 10px;
+          font-size: 14px;
+          opacity: 0.9;
+          align-items: center;
+        }
+        .bout-row span.number {
+          font-size: 18px;
+          font-weight: 700;
+          color: #1d232b;
+          text-align: center;
         }
         .bout-row span {
           display: block;
@@ -664,7 +685,7 @@ export default function MatBoardTab({ meetId }: { meetId: string }) {
                       }}
                     >
                       <div className="bout-row">
-                        <span>{index + 1}</span>
+                          <span className="number">{formatBoutNumber(matNum, b.order, index + 1)}</span>
                         <span
                           data-role="wrestler"
                           className={isRedHighlighted ? "highlight" : ""}
