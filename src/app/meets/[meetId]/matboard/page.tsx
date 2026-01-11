@@ -490,7 +490,7 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
         </a>
       </div>
 
-      <h2>Mat Board</h2>
+      <h2>Mat Assignments</h2>
       <div className="toolbar">
         <button className="nav-btn" onClick={autoReorder} disabled={!canEdit}>Auto Reorder</button>
         <button className="nav-btn" onClick={save} disabled={!canEdit}>Save Order</button>

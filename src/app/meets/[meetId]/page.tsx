@@ -60,6 +60,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [meetName, setMeetName] = useState("");
+  const [meetDate, setMeetDate] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
@@ -118,6 +119,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerExp, setNewWrestlerExp] = useState("0");
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
   const [activeTab, setActiveTab] = useState<"setup" | "matboard" | "wall">("setup");
+  const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
 
   const [target, setTarget] = useState<Wrestler | null>(null);
@@ -317,10 +319,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
     const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
     if (maxMat > 0) setMatSettings(s => ({ ...s, numMats: maxMat }));
-    if (mRes.ok) {
-      const meetJson = await mRes.json();
-      setMeetName(meetJson.name ?? "");
-      lastSavedNameRef.current = meetJson.name ?? "";
+      if (mRes.ok) {
+        const meetJson = await mRes.json();
+        setMeetName(meetJson.name ?? "");
+        lastSavedNameRef.current = meetJson.name ?? "";
+        setMeetDate(meetJson.date ?? null);
       setMatSettings(s => ({ ...s, numMats: meetJson.numMats ?? s.numMats }));
       setSettings(s => ({
         ...s,
@@ -507,7 +510,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { coming: 0, notComing: 0 }
   );
   const teamList = teams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
-  const meetLabel = [meetName, teamList].filter(Boolean).join(" - ");
+  const formattedDate = meetDate
+    ? new Date(meetDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    : null;
+  const metadataParts = [formattedDate, teamList].filter(Boolean);
   const canAddWrestler = currentUserRole === "ADMIN"
     || (currentUserRole === "COACH" && attendanceTeamId && attendanceTeamId === currentUserTeamId);
   const addWrestlerTeamLabel = attendanceTeamId
@@ -871,27 +877,72 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .tab-bar {
           display: flex;
           gap: 4px;
-          margin-bottom: 16px;
-          border-bottom: 1px solid #dfe3ea;
+          margin-bottom: 0;
+          padding: 0 8px;
+          background: #f1f3f4;
+          border: 1px solid #dfe3ea;
+          border-bottom: none;
+          border-radius: 10px 10px 0 0;
+          box-shadow: inset 0 -1px 0 #cfd4dc;
         }
         .tab-button {
-          background: transparent;
-          border: none;
-          border-bottom: 3px solid transparent;
-          padding: 12px 16px;
+          background: #f5f7fb;
+          border: 1px solid transparent;
+          border-bottom: 1px solid transparent;
+          border-radius: 8px 8px 0 0;
+          padding: 10px 18px;
           font-size: 14px;
           font-weight: 600;
           color: #5b6472;
           cursor: pointer;
-          transition: border-color 0.2s, color 0.2s;
+          transition: background 0.2s, border-color 0.2s, color 0.2s;
+        }
+        .tab-button + .tab-button {
+          margin-left: 4px;
         }
         .tab-button.active {
+          background: #ffffff;
           color: var(--ink);
-          border-color: var(--accent);
+          border-color: #cfd4dc;
+          border-bottom-color: #ffffff;
+          box-shadow: 0 3px 6px rgba(13, 59, 102, 0.12);
         }
         .tab-button:focus-visible {
           outline: 2px solid var(--accent);
-          outline-offset: 2px;
+          outline-offset: -2px;
+        }
+        .meet-heading-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-bottom: 8px;
+        }
+        .meet-heading-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .meet-name-btn {
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1;
+          background: transparent;
+          border: none;
+          color: var(--ink);
+          padding: 0;
+          cursor: pointer;
+        }
+        .meet-name-btn:hover,
+        .meet-name-btn:focus-visible {
+          text-decoration: underline;
+        }
+        .meet-metadata {
+          font-size: 13px;
+          color: #5b6472;
+          margin-bottom: 12px;
         }
         h2 {
           font-family: "Oswald", Arial, sans-serif;
@@ -1081,35 +1132,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
       `}</style>
       <AppHeader links={headerLinks} />
-      <div className="tab-bar">
-        {[
-          { key: "setup", label: "Meet Setup" },
-          { key: "matboard", label: "Mat Board" },
-          { key: "wall", label: "Wall Charts" },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            className={`tab-button${activeTab === tab.key ? " active" : ""}`}
-            onClick={() => setActiveTab(tab.key as typeof activeTab)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "setup" && (
-        <>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {!isEditingName && <h2 style={{ margin: 0 }}>{meetLabel || "this meet"}</h2>}
+      <div className="meet-heading-row">
+        <div className="meet-heading-title">
           {!isEditingName && (
             <button
-              className="nav-btn"
+              type="button"
+              className="meet-name-btn"
               onClick={() => setIsEditingName(true)}
               disabled={!canEdit}
             >
-              Edit Meet Name
+              {meetName || "this meet"}
             </button>
           )}
           {isEditingName && (
@@ -1133,31 +1165,55 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 disabled={!canEdit}
               >
                 Done
-              </button>
-            </>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-          <span>Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b></span>
-          {lastUpdatedAt && (
-            <span>
-              Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
-            </span>
-          )}
-          <button
-            className="nav-btn"
-            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-            disabled={!canEdit}
-          >
-            {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
           </button>
+        </>
+          )}
         </div>
       </div>
+      {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
+      <div className="tab-bar">
+        {[
+          { key: "setup", label: "Meet Setup" },
+          { key: "matboard", label: "Mat Assignments" },
+          { key: "wall", label: "Wall Charts" },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            className={`tab-button${activeTab === tab.key ? " active" : ""}`}
+            onClick={() => {
+              setActiveTab(tab.key as typeof activeTab);
+              if (tab.key === "wall") {
+                setWallRefreshIndex(idx => idx + 1);
+              }
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {authMsg && (
-        <div className="notice">
-          {authMsg}
-        </div>
+      {activeTab === "setup" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+            <span>Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b></span>
+            {lastUpdatedAt && (
+              <span>
+                Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
+              </span>
+            )}
+            <button
+              className="nav-btn"
+              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+              disabled={!canEdit}
+            >
+              {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
+            </button>
+          </div>
+
+        {authMsg && (
+          <div className="notice">
+            {authMsg}
+          </div>
       )}
 
       {lockState.status === "locked" && (
@@ -1779,7 +1835,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       {activeTab === "wall" && (
         <section className="wall-chart-section">
-          <WallChartTab meetId={meetId} />
+          <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} />
         </section>
       )}
     </main>

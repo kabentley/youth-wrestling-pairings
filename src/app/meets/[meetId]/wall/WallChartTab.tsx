@@ -34,12 +34,20 @@ type WallChartPayload = {
   wrestlers: Wrestler[];
 };
 
-export default function WallChartTab({ meetId }: { meetId: string }) {
+export default function WallChartTab({
+  meetId,
+  refreshIndex,
+}: {
+  meetId: string;
+  refreshIndex?: number;
+}) {
   const [payload, setPayload] = useState<WallChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const signal = refreshIndex ?? 0;
+    void signal;
     let isMounted = true;
     setLoading(true);
     setError(null);
@@ -64,34 +72,37 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
     return () => {
       isMounted = false;
     };
-  }, [meetId]);
+  }, [meetId, refreshIndex]);
 
   const styles = `
           @media print {
-            .noprint { display: none; }
-            .chart-page { page-break-after: always; }
-            .chart-page:last-of-type { page-break-after: auto; }
-            .mat-block { page-break-after: always; }
-            .mat-block:last-of-type { page-break-after: auto; }
+            .wall-chart-root .noprint { display: none; }
+            .wall-chart-root .chart-page { page-break-after: always; }
+            .wall-chart-root .chart-page:last-of-type { page-break-after: auto; }
+            .wall-chart-root .mat-block { page-break-after: always; }
+            .wall-chart-root .mat-block:last-of-type { page-break-after: auto; }
           }
-          body { font-family: system-ui; padding: 14px; }
-          h1 { margin: 0 0 6px 0; }
-          h2 { margin: 24px 0 12px 0; font-weight: 600; }
-          .meta { font-size: 12px; opacity: 0.75; margin-bottom: 10px; }
-          .chart-page {
+          .wall-chart-root {
+            font-family: system-ui;
+            padding: 14px;
+          }
+          .wall-chart-root h1 { margin: 0 0 6px 0; }
+          .wall-chart-root h2 { margin: 24px 0 12px 0; font-weight: 600; }
+          .wall-chart-root .meta { font-size: 12px; opacity: 0.75; margin-bottom: 10px; }
+          .wall-chart-root .chart-page {
             page-break-after: always;
             break-after: page;
             margin-bottom: 18px;
           }
-          .chart-page:last-of-type {
+          .wall-chart-root .chart-page:last-of-type {
             page-break-after: auto;
           }
-          .mat-grid {
+          .wall-chart-root .mat-grid {
             display: flex;
             flex-direction: column;
             gap: 8px;
           }
-          .mat-block {
+          .wall-chart-root .mat-block {
             border: 1px solid #ddd;
             border-radius: 12px;
             padding: 8px;
@@ -100,7 +111,7 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             break-inside: avoid;
             page-break-after: always;
           }
-          .mat-header {
+          .wall-chart-root .mat-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -108,31 +119,31 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             font-weight: 600;
             gap: 8px;
           }
-          .mat-block:last-of-type {
+          .wall-chart-root .mat-block:last-of-type {
             page-break-after: auto;
           }
-          .mat-table {
+          .wall-chart-root .mat-table {
             border-collapse: collapse;
             font-size: 14px;
           }
-          .mat-table th,
-          .mat-table td {
+          .wall-chart-root .mat-table th,
+          .wall-chart-root .mat-table td {
             border: 1px solid #eee;
             padding: 4px 6px;
             text-align: left;
           }
-          .mat-table th {
+          .wall-chart-root .mat-table th {
             background: #f7f9fb;
           }
-          .mat-empty {
+          .wall-chart-root .mat-empty {
             margin: 0;
             font-size: 14px;
             color: #555;
           }
-          .per-team {
+          .wall-chart-root .per-team {
             margin-top: 20px;
           }
-          .team-block {
+          .wall-chart-root .team-block {
             border: 1px solid #eee;
             border-radius: 10px;
             padding: 8px;
@@ -140,24 +151,24 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             margin-bottom: 12px;
             page-break-inside: avoid;
           }
-          .team-header {
+          .wall-chart-root .team-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 8px;
             gap: 8px;
           }
-          .team-name {
+          .wall-chart-root .team-name {
             font-weight: 700;
             font-size: 16px;
           }
-          .card-meet-label {
+          .wall-chart-root .card-meet-label {
             font-size: 14px;
             font-weight: 600;
             color: #333;
             white-space: nowrap;
           }
-          .chart-controls {
+          .wall-chart-root .chart-controls {
             display: flex;
             align-items: center;
             justify-content: flex-start;
@@ -169,21 +180,21 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             border: 1px solid #d5dbe2;
             box-shadow: 0 16px 32px rgba(13, 59, 102, 0.12);
           }
-          .chart-controls .meet-heading {
+          .wall-chart-root .chart-controls .meet-heading {
             margin-right: auto;
             font-weight: 700;
             font-size: 18px;
             letter-spacing: 0.6px;
             color: #0d3b66;
           }
-          .chart-controls label {
+          .wall-chart-root .chart-controls label {
             display: inline-flex;
             align-items: center;
           }
-          .chart-controls input {
+          .wall-chart-root .chart-controls input {
             width: auto;
           }
-          .chart-controls select {
+          .wall-chart-root .chart-controls select {
             padding: 6px 10px;
             border-radius: 6px;
             border: 1px solid #d5dbe2;
@@ -191,7 +202,7 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             font-size: 13px;
             font-weight: 600;
           }
-          .sr-only {
+          .wall-chart-root .sr-only {
             position: absolute;
             width: 1px;
             height: 1px;
@@ -201,7 +212,7 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             clip: rect(0, 0, 0, 0);
             border: 0;
           }
-          .chart-controls button {
+          .wall-chart-root .chart-controls button {
             padding: 8px 18px;
             background: #1e88e5;
             color: #fff;
@@ -213,13 +224,13 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             cursor: pointer;
             box-shadow: 0 8px 20px rgba(14, 57, 96, 0.25);
           }
-          .chart-controls button:disabled {
+          .wall-chart-root .chart-controls button:disabled {
             opacity: 0.55;
             cursor: not-allowed;
             box-shadow: none;
             background: #b0b5be;
           }
-          .chart-controls .refresh-btn {
+          .wall-chart-root .chart-controls .refresh-btn {
             padding: 8px 18px;
             background: #92979d;
             border: none;
@@ -231,60 +242,60 @@ export default function WallChartTab({ meetId }: { meetId: string }) {
             cursor: pointer;
           }
           @media print {
-            .chart-controls {
+            .wall-chart-root .chart-controls {
               display: none !important;
             }
-            .chart-controls .meet-heading {
+            .wall-chart-root .chart-controls .meet-heading {
               display: none;
             }
           }
-          .black-and-white .mat-block,
-          .black-and-white .team-block {
+          .black-and-white .wall-chart-root .mat-block,
+          .black-and-white .wall-chart-root .team-block {
             background: #fff !important;
           }
-          .black-and-white .mat-table th,
-          .black-and-white .mat-table td,
-          .black-and-white .match-opponent,
-          .black-and-white .team-name,
-          .black-and-white .card-meet-label {
+          .black-and-white .wall-chart-root .mat-table th,
+          .black-and-white .wall-chart-root .mat-table td,
+          .black-and-white .wall-chart-root .match-opponent,
+          .black-and-white .wall-chart-root .team-name,
+          .black-and-white .wall-chart-root .card-meet-label {
             color: #000 !important;
             background: transparent !important;
           }
-          .team-table {
+          .wall-chart-root .team-table {
             border-collapse: collapse;
             font-size: 14px;
           }
-          .team-table th,
-          .team-table td {
+          .wall-chart-root .team-table th,
+          .wall-chart-root .team-table td {
             border: 1px solid #eee;
             padding: 4px 6px;
             text-align: left;
           }
-          .match-line {
+          .wall-chart-root .match-line {
             display: flex;
             flex-wrap: wrap;
             align-items: baseline;
             gap: 18px;
             font-size: 14px;
           }
-          .match-chip {
+          .wall-chart-root .match-chip {
             display: inline-flex;
             align-items: baseline;
             gap: 0;
           }
-          .match-bout {
+          .wall-chart-root .match-bout {
             font-weight: 400;
             margin-right: 6px;
           }
-          .match-opponent {
+          .wall-chart-root .match-opponent {
             font-weight: 400;
           }
-          .team-empty {
+          .wall-chart-root .team-empty {
             font-size: 14px;
             color: #555;
             margin: 0 0 12px 0;
           }
-          .wrestler-name {
+          .wall-chart-root .wrestler-name {
             font-weight: 400;
           }
   `;
