@@ -31,9 +31,11 @@ const keyMat = (m: number) => String(m);
 export default function MatBoardTab({
   meetId,
   onMatAssignmentsChange,
+  meetStatus,
 }: {
   meetId: string;
   onMatAssignmentsChange?: () => void;
+  meetStatus: "DRAFT" | "PUBLISHED";
 }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
@@ -53,8 +55,7 @@ export default function MatBoardTab({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
   const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
-
-  const canEdit = lockState.status === "acquired";
+  const canEdit = lockState.status === "acquired" && meetStatus === "DRAFT";
 
   useEffect(() => {
     void load();
@@ -120,12 +121,13 @@ export default function MatBoardTab({
       fetch(`/api/meets/${meetId}/pairings`),
       fetch(`/api/meets/${meetId}/wrestlers`),
     ]);
-    if (bRes.status === 401 || wRes.status === 401) {
+    if ([bRes, wRes].some(r => r.status === 401)) {
       setAuthMsg("Please sign in to view this meet.");
       return;
     }
-    if (bRes.status === 403 || wRes.status === 403) {
-      const json = await bRes.json().catch(() => ({}));
+    if ([bRes, wRes].some(r => r.status === 403)) {
+      const forbidden = [bRes, wRes].find(r => r.status === 403);
+      const json = await forbidden!.json().catch(() => ({}));
       setAuthMsg(json?.error ?? "You are not authorized to view this meet.");
       return;
     }
@@ -143,6 +145,7 @@ export default function MatBoardTab({
     setNumMats(maxMat > 0 ? maxMat : 4);
     setDirty(false);
     dirtyRef.current = false;
+
   }
 
   async function acquireLock() {
@@ -577,7 +580,7 @@ export default function MatBoardTab({
         <h3>Mat Assignments</h3>
         {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
       </div>
-      <div className="toolbar">
+      <div className="toolbar" style={{ alignItems: "flex-start" }}>
         <label>
           Mats:
           <input
@@ -598,9 +601,15 @@ export default function MatBoardTab({
             onChange={e => setConflictGap(Number(e.target.value))}
           />
         </label>
-        <span style={{ fontSize: 14, color: "#5a6673", fontWeight: 600 }}>
-          Pink = too close · Wrestlers with only one match appear in italics.
+        <span style={{ fontSize: 14, color: "#5a6673", fontWeight: 600, marginLeft: 16 }}>
+          Note: Wrestlers with only one match appear in italics.
         </span>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginLeft: "auto", fontSize: 12 }}>
+          <span style={{ fontWeight: 600 }}>Legend:</span>
+          <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
+          <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
+          <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
+        </div>
       </div>
       {authMsg && <div className="notice">{authMsg}</div>}
       {lockState.status === "locked" && (
@@ -662,6 +671,8 @@ export default function MatBoardTab({
                     severityRed !== undefined ? `rgba(255,138,160,${0.2 + 0.25 * normalized(severityRed)})` : undefined;
                   const conflictBgGreen =
                     severityGreen !== undefined ? `rgba(255,138,160,${0.2 + 0.25 * normalized(severityGreen)})` : undefined;
+                  const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
+                  const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
                   const isRedHighlighted = highlightWrestlerId === b.redId;
                   const isGreenHighlighted = highlightWrestlerId === b.greenId;
                   return (
@@ -716,12 +727,9 @@ export default function MatBoardTab({
                           style={{
                             color: rColor || undefined,
                             background:
+                              statusBgRed ??
                               conflictBgRed ??
-                              (rStatus === "EARLY"
-                                ? "#f3eadf"
-                                : rStatus === "LATE"
-                                  ? "#e6f6ea"
-                                  : undefined),
+                              undefined,
                           }}
                           onMouseEnter={() => setHighlightWrestlerId(b.redId)}
                           onMouseLeave={() => setHighlightWrestlerId(null)}
@@ -739,12 +747,9 @@ export default function MatBoardTab({
                           style={{
                             color: gColor || undefined,
                             background:
+                              statusBgGreen ??
                               conflictBgGreen ??
-                              (gStatus === "EARLY"
-                                ? "#f3eadf"
-                                : gStatus === "LATE"
-                                  ? "#e6f6ea"
-                                  : undefined),
+                              undefined,
                           }}
                           onMouseEnter={() => setHighlightWrestlerId(b.greenId)}
                           onMouseLeave={() => setHighlightWrestlerId(null)}

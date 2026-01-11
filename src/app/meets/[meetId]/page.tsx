@@ -78,7 +78,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
   const [comments, setComments] = useState<MeetComment[]>([]);
-  const [showComments, setShowComments] = useState(true);
+  const [showComments, setShowComments] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [commentSection, setCommentSection] = useState("General");
   const [showChangeLog, setShowChangeLog] = useState(false);
@@ -360,7 +360,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
 
-  const canEdit = editAllowed && lockState.status === "acquired";
+  const canEdit =
+    editAllowed && lockState.status === "acquired" && meetStatus === "DRAFT";
+  const canChangeStatus = editAllowed && lockState.status === "acquired";
 
   useEffect(() => { void load(); void loadActivity(); }, [meetId]);
   useEffect(() => {
@@ -744,7 +746,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
-    if (!canEdit) return;
+    if (!canChangeStatus) return;
     await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1239,11 +1241,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </span>
             )}
           </div>
-          <button
-            className="nav-btn"
-            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-            disabled={!canEdit}
-          >
+            <button
+              className="nav-btn"
+              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+              disabled={!canChangeStatus}
+            >
             {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
           </button>
         </div>
@@ -1272,6 +1274,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       {activeTab === "setup" && (
         <>
+          {meetStatus === "PUBLISHED" && (
+            <div className="notice" style={{ marginTop: 12 }}>
+              Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
+            </div>
+          )}
           {authMsg && (
             <div className="notice">
               {authMsg}
@@ -1305,15 +1312,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} disabled={!canEdit} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
         <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
         {msg && <span>{msg}</span>}
-      </div>
-
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12, fontSize: 12 }}>
-        <span>Legend:</span>
-        <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
-        <span style={{ background: "#e6f6ea", padding: "2px 6px", borderRadius: 6 }}>Coming</span>
-        <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
-        <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
-        <span style={{ background: "#f0f0f0", padding: "2px 6px", borderRadius: 6 }}>Not coming</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 20 }}>
@@ -1433,6 +1431,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     className="nav-btn"
                     onClick={() => bulkAttendance("SET", null)}
                     disabled={!canEdit}
+                    style={{
+                      background: "#1d88e5",
+                      color: "#fff",
+                      borderColor: "#1d88e5",
+                      boxShadow: "0 5px 16px rgba(29, 136, 229, 0.35)",
+                    }}
                   >
                     Set all coming
                   </button>
@@ -1444,7 +1448,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         router.push(`/rosters?team=${attendanceTeamId}`);
                       }}
                       disabled={!canEdit || !attendanceTeamId || !canEditRoster}
-                      style={!canEditRoster ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+                      style={{
+                        background: "#1d88e5",
+                        color: "#fff",
+                        borderColor: "#1d88e5",
+                        boxShadow: "0 5px 16px rgba(29, 136, 229, 0.35)",
+                        ...( !canEditRoster ? { opacity: 0.5, cursor: "not-allowed" } : undefined),
+                      }}
                     >
                       Edit Roster
                     </button>
@@ -1888,9 +1898,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       {activeTab === "matboard" && (
         <section className="matboard-tab">
+          {meetStatus === "PUBLISHED" && (
+            <div className="notice">
+              Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
+            </div>
+          )}
           <MatBoardTab
             meetId={meetId}
             onMatAssignmentsChange={refreshAfterMatAssignments}
+            meetStatus={meetStatus}
           />
         </section>
       )}
