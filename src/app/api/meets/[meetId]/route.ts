@@ -126,7 +126,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     await logMeetChange(meetId, user.id, message);
   }
 
-  await revalidatePath(`/meets/${meetId}/wall`);
+  await revalidatePath(`/meets/${meetId}`);
 
   return NextResponse.json(updated);
 }

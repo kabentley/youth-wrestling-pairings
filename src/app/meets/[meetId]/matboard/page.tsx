@@ -485,8 +485,8 @@ export default function MatBoard({ params }: { params: Promise<{ meetId: string 
       <AppHeader links={headerLinks} />
       <div className="subnav">
         <a href={`/meets/${meetId}`}>Meet Pairings</a>
-        <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">
-          Wall Chart
+        <a href={`/meets/${meetId}#wall`} rel="noreferrer">
+          Wall Charts
         </a>
       </div>
 

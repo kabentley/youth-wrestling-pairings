@@ -4,6 +4,9 @@ import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 
+import WallChartTab from "./wall/WallChartTab";
+import MatBoardTab from "./matboard/MatBoardTab";
+
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
 type Wrestler = {
@@ -114,6 +117,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerWeight, setNewWrestlerWeight] = useState("");
   const [newWrestlerExp, setNewWrestlerExp] = useState("0");
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
+  const [activeTab, setActiveTab] = useState<"setup" | "matboard" | "wall">("setup");
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
 
   const [target, setTarget] = useState<Wrestler | null>(null);
@@ -864,6 +868,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           border-color: var(--line);
           background: #f7f9fb;
         }
+        .tab-bar {
+          display: flex;
+          gap: 4px;
+          margin-bottom: 16px;
+          border-bottom: 1px solid #dfe3ea;
+        }
+        .tab-button {
+          background: transparent;
+          border: none;
+          border-bottom: 3px solid transparent;
+          padding: 12px 16px;
+          font-size: 14px;
+          font-weight: 600;
+          color: #5b6472;
+          cursor: pointer;
+          transition: border-color 0.2s, color 0.2s;
+        }
+        .tab-button.active {
+          color: var(--ink);
+          border-color: var(--accent);
+        }
+        .tab-button:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
         h2 {
           font-family: "Oswald", Arial, sans-serif;
           text-transform: uppercase;
@@ -1033,14 +1062,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 10px;
           justify-content: flex-end;
         }
+        .wall-chart-section {
+          margin-top: 24px;
+        }
       `}</style>
       <AppHeader links={headerLinks} />
-      <div className="subnav">
-        <a href={`/meets/${meetId}/matboard`}>Mat Board</a>
-        <a href={`/meets/${meetId}/wall`} target="_blank" rel="noreferrer">
-          Wall Chart
-        </a>
+      <div className="tab-bar">
+        {[
+          { key: "setup", label: "Meet Setup" },
+          { key: "matboard", label: "Mat Board" },
+          { key: "wall", label: "Wall Charts" },
+        ].map(tab => (
+          <button
+            key={tab.key}
+            className={`tab-button${activeTab === tab.key ? " active" : ""}`}
+            onClick={() => setActiveTab(tab.key as typeof activeTab)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {activeTab === "setup" && (
+        <>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1709,6 +1753,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </div>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {activeTab === "matboard" && (
+        <section className="matboard-tab">
+          <MatBoardTab meetId={meetId} />
+        </section>
+      )}
+
+      {activeTab === "wall" && (
+        <section className="wall-chart-section">
+          <WallChartTab meetId={meetId} />
+        </section>
       )}
     </main>
   );
