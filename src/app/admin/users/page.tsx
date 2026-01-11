@@ -427,7 +427,10 @@ const adminStyles = `
   .admin-actions {
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+  .admin-actions button {
+    white-space: nowrap;
   }
   .admin-search {
     display: grid;

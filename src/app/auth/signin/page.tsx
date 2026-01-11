@@ -237,15 +237,6 @@ export default function SignInPage() {
         <div className="signin-card">
           <div className="signin-left">
             <h2>Welcome</h2>
-            <p>Create your account and begin using the wrestling scheduler.</p>
-            <ul>
-              <li>Claim/Create your profiles</li>
-              <li>Manage teams and rosters</li>
-              <li>Generate pairings and mats</li>
-              <li>Share match info with parents</li>
-              <li>Print and wall charts ready</li>
-              <li>Track meet progress</li>
-            </ul>
             <Link className="ghost-btn" href="/auth/signup">Create New Account</Link>
           </div>
 

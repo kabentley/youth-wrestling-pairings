@@ -13,14 +13,19 @@ export default async function Home() {
     redirect("/auth/signin");
   }
   const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
-  const teamName = session && (session.user as any)?.role === "COACH" && (session.user as any)?.teamId
-    ? (await db.team.findUnique({ where: { id: (session.user as any).teamId }, select: { symbol: true, name: true } }))
+  const teamInfo = session && (session.user as any)?.role === "COACH" && (session.user as any)?.teamId
+    ? (await db.team.findUnique({
+        where: { id: (session.user as any).teamId },
+        select: { symbol: true, name: true, website: true },
+      }))
     : null;
   const trimmedLeagueName = league?.name?.trim();
   const leagueName = trimmedLeagueName ?? "Wrestling Scheduler";
   const hasLeagueLogo = Boolean(league?.logoData);
   const leagueWebsite = league?.website?.trim() || null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
+  const teamLabel = teamInfo?.symbol ? `${teamInfo.symbol} ${teamInfo.name}` : teamInfo?.name ?? "";
+  const teamWebsiteUrl = teamInfo?.website ? teamInfo.website.replace(/\/$/, "") : null;
   const headerLinks = [
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
@@ -256,10 +261,36 @@ export default async function Home() {
                 title="League news"
                 src={leagueNewsUrl}
                 style={{ width: "100%", height: 420, border: "none" }}
-              />
+                />
+              </div>
+            )}
+          </div>
+        {teamWebsiteUrl && (
+          <div className="side">
+            <div className="panel">
+              <h3>Team Website</h3>
+              <p style={{ marginBottom: 12 }}>
+                Latest updates for {teamLabel || "your team"}.
+              </p>
+              <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+                <iframe
+                  title="Team website"
+                  src={teamWebsiteUrl}
+                  style={{ width: "100%", height: 240, border: "none" }}
+                />
+              </div>
+              <a
+                href={teamWebsiteUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn secondary"
+                style={{ display: "inline-block", marginTop: 12 }}
+              >
+                Visit team website
+              </a>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </section>
     </main>
   );

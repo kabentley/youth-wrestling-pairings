@@ -14,6 +14,46 @@ type MatRule = {
   maxAge: number;
 };
 
+const CONFIGURED_MATS = 5;
+const MIN_MATS = 1;
+const MAX_MATS = CONFIGURED_MATS;
+
+const DEFAULT_MAT_RULES: Omit<MatRule, "matIndex">[] = [
+  { color: "lightgreen", minExperience: 0, maxExperience: 0, minAge: 0, maxAge: 8.5 },
+  { color: "red", minExperience: 1, maxExperience: 2, minAge: 8.5, maxAge: 10.5 },
+  { color: "lightblue", minExperience: 2, maxExperience: 4, minAge: 10.50, maxAge: 12.5 },
+  { color: "brown", minExperience: 4, maxExperience: 10, minAge: 12.5, maxAge: 20 },
+  { color: "orange", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
+];
+
+const createMatRule = (matIndex: number): MatRule => {
+  const preset = DEFAULT_MAT_RULES[matIndex - 1];
+  return {
+    matIndex,
+    color: preset?.color ?? null,
+    minExperience: preset?.minExperience ?? 0,
+    maxExperience: preset?.maxExperience ?? 5,
+    minAge: preset?.minAge ?? 0,
+    maxAge: preset?.maxAge ?? 20,
+  };
+};
+
+const clampNumMats = (value: number) => Math.max(MIN_MATS, Math.min(MAX_MATS, value));
+
+const padRulesToCount = (rules: MatRule[], count: number) => {
+  const normalized = rules.slice(0, count).map((rule, idx) => ({
+    ...rule,
+    matIndex: idx + 1,
+  }));
+  if (normalized.length < count) {
+    const additions = Array.from({ length: count - normalized.length }, (_, idx) =>
+      createMatRule(normalized.length + idx + 1),
+    );
+    normalized.push(...additions);
+  }
+  return normalized;
+};
+
 type TeamMember = {
   id: string;
   username: string;
@@ -43,6 +83,7 @@ export default function CoachMyTeamPage() {
   const [teamHasLogo, setTeamHasLogo] = useState(false);
   const [logoVersion, setLogoVersion] = useState(0);
   const [rules, setRules] = useState<MatRule[]>([]);
+  const [numMats, setNumMats] = useState(MIN_MATS);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
@@ -59,6 +100,12 @@ export default function CoachMyTeamPage() {
   const [infoDirty, setInfoDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageStatus, setMessageStatus] = useState<"success" | "error" | null>(null);
+  const [activeTab, setActiveTab] = useState<"info" | "mat" | "roles">("info");
+  const tabs = [
+    { key: "info", label: "Team Info" },
+    { key: "mat", label: "Mat Setup" },
+    { key: "roles", label: "Team Roles" },
+  ] as const;
 
   const sortStaff = (members: TeamMember[], headId: string | null) =>
     [...members].sort((a, b) => {
@@ -116,12 +163,57 @@ export default function CoachMyTeamPage() {
     }
   };
 
+  const snapshotRef = useRef("");
+  const [matDirty, setMatDirty] = useState(false);
+
+  const buildSnapshot = (incomingRules: MatRule[], mats: number, homeSame: boolean) => {
+    const normalized = padRulesToCount(incomingRules, CONFIGURED_MATS);
+    return JSON.stringify({
+      numMats: mats,
+      homeTeamPreferSameMat: homeSame,
+      rules: normalized.map(rule => ({
+        color: rule.color,
+        minExperience: rule.minExperience,
+        maxExperience: rule.maxExperience,
+        minAge: rule.minAge,
+        maxAge: rule.maxAge,
+      })),
+    });
+  };
+
+  const updateSnapshot = (incomingRules: MatRule[], mats: number, homeSame: boolean) => {
+    snapshotRef.current = buildSnapshot(incomingRules, mats, homeSame);
+    setMatDirty(false);
+  };
+
+  useEffect(() => {
+    const normalized = padRulesToCount(rules, CONFIGURED_MATS);
+    const nextSnapshot = buildSnapshot(normalized, numMats, homeTeamPreferSameMat);
+    setMatDirty(nextSnapshot !== snapshotRef.current);
+  }, [rules, numMats, homeTeamPreferSameMat]);
+
   const loadMatRules = async (id: string) => {
     const res = await fetch(`/api/teams/${id}/mat-rules`);
     if (!res.ok) return;
     const payload = await res.json().catch(() => null);
-    setRules((payload?.rules ?? []).map((rule: MatRule) => ({ ...rule, color: rule.color ?? null })));
+    const source = (payload?.rules ?? []) as MatRule[];
+    const parsedRules: MatRule[] = source.map((rule, index) => ({
+      matIndex: index + 1,
+      color: rule.color ?? null,
+      minExperience: Number(rule.minExperience),
+      maxExperience: Number(rule.maxExperience),
+      minAge: Number(rule.minAge),
+      maxAge: Number(rule.maxAge),
+    }));
+    const rawNum = payload?.numMats;
+    const candidateCount =
+      typeof rawNum === "number" && Number.isFinite(rawNum) ? rawNum : parsedRules.length;
+    const desiredNumMats = clampNumMats(Math.max(candidateCount, parsedRules.length, MIN_MATS));
+    const normalized = padRulesToCount(parsedRules, CONFIGURED_MATS);
+    setNumMats(desiredNumMats);
+    setRules(normalized);
     setHomeTeamPreferSameMat(Boolean(payload?.homeTeamPreferSameMat));
+    updateSnapshot(normalized, desiredNumMats, Boolean(payload?.homeTeamPreferSameMat));
   };
 
   const loadTeamRoles = async (id: string) => {
@@ -282,9 +374,12 @@ export default function CoachMyTeamPage() {
   const handleMatSave = async () => {
     if (!teamId) return;
     setSavingMat(true);
+    const normalizedRules = padRulesToCount(rules, CONFIGURED_MATS);
+    setRules(normalizedRules);
     const payload = {
       homeTeamPreferSameMat,
-      rules: rules.map(rule => ({
+      numMats,
+      rules: normalizedRules.map(rule => ({
         matIndex: rule.matIndex,
         color: rule.color?.trim() || null,
         minExperience: rule.minExperience,
@@ -303,6 +398,7 @@ export default function CoachMyTeamPage() {
       console.error(err?.error ?? "Unable to save mat rules.");
     } else {
       console.info("Mat setup saved.");
+      updateSnapshot(normalizedRules, numMats, homeTeamPreferSameMat);
     }
     setSavingMat(false);
   };
@@ -320,24 +416,10 @@ export default function CoachMyTeamPage() {
     );
   };
 
-  const addRule = () => {
-    if (rules.length >= 10) return;
-    const nextIndex = rules.length > 0 ? Math.max(...rules.map(r => r.matIndex)) + 1 : 1;
-    setRules(prev => [
-      ...prev,
-      {
-        matIndex: nextIndex,
-        minExperience: 0,
-        maxExperience: 5,
-        minAge: 0,
-        maxAge: 20,
-        color: null,
-      },
-    ]);
-  };
-
-  const removeRule = (idx: number) => {
-    setRules(prev => prev.filter((_, index) => index !== idx));
+  const adjustMatCount = (value: number) => {
+    const desired = clampNumMats(Math.round(value));
+    setNumMats(desired);
+    setRules(prev => padRulesToCount(prev, CONFIGURED_MATS));
   };
 
   const updateRole = async (member: TeamMember, nextRole: TeamMember["role"]) => {
@@ -475,7 +557,20 @@ export default function CoachMyTeamPage() {
             </label>
           )}
         </div>
-        <section className="coach-card">
+        <div className="tab-bar">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`tab-button${activeTab === tab.key ? " active" : ""}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {activeTab === "info" && (
+          <section className="coach-card">
           <div className="coach-card-header">
             <h3>Team Info</h3>
           </div>
@@ -526,26 +621,28 @@ export default function CoachMyTeamPage() {
                 </div>
               </div>
             </div>
-            <label className="website-field">
-              Website
-              <input
-                type="url"
-                placeholder="https://yourteam.example.com"
-                value={teamWebsite}
-                onChange={e => handleTeamWebsiteChange(e.target.value)}
-                onKeyDown={handleFieldKeyDown}
-              />
-            </label>
-            <label className="location-field">
-              Home Meet Location
-              <input
-                type="text"
-                placeholder="Schoolname, address"
-                value={teamLocation}
-                onChange={e => handleTeamLocationChange(e.target.value)}
-                onKeyDown={handleFieldKeyDown}
-              />
-            </label>
+            <div className="website-location-group">
+              <label className="website-field">
+                Website
+                <input
+                  type="url"
+                  placeholder="https://yourteam.example.com"
+                  value={teamWebsite}
+                  onChange={e => handleTeamWebsiteChange(e.target.value)}
+                  onKeyDown={handleFieldKeyDown}
+                />
+              </label>
+              <label className="location-field">
+                Home Meet Location
+                <input
+                  type="text"
+                  placeholder="Schoolname, address"
+                  value={teamLocation}
+                  onChange={e => handleTeamLocationChange(e.target.value)}
+                  onKeyDown={handleFieldKeyDown}
+                />
+              </label>
+            </div>
             <div className="info-actions">
               <div className="info-message-slot" aria-live="polite">
                 <p
@@ -574,15 +671,14 @@ export default function CoachMyTeamPage() {
                 </button>
               </div>
             </div>
-        </div>
-        </section>
+          </div>
+          </section>
+        )}
 
-        <section className="coach-card">
+        {activeTab === "mat" && (
+          <section className="coach-card">
           <div className="coach-card-header">
             <h3>Mat Setup</h3>
-            <button type="button" className="coach-btn coach-btn-ghost" onClick={addRule} disabled={rules.length >= 10}>
-              Add Mat
-            </button>
           </div>
           <label className="toggle-row">
             <input
@@ -590,102 +686,115 @@ export default function CoachMyTeamPage() {
               checked={homeTeamPreferSameMat}
               onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
             />
-            Assign home team wrestlers to the same mat
+            Always assign home team wrestlers to the same mat
           </label>
-          <div className="coach-mat-grid">
-            {rules.map((rule, idx) => (
-              <div key={rule.matIndex} className="coach-mat-rule">
-                <div className="rule-row">
-                  <label>
-                    Mat Number
-                    <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={rule.matIndex}
-                      onChange={(e) => updateRule(idx, "matIndex", Number(e.target.value) || 1)}
-                    />
-                  </label>
-                  <label className="color-field">
-                    Color
-                    <div className="color-actions">
-                      <ColorPicker
-                        value={rule.color ?? ""}
-                        onChange={(next) => updateRule(idx, "color", next)}
-                        idPrefix={`mat-color-${rule.matIndex}-${idx}`}
-                        buttonClassName="color-swatch"
-                        buttonStyle={{ backgroundColor: rule.color || "#ffffff" }}
-                      />
-                    </div>
-                  </label>
-                </div>
-                <div className="rule-row">
-                  <label>
-                    Min Experience
-                    <input
-                      type="number"
-                      min={0}
-                      max={50}
-                      value={rule.minExperience}
-                      onChange={(e) => updateRule(idx, "minExperience", Number(e.target.value))}
-                    />
-                  </label>
-                  <label>
-                    Max Experience
-                    <input
-                      type="number"
-                      min={0}
-                      max={50}
-                      value={rule.maxExperience}
-                      onChange={(e) => updateRule(idx, "maxExperience", Number(e.target.value))}
-                    />
-                  </label>
-                </div>
-                <div className="rule-row">
-                  <label>
-                    Min Age
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={rule.minAge}
-                      onChange={(e) => updateRule(idx, "minAge", Number(e.target.value))}
-                    />
-                  </label>
-                  <label>
-                    Max Age
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={rule.maxAge}
-                      onChange={(e) => updateRule(idx, "maxAge", Number(e.target.value))}
-                    />
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  className="coach-btn coach-btn-ghost coach-btn-sm"
-                  onClick={() => removeRule(idx)}
-                >
-                  Remove Mat
-                </button>
-              </div>
-            ))}
-            {rules.length === 0 && (
-              <div className="coach-empty coach-empty-sm">Add a mat to begin defining ranges.</div>
-            )}
+          <div className="mat-summary-box">
+            <div>
+              <div className="mat-summary-label">Max number of mats for home meets</div>
+              <input
+                type="number"
+                min={MIN_MATS}
+                max={MAX_MATS}
+                value={numMats}
+                onChange={(e) => {
+                  const parsed = Number(e.target.value);
+                  adjustMatCount(Number.isFinite(parsed) ? parsed : MIN_MATS);
+                }}
+              />
+            </div>
+            <div className="mat-summary-note">This table always lists five mats; use this input to indicate the number of mats you actually have.</div>
+          </div>
+          <div className="mat-setup-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mat</th>
+                  <th>Color</th>
+                  <th>Min Experience</th>
+                  <th>Max Experience</th>
+                  <th>Min Age</th>
+                  <th>Max Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rules.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: "center" }}>
+                      Add a mat to begin defining ranges.
+                    </td>
+                  </tr>
+                ) : (
+                  rules.map((rule, idx) => (
+                    <tr key={rule.matIndex}>
+                      <td>
+                      <span>{rule.matIndex}</span>
+                      </td>
+                      <td>
+                        <div className="color-actions">
+                          <ColorPicker
+                            value={rule.color ?? ""}
+                            onChange={(next) => updateRule(idx, "color", next)}
+                            idPrefix={`mat-color-${rule.matIndex}-${idx}`}
+                            buttonClassName="color-swatch"
+                            buttonStyle={{ backgroundColor: rule.color || "#ffffff", width: 32, height: 32 }}
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={rule.minExperience}
+                          onChange={(e) => updateRule(idx, "minExperience", Number(e.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          value={rule.maxExperience}
+                          onChange={(e) => updateRule(idx, "maxExperience", Number(e.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={rule.minAge}
+                          onChange={(e) => updateRule(idx, "minAge", Number(e.target.value))}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={rule.maxAge}
+                          onChange={(e) => updateRule(idx, "maxAge", Number(e.target.value))}
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
           <button
             type="button"
             className="coach-btn coach-btn-primary"
             onClick={handleMatSave}
-            disabled={savingMat || rules.length === 0}
+            disabled={savingMat || rules.length === 0 || !matDirty}
+            style={{ marginTop: 12 }}
           >
             {savingMat ? "Saving…" : "Save Mat Setup"}
           </button>
-        </section>
+          </section>
+        )}
 
+        {activeTab === "roles" && (
         <section className="coach-card">
           <div className="coach-card-header">
             <h3>Team Roles</h3>
@@ -750,6 +859,7 @@ export default function CoachMyTeamPage() {
             </table>
           </div>
         </section>
+        )}
       </div>
     </main>
   );
@@ -827,6 +937,40 @@ const coachStyles = `
     font-size: 14px;
     background: #fff;
   }
+  .tab-bar {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+  }
+  .tab-button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 10px 22px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #5f6772;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+  }
+  .tab-button + .tab-button {
+    margin-left: 0;
+  }
+  .tab-button:hover:not(.active) {
+    background: #f1f4fb;
+    color: #1e3a82;
+    transform: translateY(-1px);
+  }
+  .tab-button.active {
+    background: linear-gradient(135deg, #1e88e5, #4dabf5);
+    color: #ffffff;
+    border-color: #1e88e5;
+    box-shadow: 0 10px 20px rgba(30, 136, 229, 0.35);
+  }
+  .tab-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
   .setup-grid {
     display: grid;
     grid-template-columns: 140px repeat(2, minmax(180px, 1fr));
@@ -894,11 +1038,23 @@ const coachStyles = `
     gap: 16px;
     align-items: flex-start;
   }
-  .website-field {
-    grid-column: 2;
+  .website-location-group {
+    grid-column: 2 / span 2;
+    display: grid;
+    gap: 4px;
   }
+  .website-field,
   .location-field {
-    grid-column: 3;
+    margin: 0;
+  }
+  .website-field input,
+  .location-field input {
+    width: 100%;
+    max-width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 16px;
   }
   .field-label {
     font-size: 12px;
@@ -937,53 +1093,80 @@ const coachStyles = `
     font-size: 13px;
     color: var(--muted);
   }
-  .coach-mat-grid {
+  .mat-summary-box {
     margin-top: 16px;
-    display: grid;
-    gap: 12px;
-  }
-  .coach-mat-rule {
     padding: 12px;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
-    display: grid;
-    gap: 10px;
-  }
-  .rule-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-  }
-  .color-field {
-    position: relative;
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
   }
-  .color-field-label {
+  .mat-summary-label {
     font-size: 12px;
     color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .mat-summary-box input {
+    width: 72px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .mat-summary-note {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .mat-setup-table {
+    margin-top: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .mat-setup-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .mat-setup-table th,
+  .mat-setup-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    min-width: 0;
+  }
+  .mat-setup-table th:last-child,
+  .mat-setup-table td:last-child {
+    border-right: none;
+  }
+  .mat-setup-table th {
+    background: #f7f9fb;
     font-weight: 600;
+    text-transform: uppercase;
+    font-size: 12px;
+  }
+  .mat-setup-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .mat-setup-table input {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 14px;
   }
   .color-actions {
     display: flex;
     gap: 8px;
     align-items: center;
-  }
-  label {
-    font-size: 12px;
-    color: var(--muted);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-weight: 600;
-  }
-  input {
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 6px 8px;
-    font-size: 14px;
   }
   .toggle-row {
     display: flex;
@@ -1073,6 +1256,11 @@ const coachStyles = `
     color: var(--ink);
     border: 1px solid var(--line);
   }
+  .coach-btn-primary:disabled,
+  .coach-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
   .coach-btn-sm {
     padding: 6px 10px;
     font-size: 12px;
@@ -1090,7 +1278,6 @@ const coachStyles = `
     font-weight: 600;
   }
   @media (max-width: 768px) {
-    .coach-mat-grid,
     .setup-grid {
       grid-template-columns: 1fr;
     }

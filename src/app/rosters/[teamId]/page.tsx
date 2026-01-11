@@ -22,6 +22,10 @@ type MatRule = {
   maxAge: number;
 };
 
+const CONFIGURED_MATS = 5;
+const MIN_MATS = 1;
+const MAX_MATS = CONFIGURED_MATS;
+
 export default function TeamDetail({ params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = use(params);
   const { data: session } = useSession();
@@ -36,6 +40,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const [showInactive, setShowInactive] = useState(true);
   const [matRules, setMatRules] = useState<MatRule[]>([]);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
+  const [numMats, setNumMats] = useState(MIN_MATS);
   const [ruleMsg, setRuleMsg] = useState("");
   const [formError, setFormError] = useState("");
   const [form, setForm] = useState({
@@ -55,17 +60,41 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
-  const matColors = ["Red", "Blue", "Green", "Yellow", "Orange", "Black", "White", "Gray", "Brown", "Pink"];
-  function defaultMatRule(index: number): MatRule {
-    return {
-      matIndex: index + 1,
-      color: matColors[index] ?? "",
-      minExperience: 0,
-      maxExperience: 10,
-      minAge: 0,
-      maxAge: 100,
-    };
+const DEFAULT_MAT_RULES: Omit<MatRule, "matIndex">[] = [
+  { color: "lightgreen", minExperience: 0, maxExperience: 0, minAge: 0, maxAge: 8.5 },
+  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
+  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
+  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
+  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
+];
+
+function defaultMatRule(index: number): MatRule {
+  const preset = DEFAULT_MAT_RULES[index] ?? DEFAULT_MAT_RULES[DEFAULT_MAT_RULES.length - 1];
+  return {
+    matIndex: index + 1,
+    color: preset.color ?? "",
+    minExperience: preset.minExperience ?? 0,
+    maxExperience: preset.maxExperience ?? 5,
+    minAge: preset.minAge ?? 0,
+    maxAge: preset.maxAge ?? 20,
+  };
+}
+
+const clampNumMats = (value: number) => Math.max(MIN_MATS, Math.min(MAX_MATS, value));
+
+const padRulesToCount = (rules: MatRule[], count: number) => {
+  const normalized = rules.slice(0, count).map((rule, idx) => ({
+    ...rule,
+    matIndex: idx + 1,
+  }));
+  if (normalized.length < count) {
+    const additions = Array.from({ length: count - normalized.length }, (_, idx) =>
+      defaultMatRule(normalized.length + idx),
+    );
+    normalized.push(...additions);
   }
+  return normalized;
+};
 
   async function load() {
     const [wRes, rRes, tRes] = await Promise.all([
@@ -76,8 +105,8 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     setWrestlers(await wRes.json());
     if (rRes.ok) {
       const json = await rRes.json();
-      setHomeTeamPreferSameMat(Boolean(json.homeTeamPreferSameMat));
-      const rules: MatRule[] = (json.rules ?? []).map((rule: MatRule, idx: number) => ({
+      const sourceRules = (json.rules ?? []) as MatRule[];
+      const parsedRules: MatRule[] = sourceRules.map((rule, idx) => ({
         matIndex: idx + 1,
         color: rule.color ?? "",
         minExperience: Number(rule.minExperience),
@@ -85,9 +114,16 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         minAge: Number(rule.minAge),
         maxAge: Number(rule.maxAge),
       }));
-      setMatRules(rules.length > 0 ? rules : Array.from({ length: 4 }, (_, idx) => defaultMatRule(idx)));
+      const rawNum = json.numMats;
+      const candidateCount =
+        typeof rawNum === "number" && Number.isFinite(rawNum) ? rawNum : parsedRules.length;
+      const desiredCount = clampNumMats(Math.max(candidateCount, parsedRules.length, MIN_MATS));
+      setNumMats(desiredCount);
+      setMatRules(padRulesToCount(parsedRules, CONFIGURED_MATS));
+      setHomeTeamPreferSameMat(Boolean(json.homeTeamPreferSameMat));
     } else if (matRules.length === 0) {
-      setMatRules(Array.from({ length: 4 }, (_, idx) => defaultMatRule(idx)));
+      setNumMats(MIN_MATS);
+      setMatRules(Array.from({ length: CONFIGURED_MATS }, (_, idx) => defaultMatRule(idx)));
     }
     if (tRes.ok) {
       const tJson = await tRes.json();
@@ -165,14 +201,16 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   async function saveMatRules() {
     if (!canEdit) return;
     setRuleMsg("");
-    const rules = matRules.map((rule, idx) => ({
+    const normalizedRules = padRulesToCount(matRules, CONFIGURED_MATS);
+    setMatRules(normalizedRules);
+    const rules = normalizedRules.map((rule, idx) => ({
       ...rule,
       matIndex: idx + 1,
     }));
     const res = await fetch(`/api/teams/${teamId}/mat-rules`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ homeTeamPreferSameMat, rules }),
+      body: JSON.stringify({ homeTeamPreferSameMat, numMats, rules }),
     });
     if (!res.ok) {
       setRuleMsg("Save failed.");
@@ -381,6 +419,9 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
 
       <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12, marginTop: 16 }}>
         <h3 style={{ marginTop: 0 }}>Home Team Mat Rules</h3>
+        <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+          Mat settings cover {CONFIGURED_MATS} mats; currently using {numMats}.
+        </div>
 
         <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
@@ -471,24 +512,6 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
         </table>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-          <button
-            onClick={() => {
-              if (matRules.length >= 10) return;
-              setMatRules(rules => [...rules, defaultMatRule(rules.length)]);
-            }}
-            disabled={!canEdit}
-          >
-            Add Mat
-          </button>
-          <button
-            onClick={() => {
-              if (matRules.length <= 1) return;
-              setMatRules(rules => rules.slice(0, rules.length - 1));
-            }}
-            disabled={!canEdit}
-          >
-            Remove Last Mat
-          </button>
           <label>
             <input
               type="checkbox"
@@ -515,7 +538,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
       <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
-            <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Exp</th><th align="left">Skill</th><th align="left">Actions</th>
+            <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -539,9 +562,9 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
           <h3 style={{ marginTop: 20 }}>Inactive Wrestlers</h3>
           <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
-              <tr>
-                <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Exp</th><th align="left">Skill</th><th align="left">Actions</th>
-              </tr>
+            <tr>
+              <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
+            </tr>
             </thead>
             <tbody>
               {wrestlers.filter(w => !w.active).map(w => (

@@ -23,6 +23,7 @@ model Team {
   meetTeams MeetTeam[]
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
+  numMats   Int        @default(4)
   homeTeamPreferSameMat Boolean @default(false)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
