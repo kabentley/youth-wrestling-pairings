@@ -1,6 +1,6 @@
 import Head from "next/head";
 import { db } from "@/lib/db";
-import PrintButton from "./PrintButton";
+import ControlBar from "./ControlBar";
 
 export default async function WallChart({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
@@ -43,7 +43,6 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
   type MatchInfo = {
     boutNumber: string;
     opponent: string;
-    opponentTeam: string;
   };
   const wrestlerMatches = new Map<string, MatchInfo[]>();
   for (const mat of mats) {
@@ -141,12 +140,12 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           .mat-grid {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 8px;
           }
           .mat-block {
             border: 1px solid #ddd;
             border-radius: 12px;
-            padding: 12px;
+            padding: 8px;
             background: #fff;
             page-break-inside: avoid;
             break-inside: avoid;
@@ -170,7 +169,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           .mat-table th,
           .mat-table td {
             border: 1px solid #eee;
-            padding: 6px 8px;
+            padding: 4px 6px;
             text-align: left;
           }
           .mat-table th {
@@ -187,9 +186,9 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           .team-block {
             border: 1px solid #eee;
             border-radius: 10px;
-            padding: 12px;
+            padding: 8px;
             background: #fff;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
             page-break-inside: avoid;
           }
           .team-header {
@@ -209,6 +208,82 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             color: #333;
             white-space: nowrap;
           }
+          .chart-controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px 18px;
+            border-radius: 14px;
+            background: #fff;
+            border: 1px solid #d5dbe2;
+            box-shadow: 0 16px 32px rgba(13, 59, 102, 0.12);
+          }
+          .chart-controls .meet-heading {
+            margin-right: auto;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: 0.6px;
+            color: #0d3b66;
+          }
+          .chart-controls label {
+            display: inline-flex;
+            align-items: center;
+          }
+          .chart-controls input {
+            width: auto;
+          }
+          .chart-controls select {
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid #d5dbe2;
+            background: #fff;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+          }
+          .chart-controls button {
+            padding: 8px 18px;
+            background: #1e88e5;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(14, 57, 96, 0.25);
+          }
+          @media print {
+            .chart-controls {
+              display: none !important;
+            }
+            .chart-controls .meet-heading {
+              display: none;
+            }
+          }
+          .black-and-white .mat-block,
+          .black-and-white .team-block {
+            background: #fff !important;
+          }
+          .black-and-white .mat-table th,
+          .black-and-white .mat-table td,
+          .black-and-white .match-opponent,
+          .black-and-white .team-name,
+          .black-and-white .card-meet-label {
+            color: #000 !important;
+            background: transparent !important;
+          }
           .team-table {
             border-collapse: collapse;
             font-size: 14px;
@@ -216,7 +291,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
           .team-table th,
           .team-table td {
             border: 1px solid #eee;
-            padding: 6px 8px;
+            padding: 4px 6px;
             text-align: left;
           }
           .match-line {
@@ -247,9 +322,15 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
             font-weight: 400;
           }
         `;
-  const meetLabel =
-    meet && meet.date
-      ? `${meet.name ?? "Meet"} · ${new Date(meet.date).toISOString().slice(0, 10)}`
+  const meetDate = meet?.date ? new Date(meet.date).toISOString().slice(0, 10) : null;
+  const teamNames = meet?.meetTeams?.map(mt => mt.team.name ?? "").filter(name => name) ?? [];
+  const headerLabel =
+    meet && (meetDate || teamNames.length)
+      ? `${meet.name ?? "Meet"}${meetDate ? ` · ${meetDate}` : ""}${teamNames.length ? ` · ${teamNames.join(", ")}` : ""}`
+      : meet?.name ?? "Meet";
+  const cardLabel =
+    meet && meetDate
+      ? `${meet.name ?? "Meet"} · ${meetDate}`
       : meet?.name ?? "Meet";
 
   return (
@@ -259,19 +340,9 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
       </Head>
       <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div>
-        <div className="noprint" style={{ marginBottom: 10 }}>
-          <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
-          <a href={`/meets/${meetId}/matboard`}>Mat Board</a> &nbsp;|&nbsp;
-          <PrintButton />
-        </div>
+        <ControlBar label={headerLabel} />
 
         <section className="chart-page per-mat">
-          <h1>{meet?.name ?? "Meet"} - Wall Chart</h1>
-          <div className="meta">
-            {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""} {meet?.location ? `- ${meet.location}` : ""}
-            <br />
-            Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
-          </div>
           <div className="mat-grid">
             {mats.map((mat) => {
               const boutsForMat = perMat.get(mat) ?? [];
@@ -279,7 +350,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                 <article key={mat} className="mat-block">
                   <div className="mat-header">
                     <span>Mat {mat}</span>
-                    <span className="card-meet-label">{meetLabel}</span>
+                    <span className="card-meet-label">{cardLabel}</span>
                   </div>
                   {boutsForMat.length === 0 ? (
                     <p className="mat-empty">No bouts scheduled for this mat.</p>
@@ -314,7 +385,6 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
         </section>
 
         <section className="chart-page per-team">
-          <h2>Team Wall Charts</h2>
           {teamCharts.length === 0 && (
             <p className="team-empty">No wrestlers found for this meet.</p>
           )}
@@ -325,7 +395,7 @@ export default async function WallChart({ params }: { params: Promise<{ meetId: 
                   {team.name}
                   {team.symbol ? ` (${team.symbol})` : ""}
                 </div>
-                <span className="card-meet-label">{meetLabel}</span>
+                <span className="card-meet-label">{cardLabel}</span>
               </div>
               {team.members.length === 0 ? (
                 <p className="team-empty">No wrestlers recorded.</p>
