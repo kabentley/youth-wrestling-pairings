@@ -2,8 +2,7 @@
 
 export default function PrintButton() {
   const handlePrint = () => {
-    sessionStorage.setItem("wallChartsPrint", "1");
-    window.location.reload();
+    window.print();
   };
 
   return (

@@ -1065,6 +1065,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .wall-chart-section {
           margin-top: 24px;
         }
+        @media print {
+          body {
+            background: #fff;
+          }
+          .meet-detail {
+            padding: 0;
+          }
+          .meet-detail > :not(.wall-chart-section) {
+            display: none !important;
+          }
+          .wall-chart-section {
+            margin-top: 0;
+          }
+        }
       `}</style>
       <AppHeader links={headerLinks} />
       <div className="tab-bar">
