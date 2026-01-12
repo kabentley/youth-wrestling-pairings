@@ -79,6 +79,7 @@ async function createMeet(name: string, date: string, teamIds: string[], updated
       date: d(date),
       location: "Local Gym",
       status: "PUBLISHED",
+      homeTeamId: teamIds[0],
       updatedAt: now,
       updatedById,
       meetTeams: { create: teamIds.map(teamId => ({ teamId })) },

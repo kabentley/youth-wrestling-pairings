@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
 import PrintButton from "./PrintButton";
 
 type ControlBarProps = {
-  label: string;
+  printTargetRef?: RefObject<HTMLElement>;
+  printStyles?: string;
 };
 
-export default function ControlBar({ label }: ControlBarProps) {
+export default function ControlBar({ printTargetRef, printStyles }: ControlBarProps) {
   const [scheme, setScheme] = useState<"color" | "black-and-white">("color");
 
   useEffect(() => {
@@ -25,7 +26,6 @@ export default function ControlBar({ label }: ControlBarProps) {
 
   return (
     <div className="chart-controls">
-      <div className="meet-heading">{label}</div>
       <label htmlFor="color-scheme" className="select-label">
         <span className="sr-only">Color mode</span>
         <select
@@ -37,7 +37,7 @@ export default function ControlBar({ label }: ControlBarProps) {
           <option value="black-and-white">Black and white</option>
         </select>
       </label>
-      <PrintButton />
+      <PrintButton targetRef={printTargetRef} styles={printStyles} />
     </div>
   );
 }

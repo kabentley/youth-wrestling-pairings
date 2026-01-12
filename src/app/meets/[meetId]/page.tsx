@@ -86,7 +86,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([120, 120]);
-  const [pairingsColWidths, setPairingsColWidths] = useState([140, 140, 90, 90, 70, 70, 90]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 90, 90, 55, 55, 90]);
   const [currentMatchColWidths, setCurrentMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90, 90]);
   const [availableMatchColWidths, setAvailableMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90]);
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
@@ -126,7 +126,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerWeight, setNewWrestlerWeight] = useState("");
   const [newWrestlerExp, setNewWrestlerExp] = useState("0");
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
-  const [activeTab, setActiveTab] = useState<"setup" | "matboard" | "wall">("setup");
+  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wall">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
@@ -371,10 +371,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetName, canEdit]);
 
   useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
-      if (!resizeRef.current) return;
-      const { kind, index, startX, startWidth } = resizeRef.current;
-      const nextWidth = Math.max(140, startWidth + (e.clientX - startX));
+      function onMouseMove(e: MouseEvent) {
+        if (!resizeRef.current) return;
+        const { kind, index, startX, startWidth } = resizeRef.current;
+        const minWidth = kind === "pairings" ? 40 : 140;
+        const nextWidth = Math.max(minWidth, startWidth + (e.clientX - startX));
       if (kind === "attendance") {
         setAttendanceColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
       } else if (kind === "pairings") {
@@ -1239,19 +1240,32 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </span>
             )}
           </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="nav-btn delete-btn"
+              onClick={() => {
+                setRestartError(null);
+                setShowRestartModal(true);
+              }}
+              disabled={!canEdit}
+            >
+              Restart Meet Setup
+            </button>
             <button
               className="nav-btn"
               onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
               disabled={!canChangeStatus}
             >
-            {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
-          </button>
+              {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
+            </button>
+          </div>
         </div>
       </div>
       {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
       <div className="tab-bar">
-        {[
-          { key: "setup", label: "Pairings" },
+          {[
+            { key: "pairings", label: "Pairings" },
           { key: "matboard", label: "Mat Assignments" },
           { key: "wall", label: "Wall Charts" },
         ].map(tab => (
@@ -1271,13 +1285,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       </div>
 
       <div className="tab-body">
-        {activeTab === "setup" && (
+        {activeTab === "pairings" && (
           <>
-          {meetStatus === "PUBLISHED" && (
-            <div className="notice">
-              Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
-            </div>
-          )}
           {authMsg && (
             <div className="notice">
               {authMsg}
@@ -1291,40 +1300,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </div>
           )}
 
-      <div
-        className="setup-control-row"
-        style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}
-      >
-        <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
-          const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
-          setSettings(s => ({ ...s, maxAgeGapDays }));
-        }} /></label>
-        <label>Max weight diff (%): <input type="number" value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
-          const maxWeightDiffPct = Number(e.target.value);
-          setSettings(s => ({ ...s, maxWeightDiffPct }));
-        }} /></label>
-        <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} disabled={!canEdit} onChange={async e => {
-          const checked = e.target.checked;
-          setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
-        }} /> First-year only rule</label>
-        <label><input type="checkbox" checked={settings.allowSameTeamMatches} disabled={!canEdit} onChange={async e => {
-          const allowSameTeamMatches = e.target.checked;
-          setSettings(s => ({ ...s, allowSameTeamMatches }));
-        }} /> Include same team</label>
-        <button
-          type="button"
-          className="nav-btn delete-btn"
-          onClick={() => {
-            setRestartError(null);
-            setShowRestartModal(true);
-          }}
-          disabled={!canEdit}
-        >
-          Restart Meet Setup
-        </button>
-      </div>
+      {meetStatus === "PUBLISHED" && (
+        <div className="notice" style={{ marginTop: 16 }}>
+          Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
+        </div>
+      )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 1.2fr)", gap: 16, marginTop: 0 }}>
         <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>Pairings</h3>
@@ -1788,6 +1770,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   </table>
                   <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
                     Note: Click on wrestler name to add or remove.
+                  </div>
+                  <div
+                    className="setup-control-row"
+                    style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
+                  >
+                    <label>Max age diff: <input type="number" step="1" style={{ width: 64 }} value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
+                      const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
+                      setSettings(s => ({ ...s, maxAgeGapDays }));
+                    }} /></label>
+                    <label>Max weight diff (%): <input type="number" style={{ width: 64 }} value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
+                      const maxWeightDiffPct = Number(e.target.value);
+                      setSettings(s => ({ ...s, maxWeightDiffPct }));
+                    }} /></label>
+                    <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} disabled={!canEdit} onChange={async e => {
+                      const checked = e.target.checked;
+                      setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
+                    }} /> First-year only rule</label>
+                    <label><input type="checkbox" checked={settings.allowSameTeamMatches} disabled={!canEdit} onChange={async e => {
+                      const allowSameTeamMatches = e.target.checked;
+                      setSettings(s => ({ ...s, allowSameTeamMatches }));
+                    }} /> Include same team</label>
                   </div>
                 </>
               )}

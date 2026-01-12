@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import ControlBar from "./ControlBar";
 
@@ -45,6 +45,7 @@ export default function WallChartTab({
   const [payload, setPayload] = useState<WallChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const wallChartRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const signal = refreshIndex ?? 0;
@@ -77,6 +78,22 @@ export default function WallChartTab({
 
   const styles = `
           @media print {
+            .wall-chart-root .print-meet-header {
+              display: block;
+              position: fixed;
+              top: 0;
+              left: 0;
+              right: 0;
+              padding: 10px 14px;
+              font-weight: 700;
+              font-size: 16px;
+              background: #fff;
+              border-bottom: 1px solid #d0d5df;
+              z-index: 5;
+            }
+            .wall-chart-root {
+              padding-top: 54px;
+            }
             .wall-chart-root .noprint { display: none; }
             .wall-chart-root .chart-page { page-break-after: always; }
             .wall-chart-root .chart-page:last-of-type { page-break-after: auto; }
@@ -171,24 +188,20 @@ export default function WallChartTab({
             color: #333;
             white-space: nowrap;
           }
+          .wall-chart-root .print-meet-header {
+            display: none;
+          }
           .wall-chart-root .chart-controls {
             display: flex;
             align-items: center;
-            justify-content: flex-start;
+            justify-content: flex-end;
             gap: 12px;
-            margin-bottom: 16px;
-            padding: 12px 18px;
-            border-radius: 14px;
-            background: #fff;
-            border: 1px solid #d5dbe2;
-            box-shadow: 0 16px 32px rgba(13, 59, 102, 0.12);
-          }
-          .wall-chart-root .chart-controls .meet-heading {
-            margin-right: auto;
-            font-weight: 700;
-            font-size: 18px;
-            letter-spacing: 0.6px;
-            color: #0d3b66;
+            margin: 0 0 12px;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            border: none;
+            box-shadow: none;
           }
           .wall-chart-root .chart-controls label {
             display: inline-flex;
@@ -247,9 +260,6 @@ export default function WallChartTab({
           @media print {
             .wall-chart-root .chart-controls {
               display: none !important;
-            }
-            .wall-chart-root .chart-controls .meet-heading {
-              display: none;
             }
           }
           .black-and-white .wall-chart-root .mat-block,
@@ -320,6 +330,7 @@ export default function WallChartTab({
   const teamIds = meet.meetTeams.map(mt => mt.team.id);
   const wMap = new Map(payload.wrestlers.map(w => [w.id, w]));
   const tMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
+  const teamSymbolMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
   const tColor = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.color ?? "#000"]));
   const maxMat = Math.max(1, ...filteredBouts.map(b => b.mat ?? 1));
   const mats = Array.from({ length: maxMat }, (_, i) => i + 1);
@@ -335,7 +346,9 @@ export default function WallChartTab({
 
   type MatchInfo = {
     boutNumber: string;
-    opponent: string;
+    opponentName: string;
+    opponentColor: string;
+    opponentTeamLabel: string;
   };
   const wrestlerMatches = new Map<string, MatchInfo[]>();
   for (const mat of mats) {
@@ -344,17 +357,39 @@ export default function WallChartTab({
       const boutNumber = String(mat * 100 + idx + 1).padStart(3, "0");
       const red = wMap.get(bout.redId);
       const green = wMap.get(bout.greenId);
-      const redName = red ? `${red.first} ${red.last}`.trim() : bout.redId;
-      const greenName = green ? `${green.first} ${green.last}`.trim() : bout.greenId;
+      const greenInfo = green
+        ? {
+            opponentName: `${green.first} ${green.last}`.trim(),
+            opponentColor: tColor.get(green.teamId) ?? "#000",
+            opponentTeamLabel: teamSymbolMap.get(green.teamId) || tMap.get(green.teamId) || "",
+          }
+        : { opponentName: bout.greenId, opponentColor: "#000", opponentTeamLabel: "" };
+      const redInfo = red
+        ? {
+            opponentName: `${red.first} ${red.last}`.trim(),
+            opponentColor: tColor.get(red.teamId) ?? "#000",
+            opponentTeamLabel: teamSymbolMap.get(red.teamId) || tMap.get(red.teamId) || "",
+          }
+        : { opponentName: bout.redId, opponentColor: "#000", opponentTeamLabel: "" };
 
       if (bout.redId) {
         const list = wrestlerMatches.get(bout.redId) ?? [];
-        list.push({ boutNumber, opponent: greenName ?? "TBD" });
+        list.push({
+          boutNumber,
+          opponentName: greenInfo.opponentName || "TBD",
+          opponentColor: greenInfo.opponentColor,
+          opponentTeamLabel: greenInfo.opponentTeamLabel,
+        });
         wrestlerMatches.set(bout.redId, list);
       }
       if (bout.greenId) {
         const list = wrestlerMatches.get(bout.greenId) ?? [];
-        list.push({ boutNumber, opponent: redName ?? "TBD" });
+        list.push({
+          boutNumber,
+          opponentName: redInfo.opponentName || "TBD",
+          opponentColor: redInfo.opponentColor,
+          opponentTeamLabel: redInfo.opponentTeamLabel,
+        });
         wrestlerMatches.set(bout.greenId, list);
       }
     });
@@ -398,9 +433,10 @@ export default function WallChartTab({
   }
 
   return (
-    <div className="wall-chart-root">
+    <div className="wall-chart-root" ref={wallChartRef}>
       <style>{styles}</style>
-      <ControlBar label={headerLabel} />
+      <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
+      <ControlBar printTargetRef={wallChartRef} printStyles={styles} />
       <div>
         <section className="chart-page per-mat">
           <div className="mat-grid">
@@ -472,12 +508,18 @@ export default function WallChartTab({
                             <span className="team-empty">No matches scheduled.</span>
                           ) : (
                             <div className="match-line">
-                              {member.matches.map(match => (
-                                <span key={`${member.id}-${match.boutNumber}`} className="match-chip">
-                                  <span className="match-bout">#{match.boutNumber}</span>
-                                  <span className="match-opponent">{match.opponent}</span>
-                                </span>
-                              ))}
+                          {member.matches.map(match => (
+                            <span key={`${member.id}-${match.boutNumber}`} className="match-chip">
+                              <span className="match-bout">#{match.boutNumber}</span>
+                              <span
+                                className="match-opponent"
+                                style={{ color: match.opponentColor }}
+                              >
+                                {match.opponentName}
+                                {match.opponentTeamLabel ? ` (${match.opponentTeamLabel})` : ""}
+                              </span>
+                            </span>
+                          ))}
                             </div>
                           )}
                         </td>
