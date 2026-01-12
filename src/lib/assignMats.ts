@@ -212,7 +212,14 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     const order = mats[bestMat].boutIds.length + 1;
     mats[bestMat].boutIds.push(b.id);
 
-    await db.bout.update({ where: { id: b.id }, data: { mat: bestMat + 1, order } });
+    await db.bout.update({
+      where: { id: b.id },
+      data: {
+        mat: bestMat + 1,
+        order,
+        originalMat: b.originalMat ?? (bestMat + 1),
+      },
+    });
 
     if (homeTeamPrefs?.homeTeamPreferSameMat && homeTeamId) {
       const red = getWrestler(b.redId);

@@ -1,3 +1,4 @@
+import "./globals.css";
 import type { Metadata } from "next";
 
 import Providers from "./providers";
@@ -10,7 +11,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0 }}><Providers>{children}</Providers></body>
+      <body>
+        <Providers>
+          <div className="app-frame">{children}</div>
+        </Providers>
+      </body>
     </html>
   );
 }

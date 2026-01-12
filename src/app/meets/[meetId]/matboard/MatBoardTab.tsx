@@ -21,6 +21,7 @@ type Bout = {
   score: number;
   mat?: number | null;
   order?: number | null;
+  originalMat?: number | null;
 };
 type LockState = {
   status: "loading" | "acquired" | "locked";
@@ -188,7 +189,7 @@ export default function MatBoardTab({
     }
 
     const bJson: Bout[] = await bRes.json();
-    setBouts(bJson);
+    setBouts(bJson.map(b => ({ ...b, originalMat: b.originalMat ?? b.mat ?? null })));
 
     const wJson = await wRes.json();
     setTeams(wJson.teams);
@@ -295,21 +296,22 @@ export default function MatBoardTab({
 
   function moveBout(boutId: string, toMat: number, toIndex: number) {
     setBouts(prev => {
-      const b = prev.find(x => x.id === boutId);
+      const next = prev.map(x => ({ ...x }));
+      const b = next.find(x => x.id === boutId);
       if (!b) return prev;
 
       const fromMat = b.mat ?? 1;
-      const next = prev.map(x => ({ ...x }));
+      if (b.originalMat == null) {
+        b.originalMat = fromMat;
+      }
 
       const fromList = next
-        .filter(x => (x.mat ?? 1) === fromMat)
-        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
-        .filter(x => x.id !== boutId);
+        .filter(x => (x.mat ?? 1) === fromMat && x.id !== boutId)
+        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 
       const toList = next
-        .filter(x => (x.mat ?? 1) === toMat)
-        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999))
-        .filter(x => x.id !== boutId);
+        .filter(x => (x.mat ?? 1) === toMat && x.id !== boutId)
+        .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 
       toList.splice(Math.max(0, Math.min(toIndex, toList.length)), 0, { ...b, mat: toMat });
 
@@ -485,6 +487,21 @@ export default function MatBoardTab({
     return `${matNum}${paddedOrder}`;
   };
 
+  const hexToRGBA = (hex: string, alpha: number) => {
+    const clean = hex.replace("#", "");
+    const normalized = clean.length === 3
+      ? clean
+          .split("")
+          .map(ch => ch + ch)
+          .join("")
+      : clean;
+    const num = parseInt(normalized.slice(0, 6), 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
   return (
     <section className="matboard-tab">
       <style>{`
@@ -636,6 +653,9 @@ export default function MatBoardTab({
           font-weight: 700;
           color: #1d232b;
           text-align: center;
+          border: 2px solid transparent;
+          border-radius: 8px;
+          padding: 4px 0;
         }
         .bout-row span {
           display: block;
@@ -794,7 +814,16 @@ export default function MatBoardTab({
                       }}
                     >
                       <div className="bout-row">
-                          <span className="number">{formatBoutNumber(matNum, b.order, index + 1)}</span>
+                          <span
+                            className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
+                            style={{
+                              backgroundColor: hexToRGBA(matColor, 0.15),
+                              borderColor:
+                                b.originalMat != null && b.originalMat !== matNum ? matColor : "transparent",
+                            }}
+                          >
+                            {formatBoutNumber(matNum, b.order, index + 1)}
+                          </span>
                         <span
                           data-role="wrestler"
                           className={[

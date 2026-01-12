@@ -21,7 +21,7 @@ export default async function Home() {
       }))
     : null;
   const trimmedLeagueName = league?.name?.trim();
-  const leagueName = trimmedLeagueName ?? "Wrestling Scheduler";
+  const leagueName = trimmedLeagueName ?? "";
   const hasLeagueLogo = Boolean(league?.logoData);
   const leagueWebsite = league?.website?.trim() ?? null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
@@ -234,15 +234,6 @@ export default async function Home() {
       `}</style>
 
       <header className="mast">
-        <div className="brand">
-          {hasLeagueLogo ? (
-            <img className="logo" src="/api/league/logo/file" alt="League logo" />
-          ) : null}
-          <div>
-            <h1 className="title">{leagueName}</h1>
-            <div className="tagline">Wrestling scheduling and pairing control</div>
-          </div>
-        </div>
         {session ? (
           <AppHeader links={headerLinks} />
         ) : (

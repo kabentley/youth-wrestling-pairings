@@ -32,19 +32,21 @@ export async function POST(req: Request) {
   const { user } = await requireRole("COACH");
   const body = await req.json();
   const parsed = MeetSchema.parse(body);
-  if (!user.teamId) {
+  const creatorTeamId = user.teamId ?? parsed.homeTeamId ?? parsed.teamIds[0];
+  if (!creatorTeamId) {
     return NextResponse.json({ error: "Creator must belong to a team" }, { status: 400 });
   }
-  if (!parsed.teamIds.includes(user.teamId)) {
+  if (!parsed.teamIds.includes(creatorTeamId)) {
     return NextResponse.json({ error: "Creator's team must be part of the meet" }, { status: 400 });
   }
+  const homeTeamId = parsed.homeTeamId ?? creatorTeamId;
 
   const meet = await db.meet.create({
     data: {
       name: parsed.name,
       date: new Date(parsed.date),
       location: parsed.location?.trim() || undefined,
-      homeTeamId: user.teamId,
+      homeTeamId,
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
       matchesPerWrestler: parsed.matchesPerWrestler,

@@ -134,7 +134,7 @@ async function assignMatToBout(meetId: string, boutId: string) {
 
   const bouts = await db.bout.findMany({
     where: { meetId },
-    select: { id: true, mat: true, redId: true, greenId: true },
+    select: { id: true, mat: true, originalMat: true, redId: true, greenId: true },
   });
 
   const matCounts = new Array(numMats).fill(0);
@@ -222,5 +222,12 @@ async function assignMatToBout(meetId: string, boutId: string) {
   }
 
   const order = matCounts[bestMat] + 1;
-  await db.bout.update({ where: { id: boutId }, data: { mat: bestMat + 1, order } });
+  await db.bout.update({
+    where: { id: boutId },
+    data: {
+      mat: bestMat + 1,
+      order,
+      originalMat: bout.originalMat ?? (bestMat + 1),
+    },
+  });
 }

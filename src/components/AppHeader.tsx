@@ -66,97 +66,49 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
     : visibleLinks.filter(link => link.href !== "/parent");
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        width: "100%",
-        gap: 12,
-        flexWrap: "wrap",
-        borderBottom: "1px solid var(--line, #d5dbe2)",
-        paddingBottom: 12,
-        marginBottom: 12,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginRight: "auto" }}>
+    <div className="app-header">
+      <div className="app-header-left">
         {mainLinks.map(link => (
-          <a key={link.href} href={link.href} style={{ fontWeight: 600, textDecoration: "none", color: "var(--ink, #1d232b)" }}>
+          <a key={link.href} href={link.href} className="app-header-link">
             {link.label}
           </a>
         ))}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div className="app-header-actions">
         {user ? (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 600 }}>
-              <span>User: {user.username}, Role: {user.role}</span>
+            <div className="app-header-user-info">
+              <span>
+                User: {user.username}, Role: {user.role}
+              </span>
               {user.team ? (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 8px",
-                    border: "1px solid var(--line, #d5dbe2)",
-                    borderRadius: 8,
-                  }}
-                >
+                <span className="app-header-team-chip">
                   {user.teamLogoUrl ? (
                     <img
                       src={user.teamLogoUrl}
                       alt={`${user.team.name ?? "Team"} logo`}
-                      style={{ width: 22, height: 22, objectFit: "contain", borderRadius: 4 }}
+                      className="app-header-team-logo"
                     />
                   ) : (
                     <span
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: 6,
-                        background: user.team.color ?? "#ccc",
-                        display: "inline-block",
-                      }}
+                      className="app-header-team-logo"
+                      style={{ background: user.team.color ?? "#ccc" }}
                     />
                   )}
-                  <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-                    <span style={{ fontWeight: 700, fontSize: 12 }}>{user.team.symbol ?? ""}</span>
-                    <span style={{ fontWeight: 600, fontSize: 12 }}>{user.team.name}</span>
+                  <span className="app-header-team-name">
+                    <span>{user.team.symbol ?? ""}</span>
+                    <span>{user.team.name}</span>
                   </span>
                 </span>
               ) : null}
             </div>
             {myWrestlersLink ? (
-              <a
-                href={myWrestlersLink.href}
-                style={{
-                  fontWeight: 600,
-                  textDecoration: "none",
-                  color: "var(--ink, #1d232b)",
-                  border: "1px solid var(--line, #d5dbe2)",
-                  borderRadius: 6,
-                  padding: "8px 10px",
-                  fontSize: 14,
-                  letterSpacing: "0.5px",
-                }}
-              >
+              <a href={myWrestlersLink.href} className="app-header-link">
                 {myWrestlersLink.label}
               </a>
             ) : null}
             {accountLink ? (
-              <a
-                href={accountLink.href}
-                style={{
-                  fontWeight: 600,
-                  textDecoration: "none",
-                  color: "var(--ink, #1d232b)",
-                  border: "1px solid var(--line, #d5dbe2)",
-                  borderRadius: 6,
-                  padding: "8px 10px",
-                  fontSize: 14,
-                  letterSpacing: "0.5px",
-                }}
-              >
+              <a href={accountLink.href} className="app-header-link">
                 {accountLink.label}
               </a>
             ) : null}
@@ -165,35 +117,13 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
                 await signOut({ redirect: false });
                 window.location.href = "/auth/signin";
               }}
-              style={{
-                color: "var(--ink, #1d232b)",
-                background: "transparent",
-                border: "1px solid var(--line, #d5dbe2)",
-                borderRadius: 6,
-                padding: "8px 10px",
-                fontWeight: 600,
-                fontSize: 14,
-                letterSpacing: "0.5px",
-                cursor: "pointer",
-              }}
+              className="app-header-btn"
             >
               Sign out
             </button>
           </>
         ) : (
-          <a
-            href="/auth/signin"
-            style={{
-              fontWeight: 600,
-              textDecoration: "none",
-              color: "var(--ink, #1d232b)",
-              border: "1px solid var(--line, #d5dbe2)",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 14,
-              letterSpacing: "0.5px",
-            }}
-          >
+          <a href="/auth/signin" className="app-header-link">
             Sign in
           </a>
         )}
