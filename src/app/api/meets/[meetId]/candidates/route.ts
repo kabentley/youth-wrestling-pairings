@@ -87,21 +87,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
     currentOpponentIds.add(opponentId);
   }
 
-  const excluded = await db.excludedPair.findMany({ where: { meetId } });
-  const excludedSet = new Set(excluded.map(e => `${e.aId}|${e.bId}`));
-  function isExcluded(aId: string, bId: string) {
-    const [a, b] = aId < bId ? [aId, bId] : [bId, aId];
-    return excludedSet.has(`${a}|${b}`);
-  }
-
   const rows: any[] = [];
   for (const opp of wrestlers) {
     if (opp.id === target.id) continue;
     if (currentOpponentIds.has(opp.id)) continue;
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
-    if (isExcluded(target.id, opp.id)) continue;
-
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
     if (ageGapDays > q.maxAgeGapDays) continue;
 

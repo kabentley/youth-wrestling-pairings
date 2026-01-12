@@ -45,6 +45,9 @@ export default function MatBoardTab({
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
+  const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
+  const [meetSettings, setMeetSettings] = useState<{ numMats: number; homeTeamId?: string | null } | null>(null);
+  const [italicizeSingles, setItalicizeSingles] = useState(true);
   const lockStatusRef = useRef<LockState["status"]>("loading");
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -59,6 +62,56 @@ export default function MatBoardTab({
 
   useEffect(() => {
     void load();
+  }, [meetId]);
+
+  useEffect(() => {
+    if (meetSettings?.numMats) {
+      setNumMats(meetSettings.numMats);
+    }
+  }, [meetSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMatColors = async () => {
+      const meetRes = await fetch(`/api/meets/${meetId}`);
+      if (!meetRes.ok) {
+        if (!cancelled) {
+          setMatRuleColors({});
+          setMeetSettings(null);
+        }
+        return;
+      }
+      const meet = await meetRes.json().catch(() => null);
+      if (!cancelled) {
+        setMeetSettings({
+          numMats: typeof meet?.numMats === "number" ? meet.numMats : 4,
+          homeTeamId: meet?.homeTeamId ?? null,
+        });
+      }
+      const homeTeamId = meet?.homeTeamId;
+      if (!homeTeamId) {
+        if (!cancelled) setMatRuleColors({});
+        return;
+      }
+      const rulesRes = await fetch(`/api/meets/${meetId}/mat-rules`);
+      if (!rulesRes.ok) {
+        if (!cancelled) setMatRuleColors({});
+        return;
+      }
+      const payload = await rulesRes.json().catch(() => null);
+      if (cancelled) return;
+      const colors: Record<number, string | null> = {};
+      for (const rule of payload?.rules ?? []) {
+        if (typeof rule.matIndex === "number") {
+          colors[rule.matIndex] = typeof rule.color === "string" ? rule.color : null;
+        }
+      }
+      setMatRuleColors(colors);
+    };
+    void fetchMatColors();
+    return () => {
+      cancelled = true;
+    };
   }, [meetId]);
 
   useEffect(() => {
@@ -142,7 +195,8 @@ export default function MatBoardTab({
     setWMap(map);
 
     const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
-    setNumMats(maxMat > 0 ? maxMat : 4);
+    const defaultMats = meetSettings?.numMats ?? 4;
+    setNumMats(defaultMats);
     setDirty(false);
     dirtyRef.current = false;
 
@@ -453,6 +507,33 @@ export default function MatBoardTab({
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.5px;
         }
+        .matboard-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .matboard-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .matboard-italic-control {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 14px;
+          color: #5a6673;
+          font-weight: 600;
+        }
+        .matboard-legend {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 12px;
+        }
         .toolbar {
           display: flex;
           flex-wrap: wrap;
@@ -521,6 +602,18 @@ export default function MatBoardTab({
           align-items: baseline;
           font-size: 16px;
         }
+        .mat-number {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .mat-color-indicator {
+          width: 20px;
+          height: 20px;
+          border-radius: 4px;
+          border: 1px solid #ccd1da;
+          box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
         .bout {
           border: 1px solid #eee;
           border-radius: 8px;
@@ -576,41 +669,29 @@ export default function MatBoardTab({
           background: #ffd6df;
         }
       `}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h3>Mat Assignments</h3>
-        {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
-      </div>
-      <div className="toolbar" style={{ alignItems: "flex-start" }}>
-        <label>
-          Mats:
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={numMats}
-            onChange={e => setNumMats(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Conflict gap:
-          <input
-            type="number"
-            min={0}
-            max={20}
-            value={conflictGap}
-            onChange={e => setConflictGap(Number(e.target.value))}
-          />
-        </label>
-        <span style={{ fontSize: 14, color: "#5a6673", fontWeight: 600, marginLeft: 16 }}>
-          Note: Wrestlers with only one match appear in italics.
-        </span>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginLeft: "auto", fontSize: 12 }}>
+      <div className="matboard-header">
+        <div className="matboard-header-left">
+          <h3>Mat Assignments</h3>
+          <label className="matboard-italic-control">
+            <input
+              type="checkbox"
+              checked={italicizeSingles}
+              onChange={e => setItalicizeSingles(e.target.checked)}
+            />
+            <span>
+              Show wrestlers with only one match in <em>italics</em>
+            </span>
+          </label>
+        </div>
+        <div className="matboard-legend">
           <span style={{ fontWeight: 600 }}>Legend:</span>
           <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
           <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
           <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
         </div>
+        {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
       </div>
+      <div className="toolbar" style={{ alignItems: "flex-start" }}></div>
       {authMsg && <div className="notice">{authMsg}</div>}
       {lockState.status === "locked" && (
         <div className="lock-notice">
@@ -620,6 +701,7 @@ export default function MatBoardTab({
       <div className="mat-grid">
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];
+          const matColor = matRuleColors[matNum] ?? "#f2f2f2";
           const conflictCount = list.reduce((count, b) => {
             const redSeverity = conflictSeverity.get(`${b.id}-${b.redId}`);
             const greenSeverity = conflictSeverity.get(`${b.id}-${b.greenId}`);
@@ -642,7 +724,14 @@ export default function MatBoardTab({
               }}
             >
               <h4>
-                <span>Mat {matNum}</span>
+                <span className="mat-number">
+                  Mat {matNum}
+                  <span
+                    className="mat-color-indicator"
+                    style={{ backgroundColor: matColor }}
+                    aria-hidden="true"
+                  />
+                </span>
                 <button
                   className="nav-btn reorder-inline-btn"
                   onClick={() => reorderMat(matNum)}
@@ -659,8 +748,8 @@ export default function MatBoardTab({
                   const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);
                   const severityRed = getSeverity(b.redId);
                   const severityGreen = getSeverity(b.greenId);
-                  const singleMatchRed = (matchCounts.get(b.redId) ?? 0) === 1;
-                  const singleMatchGreen = (matchCounts.get(b.greenId) ?? 0) === 1;
+                  const singleMatchRed = italicizeSingles && (matchCounts.get(b.redId) ?? 0) === 1;
+                  const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
                   const normalized = (value?: number) =>
                     value === undefined
                       ? 0

@@ -41,13 +41,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     .filter(w => w.active && !absentIds.has(w.id));
   const wrestlerMap = new Map(wrestlers.map(w => [w.id, w]));
 
-  const excluded = await db.excludedPair.findMany({ where: { meetId } });
-  const excludedSet = new Set(excluded.map(e => `${e.aId}|${e.bId}`));
-  function isExcluded(aId: string, bId: string) {
-    const [a, b] = aId < bId ? [aId, bId] : [bId, aId];
-    return excludedSet.has(`${a}|${b}`);
-  }
-
   const matchCounts = new Map<string, number>();
   const paired = new Set<string>();
 
@@ -100,7 +93,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
   function eligible(a: any, b: any, allowSameTeam: boolean) {
     if (!allowSameTeam && a.teamId === b.teamId) return false;
-    if (isExcluded(a.id, b.id)) return false;
 
     const ageGap = daysBetween(a.birthdate, b.birthdate);
     if (ageGap > settings.maxAgeGapDays) return false;

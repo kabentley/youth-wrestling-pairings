@@ -5,7 +5,6 @@ export async function resetDb() {
   const db = new PrismaClient();
   try {
     // Delete child tables first due to FKs
-    await db.excludedPair.deleteMany();
     await db.bout.deleteMany();
     await db.meetTeam.deleteMany();
     await db.meet.deleteMany();

@@ -48,7 +48,6 @@ const rosterD: WrestlerSeed[] = [
 ];
 
 async function clearAll() {
-  await db.excludedPair.deleteMany();
   await db.bout.deleteMany();
   await db.meetTeam.deleteMany();
   await db.meet.deleteMany();

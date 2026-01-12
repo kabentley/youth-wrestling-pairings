@@ -128,6 +128,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [activeTab, setActiveTab] = useState<"setup" | "matboard" | "wall">("setup");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
+  const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
+  const [meetLocation, setMeetLocation] = useState<string | null>(null);
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const headerLinks = [
@@ -336,6 +338,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setMeetStatus(meetJson.status ?? "DRAFT");
       setLastUpdatedAt(meetJson.updatedAt ?? null);
       setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
+      setHomeTeamId(meetJson.homeTeamId ?? null);
+      setMeetLocation(meetJson.location ?? null);
     }
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
@@ -577,6 +581,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     ? new Date(meetDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
     : null;
   const metadataParts = [formattedDate, teamList].filter(Boolean);
+  const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
+  const homeLocationDisplay = meetLocation?.trim() || homeTeam?.address?.trim() || null;
   const addWrestlerTeamLabel = attendanceTeamId
     ? teams.find(t => t.id === attendanceTeamId)?.name ?? "Selected Team"
     : "Selected Team";
@@ -971,12 +977,37 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 10px;
           flex-wrap: wrap;
         }
+        .meet-home-info {
+          font-size: 14px;
+          color: var(--muted);
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex: 1;
+          min-width: 0;
+        }
+        .meet-home-info .home-label {
+          font-weight: 600;
+          color: var(--ink);
+        }
+        .meet-home-info span {
+          display: inline-flex;
+          align-items: center;
+        }
+        .meet-home-info .home-team-name {
+          font-weight: 600;
+          color: var(--ink);
+        }
+        .meet-home-info .home-location {
+          font-size: 13px;
+          color: var(--muted);
+        }
         .meet-heading-actions {
           display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 6px;
-          text-align: right;
+          flex-direction: row;
+          align-items: center;
+          gap: 12px;
+          margin-left: auto;
         }
         .meet-status {
           font-size: 13px;
@@ -1004,9 +1035,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           text-decoration: underline;
         }
         .meet-metadata {
-          font-size: 13px;
-          color: #5b6472;
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--ink);
           margin-bottom: 12px;
+          letter-spacing: 0.8px;
         }
         h2 {
           font-family: "Oswald", Arial, sans-serif;
@@ -1229,10 +1262,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 disabled={!canEdit}
               >
                 Done
-          </button>
-        </>
+              </button>
+            </>
           )}
         </div>
+        {(homeTeam || homeLocationDisplay) && (
+          <div className="meet-home-info">
+            <span className="home-label">Home team:</span>
+            {homeTeam && (
+              <span className="home-team-name">
+                {homeTeam.name}
+                {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
+              </span>
+            )}
+            {homeLocationDisplay && (
+              <span className="home-location">· {homeLocationDisplay}</span>
+            )}
+          </div>
+        )}
         <div className="meet-heading-actions">
           <div className="meet-status">
             <span>

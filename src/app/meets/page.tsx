@@ -35,6 +35,12 @@ export default function MeetsPage() {
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(1);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<{
+    id: string;
+    name: string;
+    date: string;
+  } | null>(null);
   const router = useRouter();
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -131,6 +137,34 @@ export default function MeetsPage() {
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const deleteMeet = async (id: string) => {
+    if (!canManageMeets) return;
+    setDeletingMeetId(id);
+    try {
+      const res = await fetch(`/api/meets/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to delete meet.");
+      }
+      await load();
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setDeletingMeetId(null);
+    }
+  };
+
+  const openDeleteDialog = (meet: Meet) => {
+    setDeleteDialog({ id: meet.id, name: meet.name, date: meet.date });
+  };
+
+  const confirmDeleteMeet = async () => {
+    if (!deleteDialog) return;
+    await deleteMeet(deleteDialog.id);
+    setDeleteDialog(null);
   };
 
   useEffect(() => { void load(); }, []);
@@ -469,6 +503,19 @@ export default function MeetsPage() {
           justify-content: space-between;
           gap: 12px;
         }
+        .meet-title-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .meet-status-inline {
+          font-size: 13px;
+          color: #5b6472;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
         .badge {
           font-size: 11px;
           border-radius: 999px;
@@ -530,10 +577,20 @@ export default function MeetsPage() {
           flex-wrap: wrap;
           margin-top: 16px;
         }
+        .delete-confirm {
+          background: #d32f2f;
+          border-color: #c62828;
+          color: #fff;
+        }
         .meet-item a {
           color: var(--accent);
           text-decoration: none;
           font-weight: 700;
+        }
+        .delete-btn {
+          background: #d32f2f;
+          border: 1px solid #c62828;
+          color: #fff;
         }
         @media (max-width: 980px) {
           .grid {
@@ -580,17 +637,30 @@ export default function MeetsPage() {
             {visibleMeets.map(m => (
               <div key={m.id} className="meet-item">
                 <div className="meet-item-header">
-                  <div>
+                <div>
+                  <div className="meet-title-row">
                     <a href={`/meets/${m.id}`}>{m.name}</a>
-                    <div className="muted">
-                      - {new Date(m.date).toISOString().slice(0, 10)}
-                      {m.location ? ` - ${m.location}` : ""} -{" "}
-                      {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
-                    </div>
+                    <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
+                      {m.status === "PUBLISHED" ? "Published" : "Draft"}
+                    </span>
                   </div>
-                  <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
-                    {m.status === "PUBLISHED" ? "Published" : "Draft"}
-                  </span>
+                  <div className="muted">
+                    - {new Date(m.date).toISOString().slice(0, 10)}
+                    {m.location ? ` - ${m.location}` : ""} -{" "}
+                    {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
+                  </div>
+                </div>
+                {canManageMeets && (
+                    <button
+                      className="nav-btn"
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => openDeleteDialog(m)}
+                      disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
+                      className="delete-btn nav-btn"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
                 {m.updatedAt && (
                   <div className="muted" style={{ marginTop: 6 }}>
@@ -731,6 +801,34 @@ export default function MeetsPage() {
                 onClick={() => setIsCreateModalOpen(false)}
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteDialog && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteDialog(null)}>
+          <div className="modal" role="document" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                Delete meet: {deleteDialog.name} (
+                {new Date(deleteDialog.date).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                )
+              </h3>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to delete this meet? This action is irreversible.</p>
+            </div>
+            <div className="modal-actions">
+              <button className="nav-btn" onClick={() => setDeleteDialog(null)} disabled={Boolean(deletingMeetId)}>
+                Cancel
+              </button>
+              <button className="nav-btn delete-confirm" onClick={confirmDeleteMeet} disabled={Boolean(deletingMeetId)}>
+                Delete meet
               </button>
             </div>
           </div>

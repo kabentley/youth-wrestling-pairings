@@ -87,7 +87,6 @@ model Meet {
 
   meetTeams MeetTeam[]
   bouts     Bout[]
-  excluded  ExcludedPair[]
   wrestlerStatuses MeetWrestlerStatus[]
   meetChanges MeetChange[]
   meetComments MeetComment[]
@@ -211,20 +210,6 @@ resultAt       DateTime?
 
 }
 
-
-model ExcludedPair {
-  id        String   @id @default(cuid())
-  meetId    String
-  meet      Meet     @relation(fields: [meetId], references: [id], onDelete: Cascade)
-
-  aId       String
-  bId       String
-
-  createdAt DateTime @default(now())
-
-  @@unique([meetId, aId, bId])
-  @@index([meetId])
-}
 
 // --- NextAuth.js models ---
 model User {

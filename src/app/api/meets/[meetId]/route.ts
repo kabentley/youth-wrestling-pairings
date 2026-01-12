@@ -130,3 +130,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  const { meetId } = await params;
+  const { user } = await requireRole("COACH");
+  try {
+    await requireMeetLock(meetId, user.id);
+  } catch (err) {
+    const lockError = getMeetLockError(err);
+    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+    throw err;
+  }
+
+  try {
+    await db.meet.delete({ where: { id: meetId } });
+  } catch {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+
+  await revalidatePath("/meets");
+
+  return NextResponse.json({ ok: true });
+}
