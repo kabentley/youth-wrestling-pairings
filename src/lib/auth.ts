@@ -1,6 +1,7 @@
+import crypto from "crypto";
+
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import type { NextAuthOptions } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import AppleProvider from "next-auth/providers/apple";
@@ -151,7 +152,7 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === "credentials" && (user as any)?.mustResetPassword) {
+      if (account?.provider === "credentials" && (user)?.mustResetPassword) {
         const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
         return `${baseUrl}/auth/force-reset`;
       }
@@ -173,7 +174,7 @@ export const authOptions: NextAuthOptions = {
             where: { id: user.id },
             select: { username: true, role: true, teamId: true },
           });
-          if (dbUser?.username.startsWith("oauth-") || ((dbUser?.role === "PARENT" || dbUser?.role === "COACH" || dbUser?.role === "TABLE_WORKER") && !dbUser?.teamId)) {
+          if (dbUser?.username.startsWith("oauth-") || ((dbUser?.role === "PARENT" || dbUser?.role === "COACH" || dbUser?.role === "TABLE_WORKER") && !dbUser.teamId)) {
             return "/auth/choose-username";
           }
         }
@@ -182,12 +183,12 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user }) {
       if (user) {
-        token.id = (user as any).id;
-        token.username = (user as any).username;
-        token.role = (user as any).role ?? "COACH";
-        token.teamId = (user as any).teamId ?? null;
-        token.sessionVersion = (user as any).sessionVersion ?? 1;
-        token.mustResetPassword = (user as any).mustResetPassword ?? false;
+        token.id = (user).id;
+        token.username = (user).username;
+        token.role = (user).role ?? "COACH";
+        token.teamId = (user).teamId ?? null;
+        token.sessionVersion = (user).sessionVersion ?? 1;
+        token.mustResetPassword = (user).mustResetPassword ?? false;
       } else if (token.sessionVersion === undefined && token.id) {
         const dbUser = await db.user.findUnique({
           where: { id: token.id as string },

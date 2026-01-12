@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
 import PrintButton from "./PrintButton";
 
 type ControlBarProps = {

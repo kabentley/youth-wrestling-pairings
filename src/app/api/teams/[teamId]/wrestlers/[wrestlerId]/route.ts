@@ -1,7 +1,7 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
@@ -40,7 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     where: { id: wrestlerId },
     select: { id: true, teamId: true },
   });
-  if (!wrestler || wrestler.teamId !== teamId) {
+  if (wrestler?.teamId !== teamId) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
 

@@ -1,7 +1,7 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { requireSession, requireTeamCoach } from "@/lib/rbac";

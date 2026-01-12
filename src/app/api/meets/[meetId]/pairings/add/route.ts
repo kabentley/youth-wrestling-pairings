@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { DEFAULT_MAT_COUNT, MIN_MATS, getEligibleMatIndexes } from "@/lib/assignMats";
+import type { MatWrestler } from "@/lib/assignMats";
 import { db } from "@/lib/db";
-import { DEFAULT_MAT_COUNT, MIN_MATS } from "@/lib/assignMats";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
@@ -49,7 +50,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       notes: "manual",
     },
   });
-
   await assignMatToBout(meetId, bout.id);
 
   const [red, green] = await db.wrestler.findMany({
@@ -98,9 +98,9 @@ async function assignMatToBout(meetId: string, boutId: string) {
   const teamIds = meet.meetTeams.map(mt => mt.teamId);
   const wrestlers = await db.wrestler.findMany({
     where: { teamId: { in: teamIds } },
-    select: { id: true, teamId: true, birthdate: true, experienceYears: true },
+    select: { id: true, teamId: true, birthdate: true, experienceYears: true, first: true, last: true },
   });
-  const wMap = new Map(wrestlers.map(w => [w.id, w]));
+  const wMap = new Map<string, MatWrestler>(wrestlers.map(w => [w.id, w]));
 
   const homeTeamId = meet?.homeTeamId ?? null;
   const teamRules = homeTeamId
@@ -129,6 +129,8 @@ async function assignMatToBout(meetId: string, boutId: string) {
   while (rules.length < numMats) {
     rules.push({ ...DEFAULT_RULE });
   }
+
+  const mats = rules.map(rule => ({ boutIds: [], rule }));
 
   const bouts = await db.bout.findMany({
     where: { meetId },
@@ -161,32 +163,18 @@ async function assignMatToBout(meetId: string, boutId: string) {
     return wMap.get(id) ?? null;
   }
 
-  function matchesRuleForRule(rule: typeof rules[number]) {
-    const red = getWrestler(bout.redId);
-    const green = getWrestler(bout.greenId);
-    if (!red || !green) return true;
-
-    const redAge = ageInYears(new Date(red.birthdate), meetDate);
-    const greenAge = ageInYears(new Date(green.birthdate), meetDate);
-    const expOk =
-      red.experienceYears >= rule.minExperience &&
-      red.experienceYears <= rule.maxExperience &&
-      green.experienceYears >= rule.minExperience &&
-      green.experienceYears <= rule.maxExperience;
-    const ageOk =
-      redAge >= rule.minAge &&
-      redAge <= rule.maxAge &&
-      greenAge >= rule.minAge &&
-      greenAge <= rule.maxAge;
-    return expOk && ageOk;
-  }
-
   const meetDate = meet.date ? new Date(meet.date) : new Date();
-
+  const { indexes: eligibleMats } = getEligibleMatIndexes(
+    bout,
+    mats,
+    wMap,
+    meetDate,
+    homeTeamId,
+  );
   const red = getWrestler(bout.redId);
   const green = getWrestler(bout.greenId);
 
-  function matPenalty(matIdx: number, anyElig: boolean) {
+  function matPenalty(matIdx: number) {
     const rule = rules[matIdx];
     const nextOrder = matCounts[matIdx] + 1;
     let p = 0;
@@ -200,10 +188,10 @@ async function assignMatToBout(meetId: string, boutId: string) {
       rangePenalty(redAge, rule.minAge, rule.maxAge) +
       rangePenalty(greenAge, rule.minAge, rule.maxAge);
     const eligible = expPenalty === 0 && agePenalty === 0;
-    if (anyElig && !eligible) {
-      p += INELIGIBLE_PENALTY;
-    } else {
+    if (eligible) {
       p += (expPenalty + agePenalty) * RANGE_PENALTY_SCALE;
+    } else {
+      p += INELIGIBLE_PENALTY;
     }
 
     if (homeTeamPrefs?.homeTeamPreferSameMat && homeTeamId) {
@@ -219,14 +207,17 @@ async function assignMatToBout(meetId: string, boutId: string) {
     return p;
   }
 
-  let bestMat = 0;
-  let bestScore = Number.POSITIVE_INFINITY;
-  const eligibleForAnyRule = rules.some(matchesRuleForRule);
-  for (let m = 0; m < numMats; m++) {
-    const penalty = matPenalty(m, eligibleForAnyRule);
-    if (penalty < bestScore) {
-      bestScore = penalty;
-      bestMat = m;
+  let bestMat = eligibleMats.length > 0
+    ? eligibleMats[0]
+    : matCounts.reduce((bestIdx, count, idx) => (count < matCounts[bestIdx] ? idx : bestIdx), 0);
+  if (eligibleMats.length > 0) {
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (const m of eligibleMats) {
+      const penalty = matPenalty(m);
+      if (penalty < bestScore) {
+        bestScore = penalty;
+        bestMat = m;
+      }
     }
   }
 

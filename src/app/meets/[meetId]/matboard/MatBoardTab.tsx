@@ -9,6 +9,8 @@ type Wrestler = {
   last: string;
   weight: number;
   teamId: string;
+  birthdate?: string | null;
+  experienceYears?: number | null;
   status?: "LATE" | "EARLY" | "NOT_COMING" | "ABSENT" | null;
 };
 type Bout = {
@@ -41,7 +43,7 @@ export default function MatBoardTab({
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(4);
-  const [conflictGap, setConflictGap] = useState(3);
+  const [conflictGap] = useState(3);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
@@ -101,7 +103,8 @@ export default function MatBoardTab({
       const payload = await rulesRes.json().catch(() => null);
       if (cancelled) return;
       const colors: Record<number, string | null> = {};
-      for (const rule of payload?.rules ?? []) {
+      const rules = Array.isArray(payload?.rules) ? payload.rules : [];
+      for (const rule of rules) {
         if (typeof rule.matIndex === "number") {
           colors[rule.matIndex] = typeof rule.color === "string" ? rule.color : null;
         }
@@ -194,7 +197,6 @@ export default function MatBoardTab({
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
-    const maxMat = Math.max(0, ...bJson.map(b => b.mat ?? 0));
     const defaultMats = meetSettings?.numMats ?? 4;
     setNumMats(defaultMats);
     setDirty(false);
@@ -456,10 +458,6 @@ export default function MatBoardTab({
     onMatAssignmentsChange?.();
   }
 
-  async function save() {
-    await saveOrder();
-  }
-
   useEffect(() => {
     saveOrderRef.current = saveOrder;
   });
@@ -702,11 +700,6 @@ export default function MatBoardTab({
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];
           const matColor = matRuleColors[matNum] ?? "#f2f2f2";
-          const conflictCount = list.reduce((count, b) => {
-            const redSeverity = conflictSeverity.get(`${b.id}-${b.redId}`);
-            const greenSeverity = conflictSeverity.get(`${b.id}-${b.greenId}`);
-            return count + (redSeverity !== undefined || greenSeverity !== undefined ? 1 : 0);
-          }, 0);
           return (
             <div
               key={matNum}

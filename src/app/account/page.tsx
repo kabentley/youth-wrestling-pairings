@@ -1,8 +1,9 @@
 "use client";
 
-import AppHeader from "@/components/AppHeader";
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+
+import AppHeader from "@/components/AppHeader";
 
 type TeamRow = { id: string; name: string; symbol: string };
 

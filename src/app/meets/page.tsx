@@ -1,9 +1,19 @@
 "use client";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
+type RestartDefaults = {
+  name?: string;
+  date?: string;
+  location?: string | null;
+  homeTeamId?: string | null;
+  teamIds?: string[];
+};
+const DEFAULT_DATE = "2026-01-15";
+
 type Meet = {
   id: string;
   name: string;
@@ -25,7 +35,7 @@ export default function MeetsPage() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [name, setName] = useState("");
-  const [date, setDate] = useState("2026-01-15");
+  const [date, setDate] = useState(DEFAULT_DATE);
   const [location, setLocation] = useState("");
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -33,8 +43,9 @@ export default function MeetsPage() {
   const [homeTeamId, setHomeTeamId] = useState<string>("");
   const [numMats, setNumMats] = useState(4);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
-  const [matchesPerWrestler, setMatchesPerWrestler] = useState(1);
+  const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{
     id: string;
@@ -42,6 +53,37 @@ export default function MeetsPage() {
     date: string;
   } | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasCreateQuery = searchParams.get("create") === "1";
+  const restartDefaultsParam = searchParams.get("defaults");
+  const hasRestartDefaults = Boolean(restartDefaultsParam);
+  const restartDefaults = useMemo<RestartDefaults | null>(() => {
+    if (!restartDefaultsParam) return null;
+    try {
+      return JSON.parse(decodeURIComponent(restartDefaultsParam)) as RestartDefaults;
+    } catch {
+      return null;
+    }
+  }, [restartDefaultsParam]);
+  const resetFormFields = useCallback(() => {
+    setName("");
+    setDate(DEFAULT_DATE);
+    setLocation("");
+    setTeamIds([]);
+    setHomeTeamId("");
+    setNumMats(4);
+    setAllowSameTeamMatches(false);
+    setMatchesPerWrestler(2);
+    setEditingMeet(null);
+  }, []);
+
+  const closeCreateModal = useCallback((options?: { skipCreateQueryCleanup?: boolean }) => {
+    setIsCreateModalOpen(false);
+    resetFormFields();
+    if (hasCreateQuery && !options?.skipCreateQueryCleanup) {
+      router.replace("/meets");
+    }
+  }, [hasCreateQuery, router, resetFormFields]);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -96,6 +138,8 @@ export default function MeetsPage() {
     });
   }
 
+  const isEditing = Boolean(editingMeet);
+
   async function addMeet() {
     const res = await fetch("/api/meets", {
       method: "POST",
@@ -116,24 +160,44 @@ export default function MeetsPage() {
       const err = payload?.error ?? "Unable to create meet.";
       throw new Error(err);
     }
-    setName("");
-    setLocation("");
-    setTeamIds([]);
-    setHomeTeamId("");
-    setNumMats(4);
-    setAllowSameTeamMatches(false);
-    setMatchesPerWrestler(1);
     await load();
     return payload;
   }
 
-  const handleModalCreate = async () => {
+  async function updateMeet(meetId: string) {
+    const res = await fetch(`/api/meets/${meetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        date,
+        location,
+        homeTeamId: homeTeamId || null,
+        numMats,
+        allowSameTeamMatches,
+        matchesPerWrestler,
+      }),
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = payload?.error ?? "Unable to update meet.";
+      throw new Error(err);
+    }
+    await load();
+    return payload;
+  }
+
+  const handleModalSubmit = async () => {
     try {
-      const created = await addMeet();
-      setIsCreateModalOpen(false);
-      if (created?.id) {
-        router.push(`/meets/${created.id}`);
+      if (editingMeet) {
+        await updateMeet(editingMeet.id);
+      } else {
+        const created = await addMeet();
+        if (created?.id) {
+          router.push(`/meets/${created.id}`);
+        }
       }
+      closeCreateModal({ skipCreateQueryCleanup: true });
     } catch (error) {
       console.error(error);
     }
@@ -169,6 +233,29 @@ export default function MeetsPage() {
 
   useEffect(() => { void load(); }, []);
   useEffect(() => {
+    if (hasCreateQuery) {
+      setIsCreateModalOpen(true);
+    }
+  }, [hasCreateQuery]);
+  useEffect(() => {
+    if (!restartDefaults) return;
+    if (typeof restartDefaults.name === "string") {
+      setName(restartDefaults.name);
+    }
+    if (restartDefaults.date) {
+      setDate(restartDefaults.date);
+    }
+    if (restartDefaults.location !== undefined) {
+      setLocation(restartDefaults.location ?? "");
+    }
+    if (Array.isArray(restartDefaults.teamIds) && restartDefaults.teamIds.length > 0) {
+      setTeamIds(restartDefaults.teamIds);
+    }
+    if (restartDefaults.homeTeamId) {
+      setHomeTeamId(restartDefaults.homeTeamId);
+    }
+  }, [restartDefaults]);
+  useEffect(() => {
     setHomeTeamId((prev) => {
       if (currentTeamId) return currentTeamId;
       if (prev && teamIds.includes(prev)) return prev;
@@ -178,8 +265,10 @@ export default function MeetsPage() {
   useEffect(() => {
     if (!currentTeamId) return;
     setTeamIds(prev => (prev.includes(currentTeamId) ? prev : [currentTeamId, ...prev]));
-    setHomeTeamId(currentTeamId);
-  }, [currentTeamId]);
+    if (!hasRestartDefaults) {
+      setHomeTeamId(currentTeamId);
+    }
+  }, [currentTeamId, hasRestartDefaults]);
 
   const otherTeams = currentTeamId
     ? teams.filter(t => t.id !== currentTeamId)
@@ -190,25 +279,27 @@ export default function MeetsPage() {
   const canManageMeets = role === "COACH" || role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
   const headerTeamName = selectedTeam?.name ?? "Your Team";
-  const headerTeamSymbol = selectedTeam?.symbol ?? "";
+  const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Meet For ${headerTeamName}`;
+  const submitLabel = isEditing ? "Save Changes" : "Create Meet";
   const visibleMeets = useMemo(() => {
     if (role !== "COACH") return meets;
     if (!currentTeamId) return meets;
     return meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId));
   }, [meets, role, currentTeamId]);
   useEffect(() => {
-    if (!homeTeamId || location.trim()) return;
+    if (!homeTeamId || hasRestartDefaults) return;
+    if (location.trim()) return;
     const home = teams.find(t => t.id === homeTeamId);
     if (home?.address) setLocation(home.address);
-  }, [homeTeamId, teams, location]);
+  }, [homeTeamId, teams, location, hasRestartDefaults]);
 
   useEffect(() => {
     if (!homeTeamId) {
-      setLocation("");
+      if (!hasRestartDefaults) {
+        setLocation("");
+      }
       return;
     }
-    const team = teams.find(t => t.id === homeTeamId);
-    setLocation(team?.address ?? "");
     let didCancel = false;
     const fetchMatDefaults = async () => {
       try {
@@ -227,37 +318,18 @@ export default function MeetsPage() {
     return () => {
       didCancel = true;
     };
-  }, [homeTeamId, teams]);
+  }, [homeTeamId, hasRestartDefaults]);
 
   useEffect(() => {
     if (!isCreateModalOpen) return;
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setIsCreateModalOpen(false);
+        closeCreateModal();
       }
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [isCreateModalOpen]);
-
-  const renderTeamLabel = (team?: Team | null, fallback?: string) => {
-    if (!team) {
-      return <span className="team-name-muted">{fallback ?? "No team selected"}</span>;
-    }
-    return (
-      <span className="team-head meets-team-head">
-        {team.hasLogo ? (
-          <img src={`/api/teams/${team.id}/logo/file`} alt={`${team.name} logo`} className="team-logo" />
-        ) : (
-          <span className="color-dot" style={{ backgroundColor: team.color ?? "#ddd" }} />
-        )}
-        <span className="team-meta">
-          <span className="team-symbol" style={{ color: team.color ?? "#000" }}>{team.symbol}</span>
-          <span className="team-name">{team.name}</span>
-        </span>
-      </span>
-    );
-  };
+  }, [isCreateModalOpen, closeCreateModal]);
 
   return (
     <main className="meets">
@@ -592,6 +664,20 @@ export default function MeetsPage() {
           border: 1px solid #c62828;
           color: #fff;
         }
+        .meet-item-actions {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .meet-item-actions .nav-btn {
+          font-size: 12px;
+          padding: 6px 12px;
+          min-width: 90px;
+          text-align: center;
+        }
+        .meet-item-actions .delete-btn {
+          min-width: 100px;
+        }
         @media (max-width: 980px) {
           .grid {
             grid-template-columns: 1fr;
@@ -614,6 +700,7 @@ export default function MeetsPage() {
             className="btn"
             type="button"
             onClick={() => {
+              resetFormFields();
               if (currentTeamId) {
                 setTeamIds([currentTeamId]);
                 setHomeTeamId(currentTeamId);
@@ -651,16 +738,22 @@ export default function MeetsPage() {
                   </div>
                 </div>
                 {canManageMeets && (
+                  <div className="meet-item-actions">
                     <button
                       className="nav-btn"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      onClick={() => router.push(`/meets/${m.id}`)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="nav-btn delete-btn"
                       onClick={() => openDeleteDialog(m)}
                       disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
-                      className="delete-btn nav-btn"
                     >
                       Delete
                     </button>
-                  )}
+                  </div>
+                )}
                 </div>
                 {m.updatedAt && (
                   <div className="muted" style={{ marginTop: 6 }}>
@@ -674,13 +767,12 @@ export default function MeetsPage() {
         </section>
       </div>
       {isCreateModalOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setIsCreateModalOpen(false)}>
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={closeCreateModal}>
           <div className="modal" role="document" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                Create New Meet For {headerTeamName}
-                {headerTeamSymbol ? ` (${headerTeamSymbol})` : ""}
-                {selectedTeam ? (
+                {modalTitle}
+                {!isEditing && selectedTeam ? (
                   selectedTeam.hasLogo ? (
                     <img
                       src={`/api/teams/${selectedTeam.id}/logo/file`}
@@ -747,7 +839,12 @@ export default function MeetsPage() {
                 <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
                 {otherTeams.map(t => (
                   <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                    <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} disabled={!canManageMeets} />
+                    <input
+                      type="checkbox"
+                      checked={teamIds.includes(t.id)}
+                      onChange={() => toggleTeam(t.id)}
+                      disabled={!canManageMeets || isEditing}
+                    />
                     <span style={{ flex: 1 }}>{t.name}</span>
                     {t.hasLogo ? (
                       <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
@@ -790,15 +887,15 @@ export default function MeetsPage() {
               <button
                 className="btn"
                 type="button"
-                onClick={handleModalCreate}
+                onClick={handleModalSubmit}
                 disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
               >
-                Create Meet
+                {submitLabel}
               </button>
               <button
-                className="btn btn-secondary"
+                className="btn"
                 type="button"
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={closeCreateModal}
               >
                 Cancel
               </button>

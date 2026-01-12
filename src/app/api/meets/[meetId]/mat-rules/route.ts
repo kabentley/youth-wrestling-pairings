@@ -14,7 +14,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const rules = await db.teamMatRule.findMany({
     where: { teamId: meet.homeTeamId },
     orderBy: { matIndex: "asc" },
-    select: { matIndex: true, color: true },
+    select: {
+      matIndex: true,
+      color: true,
+      minExperience: true,
+      maxExperience: true,
+      minAge: true,
+      maxAge: true,
+    },
   });
   return NextResponse.json({ rules });
 }

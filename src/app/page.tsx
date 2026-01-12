@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+
+import AppHeader from "@/components/AppHeader";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import AppHeader from "@/components/AppHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function Home() {
   const trimmedLeagueName = league?.name?.trim();
   const leagueName = trimmedLeagueName ?? "Wrestling Scheduler";
   const hasLeagueLogo = Boolean(league?.logoData);
-  const leagueWebsite = league?.website?.trim() || null;
+  const leagueWebsite = league?.website?.trim() ?? null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
   const teamLabel = teamInfo?.symbol ? `${teamInfo.symbol} ${teamInfo.name}` : teamInfo?.name ?? "";
   const teamWebsiteUrl = teamInfo?.website ? teamInfo.website.replace(/\/$/, "") : null;

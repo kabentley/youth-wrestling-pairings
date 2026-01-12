@@ -1,12 +1,11 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-
 import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
-import { revalidatePath } from "next/cache";
 
 const PatchSchema = z.object({
   name: z.string().min(2).optional(),
@@ -126,7 +125,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     await logMeetChange(meetId, user.id, message);
   }
 
-  await revalidatePath(`/meets/${meetId}`);
+  revalidatePath(`/meets/${meetId}`);
 
   return NextResponse.json(updated);
 }
@@ -148,7 +147,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
 
-  await revalidatePath("/meets");
+  revalidatePath("/meets");
 
   return NextResponse.json({ ok: true });
 }

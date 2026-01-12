@@ -1,11 +1,13 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { use, useEffect, useMemo, useRef, useState } from "react";
+
+import MatBoardTab from "./matboard/MatBoardTab";
+import WallChartTab from "./wall/WallChartTab";
+
 import AppHeader from "@/components/AppHeader";
 
-import WallChartTab from "./wall/WallChartTab";
-import MatBoardTab from "./matboard/MatBoardTab";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
@@ -95,9 +97,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
   const [attendanceSort, setAttendanceSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [pairingsSort, setPairingsSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
-  const [currentSort, setCurrentSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
+  const currentSort = useMemo(() => ({ key: "last", dir: "asc" as const }), []);
   const [availableSort, setAvailableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "score", dir: "asc" });
-  const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [editAllowed, setEditAllowed] = useState(true);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
@@ -110,10 +111,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     maxWeightDiffPct: 12,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
-    balanceTeamPairs: true,
-    balancePenalty: 0.25,
-    matchesPerWrestler: 1,
   });
+  const [showRestartModal, setShowRestartModal] = useState(false);
+  const [restartLoading, setRestartLoading] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const [showAttendance, setShowAttendance] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -196,7 +197,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return teams.find(t => t.id === id)?.color ?? "#000000";
   }
   function contrastText(color?: string) {
-    if (!color || !color.startsWith("#")) return "#ffffff";
+    if (!color?.startsWith("#")) return "#ffffff";
     const hex = color.slice(1);
     if (hex.length !== 6) return "#ffffff";
     const r = parseInt(hex.slice(0, 2), 16);
@@ -225,31 +226,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
   function isNotAttending(status: AttendanceStatus | null | undefined) {
     return status === "NOT_COMING" || (status as string) === "ABSENT";
-  }
-  function wName(id: string) {
-    const w = wMap[id];
-    if (!w) return id;
-    const color = teamColor(w.teamId);
-    return (
-      <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
-        <span>{w.first} {w.last} ({teamName(w.teamId)})</span>
-        <span style={{ width: 12, height: 12, background: color, display: "inline-block" }} />
-      </span>
-    );
-  }
-  function daysBetween(a?: string, b?: string) {
-    if (!a || !b) return null;
-    const aDate = new Date(a);
-    const bDate = new Date(b);
-    if (Number.isNaN(aDate.getTime()) || Number.isNaN(bDate.getTime())) return null;
-    return Math.abs(Math.round((aDate.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24)));
-  }
-  function signedDaysBetween(a?: string, b?: string) {
-    if (!a || !b) return null;
-    const aDate = new Date(a);
-    const bDate = new Date(b);
-    if (Number.isNaN(aDate.getTime()) || Number.isNaN(bDate.getTime())) return null;
-    return Math.round((bDate.getTime() - aDate.getTime()) / (1000 * 60 * 60 * 24));
   }
   function ageYears(birthdate?: string) {
     if (!birthdate) return null;
@@ -282,18 +258,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   function sortIndicator(sort: { key: string; dir: "asc" | "desc" }, key: string) {
     if (sort.key !== key) return null;
     return <span style={{ fontSize: 10, marginLeft: 4 }}>{sort.dir === "asc" ? "▲" : "▼"}</span>;
-  }
-  function weightPctDiff(a?: number, b?: number) {
-    if (typeof a !== "number" || typeof b !== "number") return null;
-    const diff = Math.abs(a - b);
-    const base = Math.min(a, b);
-    return base <= 0 ? null : (100 * diff) / base;
-  }
-  function weightPctDiffSigned(a?: number, b?: number) {
-    if (typeof a !== "number" || typeof b !== "number") return null;
-    const diff = b - a;
-    const base = Math.min(a, b);
-    return base <= 0 ? null : (100 * diff) / base;
   }
 
   async function load() {
@@ -333,7 +297,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setSettings(s => ({
         ...s,
         allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
-        matchesPerWrestler: meetJson.matchesPerWrestler ?? s.matchesPerWrestler,
       }));
       setMeetStatus(meetJson.status ?? "DRAFT");
       setLastUpdatedAt(meetJson.updatedAt ?? null);
@@ -451,9 +414,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
-  const unmatched = wrestlers
-    .filter(w => !matchedIds.has(w.id) && !isNotAttending(w.status))
-    .sort((a, b) => a.weight - b.weight);
   const rosterSorted = [...wrestlers].sort((a, b) => {
     const teamA = teamName(a.teamId);
     const teamB = teamName(b.teamId);
@@ -462,7 +422,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (last !== 0) return last;
     return a.first.localeCompare(b.first);
   });
-  const rosterFiltered = activeTeamId ? rosterSorted.filter(w => w.teamId === activeTeamId) : rosterSorted;
   const attendanceTeamId = pairingsTeamId ?? activeTeamId;
   const attendanceRoster = attendanceTeamId
     ? rosterSorted.filter(w => w.teamId === attendanceTeamId)
@@ -593,32 +552,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId === attendanceTeamId;
   const canEditRoster = currentUserRole === "ADMIN" || isAttendanceTeamCoach;
 
-  const conflictBoutIds = (() => {
-    const gap = 6;
-    const byWrestler = new Map<string, { boutId: string; order: number }[]>();
-    for (const b of bouts) {
-      if (!b.order) continue;
-      for (const wid of [b.redId, b.greenId]) {
-        const list = byWrestler.get(wid) ?? [];
-        list.push({ boutId: b.id, order: b.order });
-        byWrestler.set(wid, list);
-      }
-    }
-    const conflicts = new Set<string>();
-    for (const list of byWrestler.values()) {
-      list.sort((a, b) => a.order - b.order);
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          const diff = list[j].order - list[i].order;
-          if (diff > gap) break;
-          conflicts.add(list[i].boutId);
-          conflicts.add(list[j].boutId);
-        }
-      }
-    }
-    return conflicts;
-  })();
-
   const currentMatches = target
     ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
     : [];
@@ -681,35 +614,35 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
-  async function generate() {
+  async function restartMeetSetup() {
     if (!canEdit) return;
-    setMsg("Generating...");
+    setRestartLoading(true);
+    setRestartError(null);
     try {
-      const res = await fetch(`/api/meets/${meetId}/pairings/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          maxAgeGapDays: Number(settings.maxAgeGapDays),
-          maxWeightDiffPct: Number(settings.maxWeightDiffPct),
-          firstYearOnlyWithFirstYear: Boolean(settings.firstYearOnlyWithFirstYear),
-          allowSameTeamMatches: Boolean(settings.allowSameTeamMatches),
-          balanceTeamPairs: Boolean(settings.balanceTeamPairs),
-          balancePenalty: Number(settings.balancePenalty),
-          matchesPerWrestler: Number(settings.matchesPerWrestler),
-        }),
-      });
+    const res = await fetch(`/api/meets/${meetId}`, {
+      method: "DELETE",
+    });
       if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(errText || "Failed to generate pairings");
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to restart meet setup.");
       }
-      const json = await res.json();
-      setMsg(`Created ${json.created} bouts and assigned mats`);
-      await load();
-      await loadActivity();
+      setShowRestartModal(false);
+      const defaults = {
+        name: meetName ?? undefined,
+        date: meetDate ? meetDate.slice(0, 10) : undefined,
+        location: meetLocation ?? undefined,
+        homeTeamId: homeTeamId ?? undefined,
+        teamIds: teams.map(team => team.id),
+      };
+      const params = new URLSearchParams();
+      params.set("create", "1");
+      params.set("defaults", encodeURIComponent(JSON.stringify(defaults)));
+      void router.push(`/meets?${params.toString()}`);
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : "Failed to generate pairings");
+      console.error(err);
+      setRestartError(err instanceof Error ? err.message : "Unable to restart meet setup.");
     } finally {
-      setTimeout(() => setMsg(""), 1500);
+      setRestartLoading(false);
     }
   }
 
@@ -1303,7 +1236,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
       <div className="tab-bar">
         {[
-          { key: "setup", label: "Meet Setup" },
+          { key: "setup", label: "Pairings" },
           { key: "matboard", label: "Mat Assignments" },
           { key: "wall", label: "Wall Charts" },
         ].map(tab => (
@@ -1362,9 +1295,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           const allowSameTeamMatches = e.target.checked;
           setSettings(s => ({ ...s, allowSameTeamMatches }));
         }} /> Include same team</label>
-        <label>Matches per wrestler: <input type="number" min={1} max={5} value={settings.matchesPerWrestler} disabled={!canEdit} onChange={e => setSettings(s => ({ ...s, matchesPerWrestler: Number(e.target.value) }))} style={{ width: 60 }} /></label>
-        <button onClick={generate} disabled={!canEdit}>Generate Pairings</button>
-        {msg && <span>{msg}</span>}
+        <button
+          type="button"
+          className="nav-btn delete-btn"
+          onClick={() => {
+            setRestartError(null);
+            setShowRestartModal(true);
+          }}
+          disabled={!canEdit}
+        >
+          Restart Meet Setup
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, marginTop: 20 }}>
@@ -1726,7 +1667,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               className="match-row-hover"
                               onClick={() => {
                                 if (!canEdit) return;
-                                removeBout(bout.id);
+                                void removeBout(bout.id);
                               }}
                               style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
                             >
@@ -1804,7 +1745,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             className="match-row-hover"
                             onClick={() => {
                               if (!canEdit || !target) return;
-                              addMatch(target.id, o.id);
+                              void addMatch(target.id, o.id);
                             }}
                             style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
                           >
@@ -1941,6 +1882,39 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <button className="nav-btn" onClick={() => setShowAddWrestler(false)}>Cancel</button>
               <button className="nav-btn" onClick={submitAddWrestler} disabled={!canEdit || !attendanceTeamId}>
                 Add Wrestler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showRestartModal && (
+        <div className="modal-backdrop" onClick={() => setShowRestartModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: 0 }}>Restart Meet Setup</h3>
+            <p style={{ margin: "0 0 8px", color: "#2b2b2b", fontSize: 14 }}>
+              Restarting the setup removes every pairing from this meet. Once confirmed all bouts are cleared and you'll be redirected to create a new meet.
+            </p>
+            {restartError && (
+              <div style={{ color: "#b00020", fontSize: 13, marginBottom: 6 }}>
+                {restartError}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button
+                className="nav-btn"
+                onClick={() => setShowRestartModal(false)}
+                type="button"
+                disabled={restartLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className="nav-btn delete-btn"
+                type="button"
+                onClick={restartMeetSetup}
+                disabled={!canEdit || restartLoading}
+              >
+                {restartLoading ? "Restarting..." : "Restart Meet Setup"}
               </button>
             </div>
           </div>

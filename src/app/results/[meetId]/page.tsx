@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import AppHeader from "@/components/AppHeader";
 
 type TeamInfo = { id: string; name: string; symbol?: string | null; color?: string | null };
@@ -116,8 +117,8 @@ export default function EnterResultsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           winnerId: bout.resultWinnerId ?? null,
-          type: bout.resultType?.trim() || null,
-          score: bout.resultScore?.trim() || null,
+          type: bout.resultType?.trim() ?? null,
+          score: bout.resultScore?.trim() ?? null,
           period: bout.resultPeriod ?? null,
           time: bout.resultTime?.trim() || null,
           notes: bout.resultNotes?.trim() || null,

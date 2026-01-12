@@ -1,6 +1,7 @@
 "use client";
 import { useSession } from "next-auth/react";
 import { use, useEffect, useState, type FormEvent } from "react";
+
 import AppHeader from "@/components/AppHeader";
 
 type Wrestler = {

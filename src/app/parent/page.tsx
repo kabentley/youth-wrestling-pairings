@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import AppHeader from "@/components/AppHeader";
 
 type Child = {
@@ -64,7 +65,7 @@ type Profile = {
 export default function ParentPage() {
   const [children, setChildren] = useState<Child[]>([]);
   const [meetGroups, setMeetGroups] = useState<MeetGroup[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [setProfile] = useState<Profile | null>(null);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [msg, setMsg] = useState("");

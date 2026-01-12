@@ -12,7 +12,6 @@ const MeetSchema = z.object({
   date: z.string(),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
-  homeTeamId: z.string().nullable().optional(),
   numMats: z.number().int().min(1).max(10).default(4),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(1),
@@ -33,8 +32,11 @@ export async function POST(req: Request) {
   const { user } = await requireRole("COACH");
   const body = await req.json();
   const parsed = MeetSchema.parse(body);
-  if (parsed.homeTeamId && !parsed.teamIds.includes(parsed.homeTeamId)) {
-    return NextResponse.json({ error: "homeTeamId must be one of teamIds" }, { status: 400 });
+  if (!user.teamId) {
+    return NextResponse.json({ error: "Creator must belong to a team" }, { status: 400 });
+  }
+  if (!parsed.teamIds.includes(user.teamId)) {
+    return NextResponse.json({ error: "Creator's team must be part of the meet" }, { status: 400 });
   }
 
   const meet = await db.meet.create({
@@ -42,7 +44,7 @@ export async function POST(req: Request) {
       name: parsed.name,
       date: new Date(parsed.date),
       location: parsed.location?.trim() || undefined,
-      homeTeamId: parsed.homeTeamId ?? null,
+      homeTeamId: user.teamId,
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
       matchesPerWrestler: parsed.matchesPerWrestler,

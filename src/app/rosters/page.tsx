@@ -1,9 +1,10 @@
 ﻿"use client";
 
-import { useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
@@ -114,7 +115,7 @@ export default function RostersPage() {
   const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
   const hasFieldValidationErrors = useMemo(
-    () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId]?.size ?? 0) > 0),
+    () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId].size) > 0),
     [dirtyRowIds, fieldErrors],
   );
   // Import state
