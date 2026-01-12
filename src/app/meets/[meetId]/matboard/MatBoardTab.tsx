@@ -42,7 +42,7 @@ export default function MatBoardTab({
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
-  const [numMats, setNumMats] = useState(4);
+  const [numMats, setNumMats] = useState(0);
   const [conflictGap] = useState(3);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [msg, setMsg] = useState("");
@@ -67,9 +67,8 @@ export default function MatBoardTab({
   }, [meetId]);
 
   useEffect(() => {
-    if (meetSettings?.numMats) {
-      setNumMats(meetSettings.numMats);
-    }
+    if (!meetSettings) return;
+    setNumMats(typeof meetSettings.numMats === "number" ? meetSettings.numMats : 4);
   }, [meetSettings]);
 
   useEffect(() => {
@@ -197,8 +196,6 @@ export default function MatBoardTab({
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
-    const defaultMats = meetSettings?.numMats ?? 4;
-    setNumMats(defaultMats);
     setDirty(false);
     dirtyRef.current = false;
 
