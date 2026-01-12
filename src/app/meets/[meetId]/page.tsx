@@ -925,6 +925,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           border-radius: 16px;
           box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
         }
+        .setup-control-row {
+          margin-top: 22px;
+        }
         .tab-button {
           background: transparent;
           border: 1px solid transparent;
@@ -1292,7 +1295,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </div>
           )}
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+      <div
+        className="setup-control-row"
+        style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}
+      >
         <label>Max age difference: <input type="number" step="1" value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
           const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
           setSettings(s => ({ ...s, maxAgeGapDays }));

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
@@ -33,6 +34,8 @@ export default function MeetsPage() {
   const [numMats, setNumMats] = useState(4);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(1);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const router = useRouter();
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -88,7 +91,7 @@ export default function MeetsPage() {
   }
 
   async function addMeet() {
-    await fetch("/api/meets", {
+    const res = await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -102,6 +105,11 @@ export default function MeetsPage() {
         matchesPerWrestler,
       }),
     });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = payload?.error ?? "Unable to create meet.";
+      throw new Error(err);
+    }
     setName("");
     setLocation("");
     setTeamIds([]);
@@ -110,7 +118,20 @@ export default function MeetsPage() {
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(1);
     await load();
+    return payload;
   }
+
+  const handleModalCreate = async () => {
+    try {
+      const created = await addMeet();
+      setIsCreateModalOpen(false);
+      if (created?.id) {
+        router.push(`/meets/${created.id}`);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   useEffect(() => { void load(); }, []);
   useEffect(() => {
@@ -124,8 +145,6 @@ export default function MeetsPage() {
     if (!currentTeamId) return;
     setTeamIds(prev => (prev.includes(currentTeamId) ? prev : [currentTeamId, ...prev]));
     setHomeTeamId(currentTeamId);
-    const team = teams.find(t => t.id === currentTeamId);
-    if (team?.address) setLocation(team.address);
   }, [currentTeamId]);
 
   const otherTeams = currentTeamId
@@ -136,6 +155,8 @@ export default function MeetsPage() {
     : teamIds;
   const canManageMeets = role === "COACH" || role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
+  const headerTeamName = selectedTeam?.name ?? "Your Team";
+  const headerTeamSymbol = selectedTeam?.symbol ?? "";
   const visibleMeets = useMemo(() => {
     if (role !== "COACH") return meets;
     if (!currentTeamId) return meets;
@@ -146,6 +167,44 @@ export default function MeetsPage() {
     const home = teams.find(t => t.id === homeTeamId);
     if (home?.address) setLocation(home.address);
   }, [homeTeamId, teams, location]);
+
+  useEffect(() => {
+    if (!homeTeamId) {
+      setLocation("");
+      return;
+    }
+    const team = teams.find(t => t.id === homeTeamId);
+    setLocation(team?.address ?? "");
+    let didCancel = false;
+    const fetchMatDefaults = async () => {
+      try {
+        const res = await fetch(`/api/teams/${homeTeamId}/mat-rules`);
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => null);
+        if (didCancel) return;
+        if (payload && typeof payload.numMats === "number") {
+          setNumMats(payload.numMats);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void fetchMatDefaults();
+    return () => {
+      didCancel = true;
+    };
+  }, [homeTeamId, teams]);
+
+  useEffect(() => {
+    if (!isCreateModalOpen) return;
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsCreateModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [isCreateModalOpen]);
 
   const renderTeamLabel = (team?: Team | null, fallback?: string) => {
     if (!team) {
@@ -194,6 +253,11 @@ export default function MeetsPage() {
           border-bottom: 1px solid var(--line);
           padding-bottom: 14px;
           margin-bottom: 18px;
+        }
+        .mast-actions {
+          display: flex;
+          align-items: center;
+          gap: 12px;
         }
         .brand {
           display: flex;
@@ -295,7 +359,7 @@ export default function MeetsPage() {
         }
         .grid {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+          grid-template-columns: minmax(0, 1fr);
           gap: 18px;
           align-items: start;
         }
@@ -322,6 +386,23 @@ export default function MeetsPage() {
           flex: 1 1 auto;
           min-width: 0;
           display: flex;
+        }
+        .modal-logo {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          object-fit: contain;
+          margin-left: 10px;
+          vertical-align: middle;
+        }
+        .modal-logo-dot {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          display: inline-block;
+          margin-left: 10px;
+          border: 2px solid #fff;
+          box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
         }
         .row {
           display: flex;
@@ -355,6 +436,12 @@ export default function MeetsPage() {
         .btn:disabled {
           opacity: 0.45;
           cursor: not-allowed;
+        }
+        .btn-secondary {
+          background: #f2f5f8;
+          color: var(--ink);
+          border: 1px solid var(--line);
+          font-weight: 600;
         }
         .muted {
           color: var(--muted);
@@ -406,6 +493,43 @@ export default function MeetsPage() {
           gap: 8px;
           flex-wrap: wrap;
         }
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(13, 23, 66, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 100;
+        }
+        .modal {
+          background: #fff;
+          border-radius: 16px;
+          width: min(560px, 100%);
+          padding: 24px;
+          box-shadow: 0 25px 70px rgba(12, 23, 64, 0.3);
+          position: relative;
+          max-height: 90vh;
+          overflow: hidden;
+        }
+        .modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 16px;
+        }
+        .modal-body {
+          max-height: 70vh;
+          overflow-y: auto;
+        }
+        .modal-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+          margin-top: 16px;
+        }
         .meet-item a {
           color: var(--accent);
           text-decoration: none;
@@ -428,121 +552,28 @@ export default function MeetsPage() {
             <div className="tagline">Meets</div>
           </div>
         </div>
+        <div className="mast-actions">
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              if (currentTeamId) {
+                setTeamIds([currentTeamId]);
+                setHomeTeamId(currentTeamId);
+              } else {
+                setTeamIds([]);
+                setHomeTeamId("");
+              }
+              setIsCreateModalOpen(true);
+            }}
+            disabled={!canManageMeets}
+          >
+            Create New Meet
+          </button>
+        </div>
       </header>
 
       <div className="grid">
-        <section className="card">
-          <h2 className="card-title">
-            <span className="card-title-text">Create New Meet for:</span>
-            <span className="team-label-slot">
-              {renderTeamLabel(selectedTeam, "Your Team")}
-            </span>
-          </h2>
-          {!canManageMeets && (
-            <div className="muted" style={{ marginBottom: 10 }}>
-              You do not have permission to create or edit meets.
-            </div>
-          )}
-          <div className="row" style={{ marginBottom: 10 }}>
-            <input
-              className="input"
-              placeholder="Meet name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              disabled={!canManageMeets}
-            />
-          </div>
-          <div className="row">
-            <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
-            <input className="input" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
-          </div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <label className="row">
-              <span className="muted">Number of mats</span>
-              <input
-                className="input input-sm"
-                type="number"
-                min={1}
-                max={10}
-                value={numMats}
-                onChange={e => setNumMats(Number(e.target.value))}
-                disabled={!canManageMeets}
-              />
-            </label>
-            <label className="row">
-              <span className="muted">Matches per wrestler</span>
-              <input
-                className="input input-sm"
-                type="number"
-                min={1}
-                max={5}
-                value={matchesPerWrestler}
-                onChange={e => setMatchesPerWrestler(Number(e.target.value))}
-                disabled={!canManageMeets}
-              />
-            </label>
-          </div>
-          <label className="row" style={{ marginTop: 6 }}>
-            <input
-              type="checkbox"
-              checked={allowSameTeamMatches}
-              onChange={e => setAllowSameTeamMatches(e.target.checked)}
-              disabled={!canManageMeets}
-            />
-            <span className="muted">Attempt same-team matches</span>
-          </label>
-
-          <div className="team-box" style={{ marginTop: 12 }}>
-            <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
-            {otherTeams.map(t => (
-              <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} disabled={!canManageMeets} />
-                <span style={{ flex: 1 }}>{t.name}</span>
-                {t.hasLogo ? (
-                  <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
-                ) : (
-                  <span style={{ color: t.color }}>{t.symbol}</span>
-                )}
-              </label>
-            ))}
-            <div className="muted" style={{ marginTop: 6 }}>
-              Selected other teams: {otherTeamIds.length} (max 3)
-            </div>
-          </div>
-
-          <div className="row" style={{ marginTop: 12 }}>
-            <label className="row">
-              <span className="muted">Home team</span>
-              <select
-                className="select"
-                value={homeTeamId}
-                onChange={e => {
-                  const next = e.target.value;
-                  setHomeTeamId(next);
-                  const t = teams.find(team => team.id === next);
-                  if (t?.address) setLocation(t.address);
-                }}
-                disabled={!canManageMeets}
-              >
-                {teamIds.length === 0 && <option value="">Select teams first</option>}
-                {teamIds.map(id => {
-                  const t = teams.find(team => team.id === id);
-                  return (
-                    <option key={id} value={id}>{t?.symbol ?? id}</option>
-                  );
-                })}
-              </select>
-            </label>
-            <button
-              className="btn"
-              onClick={addMeet}
-              disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
-            >
-              Create Meet
-            </button>
-          </div>
-        </section>
-
         <section className="card">
           <h2 className="card-title">Existing Meets</h2>
           <div className="meet-list">
@@ -572,6 +603,139 @@ export default function MeetsPage() {
           </div>
         </section>
       </div>
+      {isCreateModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setIsCreateModalOpen(false)}>
+          <div className="modal" role="document" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                Create New Meet For {headerTeamName}
+                {headerTeamSymbol ? ` (${headerTeamSymbol})` : ""}
+                {selectedTeam ? (
+                  selectedTeam.hasLogo ? (
+                    <img
+                      src={`/api/teams/${selectedTeam.id}/logo/file`}
+                      alt={`${headerTeamName} logo`}
+                      className="modal-logo"
+                    />
+                  ) : (
+                    <span className="modal-logo-dot" style={{ backgroundColor: selectedTeam.color ?? "#ddd" }} />
+                  )
+                ) : null}
+              </h3>
+            </div>
+            <div className="modal-body">
+              <div className="row" style={{ marginBottom: 10 }}>
+                <input
+                  className="input"
+                  placeholder="Meet name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  disabled={!canManageMeets}
+                />
+              </div>
+              <div className="row">
+                <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
+                <input className="input" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <label className="row">
+                  <span className="muted">Number of mats</span>
+                  <input
+                    className="input input-sm"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={numMats}
+                    onChange={e => setNumMats(Number(e.target.value))}
+                    disabled={!canManageMeets}
+                  />
+                </label>
+                <label className="row">
+                  <span className="muted">Matches per wrestler</span>
+                  <input
+                    className="input input-sm"
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={matchesPerWrestler}
+                    onChange={e => setMatchesPerWrestler(Number(e.target.value))}
+                    disabled={!canManageMeets}
+                  />
+                </label>
+              </div>
+              <label className="row" style={{ marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={allowSameTeamMatches}
+                  onChange={e => setAllowSameTeamMatches(e.target.checked)}
+                  disabled={!canManageMeets}
+                />
+                <span className="muted">Attempt same-team matches</span>
+              </label>
+
+              <div className="team-box" style={{ marginTop: 12 }}>
+                <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
+                {otherTeams.map(t => (
+                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                    <input type="checkbox" checked={teamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} disabled={!canManageMeets} />
+                    <span style={{ flex: 1 }}>{t.name}</span>
+                    {t.hasLogo ? (
+                      <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
+                    ) : (
+                      <span style={{ color: t.color }}>{t.symbol}</span>
+                    )}
+                  </label>
+                ))}
+                <div className="muted" style={{ marginTop: 6 }}>
+                  Selected other teams: {otherTeamIds.length} (max 3)
+                </div>
+              </div>
+
+              <div className="row" style={{ marginTop: 12 }}>
+                <label className="row">
+                  <span className="muted">Home team</span>
+                  <select
+                    className="select"
+                    value={homeTeamId}
+                    onChange={e => {
+                      const next = e.target.value;
+                      setHomeTeamId(next);
+                      const t = teams.find(team => team.id === next);
+                      if (t?.address) setLocation(t.address);
+                    }}
+                    disabled={!canManageMeets}
+                  >
+                    {teamIds.length === 0 && <option value="">Select teams first</option>}
+                    {teamIds.map(id => {
+                      const t = teams.find(team => team.id === id);
+                      return (
+                        <option key={id} value={id}>{t?.symbol ?? id}</option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn"
+                type="button"
+                onClick={handleModalCreate}
+                disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
+              >
+                Create Meet
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { assignMatsForMeet } from "@/lib/assignMats";
 import { db } from "@/lib/db";
+import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
 
@@ -51,6 +53,19 @@ export async function POST(req: Request) {
   });
 
   await logMeetChange(meet.id, user.id, "Meet created.");
+  const pairingSettings = {
+    maxAgeGapDays: 365,
+    maxWeightDiffPct: 12,
+    firstYearOnlyWithFirstYear: true,
+    allowSameTeamMatches: parsed.allowSameTeamMatches,
+    matchesPerWrestler: parsed.matchesPerWrestler,
+    balanceTeamPairs: true,
+    balancePenalty: 0.25,
+  };
+  await generatePairingsForMeet(meet.id, pairingSettings);
+  await logMeetChange(meet.id, user.id, "Auto-generated pairings.");
+  await assignMatsForMeet(meet.id, { numMats: parsed.numMats });
+  await logMeetChange(meet.id, user.id, "Auto-assigned mats.");
 
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });
