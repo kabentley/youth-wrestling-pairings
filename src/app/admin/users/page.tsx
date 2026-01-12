@@ -203,7 +203,7 @@ export default function AdminUsersPage() {
             <option value="PARENT">PARENT</option>
             <option value="TABLE_WORKER">TABLE_WORKER</option>
           </select>
-          <select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={role === "ADMIN"}>
+          <select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
             <option value="">Select team (coach/parent/table worker)</option>
             {teams.map(t => (
               <option key={t.id} value={t.id}>{t.symbol}</option>
@@ -247,7 +247,6 @@ export default function AdminUsersPage() {
                     <select
                       value={u.teamId ?? ""}
                       onChange={(e) => setUserTeam(u.id, e.target.value || null)}
-                      disabled={u.role === "ADMIN"}
                     >
                       <option value="">None</option>
                       {teams.map(t => (

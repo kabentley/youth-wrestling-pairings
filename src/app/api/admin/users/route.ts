@@ -72,9 +72,6 @@ export async function POST(req: Request) {
   const body = parsed.data;
   const email = body.email.trim().toLowerCase();
   const phone = body.phone ? body.phone.trim() : "";
-  if (body.role === "ADMIN" && body.teamId) {
-    return NextResponse.json({ error: "Admins cannot be assigned a team" }, { status: 400 });
-  }
   if (body.role === "COACH" && !body.teamId) {
     return NextResponse.json({ error: "Coaches must be assigned a team" }, { status: 400 });
   }
@@ -91,11 +88,7 @@ export async function POST(req: Request) {
       name: body.name,
       passwordHash,
       role: body.role,
-      ...(body.role === "ADMIN"
-        ? {}
-        : body.teamId
-          ? { team: { connect: { id: body.teamId } } }
-          : {}),
+      ...(body.teamId ? { team: { connect: { id: body.teamId } } } : {}),
       mustResetPassword: true,
     },
     select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },

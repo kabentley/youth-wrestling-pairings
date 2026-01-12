@@ -45,5 +45,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data: { role: parsed.data.role, teamId: user.teamId },
     select: { id: true, username: true, role: true, email: true, name: true, phone: true },
   });
+  if (parsed.data.role === "COACH" && !team.headCoachId) {
+    await db.team.update({
+      where: { id: user.teamId },
+      data: { headCoachId: id },
+    });
+  }
   return NextResponse.json({ updated });
 }

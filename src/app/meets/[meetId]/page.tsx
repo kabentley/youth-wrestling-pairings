@@ -856,45 +856,60 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .tab-bar {
           display: flex;
-          gap: 8px;
+          justify-content: flex-start;
+          gap: 4px;
           margin-bottom: 0;
-          padding: 4px;
-          background: #ffffff;
+          padding: 0 8px;
+          background: #f1f3f7;
           border: 1px solid #d0d5df;
-          border-radius: 16px;
-          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+          border-bottom: none;
+          border-radius: 16px 16px 0 0;
+          box-shadow: inset 0 -1px 0 rgba(13, 23, 66, 0.08);
         }
         .setup-control-row {
           margin-top: 22px;
         }
         .tab-button {
-          background: transparent;
-          border: 1px solid transparent;
-          border-radius: 12px;
-          padding: 10px 24px;
-          font-size: 15px;
+          flex: none;
+          padding: 8px 14px;
+          font-size: 14px;
           font-weight: 600;
           color: #5f6772;
+          background: transparent;
+          border: 1px solid transparent;
+          border-bottom: 1px solid transparent;
+          border-radius: 12px 12px 0 0;
           cursor: pointer;
-          transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+          transition: background 0.2s, color 0.2s, border-color 0.2s;
         }
         .tab-button + .tab-button {
-          margin-left: 0;
+          margin-left: 4px;
         }
         .tab-button:hover:not(.active) {
-          background: #f1f4fb;
+          background: #e5e9f0;
           color: #1e3a82;
-          transform: translateY(-1px);
         }
         .tab-button.active {
-          background: linear-gradient(135deg, #1e88e5, #4dabf5);
-          color: #ffffff;
-          border-color: #1e88e5;
-          box-shadow: 0 10px 20px rgba(30, 136, 229, 0.35);
+          background: #fff;
+          color: #1e2a4b;
+          border-color: #d0d5df;
+          border-bottom-color: #fff;
+          box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.08);
         }
         .tab-button:focus-visible {
           outline: 2px solid var(--accent);
           outline-offset: -2px;
+        }
+        .tab-body {
+          margin-top: -1px;
+          padding-top: 0;
+          border: 1px solid #d0d5df;
+          border-top: none;
+          border-radius: 0 0 16px 16px;
+          background: #fff;
+        }
+        .tab-body > *:first-child {
+          margin-top: 0;
         }
         .meet-heading-row {
           display: flex;
@@ -1255,10 +1270,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         ))}
       </div>
 
-      {activeTab === "setup" && (
-        <>
+      <div className="tab-body">
+        {activeTab === "setup" && (
+          <>
           {meetStatus === "PUBLISHED" && (
-            <div className="notice" style={{ marginTop: 12 }}>
+            <div className="notice">
               Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
             </div>
           )}
@@ -1921,9 +1937,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
       )}
         </>
-      )}
+        )}
 
-      {activeTab === "matboard" && (
+        {activeTab === "matboard" && (
         <section className="matboard-tab">
           {meetStatus === "PUBLISHED" && (
             <div className="notice">
@@ -1936,13 +1952,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             meetStatus={meetStatus}
           />
         </section>
-      )}
+        )}
 
-      {activeTab === "wall" && (
+        {activeTab === "wall" && (
         <section className="wall-chart-section">
           <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} />
         </section>
       )}
+      </div>
     </main>
   );
 }

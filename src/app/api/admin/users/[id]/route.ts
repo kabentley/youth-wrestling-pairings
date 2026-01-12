@@ -24,6 +24,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const data: { role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER"; teamId?: string | null; email?: string; phone?: string | null } = {};
   const finalRole = body.role ?? existing.role;
   const finalTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
+  let teamForHeadCheck: { headCoachId: string | null } | null = null;
+  if (finalTeamId) {
+    teamForHeadCheck = await db.team.findUnique({
+      where: { id: finalTeamId },
+      select: { headCoachId: true },
+    });
+    if (teamForHeadCheck && teamForHeadCheck.headCoachId === id && finalRole !== "COACH") {
+      return NextResponse.json({ error: "Only admins can remove the head coach role." }, { status: 403 });
+    }
+  }
   if (body.email) {
     data.email = body.email.trim().toLowerCase();
   }
@@ -32,12 +42,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (body.role) {
     data.role = body.role;
-    if (body.role === "ADMIN") data.teamId = null;
   }
   if (body.teamId !== undefined) {
-    if (finalRole === "ADMIN" && body.teamId) {
-      return NextResponse.json({ error: "Admins cannot be assigned a team" }, { status: 400 });
-    }
     data.teamId = body.teamId;
   }
   if ((finalRole === "COACH" || finalRole === "PARENT" || finalRole === "TABLE_WORKER") && !finalTeamId) {
@@ -50,6 +56,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data,
     select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
   });
+  if (finalRole === "COACH" && finalTeamId) {
+    const headCoachId = teamForHeadCheck?.headCoachId;
+    if (!headCoachId) {
+      await db.team.update({
+        where: { id: finalTeamId },
+        data: { headCoachId: id },
+      });
+    }
+  }
   return NextResponse.json(user);
 }
 
