@@ -194,6 +194,7 @@ model Bout {
 
   mat       Int?
   order     Int?
+  originalMat Int?
 
   createdAt DateTime @default(now())
 

@@ -112,6 +112,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
   });
+  const [candidateRefreshVersion, setCandidateRefreshVersion] = useState(0);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
@@ -285,6 +286,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setBouts(bJson);
     setTeams(wJson.teams);
     setWrestlers(wJson.wrestlers);
+    setCandidateRefreshVersion((prev) => prev + 1);
 
     const map: Record<string, Wrestler | undefined> = {};
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
@@ -331,6 +333,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canEdit =
     editAllowed && lockState.status === "acquired" && meetStatus === "DRAFT";
   const canChangeStatus = editAllowed && lockState.status === "acquired";
+  const restartDisabled = !canEdit || meetStatus === "PUBLISHED";
+  const handleRestartClick = () => {
+    if (restartDisabled) return;
+    setRestartError(null);
+    setShowRestartModal(true);
+  };
 
   useEffect(() => { void load(); void loadActivity(); }, [meetId]);
   useEffect(() => {
@@ -507,27 +515,28 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setTarget(wMap[selectedPairingId] ?? null);
   }, [selectedPairingId, wMap]);
 
+  const candidateFetchConfig = useMemo(() => ({
+    maxAgeGapDays: settings.maxAgeGapDays,
+    maxWeightDiffPct: settings.maxWeightDiffPct,
+    firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
+    allowSameTeamMatches: settings.allowSameTeamMatches,
+    version: candidateRefreshVersion,
+  }), [
+    settings.maxAgeGapDays,
+    settings.maxWeightDiffPct,
+    settings.firstYearOnlyWithFirstYear,
+    settings.allowSameTeamMatches,
+    candidateRefreshVersion,
+  ]);
+
   useEffect(() => {
     if (!selectedPairingId) {
       setCandidates([]);
       return;
     }
-    void loadCandidates(
-      selectedPairingId,
-      {
-        maxAgeGapDays: settings.maxAgeGapDays,
-        maxWeightDiffPct: settings.maxWeightDiffPct,
-        firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
-        allowSameTeamMatches: settings.allowSameTeamMatches,
-      },
-    );
-  }, [
-    selectedPairingId,
-    settings.maxAgeGapDays,
-    settings.maxWeightDiffPct,
-    settings.firstYearOnlyWithFirstYear,
-    settings.allowSameTeamMatches,
-  ]);
+    const { version, ...query } = candidateFetchConfig;
+    void loadCandidates(selectedPairingId, query);
+  }, [selectedPairingId, candidateFetchConfig]);
   const attendanceCounts = attendanceRoster.reduce(
     (acc, w) => {
       const status = w.status ?? null;
@@ -839,6 +848,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .nav-btn:hover {
           background: #f7f9fb;
+        }
+        .nav-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
+          color: var(--muted);
+          border-color: var(--line);
+          background: transparent;
         }
         .subnav {
           display: flex;
@@ -1245,11 +1261,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <button
               type="button"
               className="nav-btn delete-btn"
-              onClick={() => {
-                setRestartError(null);
-                setShowRestartModal(true);
-              }}
-              disabled={!canEdit}
+              onClick={handleRestartClick}
+              disabled={restartDisabled}
             >
               Restart Meet Setup
             </button>
@@ -1338,7 +1351,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             })}
           </div>
         <div className="pairings-table-wrapper">
-        <table className="pairings-table" cellPadding={6} style={{ borderCollapse: "collapse" }}>
+        <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
             <colgroup>
               <col style={{ width: pairingsColWidths[0] }} />
               <col style={{ width: pairingsColWidths[1] }} />

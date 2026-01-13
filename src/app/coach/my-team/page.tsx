@@ -252,13 +252,16 @@ export default function CoachMyTeamPage() {
   };
 
   const teamSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateTeamRef = useRef<() => Promise<void> | null>(null);
 
   const scheduleTeamSave = () => {
     if (teamSaveTimer.current) {
       clearTimeout(teamSaveTimer.current);
     }
     teamSaveTimer.current = setTimeout(() => {
-      void updateTeam();
+      if (updateTeamRef.current) {
+        void updateTeamRef.current();
+      }
     }, 500);
   };
 
@@ -335,6 +338,10 @@ export default function CoachMyTeamPage() {
       setSavingTeam(false);
     }
   };
+
+  useEffect(() => {
+    updateTeamRef.current = updateTeam;
+  }, [updateTeam]);
 
   const handleFieldKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -534,7 +541,7 @@ export default function CoachMyTeamPage() {
               ) : null}
             </h1>
             <p className="coach-intro">
-              Configure your team’s public details, mat rules, and helper roles from one place.
+              Configure your team’s public details, mat rules, and helper roles.
             </p>
           </div>
           {role === "ADMIN" && (

@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 
+import { assignMatsForMeet } from "@/lib/assignMats";
 import { db } from "@/lib/db";
+import { generatePairingsForMeet, type PairingSettings } from "@/lib/generatePairings";
 
 function d(s: string) {
   return new Date(s);
@@ -71,20 +73,56 @@ async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) 
   return team;
 }
 
-async function createMeet(name: string, date: string, teamIds: string[], updatedById: string) {
+type SeedMeetOptions = {
+  numMats?: number;
+  allowSameTeamMatches?: boolean;
+  matchesPerWrestler?: number;
+};
+
+async function finalizeMeet(meetId: string, options: Required<SeedMeetOptions>) {
+  const pairingSettings: PairingSettings = {
+    maxAgeGapDays: 365,
+    maxWeightDiffPct: 12,
+    firstYearOnlyWithFirstYear: true,
+    allowSameTeamMatches: options.allowSameTeamMatches,
+    matchesPerWrestler: options.matchesPerWrestler,
+    balanceTeamPairs: true,
+    balancePenalty: 0.25,
+  };
+  await generatePairingsForMeet(meetId, pairingSettings);
+  await assignMatsForMeet(meetId, { numMats: options.numMats });
+}
+
+async function createMeet(
+  name: string,
+  date: string,
+  teamIds: string[],
+  updatedById: string,
+  options: SeedMeetOptions = {},
+) {
   const now = new Date();
-  return db.meet.create({
+  const opts = {
+    numMats: options.numMats ?? 4,
+    allowSameTeamMatches: options.allowSameTeamMatches ?? false,
+    matchesPerWrestler: options.matchesPerWrestler ?? 1,
+  };
+  const meet = await db.meet.create({
     data: {
       name,
       date: d(date),
       location: "Local Gym",
       status: "PUBLISHED",
       homeTeamId: teamIds[0],
+      numMats: opts.numMats,
+      allowSameTeamMatches: opts.allowSameTeamMatches,
+      matchesPerWrestler: opts.matchesPerWrestler,
       updatedAt: now,
       updatedById,
       meetTeams: { create: teamIds.map(teamId => ({ teamId })) },
     },
   });
+  await finalizeMeet(meet.id, opts);
+  return meet;
 }
 
 
@@ -104,6 +142,18 @@ async function ensureAdmin() {
   return user;
 }
 
+async function ensureLeague(name: string) {
+  const existing = await db.league.findFirst({ select: { id: true } });
+  if (!existing) {
+    await db.league.create({ data: { name } });
+    return;
+  }
+  await db.league.update({
+    where: { id: existing.id },
+    data: { name },
+  });
+}
+
 async function main() {
   const seedMode = process.env.SEED_MODE ?? "demo"; // demo | empty
   if (seedMode === "empty") {
@@ -115,6 +165,7 @@ async function main() {
   console.log("Seeding demo data...");
   const admin = await ensureAdmin();
   await clearAll();
+  await ensureLeague("ICWL");
 
   const t1 = await createTeam("Tigers", "TIG", rosterA);
   const t2 = await createTeam("Bears", "BEA", rosterB);
