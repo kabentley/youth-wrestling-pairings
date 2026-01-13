@@ -83,6 +83,17 @@ export const adminStyles = `
   }
   .admin-card h3 {
     margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 20px;
+  }
+  .admin-form-grid {
+    display: grid;
+    gap: 16px;
+  }
+  .admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
   .admin-grid {
     display: grid;
@@ -91,13 +102,17 @@ export const adminStyles = `
   }
   .admin input,
   .admin select {
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--line);
     border-radius: 4px;
     padding: 8px 10px;
     font-size: 14px;
   }
   .admin-label {
-    font-size: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
     color: var(--muted);
   }
   .admin-row {
@@ -183,9 +198,20 @@ export const adminStyles = `
     gap: 10px;
     margin-top: 12px;
   }
-  .color-cell,
+  .color-cell {
+    position: relative;
+  }
   .logo-cell {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
   }
   .logo-button {
     display: inline-flex;
@@ -213,6 +239,56 @@ export const adminStyles = `
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.12);
     display: grid;
     gap: 8px;
+  }
+  .reset-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 60;
+  }
+  .reset-modal {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 24px;
+    width: min(440px, 100%);
+    box-shadow: 0 20px 40px rgba(13, 23, 66, 0.25);
+  }
+  .reset-modal h4 {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+  .reset-message {
+    margin: 0 0 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .reset-confirm-term {
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  .reset-confirm-input {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 6px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .reset-error {
+    color: #b00020;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .reset-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
   }
   .color-actions {
     display: flex;

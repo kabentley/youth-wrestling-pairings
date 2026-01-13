@@ -30,6 +30,10 @@ export default function LeagueSection() {
   const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string>>({});
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [isResetting, setIsResetting] = useState(false);
   const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -211,64 +215,121 @@ export default function LeagueSection() {
     scheduleColorSave(teamId, color);
   }
 
+  function closeResetModal() {
+    setShowResetModal(false);
+    setResetConfirm("");
+    setResetError("");
+  }
+
+  async function confirmYearlyReset() {
+    if (resetConfirm.trim().toUpperCase() !== "RESET") {
+      setResetError('Type "RESET" to confirm.');
+      return;
+    }
+    setIsResetting(true);
+    setResetError("");
+    try {
+      const res = await fetch("/api/admin/reset", { method: "POST" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error ?? "Unable to reset league data.");
+      }
+      await load();
+      setMsg("League data cleared for the new year.");
+      closeResetModal();
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : "Unable to reset league data.");
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!showResetModal) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isResetting) {
+        closeResetModal();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [showResetModal, isResetting]);
 
   return (
     <>
       <div className="admin-card">
         <h3>League</h3>
-        <div className="admin-row">
-          <label className="admin-label" htmlFor="league-name">
-            League Name
-          </label>
-          <input
-            id="league-name"
-            value={leagueName}
-            onChange={(e) => {
-              const next = e.target.value;
-              setLeagueName(next);
-              scheduleLeagueSave(next, leagueWebsite);
-            }}
-            placeholder="League name"
-          />
-        </div>
-        <div className="admin-row">
-          <label className="admin-label" htmlFor="league-website">
-            League Website
-          </label>
-          <input
-            id="league-website"
-            value={leagueWebsite}
-            onChange={(e) => {
-              const next = e.target.value;
-              setLeagueWebsite(next);
-              scheduleLeagueSave(leagueName, next);
-            }}
-            placeholder="https://league.example.com"
-            style={{ minWidth: 360 }}
-          />
-        </div>
-        <div className="admin-row admin-row-tight">
-          <div className="logo-cell">
-            <input
-              id="league-logo-file"
-              className="file-input"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              onChange={(e) => {
-                void uploadLeagueLogo(e.target.files?.[0] ?? null);
-                e.currentTarget.value = "";
-              }}
-            />
-            <label className="logo-button" htmlFor="league-logo-file">
-              {leagueHasLogo ? (
-                <img src={`/api/league/logo/file?v=${leagueLogoVersion}`} alt="League logo" className="admin-logo" />
-              ) : (
-                <span className="admin-muted">Set Logo</span>
-              )}
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-name">
+              League Name
             </label>
+            <input
+              id="league-name"
+              value={leagueName}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLeagueName(next);
+                scheduleLeagueSave(next, leagueWebsite);
+              }}
+              placeholder="League name"
+            />
+          </div>
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-website">
+              League Website
+            </label>
+            <input
+              id="league-website"
+              value={leagueWebsite}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLeagueWebsite(next);
+                scheduleLeagueSave(leagueName, next);
+              }}
+              placeholder="https://league.example.com"
+            />
+          </div>
+          <div className="admin-field admin-row-tight">
+            <span className="admin-label">League Logo</span>
+            <div className="logo-row">
+              <div className="logo-cell">
+                <input
+                  id="league-logo-file"
+                  className="file-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={(e) => {
+                    void uploadLeagueLogo(e.target.files?.[0] ?? null);
+                    e.currentTarget.value = "";
+                  }}
+                />
+                <label className="logo-button" htmlFor="league-logo-file">
+                  {leagueHasLogo ? (
+                    <img src={`/api/league/logo/file?v=${leagueLogoVersion}`} alt="League logo" className="admin-logo" />
+                  ) : (
+                    <span className="admin-muted">Set Logo</span>
+                  )}
+                </label>
+              </div>
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger"
+                onClick={() => {
+                  setShowResetModal(true);
+                  setResetConfirm("");
+                  setResetError("");
+                }}
+              >
+                Reset For New Year
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -414,6 +475,57 @@ export default function LeagueSection() {
           </table>
         </div>
       </div>
+      {showResetModal && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={() => {
+            if (isResetting) return;
+            closeResetModal();
+          }}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h4 id="reset-title">Reset For New Year</h4>
+            <p className="reset-message">
+              This will permanently delete every meet and clear all team rosters.
+            </p>
+            <p className="reset-message">
+              Type{" "}
+              <span className="reset-confirm-term">
+                RESET
+              </span>{" "}
+              to confirm.
+            </p>
+            <input
+              className="reset-confirm-input"
+              placeholder="Type RESET to confirm"
+              value={resetConfirm}
+              onChange={(e) => setResetConfirm(e.target.value)}
+              disabled={isResetting}
+            />
+            {resetError && <div className="reset-error">{resetError}</div>}
+            <div className="reset-actions">
+              <button type="button" className="admin-btn admin-btn-ghost" onClick={closeResetModal} disabled={isResetting}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger"
+                onClick={confirmYearlyReset}
+                disabled={isResetting || resetConfirm.trim().toUpperCase() !== "RESET"}
+              >
+                {isResetting ? "Resetting..." : "Confirm Reset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

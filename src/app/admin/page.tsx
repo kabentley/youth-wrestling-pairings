@@ -6,7 +6,7 @@ import AdminTabs, { AdminTabKey } from "./AdminTabs";
 import { adminStyles } from "./adminStyles";
 
 type Props = {
-  searchParams?: { tab?: string };
+  searchParams?: Promise<{ tab?: string } | undefined>;
 };
 
 export default async function AdminHome({ searchParams }: Props) {
@@ -43,7 +43,8 @@ export default async function AdminHome({ searchParams }: Props) {
     );
   }
 
-  const requestedTab = (searchParams?.tab === "league" ? "league" : "users") as AdminTabKey;
+  const resolvedSearchParams = await searchParams;
+  const requestedTab = (resolvedSearchParams?.tab === "league" ? "league" : "users") as AdminTabKey;
 
   return (
     <main className="admin">

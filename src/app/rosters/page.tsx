@@ -145,6 +145,11 @@ export default function RostersPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showTeamSelector]);
+  const importTeamLabel = useMemo(() => {
+    const team = teams.find(t => t.id === importTeamId);
+    if (!team) return "no team selected";
+    return `${team.name} (${team.symbol})`;
+  }, [importTeamId, teams]);
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
@@ -223,6 +228,19 @@ export default function RostersPage() {
     setImportTeamId(teamQueryParam);
     setShowTeamSelector(false);
   }, [teamQueryParam, teams, selectedTeamId, hasDirtyChanges]);
+
+  useEffect(() => {
+    if (!showImportModal) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowImportModal(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showImportModal]);
 
   async function onChooseFile(f: File | null) {
     setFile(f);
@@ -1496,9 +1514,6 @@ export default function RostersPage() {
           position: relative;
         }
         .import-modal-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
           margin-bottom: 12px;
         }
         .import-modal-body {
@@ -1509,14 +1524,8 @@ export default function RostersPage() {
           display: flex;
           justify-content: flex-end;
           margin-top: 14px;
-        }
-        .modal-close {
-          border: none;
-          background: transparent;
-          font-size: 20px;
-          line-height: 1;
-          cursor: pointer;
-          color: var(--muted);
+          gap: 12px;
+          flex-wrap: wrap;
         }
         .import-preview table {
           width: 100%;
@@ -1654,7 +1663,7 @@ export default function RostersPage() {
                         type="button"
                         className="btn btn-ghost btn-small header-import"
                         onClick={() => setShowImportModal(true)}
-                        disabled={hasDirtyChanges}
+                        disabled={hasDirtyChanges || !selectedTeamId}
                       >
                         Import Roster
                       </button>
@@ -1789,15 +1798,9 @@ export default function RostersPage() {
         >
           <div className="import-modal" onClick={event => event.stopPropagation()}>
             <div className="import-modal-header">
-              <h3 id="import-title">Import / Update CSV</h3>
-              <button
-                type="button"
-                className="modal-close"
-                aria-label="Close import dialog"
-                onClick={() => setShowImportModal(false)}
-              >
-                ×
-              </button>
+              <h3 id="import-title">
+                Import roster for <strong>{importTeamLabel}</strong>
+              </h3>
             </div>
             <div className="import-modal-body">
               <label className="muted">CSV file</label>
@@ -1845,6 +1848,13 @@ John,Smith,55,2014-11-02,0,2
               </details>
             </div>
             <div className="import-modal-footer">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={() => setShowImportModal(false)}
+              >
+                Cancel
+              </button>
               <button
                 className="btn"
                 type="button"

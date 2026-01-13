@@ -130,11 +130,20 @@ main {
   border-color: var(--line);
 }
 
-.btn:hover,
-.nav-btn:hover,
-.app-header button:hover {
+.btn:not(.btn-ghost):hover,
+.nav-btn:not(.secondary):hover,
+.app-header button:not(.secondary):hover {
+  background: color-mix(in srgb, var(--accent) 80%, #fff 20%);
+  border-color: color-mix(in srgb, var(--accent) 70%, #fff 30%);
+  color: #fff;
+}
+
+.btn-ghost:hover,
+.nav-btn.secondary:hover,
+.app-header button.secondary:hover {
   border-color: var(--line);
   background: #f7f9fb;
+  color: var(--ink);
 }
 
 .card,
