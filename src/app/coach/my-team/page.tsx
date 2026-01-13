@@ -69,7 +69,7 @@ const headerLinks = [
   { href: "/", label: "Home" },
   { href: "/rosters", label: "Rosters" },
   { href: "/meets", label: "Meets", minRole: "COACH" as const },
-  { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
+  { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   { href: "/parent", label: "My Wrestlers" },
 ];
 
@@ -869,7 +869,7 @@ export default function CoachMyTeamPage() {
 
 const coachStyles = `
   :root {
-    --bg: #f5f6f8;
+    --bg: #eef1f4;
     --card: #fff;
     --ink: #1d232b;
     --muted: #5a6673;
@@ -884,8 +884,8 @@ const coachStyles = `
     font-family: "Source Sans 3", Arial, sans-serif;
   }
   .coach-shell {
-    max-width: 1100px;
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
   }
   .coach h1 {
     margin: 0;

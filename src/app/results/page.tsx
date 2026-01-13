@@ -24,6 +24,7 @@ export default function ResultsLandingPage() {
     { href: "/rosters", label: "Rosters" },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
+    { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/account", label: "Account" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];

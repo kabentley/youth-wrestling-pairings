@@ -139,6 +139,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
+    { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 

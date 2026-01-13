@@ -148,10 +148,11 @@ export default function RostersPage() {
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
-    { href: "/parent", label: "My Wrestlers" },
-    { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
-  ];
+      { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
+      { href: "/parent", label: "My Wrestlers" },
+      { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
+      { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
+    ];
 
   const redirectToLogin = () => {
     const callbackUrl = pathname ?? "/rosters";
