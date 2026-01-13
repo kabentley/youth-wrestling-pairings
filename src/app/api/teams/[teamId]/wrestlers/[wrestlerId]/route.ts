@@ -77,3 +77,24 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
 
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(_: Request, { params }: { params: Promise<{ teamId: string; wrestlerId: string }> }) {
+  const { teamId, wrestlerId } = await params;
+  await requireTeamCoach(teamId);
+  const wrestler = await db.wrestler.findUnique({
+    where: { id: wrestlerId },
+    select: { id: true, teamId: true },
+  });
+  if (!wrestler || wrestler.teamId !== teamId) {
+    return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
+  }
+  await db.$transaction([
+    db.bout.deleteMany({
+      where: {
+        OR: [{ redId: wrestlerId }, { greenId: wrestlerId }],
+      },
+    }),
+    db.wrestler.delete({ where: { id: wrestlerId } }),
+  ]);
+  return NextResponse.json({ ok: true });
+}

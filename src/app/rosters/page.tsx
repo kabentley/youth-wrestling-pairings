@@ -27,7 +27,6 @@ type EditableWrestler = {
   experienceYears: string;
   skill: string;
   active: boolean;
-  isPendingSave?: boolean;
   isNew?: boolean;
 };
 type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
@@ -128,6 +127,11 @@ export default function RostersPage() {
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const headerTeamButtonRef = useRef<HTMLButtonElement | null>(null);
   const teamSelectRef = useRef<HTMLDivElement | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wrestler: EditableWrestler } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<EditableWrestler | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingWrestler, setIsDeletingWrestler] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const daysPerYear = 365;
   useEffect(() => {
     if (!showTeamSelector) return undefined;
@@ -146,6 +150,21 @@ export default function RostersPage() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [showTeamSelector]);
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
+  }, []);
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+        setShowDeleteModal(false);
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, []);
   const importTeamLabel = useMemo(() => {
     const team = teams.find(t => t.id === importTeamId);
     if (!team) return "no team selected";
@@ -507,12 +526,46 @@ export default function RostersPage() {
     if (!row.isNew) return;
     setEditableRows(rows => {
       const mapped = rows.map(r =>
-        r.id === row.id ? { ...r, isPendingSave: true } : r,
+        r.id === row.id ? { ...r, isNew: false } : r,
       );
       return [createEmptyRow(), ...mapped];
     });
-    markRowDirtyState({ ...row, isPendingSave: true });
+    markRowDirtyState({ ...row, isNew: false });
     setRosterMsg("New roster change ready. Save changes to persist.");
+  };
+
+  const openDeleteModal = (row: EditableWrestler) => {
+    setDeleteError("");
+    setDeleteTarget(row);
+    setShowDeleteModal(true);
+    setContextMenu(null);
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setDeleteTarget(null);
+    setDeleteError("");
+    setContextMenu(null);
+  };
+
+  const confirmDeleteWrestler = async () => {
+    if (!selectedTeamId || !deleteTarget) return;
+    setIsDeletingWrestler(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/teams/${selectedTeamId}/wrestlers/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(json?.error ?? "Unable to delete wrestler.");
+      }
+      await loadRoster(selectedTeamId);
+      setRosterMsg(`${deleteTarget.first} ${deleteTarget.last} removed; bouts cleared.`);
+      cancelDelete();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Unable to delete wrestler.");
+    } finally {
+      setIsDeletingWrestler(false);
+    }
   };
 
   const saveAllChanges = async () => {
@@ -636,6 +689,12 @@ export default function RostersPage() {
     });
     return rows;
   }, [filteredEditableRows, sortConfig]);
+
+  const handleRowContextMenu = (event: ReactMouseEvent<HTMLTableRowElement>, row: EditableWrestler) => {
+    if (!canEditRoster || row.isNew) return;
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY, wrestler: row });
+  };
 
   useEffect(() => {
     const rows: EditableWrestler[] = roster.map(w => ({
@@ -807,6 +866,7 @@ export default function RostersPage() {
       <tr
         key={row.id}
         className={`spreadsheet-row${isNewRow ? " new-row" : ""}${rowDirty ? " dirty-row" : ""}${row.active ? "" : " inactive-row"}${hasErrors ? " error-row" : ""}`}
+        onContextMenu={event => handleRowContextMenu(event, row)}
       >
         <td>
           <input
@@ -887,7 +947,7 @@ export default function RostersPage() {
           />
         </td>
         <td>
-          {isNewRow && !row.isPendingSave ? (
+          {isNewRow ? (
             <button
               type="button"
               className="btn btn-small"
@@ -1551,6 +1611,27 @@ export default function RostersPage() {
           gap: 12px;
           flex-wrap: wrap;
         }
+        .roster-context-menu {
+          position: fixed;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          box-shadow: 0 16px 30px rgba(0, 0, 0, 0.25);
+          z-index: 40;
+        }
+        .roster-context-menu button {
+          border: none;
+          background: transparent;
+          padding: 10px 16px;
+          width: 100%;
+          text-align: left;
+          color: var(--ink);
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .roster-context-menu button:hover {
+          background: #f2f5f8;
+        }
         .import-preview table {
           width: 100%;
           border-collapse: collapse;
@@ -1886,6 +1967,59 @@ John,Smith,55,2014-11-02,0,2
                 disabled={!file || !importTeamId}
               >
                 Import / Update CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {contextMenu && (() => {
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const menuWidth = 220;
+        const menuHeight = 48;
+        const left = viewportWidth ? Math.min(contextMenu.x, viewportWidth - menuWidth) : contextMenu.x;
+        const top = viewportHeight ? Math.min(contextMenu.y, viewportHeight - menuHeight) : contextMenu.y;
+        return (
+          <div
+            className="roster-context-menu"
+            style={{ left, top }}
+            onClick={event => event.stopPropagation()}
+            onContextMenu={event => event.preventDefault()}
+          >
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => openDeleteModal(contextMenu.wrestler)}
+            >
+              Delete {contextMenu.wrestler.first} {contextMenu.wrestler.last}
+            </button>
+          </div>
+        );
+      })()}
+
+      {showDeleteModal && deleteTarget && (
+        <div className="import-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-wrestler-title" onClick={cancelDelete}>
+          <div className="import-modal" onClick={event => event.stopPropagation()}>
+            <div className="import-modal-header">
+              <h3 id="delete-wrestler-title">Delete {deleteTarget.first} {deleteTarget.last}?</h3>
+            </div>
+            <div className="import-modal-body">
+              <p>
+                This will permanently remove this wrestler and delete every bout from all existing or previous meets that include them.
+              </p>
+              {deleteError && <div className="error-msg">{deleteError}</div>}
+            </div>
+            <div className="import-modal-footer">
+              <button className="btn btn-ghost" type="button" onClick={cancelDelete} disabled={isDeletingWrestler}>
+                Cancel
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={confirmDeleteWrestler}
+                disabled={isDeletingWrestler}
+              >
+                {isDeletingWrestler ? "Deleting..." : `Delete ${deleteTarget.first} ${deleteTarget.last}`}
               </button>
             </div>
           </div>
