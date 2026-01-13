@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
@@ -262,7 +262,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return <span style={{ fontSize: 10, marginLeft: 4 }}>{sort.dir === "asc" ? "▲" : "▼"}</span>;
   }
 
-  async function load() {
+  const load = useCallback(async () => {
     const [bRes, wRes, mRes, meRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/pairings`),
       fetch(`/api/meets/${meetId}/wrestlers`),
@@ -312,9 +312,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCurrentUserRole(meJson?.role ?? null);
       setCurrentUserTeamId(meJson?.teamId ?? null);
     }
-  }
+  }, [meetId]);
 
-  async function loadActivity() {
+  const loadActivity = useCallback(async () => {
     const [changesRes, commentsRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/changes`),
       fetch(`/api/meets/${meetId}/comments`),
@@ -327,7 +327,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const commentsJson = await commentsRes.json().catch(() => []);
       setComments(Array.isArray(commentsJson) ? commentsJson : []);
     }
-  }
+  }, [meetId]);
 
 
   const canEdit =
@@ -340,7 +340,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setShowRestartModal(true);
   };
 
-  useEffect(() => { void load(); void loadActivity(); }, [meetId]);
+  useEffect(() => { void load(); void loadActivity(); }, [load, loadActivity]);
+  useEffect(() => {
+    const handleFocus = () => {
+      void load();
+      void loadActivity();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [load, loadActivity]);
   useEffect(() => {
     if (teams.length === 0) {
       if (activeTeamId) setActiveTeamId(null);
@@ -1087,8 +1097,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .pairings-table-wrapper {
           margin-top: 12px;
-          max-height: calc(20 * 40px);
+          max-height: calc(15 * 40px + 48px);
           overflow-y: auto;
+        }
+        .pairings-table thead th {
+          position: sticky;
+          top: 0;
+          background: var(--card);
+          z-index: 2;
         }
         .col-resizer {
           position: absolute;

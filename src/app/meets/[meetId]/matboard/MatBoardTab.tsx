@@ -329,8 +329,9 @@ export default function MatBoardTab({
     dirtyRef.current = true;
   }
 
-  function computeConflictCount(matLists: Bout[][], gap: number) {
-    if (gap <= 0) return 0;
+  function computeConflictSummary(matLists: Bout[][], gap: number) {
+    const counts = Array(gap + 1).fill(0);
+    if (gap < 0) return counts;
     const byWrestler = new Map<string, number[]>();
     for (const list of matLists) {
       list.forEach((b, idx) => {
@@ -343,18 +344,27 @@ export default function MatBoardTab({
         byWrestler.set(b.greenId, green);
       });
     }
-    let conflicts = 0;
     for (const orders of byWrestler.values()) {
       orders.sort((a, b) => a - b);
       for (let i = 0; i < orders.length; i++) {
         for (let j = i + 1; j < orders.length; j++) {
           const diff = orders[j] - orders[i];
           if (diff > gap) break;
-          conflicts += 1;
+          counts[diff] += 1;
         }
       }
     }
-    return conflicts;
+    return counts;
+  }
+
+  function compareConflictSummary(a: number[], b: number[]) {
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      if (a[i] !== b[i]) {
+        return a[i] - b[i];
+      }
+    }
+    return a.length - b.length;
   }
 
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
@@ -364,7 +374,7 @@ export default function MatBoardTab({
     function scoreCandidate(candidate: Bout[]) {
       const matsCopy = allMats.map(m => m.slice());
       if (matIndex >= 0) matsCopy[matIndex] = candidate;
-      return computeConflictCount(matsCopy, gap);
+      return computeConflictSummary(matsCopy, gap);
     }
 
     let best = base;
@@ -377,7 +387,7 @@ export default function MatBoardTab({
         const [moved] = candidate.splice(i, 1);
         candidate.splice(j, 0, moved);
         const score = scoreCandidate(candidate);
-        if (score < bestScore) {
+        if (compareConflictSummary(score, bestScore) < 0) {
           bestScore = score;
           best = candidate;
         }
@@ -628,34 +638,35 @@ export default function MatBoardTab({
         }
         .bout {
           border: 1px solid #eee;
-          border-radius: 8px;
-          padding: 10px;
+          border-radius: 6px;
+          padding: 1px;
           background: #fff;
           cursor: grab;
-          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 1px;
         }
         .bout.dragging {
           opacity: 0.6;
         }
         .bout-row {
           display: grid;
-          grid-template-columns: 54px 1fr 1fr;
-          gap: 10px;
-          font-size: 14px;
+          grid-template-columns: 36px 1fr 1fr;
+          gap: 2px;
+          font-size: 11px;
           opacity: 0.9;
           align-items: center;
         }
         .bout-row span.number {
-          font-size: 18px;
+          font-size: 14px;
           font-weight: 700;
           color: #1d232b;
           text-align: center;
           border: 2px solid transparent;
-          border-radius: 8px;
-          padding: 4px 0;
+          border-radius: 6px;
+          padding: 2px 0;
+          min-width: 36px;
         }
         .bout-row span {
           display: block;
@@ -774,6 +785,10 @@ export default function MatBoardTab({
                   const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
                   const isRedHighlighted = highlightWrestlerId === b.redId;
                   const isGreenHighlighted = highlightWrestlerId === b.greenId;
+                  const originalMatColor =
+                    b.originalMat != null && b.originalMat !== matNum
+                      ? matRuleColors[b.originalMat] ?? "#f2f2f2"
+                      : matColor;
                   return (
                     <div
                       key={b.id}
@@ -816,13 +831,13 @@ export default function MatBoardTab({
                       <div className="bout-row">
                           <span
                             className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
-                            style={{
-                              backgroundColor: hexToRGBA(matColor, 0.15),
-                              borderColor:
-                                b.originalMat != null && b.originalMat !== matNum ? matColor : "transparent",
-                            }}
-                          >
-                            {formatBoutNumber(matNum, b.order, index + 1)}
+                          style={{
+                            backgroundColor: hexToRGBA(originalMatColor, 0.15),
+                            borderColor:
+                              b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent",
+                          }}
+                        >
+                          {formatBoutNumber(matNum, b.order, index + 1)}
                           </span>
                         <span
                           data-role="wrestler"
