@@ -27,6 +27,7 @@ type EditableWrestler = {
   experienceYears: string;
   skill: string;
   active: boolean;
+  isPendingSave?: boolean;
   isNew?: boolean;
 };
 type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
@@ -115,7 +116,7 @@ export default function RostersPage() {
   const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
   const hasFieldValidationErrors = useMemo(
-    () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId].size) > 0),
+    () => [...dirtyRowIds].some(rowId => (fieldErrors[rowId]?.size ?? 0) > 0),
     [dirtyRowIds, fieldErrors],
   );
   // Import state
@@ -502,6 +503,18 @@ export default function RostersPage() {
     return true;
   };
 
+  const prepareNewRowForSave = (row: EditableWrestler) => {
+    if (!row.isNew) return;
+    setEditableRows(rows => {
+      const mapped = rows.map(r =>
+        r.id === row.id ? { ...r, isPendingSave: true } : r,
+      );
+      return [createEmptyRow(), ...mapped];
+    });
+    markRowDirtyState({ ...row, isPendingSave: true });
+    setRosterMsg("New roster change ready. Save changes to persist.");
+  };
+
   const saveAllChanges = async () => {
     if (!selectedTeamId || dirtyRowIds.size === 0) return;
     if (hasFieldValidationErrors) {
@@ -729,9 +742,9 @@ export default function RostersPage() {
   });
 
   const handleNewRowInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>, row: EditableWrestler) => {
-    if (event.key !== "Enter" || !row.isNew) return;
+    if (event.key !== "Enter" || !row.isNew || !isRowDirty(row)) return;
     event.preventDefault();
-    addEmptyRow();
+    prepareNewRowForSave(row);
   };
 
   const fieldRefs = useRef<Map<string, HTMLInputElement | HTMLSelectElement>>(new Map());
@@ -874,17 +887,28 @@ export default function RostersPage() {
           />
         </td>
         <td>
-          <select
-            className={statusClass}
-            value={row.active ? "active" : "inactive"}
-            onChange={e => handleFieldChange(row.id, "active", e.target.value === "active")}
-            disabled={!canEditRoster}
-            ref={el => registerFieldRef(row.id, "active", el)}
-            onKeyDown={e => handleInputKeyDown(e, row, "active")}
-          >
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
+          {isNewRow && !row.isPendingSave ? (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => prepareNewRowForSave(row)}
+              disabled={!rowDirty || hasErrors}
+            >
+              Add
+            </button>
+          ) : (
+            <select
+              className={statusClass}
+              value={row.active ? "active" : "inactive"}
+              onChange={e => handleFieldChange(row.id, "active", e.target.value === "active")}
+              disabled={!canEditRoster}
+              ref={el => registerFieldRef(row.id, "active", el)}
+              onKeyDown={e => handleInputKeyDown(e, row, "active")}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          )}
         </td>
       </tr>
     );
