@@ -160,7 +160,7 @@ export const adminStyles = `
   .admin-table {
     border: 1px solid var(--line);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible;
     background: #fff;
     margin-top: 12px;
   }
@@ -200,6 +200,8 @@ export const adminStyles = `
   }
   .color-cell {
     position: relative;
+    overflow: visible;
+    z-index: 2;
   }
   .logo-cell {
     position: relative;

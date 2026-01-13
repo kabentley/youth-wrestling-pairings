@@ -4,11 +4,18 @@ const parseList = (value) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+const dumpAllowedOrigins = (value) => {
+  console.log("ALLOWED_DEV_ORIGINS raw:", value);
+  const parsed = parseList(value);
+  console.log("ALLOWED_DEV_ORIGINS parsed:", parsed);
+  return parsed;
+};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   allowedDevOrigins:
     typeof process.env.ALLOWED_DEV_ORIGINS === "string"
-      ? parseList(process.env.ALLOWED_DEV_ORIGINS)
+      ? dumpAllowedOrigins(process.env.ALLOWED_DEV_ORIGINS)
       : undefined,
 };
 export default nextConfig;

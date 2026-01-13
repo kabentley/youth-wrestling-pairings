@@ -102,7 +102,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([120, 120]);
-  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 90, 90, 55, 55, 90]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 90]);
   const [currentMatchColWidths, setCurrentMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90, 90]);
   const [availableMatchColWidths, setAvailableMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90]);
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
@@ -1091,6 +1091,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .pairings-table tbody tr:hover {
           background: #f7f9fb;
         }
+        .pairings-table th,
+        .pairings-table td,
+        .attendance-table th,
+        .attendance-table td {
+          padding: 3px 6px;
+          line-height: 1.2;
+          font-size: 14px;
+        }
         .match-row-hover:hover {
           box-shadow: 0 0 0 2px #1e88e5 inset;
           background: #f2f8ff;
@@ -1113,7 +1121,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .pairings-table-wrapper {
           margin-top: 12px;
-          max-height: calc(15 * 40px + 48px);
+          max-height: calc(23 * 25px + 48px);
           overflow-y: auto;
         }
         .pairings-table thead th {

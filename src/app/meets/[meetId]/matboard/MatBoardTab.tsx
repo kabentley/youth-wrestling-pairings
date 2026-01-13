@@ -585,19 +585,21 @@ export default function MatBoardTab({
       <style>{`
         .matboard-tab {
           background: #fff;
-          border-radius: 12px;
-          padding: 16px;
-          box-shadow: 0 20px 45px rgba(0, 0, 0, 0.08);
+          border-radius: 10px;
+          padding: 8px;
+          box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 6px;
           position: relative;
           z-index: 0;
+          font-size: 13px;
         }
         .matboard-tab h3 {
           margin: 0;
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.5px;
+          font-size: 20px;
         }
         .matboard-header {
           display: flex;
@@ -674,17 +676,17 @@ export default function MatBoardTab({
         }
         .mat-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-          gap: 12px;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 10px;
         }
         .mat-card {
           border: 1px solid #dfe3e8;
           border-radius: 10px;
-          padding: 10px;
-          min-height: 200px;
+          padding: 4px;
+          min-height: 140px;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 2px;
           background: #fdfefe;
         }
         .mat-card h4 {
@@ -709,44 +711,49 @@ export default function MatBoardTab({
         .bout {
           border: 1px solid #eee;
           border-radius: 6px;
-          padding: 1px;
+          padding: 0;
           background: #fff;
           cursor: grab;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
           display: flex;
           flex-direction: column;
-          gap: 1px;
+          gap: 0;
         }
         .bout.dragging {
-          opacity: 0.6;
+          opacity: 1;
+          box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+          border-color: #c3c9d5;
+          transform: translateY(-1px);
         }
         .bout-row {
           display: grid;
-          grid-template-columns: 36px 1fr 1fr;
-          gap: 2px;
+          grid-template-columns: max-content 1fr 1fr;
+          gap: 0;
           font-size: 11px;
           opacity: 0.9;
           align-items: center;
+          padding: 0;
         }
         .bout-row span.number {
-          font-size: 14px;
+          font-size: 12px;
           font-weight: 700;
           color: #1d232b;
           text-align: center;
           border: 2px solid transparent;
           border-radius: 6px;
-          padding: 2px 0;
-          min-width: 36px;
+          padding: 1px 0;
+          margin-right: 6px;
+          min-width: 34px;
         }
         .bout-row span {
           display: block;
         }
         .bout-row span[data-role="wrestler"] {
-          font-weight: 700;
-          font-size: 16px;
+          font-weight: 600;
+          font-size: 14px;
           cursor: pointer;
           border-radius: 4px;
-          padding: 2px 4px;
+          padding: 1px 3px;
         }
         .bout-row span.single-match {
           font-style: italic;
@@ -764,6 +771,24 @@ export default function MatBoardTab({
         .conflict {
           background: #ffd6df;
         }
+        @media (max-width: 700px) {
+        .mat-grid {
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+        .mat-card {
+          min-height: 120px;
+          padding: 3px;
+        }
+        .bout-row {
+          grid-template-columns: max-content 1fr 1fr;
+          font-size: 10px;
+          gap: 0;
+          padding: 0;
+        }
+        .bout-row span.number {
+          min-width: 24px;
+        }
+      }
       `}</style>
       <div className="matboard-header">
         <div className="matboard-header-left">
@@ -827,13 +852,13 @@ export default function MatBoardTab({
                   className="nav-btn reorder-inline-btn"
                   onClick={() => reorderMat(matNum)}
                   disabled={!canEdit}
-                  style={{ fontSize: 12, padding: "4px 8px" }}
+                  style={{ fontSize: 12, padding: "0px 8px" }}
                 >
                   Reorder
                 </button>
                 <span style={{ fontSize: 12, opacity: 0.7 }}>{list.length} bouts</span>
               </h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {list.map((b, index) => {
                   const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
                   const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);

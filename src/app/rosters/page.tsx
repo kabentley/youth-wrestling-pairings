@@ -1377,22 +1377,35 @@ export default function RostersPage() {
         .roster-table {
           border: 1px solid var(--line);
           border-radius: 8px;
-          overflow: hidden;
           background: #fff;
+          display: block;
+          width: fit-content;
         }
         .roster-table table {
           table-layout: auto;
           border-collapse: collapse;
+          display: block;
+          min-width: 480px;
+          max-height: calc(10 * 36px);
+          overflow-y: auto;
         }
         .roster-table tbody tr:hover {
           background: #f7f9fb;
         }
         .roster-table th,
         .roster-table td {
-          padding: 4px 5px;
+          padding: 1px 3px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          font-size: 13px;
+          line-height: 1.2;
+          font-size: 15px;
+        }
+        .roster-table th {
+          background: #f0f4ff;
+          font-weight: 600;
+        }
+        .roster-table tbody tr:nth-child(even) {
+          background: #f7f9fb;
         }
         .roster-table td:last-child {
           white-space: nowrap;
@@ -1442,7 +1455,7 @@ export default function RostersPage() {
           .roster-table th,
           .roster-table td {
             padding: 2px 4px;
-            font-size: 12px;
+            font-size: 15px;
           }
           .row {
             gap: 2px;
@@ -1467,6 +1480,9 @@ export default function RostersPage() {
           border-radius: 8px;
           overflow: hidden;
           background: #fff;
+          width: fit-content;
+          max-width: calc(100vw - 32px);
+          margin: 0;
         }
         .roster-grid {
           display: flex;
@@ -1480,23 +1496,30 @@ export default function RostersPage() {
           border-collapse: collapse;
         }
         .roster-scroll {
-          max-height: calc(20 * 40px);
+          max-height: calc(20 * 36px);
           overflow-y: auto;
           background: #fff;
         }
         .spreadsheet-table {
           border-collapse: collapse;
+          border: 1px solid rgba(29, 56, 162, 0.4);
+          box-shadow: 0 2px 12px rgba(29, 56, 162, 0.15);
+          background: #fff;
         }
         .spreadsheet-table th,
         .spreadsheet-table td {
-          padding: 2px 4px;
+          padding: 1px 3px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          line-height: 1.1;
+          line-height: 1.05;
+          font-size: 15px;
         }
         .spreadsheet-table th {
           background: #f7f9fb;
           font-weight: 700;
+        }
+        .spreadsheet-table tbody tr:hover {
+          background: rgba(29, 56, 162, 0.12);
         }
         .sortable-header {
           border: none;
@@ -1526,9 +1549,9 @@ export default function RostersPage() {
         .spreadsheet-input,
         .spreadsheet-select {
           width: 100%;
-          padding: 6px 8px;
+          padding: 0px 8px;
           border: 0;
-          font-size: 13px;
+          font-size: 14px;
           background: transparent;
           border-radius: 0;
         }
@@ -1567,6 +1590,7 @@ export default function RostersPage() {
         .spreadsheet-age {
           padding: 6px 8px;
           color: var(--muted);
+          font-size: 15px;
         }
         .full-row-placeholder {
           text-align: center;

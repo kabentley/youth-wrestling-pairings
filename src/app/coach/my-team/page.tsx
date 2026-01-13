@@ -1170,10 +1170,13 @@ const coachStyles = `
     border-radius: 8px;
     overflow: hidden;
     background: #fff;
+    padding: 0 8px 8px;
+    width: fit-content;
   }
   .mat-setup-table table {
-    width: 100%;
+    width: min(760px, 100%);
     border-collapse: collapse;
+    display: block;
   }
   .mat-setup-table th,
   .mat-setup-table td {
