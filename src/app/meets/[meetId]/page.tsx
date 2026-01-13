@@ -2,11 +2,27 @@
 
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
+
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const div = document.createElement("div");
+    document.body.appendChild(div);
+    setContainer(div);
+    return () => {
+      document.body.removeChild(div);
+    };
+  }, []);
+  if (!container) return null;
+  return createPortal(children, container);
+}
 
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
@@ -1172,7 +1188,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 50;
+          z-index: 999;
         }
         .modal-card {
           background: #ffffff;
@@ -1937,37 +1953,39 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
       )}
       {showRestartModal && (
-        <div className="modal-backdrop" onClick={() => setShowRestartModal(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0 }}>Restart Meet Setup</h3>
-            <p style={{ margin: "0 0 8px", color: "#2b2b2b", fontSize: 14 }}>
-              Restarting the setup removes every pairing from this meet. Once confirmed all bouts are cleared and you'll be redirected to create a new meet.
-            </p>
-            {restartError && (
-              <div style={{ color: "#b00020", fontSize: 13, marginBottom: 6 }}>
-                {restartError}
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowRestartModal(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Restart Meet Setup</h3>
+              <p style={{ margin: "0 0 8px", color: "#2b2b2b", fontSize: 14 }}>
+                Restarting the setup removes every pairing from this meet. Once confirmed all bouts are cleared and you'll be redirected to create a new meet.
+              </p>
+              {restartError && (
+                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 6 }}>
+                  {restartError}
+                </div>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="nav-btn"
+                  onClick={() => setShowRestartModal(false)}
+                  type="button"
+                  disabled={restartLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="nav-btn delete-btn"
+                  type="button"
+                  onClick={restartMeetSetup}
+                  disabled={!canEdit || restartLoading}
+                >
+                  {restartLoading ? "Restarting..." : "Restart Meet Setup"}
+                </button>
               </div>
-            )}
-            <div className="modal-actions">
-              <button
-                className="nav-btn"
-                onClick={() => setShowRestartModal(false)}
-                type="button"
-                disabled={restartLoading}
-              >
-                Cancel
-              </button>
-              <button
-                className="nav-btn delete-btn"
-                type="button"
-                onClick={restartMeetSetup}
-                disabled={!canEdit || restartLoading}
-              >
-                {restartLoading ? "Restarting..." : "Restart Meet Setup"}
-              </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
         </>
         )}

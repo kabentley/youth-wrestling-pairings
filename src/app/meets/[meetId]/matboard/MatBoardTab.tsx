@@ -367,6 +367,66 @@ export default function MatBoardTab({
     return a.length - b.length;
   }
 
+  function buildOtherMatOrders(allMats: Bout[][], matIndex: number) {
+    const map = new Map<string, Set<number>>();
+    allMats.forEach((list, idx) => {
+      if (idx === matIndex) return;
+      list.forEach((b, pos) => {
+        const order = pos + 1;
+        for (const id of [b.redId, b.greenId]) {
+          if (!map.has(id)) map.set(id, new Set());
+          map.get(id)!.add(order);
+        }
+      });
+    });
+    return map;
+  }
+
+  function hasZeroConflict(bout: Bout, order: number, otherOrders: Map<string, Set<number>>) {
+    const check = (id: string) => otherOrders.get(id)?.has(order);
+    return Boolean(check(bout.redId) || check(bout.greenId));
+  }
+
+  function trySlide(
+    list: Bout[],
+    idx: number,
+    direction: -1 | 1,
+    otherOrders: Map<string, Set<number>>,
+  ) {
+    const target = idx + direction;
+    if (target < 0 || target >= list.length) return false;
+    const current = list[idx];
+    const neighbor = list[target];
+    const newCurrentOrder = target + 1;
+    const newNeighborOrder = idx + 1;
+    if (hasZeroConflict(current, newCurrentOrder, otherOrders)) return false;
+    if (hasZeroConflict(neighbor, newNeighborOrder, otherOrders)) return false;
+    [list[idx], list[target]] = [list[target], list[idx]];
+    return true;
+  }
+
+  function resolveZeroGapConflicts(
+    list: Bout[],
+    allMats: Bout[][],
+    matIndex: number,
+    gap: number,
+  ) {
+    const otherOrders = buildOtherMatOrders(allMats, matIndex);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let idx = 0; idx < list.length; idx++) {
+        const order = idx + 1;
+        if (!hasZeroConflict(list[idx], order, otherOrders)) continue;
+        if (trySlide(list, idx, -1, otherOrders) || trySlide(list, idx, 1, otherOrders)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    return list;
+  }
+
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
     const base = list.slice();
     if (gap <= 0) return base;
@@ -377,23 +437,31 @@ export default function MatBoardTab({
       return computeConflictSummary(matsCopy, gap);
     }
 
-    let best = base;
-    let bestScore = scoreCandidate(base);
-
-    for (let i = 0; i < base.length; i++) {
-      for (let j = 0; j < base.length; j++) {
-        if (i === j) continue;
-        const candidate = base.slice();
-        const [moved] = candidate.splice(i, 1);
-        candidate.splice(j, 0, moved);
-        const score = scoreCandidate(candidate);
-        if (compareConflictSummary(score, bestScore) < 0) {
-          bestScore = score;
-          best = candidate;
-        }
+    let best = base.slice();
+    let bestScore = scoreCandidate(best);
+    const attempts = Math.max(25, closestPowerOfTwo(base.length * 4));
+    for (let iter = 0; iter < attempts; iter++) {
+      if (best.length < 2) break;
+      const next = best.slice();
+      const idx = Math.floor(Math.random() * (next.length - 1));
+      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+      const score = scoreCandidate(next);
+      const delta = compareConflictSummary(score, bestScore);
+      const accept = delta < 0 || Math.random() < 0.05;
+      if (accept) {
+        best = next;
+        bestScore = score;
       }
     }
-    return best;
+    const resolved = resolveZeroGapConflicts(best, allMats, matIndex, gap);
+    allMats[matIndex] = resolved.slice();
+    return resolved;
+  }
+
+  function closestPowerOfTwo(value: number) {
+    let power = 1;
+    while (power < value) power <<= 1;
+    return power;
   }
 
   function reorderMat(matNum: number) {
@@ -410,7 +478,7 @@ export default function MatBoardTab({
       const matIndex = matKeys.indexOf(matNum);
       if (matIndex === -1) return next;
       const targetList = matLists[matIndex];
-      const ordered = reorderBoutsForMat(targetList, [targetList], 0, conflictGap);
+      const ordered = reorderBoutsForMat(targetList, matLists, matIndex, conflictGap);
       const updated = new Map<string, { mat: number; order: number }>();
       ordered.forEach((bout, idx) => {
         updated.set(bout.id, { mat: matNum, order: idx + 1 });
@@ -523,6 +591,8 @@ export default function MatBoardTab({
           display: flex;
           flex-direction: column;
           gap: 12px;
+          position: relative;
+          z-index: 0;
         }
         .matboard-tab h3 {
           margin: 0;
@@ -771,16 +841,17 @@ export default function MatBoardTab({
                   const severityGreen = getSeverity(b.greenId);
                   const singleMatchRed = italicizeSingles && (matchCounts.get(b.redId) ?? 0) === 1;
                   const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
-                  const normalized = (value?: number) =>
-                    value === undefined
-                      ? 0
-                      : conflictGap > 1
-                        ? Math.max(0, Math.min(1, (conflictGap - value) / (conflictGap - 1)))
-                        : 1;
+                  const conflictOpacity = (value?: number) => {
+                    if (value === undefined) return undefined;
+                    if (value <= 0) return 0.45;
+                    const maxGap = Math.max(1, conflictGap);
+                    const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
+                    return 0.25 + 0.15 * ratio;
+                  };
                   const conflictBgRed =
-                    severityRed !== undefined ? `rgba(255,138,160,${0.2 + 0.25 * normalized(severityRed)})` : undefined;
+                    severityRed !== undefined ? `rgba(255,138,160,${conflictOpacity(severityRed)})` : undefined;
                   const conflictBgGreen =
-                    severityGreen !== undefined ? `rgba(255,138,160,${0.2 + 0.25 * normalized(severityGreen)})` : undefined;
+                    severityGreen !== undefined ? `rgba(255,138,160,${conflictOpacity(severityGreen)})` : undefined;
                   const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
                   const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
                   const isRedHighlighted = highlightWrestlerId === b.redId;
