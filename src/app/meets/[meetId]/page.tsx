@@ -150,6 +150,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
 
   const [target, setTarget] = useState<Wrestler | null>(null);
+  const pairingMenuRef = useRef<HTMLDivElement | null>(null);
+  const [pairingContext, setPairingContext] = useState<{ x: number; y: number; wrestler: Wrestler } | null>(null);
+  const attendanceStatusStyles: Record<Exclude<AttendanceStatus, "COMING">, { background: string; borderColor: string }> = {
+    NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
+    LATE: { background: "#dff1ff", borderColor: "#b6defc" },
+    EARLY: { background: "#f3eadf", borderColor: "#e2c8ad" },
+  };
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -541,6 +548,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setTarget(wMap[selectedPairingId] ?? null);
   }, [selectedPairingId, wMap]);
 
+  useEffect(() => {
+    if (!pairingContext) return;
+    const handleMouseDown = (event: MouseEvent) => {
+      const targetNode = event.target as Node | null;
+      if (pairingMenuRef.current && targetNode && pairingMenuRef.current.contains(targetNode)) return;
+      setPairingContext(null);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPairingContext(null);
+      }
+    };
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [pairingContext]);
+
   const candidateFetchConfig = useMemo(() => ({
     maxAgeGapDays: settings.maxAgeGapDays,
     maxWeightDiffPct: settings.maxWeightDiffPct,
@@ -711,6 +738,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     } else if (target?.id === wrestlerId) {
       await loadCandidates(wrestlerId);
     }
+  }
+
+  async function handlePairingContextStatus(status: AttendanceStatus | null) {
+    if (!pairingContext) return;
+    await updateWrestlerStatus(pairingContext.wrestler.id, status);
+    setPairingContext(null);
   }
 
   async function removeBout(boutId: string) {
@@ -1216,6 +1249,47 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 10px;
           justify-content: flex-end;
         }
+        .pairings-context-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 1200;
+        }
+        .pairings-context-menu {
+          position: fixed;
+          z-index: 1201;
+          width: 210px;
+          padding: 8px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: #ffffff;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+          display: grid;
+          gap: 6px;
+        }
+        .pairings-context-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--ink);
+        }
+        .pairings-context-item {
+          border: none;
+          border-radius: 6px;
+          padding: 6px 8px;
+          text-align: left;
+          cursor: pointer;
+          font-size: 13px;
+          transition: transform 0.1s ease, box-shadow 0.1s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .pairings-context-item:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: -2px;
+        }
+        .pairings-context-item:hover {
+          transform: translateY(-1px);
+        }
         .wall-chart-section {
           margin-top: 24px;
         }
@@ -1437,12 +1511,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   key={w.id}
                   onClick={() => {
                     setSelectedPairingId(w.id);
+                    setTarget(w);
                   }}
-                    style={{
-                      borderTop: "1px solid #eee",
-                      background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
-                      cursor: "pointer",
-                    }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setSelectedPairingId(w.id);
+                    setTarget(w);
+                    setPairingContext({ x: event.clientX, y: event.clientY, wrestler: w });
+                  }}
+                  style={{
+                    borderTop: "1px solid #eee",
+                    background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
+                    cursor: "pointer",
+                  }}
                 >
                     <td>{w.last}</td>
                     <td>{w.first}</td>
@@ -1645,19 +1726,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 </span>
               )}
             </div>
-            {target && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={() => updateWrestlerStatus(target.id, "NOT_COMING")} disabled={!canEdit || target.status === "NOT_COMING"}>
-                  Not Coming
-                </button>
-                <button onClick={() => updateWrestlerStatus(target.id, "LATE")} disabled={!canEdit || target.status === "LATE"}>
-                  Arrive Late
-                </button>
-                <button onClick={() => updateWrestlerStatus(target.id, "EARLY")} disabled={!canEdit || target.status === "EARLY"}>
-                  Leave Early
-                </button>
-              </div>
-            )}
           </div>
           {!target && <div>Select a wrestler to see opponent options.</div>}
 
@@ -1995,29 +2063,81 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </ModalPortal>
       )}
-        </>
+      {pairingContext && (() => {
+        const menuWidth = 210;
+        const menuHeight = 150;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth ? Math.min(pairingContext.x, viewportWidth - menuWidth) : pairingContext.x;
+        const top = viewportHeight ? Math.min(pairingContext.y, viewportHeight - menuHeight) : pairingContext.y;
+        const fullName = `${pairingContext.wrestler.first} ${pairingContext.wrestler.last}`;
+        return (
+          <>
+            <div className="pairings-context-backdrop" onMouseDown={() => setPairingContext(null)} />
+            <div
+              className="pairings-context-menu"
+              ref={pairingMenuRef}
+              style={{ left, top }}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <div className="pairings-context-title">{fullName}</div>
+              <button
+                className="pairings-context-item"
+                style={{
+                  background: attendanceStatusStyles.NOT_COMING.background,
+                  border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
+                }}
+                onClick={() => handlePairingContextStatus("NOT_COMING")}
+              >
+                Not Coming
+              </button>
+              <button
+                className="pairings-context-item"
+                style={{
+                  background: attendanceStatusStyles.LATE.background,
+                  border: `1px solid ${attendanceStatusStyles.LATE.borderColor}`,
+                }}
+                onClick={() => handlePairingContextStatus("LATE")}
+              >
+                Arrive Late
+              </button>
+              <button
+                className="pairings-context-item"
+                style={{
+                  background: attendanceStatusStyles.EARLY.background,
+                  border: `1px solid ${attendanceStatusStyles.EARLY.borderColor}`,
+                }}
+                onClick={() => handlePairingContextStatus("EARLY")}
+              >
+                Leave Early
+              </button>
+            </div>
+          </>
+        );
+      })()}
+          </>
         )}
 
         {activeTab === "matboard" && (
-        <section className="matboard-tab">
-          {meetStatus === "PUBLISHED" && (
-            <div className="notice">
-              Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
-            </div>
-          )}
-          <MatBoardTab
-            meetId={meetId}
-            onMatAssignmentsChange={refreshAfterMatAssignments}
-            meetStatus={meetStatus}
-          />
-        </section>
+          <section className="matboard-tab">
+            {meetStatus === "PUBLISHED" && (
+              <div className="notice">
+                Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
+              </div>
+            )}
+            <MatBoardTab
+              meetId={meetId}
+              onMatAssignmentsChange={refreshAfterMatAssignments}
+              meetStatus={meetStatus}
+            />
+          </section>
         )}
 
         {activeTab === "wall" && (
-        <section className="wall-chart-section">
-          <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} />
-        </section>
-      )}
+          <section className="wall-chart-section">
+            <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} />
+          </section>
+        )}
       </div>
     </main>
   );
