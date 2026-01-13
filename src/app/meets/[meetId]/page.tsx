@@ -8,6 +8,7 @@ import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
+import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   const [container, setContainer] = useState<HTMLElement | null>(null);
@@ -83,7 +84,7 @@ type MeetComment = {
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
   const router = useRouter();
-  const daysPerYear = 365;
+  const daysPerYear = DAYS_PER_YEAR;
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
@@ -123,11 +124,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const candidatesReqIdRef = useRef(0);
 
   const [settings, setSettings] = useState({
-    maxAgeGapDays: 365,
+    maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
     maxWeightDiffPct: 12,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
   });
+  const [ageDiffInput, setAgeDiffInput] = useState(String(DEFAULT_MAX_AGE_GAP_DAYS / daysPerYear));
+  useEffect(() => {
+    const years = settings.maxAgeGapDays / daysPerYear;
+    setAgeDiffInput(Number.isFinite(years) ? String(years) : "");
+  }, [settings.maxAgeGapDays, daysPerYear]);
   const [candidateRefreshVersion, setCandidateRefreshVersion] = useState(0);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
@@ -152,6 +158,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [target, setTarget] = useState<Wrestler | null>(null);
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
   const [pairingContext, setPairingContext] = useState<{ x: number; y: number; wrestler: Wrestler } | null>(null);
+  const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
   const attendanceStatusStyles: Record<Exclude<AttendanceStatus, "COMING">, { background: string; borderColor: string }> = {
     NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
     LATE: { background: "#dff1ff", borderColor: "#b6defc" },
@@ -1033,6 +1040,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           align-items: center;
           gap: 12px;
           margin-left: auto;
+          position: relative;
+          z-index: 10;
         }
         .meet-status {
           font-size: 13px;
@@ -1372,14 +1381,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              className="nav-btn delete-btn"
-              onClick={handleRestartClick}
-              disabled={restartDisabled}
-            >
-              Restart Meet Setup
-            </button>
+            {activeTab === "pairings" && (
+              <button
+                type="button"
+                className="nav-btn delete-btn"
+                onClick={handleRestartClick}
+                disabled={restartDisabled}
+              >
+                Restart Meet Setup
+              </button>
+            )}
             <button
               className="nav-btn"
               onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
@@ -1558,12 +1569,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     className="nav-btn"
                     onClick={() => bulkAttendance("SET", null)}
                     disabled={!canEdit}
-                    style={{
-                      background: "#1d88e5",
-                      color: "#fff",
-                      borderColor: "#1d88e5",
-                      boxShadow: "0 5px 16px rgba(29, 136, 229, 0.35)",
-                    }}
                   >
                     Set all coming
                   </button>
@@ -1575,13 +1580,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         router.push(`/rosters?team=${attendanceTeamId}`);
                       }}
                       disabled={!canEdit || !attendanceTeamId || !canEditRoster}
-                      style={{
-                        background: "#1d88e5",
-                        color: "#fff",
-                        borderColor: "#1d88e5",
-                        boxShadow: "0 5px 16px rgba(29, 136, 229, 0.35)",
-                        ...( !canEditRoster ? { opacity: 0.5, cursor: "not-allowed" } : undefined),
-                      }}
                     >
                       Edit Roster
                     </button>
@@ -1703,7 +1701,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0 }}>Current Matches For</h3>
-              {target && (
+            {target && (
+              <>
                 <span
                   style={{
                     color: "#111111",
@@ -1724,7 +1723,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   </span>
                   <span style={{ width: 14, height: 14, background: teamColor(target.teamId), display: "inline-block", borderRadius: 3 }} />
                 </span>
-              )}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: "#444",
+                    flexWrap: "wrap",
+                    paddingLeft: 10,
+                  }}
+                >
+                  <span>Age: {targetAge ? `${targetAge}` : "—"}</span>
+                  <span>Weight: {target.weight ?? "—"}</span>
+                  <span>Exp: {target.experienceYears ?? "—"}</span>
+                  <span>Skill: {target.skill ?? "—"}</span>
+                </div>
+              </>
+            )}
             </div>
           </div>
           {!target && <div>Select a wrestler to see opponent options.</div>}
@@ -1751,11 +1768,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Matches", key: "matches" },
                             { label: "Bout #", key: "bout" },
                           ].map((col, index) => (
-                            <th
-                              key={col.label}
-                              align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
-                              className="pairings-th"
-                            >
+                          <th key={col.label} align="left" className="pairings-th">
                               {col.label}
                               <span
                                 className="col-resizer"
@@ -1801,12 +1814,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   </span>
                                 )}
                               </td>
-                              <td align="right">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
-                              <td align="right">{opponent?.weight ?? ""}</td>
-                              <td align="right">{opponent?.experienceYears ?? ""}</td>
-                              <td align="right">{opponent?.skill ?? ""}</td>
-                              <td align="right">{matchCounts[opponentId] ?? 0}</td>
-                              <td align="right">{boutNumber(bout.mat, bout.order)}</td>
+                            <td align="left">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td align="left">{opponent?.weight ?? ""}</td>
+                            <td align="left">{opponent?.experienceYears ?? ""}</td>
+                            <td align="left">{opponent?.skill ?? ""}</td>
+                            <td align="left">{matchCounts[opponentId] ?? 0}</td>
+                            <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                             </tr>
                           );
                         })}
@@ -1834,7 +1847,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         ].map((col, index) => (
                           <th
                             key={col.label}
-                            align={col.label === "Last" || col.label === "First" || col.label === "Team" ? "left" : "right"}
+                            align="left"
                             className="pairings-th sortable-th"
                             onClick={() => toggleSort(setAvailableSort, col.key)}
                           >
@@ -1877,11 +1890,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 {teamSymbol(o.teamId)}
                               </span>
                             </td>
-                            <td align="right">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
-                            <td align="right">{o.weight}</td>
-                            <td align="right">{o.experienceYears}</td>
-                            <td align="right">{o.skill}</td>
-                            <td align="right">{matchCounts[o.id] ?? 0}</td>
+                            <td align="left">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td align="left">{o.weight}</td>
+                            <td align="left">{o.experienceYears}</td>
+                            <td align="left">{o.skill}</td>
+                            <td align="left">{matchCounts[o.id] ?? 0}</td>
                           </tr>
                         );
                       })}
@@ -1897,10 +1910,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     className="setup-control-row"
                     style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
                   >
-                    <label>Max age diff: <input type="number" step="1" style={{ width: 64 }} value={settings.maxAgeGapDays / daysPerYear} disabled={!canEdit} onChange={async e => {
-                      const maxAgeGapDays = Math.round(Number(e.target.value) * daysPerYear);
-                      setSettings(s => ({ ...s, maxAgeGapDays }));
-                    }} /></label>
+                    <label>
+                      Max age diff:
+                      <input
+                        type="number"
+                        step="0.5"
+                        style={{ width: 64 }}
+                        value={ageDiffInput}
+                        disabled={!canEdit}
+                        onChange={async e => {
+                          const nextValue = e.target.value;
+                          setAgeDiffInput(nextValue);
+                          const parsed = Number(nextValue);
+                          if (Number.isNaN(parsed)) return;
+                          const maxAgeGapDays = Math.max(0, parsed * daysPerYear);
+                          setSettings(s => ({ ...s, maxAgeGapDays }));
+                        }}
+                      />
+                    </label>
                     <label>Max weight diff (%): <input type="number" style={{ width: 64 }} value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
                       const maxWeightDiffPct = Number(e.target.value);
                       setSettings(s => ({ ...s, maxWeightDiffPct }));

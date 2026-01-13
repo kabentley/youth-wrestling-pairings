@@ -8,7 +8,7 @@ import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
 const SettingsSchema = z.object({
-  maxAgeGapDays: z.number().int().min(0),
+  maxAgeGapDays: z.number().min(0),
   maxWeightDiffPct: z.number().min(0),
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),

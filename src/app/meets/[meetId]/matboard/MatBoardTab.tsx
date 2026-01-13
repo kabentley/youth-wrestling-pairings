@@ -565,7 +565,7 @@ export default function MatBoardTab({
     return `${matNum}${paddedOrder}`;
   };
 
-  const hexToRGBA = (hex: string, alpha: number) => {
+  const parseHexColor = (hex: string) => {
     const clean = hex.replace("#", "");
     const normalized = clean.length === 3
       ? clean
@@ -577,7 +577,64 @@ export default function MatBoardTab({
     const r = (num >> 16) & 255;
     const g = (num >> 8) & 255;
     const b = num & 255;
+    return { r, g, b };
+  };
+  const hexToRGBA = (hex: string, alpha: number) => {
+    const { r, g, b } = parseHexColor(hex);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  const toHSL = (r: number, g: number, b: number) => {
+    const rp = r / 255;
+    const gp = g / 255;
+    const bp = b / 255;
+    const max = Math.max(rp, gp, bp);
+    const min = Math.min(rp, gp, bp);
+    const l = (max + min) / 2;
+    let h = 0;
+    let s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === rp) h = ((gp - bp) / d + (gp < bp ? 6 : 0)) * 60;
+      else if (max === gp) h = ((bp - rp) / d + 2) * 60;
+      else h = ((rp - gp) / d + 4) * 60;
+    }
+    return { h, s, l };
+  };
+  const hslToRgb = ({ h, s, l }: { h: number; s: number; l: number }) => {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 360;
+      if (t >= 360) t -= 360;
+      if (t < 60) return p + (q - p) * t / 60;
+      if (t < 180) return q;
+      if (t < 240) return p + (q - p) * (240 - t) / 60;
+      return p;
+    };
+    let r: number;
+    let g: number;
+    let b: number;
+    if (s === 0) {
+      r = g = b = l;
+    } else {
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      r = hue2rgb(p, q, h + 120);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 120);
+    }
+    return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+  };
+  const mixWithWhite = (hex: string, weight = 0.85) => {
+    const { r, g, b } = parseHexColor(hex);
+    const mix = (channel: number) => Math.round(channel + (255 - channel) * weight);
+    return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+  };
+  const getMatNumberBackground = (color?: string | null) => {
+    if (!color) return "#f2f2f2";
+    if (color.startsWith("#")) {
+      return mixWithWhite(color);
+    }
+    return color;
   };
 
   return (
@@ -790,21 +847,21 @@ export default function MatBoardTab({
         }
       }
       `}</style>
-      <div className="matboard-header">
-        <div className="matboard-header-left">
-          <h3>Mat Assignments</h3>
-          <label className="matboard-italic-control">
-            <input
-              type="checkbox"
-              checked={italicizeSingles}
-              onChange={e => setItalicizeSingles(e.target.checked)}
-            />
-            <span>
-              Show wrestlers with only one match in <em>italics</em>
-            </span>
-          </label>
-        </div>
-        <div className="matboard-legend">
+        <div className="matboard-header">
+          <div className="matboard-header-left">
+            <h3>Mat Assignments</h3>
+            <label className="matboard-italic-control">
+              <input
+                type="checkbox"
+                checked={italicizeSingles}
+                onChange={e => setItalicizeSingles(e.target.checked)}
+              />
+              <span>
+                Show wrestlers with only one match in <em>italics</em>
+              </span>
+            </label>
+          </div>
+          <div className="matboard-legend">
           <span style={{ fontWeight: 600 }}>Legend:</span>
           <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
           <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
@@ -860,14 +917,14 @@ export default function MatBoardTab({
               </h4>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                 {list.map((b, index) => {
-                  const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
-                  const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);
-                  const severityRed = getSeverity(b.redId);
-                  const severityGreen = getSeverity(b.greenId);
-                  const singleMatchRed = italicizeSingles && (matchCounts.get(b.redId) ?? 0) === 1;
-                  const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
-                  const conflictOpacity = (value?: number) => {
-                    if (value === undefined) return undefined;
+      const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
+      const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);
+      const severityRed = getSeverity(b.redId);
+      const severityGreen = getSeverity(b.greenId);
+      const singleMatchRed = italicizeSingles && (matchCounts.get(b.redId) ?? 0) === 1;
+      const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
+      const conflictOpacity = (value?: number) => {
+        if (value === undefined) return undefined;
                     if (value <= 0) return 0.45;
                     const maxGap = Math.max(1, conflictGap);
                     const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
@@ -878,20 +935,50 @@ export default function MatBoardTab({
                   const conflictBgGreen =
                     severityGreen !== undefined ? `rgba(255,138,160,${conflictOpacity(severityGreen)})` : undefined;
                   const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
-                  const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
-                  const isRedHighlighted = highlightWrestlerId === b.redId;
-                  const isGreenHighlighted = highlightWrestlerId === b.greenId;
-                  const originalMatColor =
-                    b.originalMat != null && b.originalMat !== matNum
-                      ? matRuleColors[b.originalMat] ?? "#f2f2f2"
-                      : matColor;
-                  return (
-                    <div
-                      key={b.id}
-                      className={`bout${dragging?.boutId === b.id ? " dragging" : ""}`}
-                      draggable={canEdit}
-                      onDragStart={e => {
-                        if (!canEdit) return;
+      const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
+      const isRedHighlighted = highlightWrestlerId === b.redId;
+      const isGreenHighlighted = highlightWrestlerId === b.greenId;
+      const originalMatColor =
+        b.originalMat != null && b.originalMat !== matNum
+          ? matRuleColors[b.originalMat] ?? "#f2f2f2"
+          : matColor;
+      const homeTeamId = meetSettings?.homeTeamId ?? null;
+      const isHomeRed = homeTeamId ? wMap[b.redId]?.teamId === homeTeamId : false;
+      const isHomeGreen = homeTeamId ? wMap[b.greenId]?.teamId === homeTeamId : false;
+      const entries = [
+        {
+          id: b.redId,
+          label: rTxt,
+          color: rColor,
+          statusBg: statusBgRed,
+          conflictBg: conflictBgRed,
+          singleMatch: singleMatchRed,
+          highlight: isRedHighlighted,
+        },
+        {
+          id: b.greenId,
+          label: gTxt,
+          color: gColor,
+          statusBg: statusBgGreen,
+          conflictBg: conflictBgGreen,
+          singleMatch: singleMatchGreen,
+          highlight: isGreenHighlighted,
+        },
+      ];
+      const ordered = (() => {
+        if (homeTeamId) {
+          if (isHomeGreen && !isHomeRed) return [entries[1], entries[0]];
+          return entries;
+        }
+        return entries;
+      })();
+      return (
+        <div
+          key={b.id}
+          className={`bout${dragging?.boutId === b.id ? " dragging" : ""}`}
+          draggable={canEdit}
+          onDragStart={e => {
+            if (!canEdit) return;
                         const target = e.target as HTMLElement | null;
                         if (target?.dataset?.role === "wrestler") {
                           e.preventDefault();
@@ -928,53 +1015,36 @@ export default function MatBoardTab({
                           <span
                             className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
                           style={{
-                            backgroundColor: hexToRGBA(originalMatColor, 0.15),
+                            backgroundColor: getMatNumberBackground(originalMatColor),
                             borderColor:
                               b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent",
                           }}
                         >
                           {formatBoutNumber(matNum, b.order, index + 1)}
                           </span>
-                        <span
-                          data-role="wrestler"
-                          className={[
-                            isRedHighlighted ? "highlight" : "",
-                            singleMatchRed ? "single-match" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                          style={{
-                            color: rColor || undefined,
-                            background:
-                              statusBgRed ??
-                              conflictBgRed ??
-                              undefined,
-                          }}
-                          onMouseEnter={() => setHighlightWrestlerId(b.redId)}
-                          onMouseLeave={() => setHighlightWrestlerId(null)}
-                        >
-                          {rTxt}
-                        </span>
-                        <span
-                          data-role="wrestler"
-                          className={[
-                            isGreenHighlighted ? "highlight" : "",
-                            singleMatchGreen ? "single-match" : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                          style={{
-                            color: gColor || undefined,
-                            background:
-                              statusBgGreen ??
-                              conflictBgGreen ??
-                              undefined,
-                          }}
-                          onMouseEnter={() => setHighlightWrestlerId(b.greenId)}
-                          onMouseLeave={() => setHighlightWrestlerId(null)}
-                        >
-                          {gTxt}
-                        </span>
+                        {ordered.map(entry => (
+                          <span
+                            key={entry.id}
+                            data-role="wrestler"
+                            className={[
+                              entry.highlight ? "highlight" : "",
+                              entry.singleMatch ? "single-match" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            style={{
+                              color: entry.color || undefined,
+                              background:
+                                entry.statusBg ??
+                                entry.conflictBg ??
+                                undefined,
+                            }}
+                            onMouseEnter={() => setHighlightWrestlerId(entry.id)}
+                            onMouseLeave={() => setHighlightWrestlerId(null)}
+                          >
+                            {entry.label}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   );

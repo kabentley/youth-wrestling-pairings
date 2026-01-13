@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
+import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 const MeetSchema = z.object({
   name: z.string().min(2),
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
 
   await logMeetChange(meet.id, user.id, "Meet created.");
   const pairingSettings = {
-    maxAgeGapDays: 365,
+    maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
     maxWeightDiffPct: 12,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: parsed.allowSameTeamMatches,

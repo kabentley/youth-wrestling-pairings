@@ -3,6 +3,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import NumberInput from "@/components/NumberInput";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 type RestartDefaults = {
@@ -13,6 +14,10 @@ type RestartDefaults = {
   teamIds?: string[];
 };
 const DEFAULT_DATE = "2026-01-15";
+
+const MIN_MATS = 1;
+const MAX_MATS = 10;
+const DEFAULT_NUM_MATS = 4;
 
 type Meet = {
   id: string;
@@ -41,7 +46,8 @@ export default function MeetsPage() {
   const [role, setRole] = useState<string | null>(null);
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [homeTeamId, setHomeTeamId] = useState<string>("");
-  const [numMats, setNumMats] = useState(4);
+  const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
+  const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -65,13 +71,25 @@ export default function MeetsPage() {
       return null;
     }
   }, [restartDefaultsParam]);
+  const clampNumMatsValue = useCallback(
+    (value: number) => Math.max(MIN_MATS, Math.min(homeTeamMaxMats, value)),
+    [homeTeamMaxMats],
+  );
+  const handleNumMatsChange = useCallback(
+    (value: number) => {
+      const clamped = clampNumMatsValue(Math.round(value));
+      setNumMats(clamped);
+    },
+    [clampNumMatsValue],
+  );
+
   const resetFormFields = useCallback(() => {
     setName("");
     setDate(DEFAULT_DATE);
     setLocation("");
     setTeamIds([]);
     setHomeTeamId("");
-    setNumMats(4);
+    setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(2);
     setEditingMeet(null);
@@ -238,6 +256,7 @@ export default function MeetsPage() {
       setIsCreateModalOpen(true);
     }
   }, [hasCreateQuery]);
+
   useEffect(() => {
     if (!restartDefaults) return;
     if (typeof restartDefaults.name === "string") {
@@ -299,6 +318,8 @@ export default function MeetsPage() {
       if (!hasRestartDefaults) {
         setLocation("");
       }
+      setHomeTeamMaxMats(MAX_MATS);
+      setNumMats(DEFAULT_NUM_MATS);
       return;
     }
     let didCancel = false;
@@ -308,9 +329,10 @@ export default function MeetsPage() {
         if (!res.ok) return;
         const payload = await res.json().catch(() => null);
         if (didCancel) return;
-        if (payload && typeof payload.numMats === "number") {
-          setNumMats(payload.numMats);
-        }
+        const raw = payload && typeof payload.numMats === "number" ? payload.numMats : DEFAULT_NUM_MATS;
+        const clamped = Math.max(MIN_MATS, Math.min(MAX_MATS, raw));
+        setHomeTeamMaxMats(clamped);
+        setNumMats(clamped);
       } catch {
         // ignore
       }
@@ -803,25 +825,25 @@ export default function MeetsPage() {
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="row">
                   <span className="muted">Number of mats</span>
-                  <input
+                  <NumberInput
                     className="input input-sm"
-                    type="number"
-                    min={1}
-                    max={10}
+                    min={MIN_MATS}
+                    max={homeTeamMaxMats}
                     value={numMats}
-                    onChange={e => setNumMats(Number(e.target.value))}
+                    onValueChange={handleNumMatsChange}
+                    normalize={(value) => Math.round(value)}
                     disabled={!canManageMeets}
                   />
                 </label>
                 <label className="row">
                   <span className="muted">Matches per wrestler</span>
-                  <input
+                  <NumberInput
                     className="input input-sm"
-                    type="number"
                     min={1}
                     max={5}
                     value={matchesPerWrestler}
-                    onChange={e => setMatchesPerWrestler(Number(e.target.value))}
+                    onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
+                    normalize={(value) => Math.round(value)}
                     disabled={!canManageMeets}
                   />
                 </label>

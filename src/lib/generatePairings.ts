@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { MAX_MATCHES_PER_WRESTLER } from "./constants";
 
 export type PairingSettings = {
   maxAgeGapDays: number;
@@ -73,7 +74,10 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);
   const newBouts: { redId: string; greenId: string; score: number; notes: string }[] = [];
-  const targetMatches = Math.max(1, Math.floor(settings.matchesPerWrestler ?? 1));
+  const targetMatches = Math.min(
+    MAX_MATCHES_PER_WRESTLER,
+    Math.max(1, Math.floor(settings.matchesPerWrestler ?? 1)),
+  );
 
   function baseScore(a: any, b: any) {
     const ageGap = daysBetween(a.birthdate, b.birthdate);
@@ -108,8 +112,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     return true;
   }
 
-  function canUse(id: string) {
-    return (matchCounts.get(id) ?? 0) < targetMatches;
+  function matchesNeeded(id: string) {
+    return Math.max(0, targetMatches - (matchCounts.get(id) ?? 0));
   }
   function pairKey(a: string, b: string) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
@@ -119,8 +123,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     while (made) {
       made = false;
       for (let i = 0; i < pool.length; i++) {
-        const a = pool[i];
-        if (!canUse(a.id)) continue;
+      const a = pool[i];
+      const needA = matchesNeeded(a.id);
 
         let bestJ = -1;
         let bestScore = Number.POSITIVE_INFINITY;
@@ -128,7 +132,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
         for (let j = i + 1; j < Math.min(pool.length, i + 20); j++) {
           const b = pool[j];
-          if (!canUse(b.id)) continue;
+        const needB = matchesNeeded(b.id);
+        if (needA <= 0 && needB <= 0) continue;
           if (!eligible(a, b, allowSameTeam)) continue;
           if (paired.has(pairKey(a.id, b.id))) continue;
 
@@ -167,6 +172,22 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
   pickMatches(false);
   if (settings.allowSameTeamMatches) pickMatches(true);
+
+  let removedExtra = true;
+  while (removedExtra) {
+    removedExtra = false;
+    for (let i = newBouts.length - 1; i >= 0; i--) {
+      const bout = newBouts[i];
+      const redCount = matchCounts.get(bout.redId) ?? 0;
+      const greenCount = matchCounts.get(bout.greenId) ?? 0;
+      if (redCount > targetMatches && greenCount > targetMatches) {
+        newBouts.splice(i, 1);
+        matchCounts.set(bout.redId, redCount - 1);
+        matchCounts.set(bout.greenId, greenCount - 1);
+        removedExtra = true;
+      }
+    }
+  }
 
   await db.bout.createMany({
     data: newBouts.map(b => ({

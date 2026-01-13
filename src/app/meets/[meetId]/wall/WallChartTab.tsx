@@ -47,6 +47,22 @@ export default function WallChartTab({
   const [error, setError] = useState<string | null>(null);
   const wallChartRef = useRef<HTMLDivElement | null>(null);
 
+  function formatWrestlerName(w?: Wrestler | null) {
+    if (!w) return "";
+    const last = w.last?.trim();
+    const first = w.first?.trim();
+    if (last && first) return `${last}, ${first}`;
+    return last || first || "";
+  }
+
+  function formatWrestlerFirstLast(w?: Wrestler | null) {
+    if (!w) return "";
+    const first = w.first?.trim();
+    const last = w.last?.trim();
+    if (first && last) return `${first} ${last}`;
+    return first || last || "";
+  }
+
   useEffect(() => {
     const signal = refreshIndex ?? 0;
     void signal;
@@ -359,14 +375,14 @@ export default function WallChartTab({
       const green = wMap.get(bout.greenId);
       const greenInfo = green
         ? {
-            opponentName: `${green.first} ${green.last}`.trim(),
+            opponentName: formatWrestlerFirstLast(green) || `${green.first} ${green.last}`.trim(),
             opponentColor: tColor.get(green.teamId) ?? "#000",
             opponentTeamLabel: teamSymbolMap.get(green.teamId) || tMap.get(green.teamId) || "",
           }
         : { opponentName: bout.greenId, opponentColor: "#000", opponentTeamLabel: "" };
       const redInfo = red
         ? {
-            opponentName: `${red.first} ${red.last}`.trim(),
+            opponentName: formatWrestlerFirstLast(red) || `${red.first} ${red.last}`.trim(),
             opponentColor: tColor.get(red.teamId) ?? "#000",
             opponentTeamLabel: teamSymbolMap.get(red.teamId) || tMap.get(red.teamId) || "",
           }
@@ -400,7 +416,7 @@ export default function WallChartTab({
       .filter(w => w.teamId === mt.team.id)
       .map(w => ({
         id: w.id,
-        name: `${w.first} ${w.last}`.trim(),
+        name: formatWrestlerName(w),
         matches: (wrestlerMatches.get(w.id) ?? []).slice().sort((a, b) => Number(a.boutNumber) - Number(b.boutNumber)),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));

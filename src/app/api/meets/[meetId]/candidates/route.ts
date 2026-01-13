@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 const boolFromQuery = z.preprocess((value) => {
   if (typeof value === "string") {
@@ -16,7 +17,7 @@ const QuerySchema = z.object({
   wrestlerId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 
-  maxAgeGapDays: z.coerce.number().int().min(0).default(365),
+  maxAgeGapDays: z.coerce.number().min(0).default(DEFAULT_MAX_AGE_GAP_DAYS),
   maxWeightDiffPct: z.coerce.number().min(0).default(12),
   firstYearOnlyWithFirstYear: boolFromQuery.default(true),
   allowSameTeamMatches: boolFromQuery.default(false),

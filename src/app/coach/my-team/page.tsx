@@ -1168,7 +1168,7 @@ const coachStyles = `
     margin-top: 16px;
     border: 1px solid var(--line);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible;
     background: #fff;
     padding: 0 8px 8px;
     width: fit-content;
