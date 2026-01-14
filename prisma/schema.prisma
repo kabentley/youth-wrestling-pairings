@@ -3,12 +3,25 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 
 
-// enums are not supported by the sqlite connector; use string fields instead.
+enum Role {
+  ADMIN
+  COACH
+  PARENT
+  TABLE_WORKER
+}
+
+enum MeetWrestlerStatusType {
+  COMING
+  NOT_COMING
+  LATE
+  EARLY
+  ABSENT
+}
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -97,7 +110,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     String
+  status     MeetWrestlerStatusType
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -214,7 +227,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          String   @default("PARENT")
+  role          Role     @default(PARENT)
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -225,7 +238,6 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
-  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -239,6 +251,7 @@ model User {
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   children      UserChild[]
+  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

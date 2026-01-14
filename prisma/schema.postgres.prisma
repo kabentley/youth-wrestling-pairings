@@ -16,6 +16,8 @@ enum Role {
 }
 
 enum MeetWrestlerStatusType {
+  COMING
+  NOT_COMING
   LATE
   EARLY
   ABSENT
@@ -34,7 +36,10 @@ model Team {
   meetTeams MeetTeam[]
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
+  numMats   Int        @default(4)
   homeTeamPreferSameMat Boolean @default(false)
+  headCoachId String?   @unique
+  headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
   coaches   User[]
 }
 
@@ -246,6 +251,7 @@ model User {
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   children      UserChild[]
+  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

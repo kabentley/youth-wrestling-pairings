@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const data: Prisma.UserUncheckedUpdateInput = {};
   const finalRole = body.role ?? existing.role;
   const finalTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
-  let teamForHeadCheck: { headCoachId: string | null } | null = null;
+  let teamForHeadCheck = null;
   if (finalTeamId) {
     teamForHeadCheck = await db.team.findUnique({
       where: { id: finalTeamId },
