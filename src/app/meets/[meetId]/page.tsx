@@ -102,7 +102,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [commentSection, setCommentSection] = useState("General");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
-  const [attendanceColWidths, setAttendanceColWidths] = useState([120, 120]);
+  const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 90]);
   const [currentMatchColWidths, setCurrentMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90, 90]);
   const [availableMatchColWidths, setAvailableMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90]);
@@ -423,7 +423,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       function onMouseMove(e: MouseEvent) {
         if (!resizeRef.current) return;
         const { kind, index, startX, startWidth } = resizeRef.current;
-        const minWidth = kind === "pairings" ? 40 : 140;
+        const minWidth =
+          kind === "pairings" ? 40 :
+          kind === "attendance" ? 60 :
+          140;
         const nextWidth = Math.max(minWidth, startWidth + (e.clientX - startX));
       if (kind === "attendance") {
         setAttendanceColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
