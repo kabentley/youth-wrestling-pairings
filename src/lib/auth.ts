@@ -112,7 +112,8 @@ export const authOptions: NextAuthOptions = {
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
 
-        if (!user.emailVerified && !(process.env.NODE_ENV !== "production" && bypassEmailVerification)) {
+        const requireEmailVerified = process.env.SKIP_EMAIL_VERIFICATION === "true" ? false : true;
+        if (requireEmailVerified && !user.emailVerified && !(process.env.NODE_ENV !== "production" && bypassEmailVerification)) {
           throw new Error("EMAIL_NOT_VERIFIED");
         }
 
