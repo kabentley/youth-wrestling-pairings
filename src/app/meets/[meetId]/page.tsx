@@ -81,6 +81,18 @@ type MeetComment = {
   author?: { username?: string | null } | null;
 };
 
+const CURRENT_SHARED_COLUMN_MAP: Record<number, number> = {
+  0: 0,
+  1: 1,
+  3: 2,
+  4: 3,
+  5: 4,
+  6: 5,
+  7: 6,
+};
+
+const AVAILABLE_SHARED_COLUMN_MAP = CURRENT_SHARED_COLUMN_MAP;
+
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
   const router = useRouter();
@@ -104,8 +116,42 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 90]);
-  const [currentMatchColWidths, setCurrentMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90, 90]);
-  const [availableMatchColWidths, setAvailableMatchColWidths] = useState([140, 140, 60, 90, 90, 70, 70, 90]);
+  const [currentTeamColWidth, setCurrentTeamColWidth] = useState(90);
+  const [currentBoutColWidth, setCurrentBoutColWidth] = useState(90);
+  const [availableTeamColWidth, setAvailableTeamColWidth] = useState(90);
+
+  const sharedColumnWidths = {
+    last: pairingsColWidths[0],
+    first: pairingsColWidths[1],
+    age: pairingsColWidths[2],
+    weight: pairingsColWidths[3],
+    exp: pairingsColWidths[4],
+    skill: pairingsColWidths[5],
+    matches: pairingsColWidths[6],
+  };
+
+  const currentColumnWidths = [
+    sharedColumnWidths.last,
+    sharedColumnWidths.first,
+    currentTeamColWidth,
+    sharedColumnWidths.age,
+    sharedColumnWidths.weight,
+    sharedColumnWidths.exp,
+    sharedColumnWidths.skill,
+    sharedColumnWidths.matches,
+    currentBoutColWidth,
+  ];
+
+  const availableColumnWidths = [
+    sharedColumnWidths.last,
+    sharedColumnWidths.first,
+    availableTeamColWidth,
+    sharedColumnWidths.age,
+    sharedColumnWidths.weight,
+    sharedColumnWidths.exp,
+    sharedColumnWidths.skill,
+    sharedColumnWidths.matches,
+  ];
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
   const lastSavedNameRef = useRef("");
   const nameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,6 +184,43 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+  const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
+  const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
+  const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+
+  async function rerunAutoPairings() {
+    setAutoPairingsError(null);
+    setAutoPairingsLoading(true);
+    try {
+      const clearRes = await fetch(`/api/meets/${meetId}/pairings`, { method: "DELETE" });
+      if (!clearRes.ok) {
+        const errorText = await clearRes.text();
+        throw new Error(errorText || "Unable to clear existing bouts.");
+      }
+      const payload = {
+        maxAgeGapDays: settings.maxAgeGapDays,
+        maxWeightDiffPct: settings.maxWeightDiffPct,
+        firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
+        allowSameTeamMatches: settings.allowSameTeamMatches,
+      };
+      const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!generateRes.ok) {
+        const json = await generateRes.json().catch(() => null);
+        throw new Error(json?.error ?? "Unable to generate new pairings.");
+      }
+      await load();
+      await loadActivity();
+      setShowAutoPairingsModal(false);
+    } catch (err) {
+      setAutoPairingsError(err instanceof Error ? err.message : "Unable to rerun auto pairings.");
+    } finally {
+      setAutoPairingsLoading(false);
+    }
+  }
 
   const [showAttendance, setShowAttendance] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -420,27 +503,45 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetName, canEdit]);
 
   useEffect(() => {
-      function onMouseMove(e: MouseEvent) {
-        if (!resizeRef.current) return;
-        const { kind, index, startX, startWidth } = resizeRef.current;
-        const minWidth =
-          kind === "pairings" ? 40 :
-          kind === "attendance" ? 60 :
-          140;
-        const nextWidth = Math.max(minWidth, startWidth + (e.clientX - startX));
+    function onMouseMove(e: MouseEvent) {
+      if (!resizeRef.current) return;
+      const { kind, index, startX, startWidth } = resizeRef.current;
+      const delta = e.clientX - startX;
+
       if (kind === "attendance") {
+        const nextWidth = Math.max(60, startWidth + delta);
         setAttendanceColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
       } else if (kind === "pairings") {
+        const nextWidth = Math.max(40, startWidth + delta);
         setPairingsColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
       } else if (kind === "current") {
-        setCurrentMatchColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+        const pairingsIndex = CURRENT_SHARED_COLUMN_MAP[index];
+        if (pairingsIndex !== undefined) {
+          const nextWidth = Math.max(40, startWidth + delta);
+          setPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
+        } else if (index === 2) {
+          const nextWidth = Math.max(60, startWidth + delta);
+          setCurrentTeamColWidth(nextWidth);
+        } else if (index === 8) {
+          const nextWidth = Math.max(60, startWidth + delta);
+          setCurrentBoutColWidth(nextWidth);
+        }
       } else {
-        setAvailableMatchColWidths((prev) => prev.map((w, i) => (i === index ? nextWidth : w)));
+        const pairingsIndex = AVAILABLE_SHARED_COLUMN_MAP[index];
+        if (pairingsIndex !== undefined) {
+          const nextWidth = Math.max(40, startWidth + delta);
+          setPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
+        } else if (index === 2) {
+          const nextWidth = Math.max(60, startWidth + delta);
+          setAvailableTeamColWidth(nextWidth);
+        }
       }
     }
+
     function onMouseUp() {
       resizeRef.current = null;
     }
+
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
@@ -1175,6 +1276,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           background: var(--card);
           z-index: 2;
         }
+        .pairings-heading {
+          min-width: 0;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
         .col-resizer {
           position: absolute;
           right: 2px;
@@ -1539,8 +1645,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     cursor: "pointer",
                   }}
                 >
-                    <td>{w.last}</td>
-                    <td>{w.first}</td>
+                    <td style={{ color: teamColor(w.teamId) }}>{w.last}</td>
+                    <td style={{ color: teamColor(w.teamId) }}>{w.first}</td>
                     <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
                     <td>{w.experienceYears}</td>
@@ -1587,16 +1693,30 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       Edit Roster
                     </button>
                   )}
+                  <button
+                    className="nav-btn"
+                    onClick={() => {
+                      setAutoPairingsError(null);
+                      setShowAutoPairingsModal(true);
+                    }}
+                    disabled={!canEdit}
+                  >
+                    Re-run auto pairings
+                  </button>
                 </div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
                   Coming: {attendanceCounts.coming} - Not Coming: {attendanceCounts.notComing}
                 </div>
-                <table className="attendance-table" cellPadding={6} style={{ borderCollapse: "collapse" }}>
-                  <colgroup>
-                    <col style={{ width: attendanceColWidths[0] }} />
-                    <col style={{ width: attendanceColWidths[1] }} />
-                    <col style={{ width: "100%" }} />
-                  </colgroup>
+                <table
+                  className="attendance-table"
+                  cellPadding={6}
+                  style={{ borderCollapse: "collapse", tableLayout: "auto", width: "100%" }}
+                >
+                    <colgroup>
+                      <col style={{ width: attendanceColWidths[0] }} />
+                      <col style={{ width: attendanceColWidths[1] }} />
+                      <col />
+                    </colgroup>
                   <thead>
                     <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
                       {[
@@ -1626,68 +1746,98 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </tr>
                   </thead>
                   <tbody>
-                    {attendanceSorted.map(w => {
-                      const isComing = !w.status || w.status === "COMING";
-                      const isNotComing = w.status === "NOT_COMING";
-                      const isLate = w.status === "LATE";
-                      const isEarly = w.status === "EARLY";
-                      const nameBg = w.status === "NOT_COMING"
-                        ? "#f0f0f0"
-                        : w.status === "LATE" || w.status === "EARLY"
-                          ? statusColor(w.status)
-                          : undefined;
-                      const nameColor = w.status === "NOT_COMING" ? "#8a8a8a" : undefined;
-                      const nameDecoration = w.status === "NOT_COMING" ? "line-through" : undefined;
-                      const activeStyle = (active: boolean, base: React.CSSProperties) => (
-                        active
-                          ? {
-                              ...base,
-                              fontWeight: 700,
-                              opacity: 1,
-                              color: "#1d232b",
-                              WebkitTextFillColor: "#1d232b",
-                            }
-                          : base
-                      );
-                      return (
-                        <tr key={w.id} style={{ borderTop: "1px solid #eee" }}>
-                          <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.last}</td>
-                          <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.first}</td>
-                          <td>
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                              <button
-                                onClick={() => updateWrestlerStatus(w.id, null)}
-                                disabled={!canEdit || isComing}
-                                style={activeStyle(isComing, { background: "#e6f6ea", borderColor: "#bcd8c1" })}
+                      {attendanceSorted.map(w => {
+                        const isComing = !isNotAttending(w.status);
+                        const isLate = w.status === "LATE";
+                        const isEarly = w.status === "EARLY";
+                        const nameBg = w.status === "NOT_COMING"
+                          ? "#f0f0f0"
+                          : w.status === "LATE" || w.status === "EARLY"
+                            ? statusColor(w.status)
+                            : undefined;
+                        const nameColor = w.status === "NOT_COMING" ? "#8a8a8a" : undefined;
+                        const nameDecoration = w.status === "NOT_COMING" ? "line-through" : undefined;
+                        const toggleLabelStyle: React.CSSProperties = {
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${isComing ? "#bcd8c1" : "#cfcfcf"}`,
+                          background: isComing ? "#e6f6ea" : "#f0f0f0",
+                          color: isComing ? "#1d232b" : "#5f6772",
+                          cursor: canEdit ? "pointer" : "default",
+                          transition: "background 0.2s, border-color 0.2s",
+                          fontWeight: 600,
+                          fontSize: 12,
+                          minWidth: 0,
+                        };
+                        const activeStyle = (active: boolean, base: React.CSSProperties) =>
+                          active
+                            ? {
+                                ...base,
+                                fontWeight: 700,
+                                opacity: 1,
+                                color: "#1d232b",
+                                WebkitTextFillColor: "#1d232b",
+                              }
+                            : base;
+                        return (
+                          <tr key={w.id} style={{ borderTop: "1px solid #eee" }}>
+                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.last}</td>
+                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.first}</td>
+                            <td style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  flexWrap: "nowrap",
+                                  alignItems: "center",
+                                  overflowX: "auto",
+                                  paddingBottom: 2,
+                                  whiteSpace: "nowrap",
+                                  width: "100%",
+                                }}
                               >
-                                Coming
-                              </button>
-                              <button
-                                onClick={() => updateWrestlerStatus(w.id, "NOT_COMING")}
-                                disabled={!canEdit || isNotComing}
-                                style={activeStyle(isNotComing, { background: "#f0f0f0", borderColor: "#cfcfcf" })}
-                              >
-                                Not Coming
-                              </button>
-                              <button
-                                onClick={() => updateWrestlerStatus(w.id, "LATE")}
-                                disabled={!canEdit || isLate}
-                                style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
-                              >
-                                Arrive Late
-                              </button>
-                              <button
-                                onClick={() => updateWrestlerStatus(w.id, "EARLY")}
-                                disabled={!canEdit || isEarly}
-                                style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
-                              >
-                                Leave Early
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                <label style={toggleLabelStyle}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isComing}
+                                    disabled={!canEdit}
+                                    onChange={(event) => {
+                                      const nextStatus = event.target.checked ? null : "NOT_COMING";
+                                      updateWrestlerStatus(w.id, nextStatus);
+                                    }}
+                                    aria-label="Coming"
+                                  />
+                                  Coming
+                                </label>
+                                <button
+                                  onClick={() => {
+                                    const nextStatus = isLate ? null : "LATE";
+                                    updateWrestlerStatus(w.id, nextStatus);
+                                  }}
+                                  disabled={!canEdit || !isComing}
+                                  style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
+                                >
+                                  Arrive Late
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const nextStatus = isEarly ? null : "EARLY";
+                                    updateWrestlerStatus(w.id, nextStatus);
+                                  }}
+                                  disabled={!canEdit || !isComing}
+                                  style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
+                                >
+                                  Leave Early
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     {attendanceRoster.length === 0 && (
                       <tr>
                         <td colSpan={3} style={{ color: "#666" }}>No wrestlers on this team.</td>
@@ -1701,11 +1851,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
 
         <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0 }}>Current Matches For</h3>
-            {target && (
-              <>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 10,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+              <h3 className="pairings-heading" style={{ margin: 0 }}>
+                Current Matches For
+              </h3>
+              {target && (
+                <>
                 <span
                   style={{
                     color: "#111111",
@@ -1718,6 +1880,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     border: "1px solid #d5dbe2",
                     borderRadius: 8,
                     padding: "4px 8px",
+                    minWidth: 0,
                   }}
                 >
                   {target.first} {target.last}
@@ -1727,17 +1890,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <span style={{ width: 14, height: 14, background: teamColor(target.teamId), display: "inline-block", borderRadius: 3 }} />
                 </span>
                 <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    fontSize: 18,
-                    fontWeight: 800,
-                    color: "#444",
-                    flexWrap: "wrap",
-                    paddingLeft: 10,
-                  }}
-                >
+                   style={{
+                     display: "flex",
+                     alignItems: "center",
+                     gap: 12,
+                     fontSize: 18,
+                     fontWeight: 800,
+                     color: "#444",
+                     flexWrap: "wrap",
+                     paddingLeft: 10,
+                     minWidth: 0,
+                   }}
+                 >
                   <span>Age: {targetAge ? `${targetAge}` : "—"}</span>
                   <span>Weight: {target.weight ?? "—"}</span>
                   <span>Exp: {target.experienceYears ?? "—"}</span>
@@ -1753,11 +1917,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <>
                   <div style={{ marginBottom: 10 }}>
                     <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
-                      <colgroup>
-                        {currentMatchColWidths.map((w, idx) => (
-                          <col key={`current-col-${idx}`} style={{ width: w }} />
-                        ))}
-                      </colgroup>
+                    <colgroup>
+                      {currentColumnWidths.map((w, idx) => (
+                        <col key={`current-col-${idx}`} style={{ width: w }} />
+                      ))}
+                      <col />
+                    </colgroup>
                       <thead>
                         <tr>
                           {[
@@ -1773,19 +1938,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           ].map((col, index) => (
                           <th key={col.label} align="left" className="pairings-th">
                               {col.label}
-                              <span
-                                className="col-resizer"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  resizeRef.current = {
-                                    kind: "current",
-                                    index,
-                                    startX: e.clientX,
-                                    startWidth: currentMatchColWidths[index],
-                                  };
-                                }}
-                              />
+                            <span
+                              className="col-resizer"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                resizeRef.current = {
+                                  kind: "current",
+                                  index,
+                                  startX: e.clientX,
+                                  startWidth: currentColumnWidths[index],
+                                };
+                              }}
+                            />
                             </th>
                           ))}
                         </tr>
@@ -1797,6 +1962,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           </tr>
                         )}
                         {currentSorted.map(({ bout, opponentId, opponent }) => {
+                          const opponentColor = opponent ? teamColor(opponent.teamId) : undefined;
                           return (
                             <tr
                               key={bout.id}
@@ -1807,8 +1973,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               }}
                               style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
                             >
-                              <td>{opponent?.last ?? ""}</td>
-                              <td>{opponent?.first ?? ""}</td>
+                                <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.last ?? ""}</td>
+                                <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.first ?? ""}</td>
                               <td>
                                 {opponent && (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -1829,10 +1995,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       </tbody>
                     </table>
                   </div>
-                  <h3 style={{ margin: "10px 0 6px" }}>Possible additional matches:</h3>
+                  <h3 className="pairings-heading" style={{ margin: "10px 0 6px" }}>
+                    Possible additional matches:
+                  </h3>
                   <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
-                      {availableMatchColWidths.map((w, idx) => (
+                      {availableColumnWidths.map((w, idx) => (
                         <col key={`available-col-${idx}`} style={{ width: w }} />
                       ))}
                     </colgroup>
@@ -1865,7 +2033,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   kind: "available",
                                   index,
                                   startX: e.clientX,
-                                  startWidth: availableMatchColWidths[index],
+                                  startWidth: availableColumnWidths[index],
                                 };
                               }}
                             />
@@ -1875,6 +2043,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </thead>
                     <tbody>
                       {availableSorted.map(({ opponent: o }) => {
+                        const matchColor = teamColor(o.teamId);
                         return (
                           <tr
                             key={o.id}
@@ -1885,8 +2054,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             }}
                             style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
                           >
-                            <td>{o.last}</td>
-                            <td>{o.first}</td>
+                            <td style={{ color: matchColor }}>{o.last}</td>
+                            <td style={{ color: matchColor }}>{o.first}</td>
                             <td>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ width: 10, height: 10, background: teamColor(o.teamId), display: "inline-block" }} />
@@ -1950,8 +2119,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       </div>
 
       <div style={{ marginTop: 20 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="nav-btn" onClick={() => setShowComments(prev => !prev)}>
+            {showComments ? "Hide Comments" : "Show Comments"}
+          </button>
+          <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
+            {showChangeLog ? "Hide Change Log" : "Show Change Log"}
+          </button>
+        </div>
         {showComments && (
-          <div className="panel fill">
+          <div className="panel fill" style={{ marginTop: 10 }}>
             <h3 className="panel-title">Comments</h3>
             <div style={{ display: "grid", gap: 8 }}>
               <label style={{ fontSize: 12 }}>Section</label>
@@ -1989,16 +2166,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </div>
           </div>
         )}
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button className="nav-btn" onClick={() => setShowComments(prev => !prev)}>
-              {showComments ? "Hide Comments" : "Show Comments"}
-            </button>
-            <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
-              {showChangeLog ? "Hide Change Log" : "Show Change Log"}
-            </button>
-          </div>
-        </div>
         {showChangeLog && (
           <div className="panel fill" style={{ marginTop: 10 }}>
             <h3 className="panel-title">Change Log</h3>
@@ -2087,6 +2254,42 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   disabled={!canEdit || restartLoading}
                 >
                   {restartLoading ? "Restarting..." : "Restart Meet Setup"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showAutoPairingsModal && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowAutoPairingsModal(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Re-run auto pairings</h3>
+              <p style={{ marginTop: 8, marginBottom: 12 }}>
+                This will clear every existing bout for the meet before generating a fresh set of auto pairings and mat assignments.
+                Make sure you want to start over, as this cannot be undone.
+              </p>
+              {autoPairingsError && (
+                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
+                  {autoPairingsError}
+                </div>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="nav-btn"
+                  onClick={() => setShowAutoPairingsModal(false)}
+                  type="button"
+                  disabled={autoPairingsLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="nav-btn delete-btn"
+                  type="button"
+                  onClick={rerunAutoPairings}
+                  disabled={!canEdit || autoPairingsLoading}
+                >
+                  {autoPairingsLoading ? "Running…" : "Re-run auto pairings"}
                 </button>
               </div>
             </div>

@@ -99,13 +99,21 @@ export default function UsersSection() {
   }
 
   async function resetPassword(id: string) {
+    setMsg("");
     const newPass = prompt("Enter new password:");
     if (!newPass) return;
-    await fetch(`/api/admin/users/${id}/reset-password`, {
+    const res = await fetch(`/api/admin/users/${id}/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: newPass }),
     });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const errorMsg = formatError(data?.error) ?? "Unable to reset password.";
+      alert(`Password not reset. ${errorMsg}`);
+      setMsg(errorMsg);
+      return;
+    }
     setMsg("Password reset.");
   }
 

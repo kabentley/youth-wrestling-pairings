@@ -153,7 +153,8 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "credentials" && (user)?.mustResetPassword) {
-      return "/auth/force-reset";
+        const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+        return `${baseUrl}/auth/force-reset`;
       }
       if (user?.id) {
         await db.user.updateMany({
