@@ -28,10 +28,8 @@ export async function GET(req: Request) {
   const { q, limit } = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
   const tokens = tokenize(q);
 
-  if (
-    (user?.role === "PARENT" || user?.role === "TABLE_WORKER" || user?.role === "COACH") &&
-    !user.teamId
-  ) {
+  const rolesRequiringTeam = user?.role === "TABLE_WORKER" || user?.role === "COACH";
+  if (rolesRequiringTeam && !user.teamId) {
     return NextResponse.json({ error: "No team assigned." }, { status: 400 });
   }
 
@@ -55,9 +53,7 @@ export async function GET(req: Request) {
         };
 
   const teamFilter =
-    (user?.role === "PARENT" || user?.role === "TABLE_WORKER" || user?.role === "COACH") && user.teamId
-      ? { teamId: user.teamId }
-      : {};
+    (user?.role === "TABLE_WORKER" || user?.role === "COACH") && user.teamId ? { teamId: user.teamId } : {};
 
   const wrestlers = await db.wrestler.findMany({
     where: { ...where, ...teamFilter },
