@@ -18,6 +18,13 @@ function tokenize(q: string) {
     .slice(0, 3);
 }
 
+const clauseForToken = (token: string) => ({
+  OR: [
+    { first: { contains: token, mode: "insensitive" as const } },
+    { last: { contains: token, mode: "insensitive" as const } },
+  ],
+});
+
 export async function GET(req: Request) {
   const { userId } = await requireSession();
   const user = await db.user.findUnique({
@@ -37,19 +44,11 @@ export async function GET(req: Request) {
     tokens.length === 1
       ? {
           active: true,
-          OR: [
-            { first: { contains: tokens[0] } },
-            { last: { contains: tokens[0] } },
-          ],
+          OR: clauseForToken(tokens[0]).OR,
         }
       : {
           active: true,
-          AND: tokens.map((t) => ({
-            OR: [
-              { first: { contains: t } },
-              { last: { contains: t } },
-            ],
-          })),
+          AND: tokens.map((t) => clauseForToken(t)),
         };
 
   const teamFilter =
