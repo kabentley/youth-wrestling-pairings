@@ -136,7 +136,15 @@ async function ensureAdmin() {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await db.user.create({
-    data: { username, email, phone, name: "Admin", passwordHash, role: "ADMIN" },
+    data: {
+      username,
+      email,
+      phone,
+      name: "Admin",
+      passwordHash,
+      role: "ADMIN",
+      emailVerified: new Date(),
+    },
   });
   console.log(`Created admin user: ${username} (password from ADMIN_PASSWORD or default admin1234)`);
   return user;

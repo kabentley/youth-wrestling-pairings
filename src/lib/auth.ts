@@ -116,7 +116,7 @@ export const authOptions: NextAuthOptions = {
           throw new Error("EMAIL_NOT_VERIFIED");
         }
 
-        if (user.role === "ADMIN" || user.role === "COACH") {
+        if (user.role === "COACH") {
           if (process.env.NODE_ENV !== "production" && bypassEmailVerification) {
             return {
               id: user.id,
