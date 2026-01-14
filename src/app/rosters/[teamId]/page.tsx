@@ -1,6 +1,7 @@
 "use client";
 import { useSession } from "next-auth/react";
 import { use, useEffect, useState, type FormEvent } from "react";
+import { DEFAULT_MAT_RULES, MatRule } from "@/lib/matRules";
 
 import AppHeader from "@/components/AppHeader";
 
@@ -14,15 +15,6 @@ type Wrestler = {
   skill: number;
   active: boolean;
 };
-type MatRule = {
-  matIndex: number;
-  color?: string;
-  minExperience: number;
-  maxExperience: number;
-  minAge: number;
-  maxAge: number;
-};
-
 const CONFIGURED_MATS = 5;
 const MIN_MATS = 1;
 const MAX_MATS = CONFIGURED_MATS;
@@ -61,14 +53,6 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
-
-const DEFAULT_MAT_RULES: Omit<MatRule, "matIndex">[] = [
-  { color: "lightgreen", minExperience: 0, maxExperience: 0, minAge: 0, maxAge: 8.5 },
-  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
-  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
-  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
-  { color: "", minExperience: 0, maxExperience: 5, minAge: 0, maxAge: 20 },
-];
 
 function defaultMatRule(index: number): MatRule {
   const preset = DEFAULT_MAT_RULES[index] ?? DEFAULT_MAT_RULES[DEFAULT_MAT_RULES.length - 1];
@@ -441,8 +425,8 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
               <tr key={idx} style={{ borderTop: "1px solid #eee" }}>
                 <td>{idx + 1}</td>
                 <td>
-                  <input
-                    value={rule.color}
+                    <input
+                      value={rule.color ?? ""}
                     onChange={(e) => {
                       const color = e.target.value;
                       setMatRules(rules => rules.map((r, i) => (i === idx ? { ...r, color } : r)));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
@@ -106,7 +107,8 @@ export default function MatBoardTab({
       const rules = Array.isArray(payload?.rules) ? payload.rules : [];
       for (const rule of rules) {
         if (typeof rule.matIndex === "number") {
-          colors[rule.matIndex] = typeof rule.color === "string" ? rule.color : null;
+          const suggestedColor = typeof rule.color === "string" ? rule.color.trim() : "";
+          colors[rule.matIndex] = suggestedColor || null;
         }
       }
       setMatRuleColors(colors);
@@ -629,6 +631,16 @@ export default function MatBoardTab({
     const mix = (channel: number) => Math.round(channel + (255 - channel) * weight);
     return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
   };
+  const getDefaultMatColor = (matIndex: number) => {
+    const preset = DEFAULT_MAT_RULES[(matIndex - 1) % DEFAULT_MAT_RULES.length];
+    return preset?.color ?? "#f2f2f2";
+  };
+  const getMatColor = (matIndex: number) => {
+    if (!matIndex || matIndex < 1) return "#f2f2f2";
+    const stored = matRuleColors[matIndex];
+    if (stored && stored.trim()) return stored.trim();
+    return getDefaultMatColor(matIndex);
+  };
   const getMatNumberBackground = (color?: string | null) => {
     if (!color) return "#f2f2f2";
     if (color.startsWith("#")) {
@@ -879,7 +891,7 @@ export default function MatBoardTab({
       <div className="mat-grid">
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];
-          const matColor = matRuleColors[matNum] ?? "#f2f2f2";
+          const matColor = getMatColor(matNum);
           return (
             <div
               key={matNum}
@@ -940,7 +952,7 @@ export default function MatBoardTab({
       const isGreenHighlighted = highlightWrestlerId === b.greenId;
       const originalMatColor =
         b.originalMat != null && b.originalMat !== matNum
-          ? matRuleColors[b.originalMat] ?? "#f2f2f2"
+          ? getMatColor(b.originalMat)
           : matColor;
       const homeTeamId = meetSettings?.homeTeamId ?? null;
       const isHomeRed = homeTeamId ? wMap[b.redId]?.teamId === homeTeamId : false;

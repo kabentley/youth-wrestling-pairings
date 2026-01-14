@@ -1,31 +1,15 @@
-"use client";
+ "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
 import NumberInput from "@/components/NumberInput";
-
-type MatRule = {
-  matIndex: number;
-  color?: string | null;
-  minExperience: number;
-  maxExperience: number;
-  minAge: number;
-  maxAge: number;
-};
+import { DEFAULT_MAT_RULES, MatRule } from "@/lib/matRules";
 
 const CONFIGURED_MATS = 5;
 const MIN_MATS = 1;
 const MAX_MATS = CONFIGURED_MATS;
-
-const DEFAULT_MAT_RULES: Omit<MatRule, "matIndex">[] = [
-  { color: "lightgreen", minExperience: 0, maxExperience: 0, minAge: 0, maxAge: 8.5 },
-  { color: "red", minExperience: 1, maxExperience: 2, minAge: 8.5, maxAge: 10.5 },
-  { color: "lightblue", minExperience: 2, maxExperience: 4, minAge: 10.50, maxAge: 12.5 },
-  { color: "brown", minExperience: 4, maxExperience: 10, minAge: 12.5, maxAge: 20 },
-  { color: "orange", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
-];
 
 const createMatRule = (matIndex: number): MatRule => {
   const preset = DEFAULT_MAT_RULES[matIndex - 1];
