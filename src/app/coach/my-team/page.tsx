@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
+import NumberInput from "@/components/NumberInput";
 
 type MatRule = {
   matIndex: number;
@@ -699,15 +700,12 @@ export default function CoachMyTeamPage() {
           <div className="mat-summary-box">
             <div>
               <div className="mat-summary-label">Max number of mats for home meets</div>
-              <input
-                type="number"
+              <NumberInput
                 min={MIN_MATS}
                 max={MAX_MATS}
                 value={numMats}
-                onChange={(e) => {
-                  const parsed = Number(e.target.value);
-                  adjustMatCount(Number.isFinite(parsed) ? parsed : MIN_MATS);
-                }}
+                onValueChange={(value) => adjustMatCount(value)}
+                normalize={(value) => Math.round(value)}
               />
             </div>
             <div className="mat-summary-note">This table always lists five mats; use this input to indicate the number of mats you actually have.</div>
@@ -749,39 +747,39 @@ export default function CoachMyTeamPage() {
                         </div>
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
                           max={50}
                           value={rule.minExperience}
-                          onChange={(e) => updateRule(idx, "minExperience", Number(e.target.value))}
+                          onValueChange={(value) => updateRule(idx, "minExperience", Math.round(value))}
+                          normalize={(value) => Math.round(value)}
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
                           max={50}
                           value={rule.maxExperience}
-                          onChange={(e) => updateRule(idx, "maxExperience", Number(e.target.value))}
+                          onValueChange={(value) => updateRule(idx, "maxExperience", Math.round(value))}
+                          normalize={(value) => Math.round(value)}
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
                           max={100}
                           value={rule.minAge}
-                          onChange={(e) => updateRule(idx, "minAge", Number(e.target.value))}
+                          onValueChange={(value) => updateRule(idx, "minAge", Math.round(value))}
+                          normalize={(value) => Math.round(value)}
                         />
                       </td>
                       <td>
-                        <input
-                          type="number"
+                        <NumberInput
                           min={0}
                           max={100}
                           value={rule.maxAge}
-                          onChange={(e) => updateRule(idx, "maxAge", Number(e.target.value))}
+                          onValueChange={(value) => updateRule(idx, "maxAge", Math.round(value))}
+                          normalize={(value) => Math.round(value)}
                         />
                       </td>
                     </tr>
