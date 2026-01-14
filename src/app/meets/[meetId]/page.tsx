@@ -1807,7 +1807,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     disabled={!canEdit}
                                     onChange={(event) => {
                                       const nextStatus = event.target.checked ? null : "NOT_COMING";
-                                      updateWrestlerStatus(w.id, nextStatus);
+                                      void updateWrestlerStatus(w.id, nextStatus);
                                     }}
                                     aria-label="Coming"
                                   />
@@ -1816,7 +1816,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 <button
                                   onClick={() => {
                                     const nextStatus = isLate ? null : "LATE";
-                                    updateWrestlerStatus(w.id, nextStatus);
+                                    void updateWrestlerStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
                                   style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
@@ -1826,7 +1826,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 <button
                                   onClick={() => {
                                     const nextStatus = isEarly ? null : "EARLY";
-                                    updateWrestlerStatus(w.id, nextStatus);
+                                    void updateWrestlerStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
                                   style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
