@@ -30,6 +30,7 @@ export default withAuth(function middleware(req) {
       // Public routes
       if (pathname === "/" || pathname.startsWith("/auth")) return true;
       if (pathname.startsWith("/api/auth")) return true;
+      if (pathname.startsWith("/api/public")) return true;
 
       // Everything else requires login
       return !!token;
