@@ -201,7 +201,7 @@ export const adminStyles = `
   .color-cell {
     position: relative;
     overflow: visible;
-    z-index: 2;
+    z-index: 9999;
   }
   .logo-cell {
     position: relative;

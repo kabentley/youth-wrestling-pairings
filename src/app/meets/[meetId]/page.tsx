@@ -1492,14 +1492,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {activeTab === "pairings" && (
-              <button
-                type="button"
-                className="nav-btn delete-btn"
-                onClick={handleRestartClick}
-                disabled={restartDisabled}
-              >
-                Restart Meet Setup
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => {
+                    setAutoPairingsError(null);
+                    setShowAutoPairingsModal(true);
+                  }}
+                  disabled={!canEdit || autoPairingsLoading}
+                >
+                  {autoPairingsLoading ? "Running..." : "Re-run auto pairings"}
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn delete-btn"
+                  onClick={handleRestartClick}
+                  disabled={restartDisabled}
+                >
+                  Restart Meet Setup
+                </button>
+              </>
             )}
             <button
               className="nav-btn"
@@ -1686,25 +1699,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     <button
                       className="nav-btn"
                       onClick={() => {
-                        if (!attendanceTeamId) return;
-                        router.push(`/rosters?team=${attendanceTeamId}`);
-                      }}
-                      disabled={!canEdit || !attendanceTeamId || !canEditRoster}
-                    >
-                      Edit Roster
-                    </button>
-                  )}
-                  <button
-                    className="nav-btn"
-                    onClick={() => {
-                      setAutoPairingsError(null);
-                      setShowAutoPairingsModal(true);
-                    }}
-                    disabled={!canEdit}
-                  >
-                    Re-run auto pairings
-                  </button>
-                </div>
+                if (!attendanceTeamId) return;
+                router.push(`/rosters?team=${attendanceTeamId}`);
+              }}
+              disabled={!canEdit || !attendanceTeamId || !canEditRoster}
+            >
+              Edit Roster
+            </button>
+          )}
+        </div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
                   Coming: {attendanceCounts.coming} - Not Coming: {attendanceCounts.notComing}
                 </div>

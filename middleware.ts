@@ -31,6 +31,7 @@ export default withAuth(function middleware(req) {
       if (pathname === "/" || pathname.startsWith("/auth")) return true;
       if (pathname.startsWith("/api/auth")) return true;
       if (pathname.startsWith("/api/public")) return true;
+      if (pathname.startsWith("/api/league")) return true;
 
       // Everything else requires login
       return !!token;

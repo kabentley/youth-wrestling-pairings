@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 
 export const NAMED_COLORS = [
@@ -55,6 +56,8 @@ export default function ColorPicker({
   const normalizedValue = (value ?? "").trim();
   const activeColor = normalizedValue || "";
 
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties | null>(null);
+
   useEffect(() => {
     if (!open) return undefined;
     const handleClickOutside = (event: MouseEvent) => {
@@ -77,6 +80,22 @@ export default function ColorPicker({
 
   const handleButtonClick = () => setOpen((prev) => !prev);
 
+  useEffect(() => {
+    if (!open || !triggerRef.current) {
+      setPopoverStyle(null);
+      return;
+    }
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPopoverStyle({
+      position: "absolute",
+      top: rect.bottom + window.scrollY + 8,
+      left: rect.left + window.scrollX,
+      zIndex: 10005,
+    });
+  }, [open]);
+
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+
   return (
     <div className="color-picker">
       <button
@@ -89,39 +108,41 @@ export default function ColorPicker({
       >
         &nbsp;
       </button>
-      {open && (
-        <div className="color-popover" ref={popoverRef}>
-          {showNativeColorInput && (
-            <>
-              <label className="picker-label" htmlFor={`${idPrefix}-custom`}>
-                Custom color
-              </label>
-              <input
-                id={`${idPrefix}-custom`}
-                className="color-input"
-                type="color"
-                value={activeColor || "#000000"}
-                onChange={(event) => handleChange(event.target.value)}
-              />
-            </>
-          )}
-          {showSwatches && (
-            <div className="swatch-grid">
-              {NAMED_COLORS.map((color) => (
-                <button
-                  key={color.value}
-                  type="button"
-                  className="swatch"
-                  style={{ backgroundColor: color.value }}
-                  onClick={() => handleChange(color.value, true)}
-                >
-                  &nbsp;
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {open && popoverStyle && portalTarget &&
+        createPortal(
+          <div className="color-popover" ref={popoverRef} style={popoverStyle}>
+            {showNativeColorInput && (
+              <>
+                <label className="picker-label" htmlFor={`${idPrefix}-custom`}>
+                  Custom color
+                </label>
+                <input
+                  id={`${idPrefix}-custom`}
+                  className="color-input"
+                  type="color"
+                  value={activeColor || "#000000"}
+                  onChange={(event) => handleChange(event.target.value)}
+                />
+              </>
+            )}
+            {showSwatches && (
+              <div className="swatch-grid">
+                {NAMED_COLORS.map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    className="swatch"
+                    style={{ backgroundColor: color.value }}
+                    onClick={() => handleChange(color.value, true)}
+                  >
+                    &nbsp;
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>,
+          portalTarget,
+        )}
       <style jsx>{`
         .color-picker {
           position: relative;
@@ -141,7 +162,7 @@ export default function ColorPicker({
         }
         .color-popover {
           position: absolute;
-          z-index: 20;
+          z-index: 10005;
           top: 30px;
           left: 0;
           background: #ffffff;
