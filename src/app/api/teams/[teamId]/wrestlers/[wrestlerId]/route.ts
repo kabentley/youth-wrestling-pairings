@@ -85,7 +85,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ teamId:
     where: { id: wrestlerId },
     select: { id: true, teamId: true },
   });
-  if (!wrestler || wrestler.teamId !== teamId) {
+  if (wrestler?.teamId !== teamId) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
   await db.$transaction([

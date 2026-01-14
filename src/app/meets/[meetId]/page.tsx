@@ -26,7 +26,7 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 }
 
 
-type Team = { id: string; name: string; symbol?: string; color?: string };
+type Team = { id: string; name: string; symbol?: string; color?: string; address?: string | null };
 type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
 type Wrestler = {
   id: string;
@@ -443,10 +443,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetId]);
 
 
-  const canEdit =
-    editAllowed && lockState.status === "acquired" && meetStatus === "DRAFT";
+  const isDraft = meetStatus === "DRAFT";
+  const isPublished = meetStatus === "PUBLISHED";
+  const canEdit = editAllowed && lockState.status === "acquired" && isDraft;
   const canChangeStatus = editAllowed && lockState.status === "acquired";
-  const restartDisabled = !canEdit || meetStatus === "PUBLISHED";
+  const restartDisabled = !canEdit || isPublished;
   const handleRestartClick = () => {
     if (restartDisabled) return;
     setRestartError(null);

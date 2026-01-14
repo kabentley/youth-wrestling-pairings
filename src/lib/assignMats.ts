@@ -104,7 +104,7 @@ function pickLeastLoadedMat(mats: { boutIds: string[]; rule: MatRule }[]) {
 export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { date: true, meetTeams: { select: { teamId: true } }, homeTeamId: true },
+    select: { date: true, meetTeams: { select: { teamId: true } }, homeTeamId: true, numMats: true },
   });
   const homeTeamId = meet?.homeTeamId ?? null;
 

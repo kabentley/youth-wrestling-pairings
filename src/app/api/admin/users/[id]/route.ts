@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -21,7 +22,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (!existing) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const data: { role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER"; teamId?: string | null; email?: string; phone?: string | null } = {};
+  const data: Prisma.UserUncheckedUpdateInput = {};
   const finalRole = body.role ?? existing.role;
   const finalTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
   let teamForHeadCheck: { headCoachId: string | null } | null = null;
@@ -30,7 +31,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       where: { id: finalTeamId },
       select: { headCoachId: true },
     });
-    if (teamForHeadCheck && teamForHeadCheck.headCoachId === id && finalRole !== "COACH") {
+    if (teamForHeadCheck?.headCoachId === id && finalRole !== "COACH") {
       return NextResponse.json({ error: "Only admins can remove the head coach role." }, { status: 403 });
     }
   }
@@ -44,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data.role = body.role;
   }
   if (body.teamId !== undefined) {
-    data.teamId = body.teamId;
+    data.teamId = body.teamId ?? null;
   }
   if ((finalRole === "COACH" || finalRole === "PARENT" || finalRole === "TABLE_WORKER") && !finalTeamId) {
     const label = finalRole === "COACH" ? "Coaches" : finalRole === "PARENT" ? "Parents" : "Table workers";

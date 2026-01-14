@@ -253,7 +253,7 @@ export default function CoachMyTeamPage() {
   };
 
   const teamSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const updateTeamRef = useRef<() => Promise<void> | null>(null);
+  const updateTeamRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   const scheduleTeamSave = () => {
     if (teamSaveTimer.current) {

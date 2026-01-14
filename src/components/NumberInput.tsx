@@ -23,12 +23,16 @@ export default function NumberInput({
       const parsed = Number(inputValue);
       if (!Number.isFinite(parsed)) {
         setInputValue(String(value));
-        onBlur?.(event);
+        if (event) {
+          onBlur?.(event);
+        }
         return;
       }
       const normalizedValue = normalize ? normalize(parsed) : parsed;
       onValueChange(normalizedValue);
-      onBlur?.(event);
+      if (event) {
+        onBlur?.(event);
+      }
     },
     [inputValue, normalize, onValueChange, onBlur, value],
   );

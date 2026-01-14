@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { db } from "@/lib/db";
 import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
+import { db } from "@/lib/db";
 
 const boolFromQuery = z.preprocess((value) => {
   if (typeof value === "string") {

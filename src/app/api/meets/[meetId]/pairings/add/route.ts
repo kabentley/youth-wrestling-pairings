@@ -70,6 +70,7 @@ const DEFAULT_RULE = {
   maxExperience: 10,
   minAge: 0,
   maxAge: 100,
+  color: undefined,
 };
 
 function ageInYears(birthdate: Date, onDate: Date) {

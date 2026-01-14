@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
-import AppHeader from "@/components/AppHeader";
 import LeagueSection from "./sections/LeagueSection";
 import UsersSection from "./sections/UsersSection";
+
+import AppHeader from "@/components/AppHeader";
 
 const headerLinks = [
   { href: "/", label: "Home" },
@@ -18,7 +19,7 @@ const headerLinks = [
 
 export type AdminTabKey = "users" | "league";
 
-export default function AdminTabs({ initialTab }: { initialTab?: TabKey }) {
+export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const defaultTab = initialTab ?? "users";
@@ -31,7 +32,7 @@ export default function AdminTabs({ initialTab }: { initialTab?: TabKey }) {
     }
   }, [searchParams, activeTab, defaultTab]);
 
-  const handleTabClick = (tab: TabKey) => {
+  const handleTabClick = (tab: AdminTabKey) => {
     router.replace(`/admin?tab=${tab}`);
   };
 

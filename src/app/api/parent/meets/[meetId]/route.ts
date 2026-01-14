@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
 
-export async function GET(_req: Request, { params }: { params: { meetId: string } }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ meetId: string }> },
+) {
+  const { meetId } = await params;
   const { userId } = await requireSession();
 
   const children = await db.userChild.findMany({
@@ -17,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: { meetId: string 
   const childIds = children.map((c) => c.wrestlerId);
   const hasAccess = await db.bout.count({
     where: {
-      meetId: params.meetId,
+      meetId,
       OR: [{ redId: { in: childIds } }, { greenId: { in: childIds } }],
     },
   });
@@ -26,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: { meetId: string 
   }
 
   const meet = await db.meet.findUnique({
-    where: { id: params.meetId },
+      where: { id: meetId },
     select: {
       id: true,
       name: true,

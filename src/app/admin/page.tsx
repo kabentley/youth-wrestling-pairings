@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
+
+import { adminStyles } from "./adminStyles";
+import type { AdminTabKey } from "./AdminTabs";
+import AdminTabs from "./AdminTabs";
 
 import { authOptions } from "@/lib/auth";
-import AdminTabs, { AdminTabKey } from "./AdminTabs";
-import { adminStyles } from "./adminStyles";
+
 
 type Props = {
   searchParams?: Promise<{ tab?: string } | undefined>;

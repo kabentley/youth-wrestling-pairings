@@ -35,7 +35,7 @@ async function generatePlaceholderUsername() {
 const adapter = PrismaAdapter(db);
 const authAdapter: Adapter = {
   ...adapter,
-  async createUser(data) {
+  async createUser(data: Parameters<Adapter["createUser"]>[0]) {
     const username = await generatePlaceholderUsername();
     return db.user.create({
       data: {
@@ -80,6 +80,7 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
         twoFactorMethod: { label: "Two Factor Method", type: "text" },
         twoFactorCode: { label: "Two Factor Code", type: "text" },
+        bypassEmailVerification: { label: "Bypass Email Verification", type: "text" },
       },
       async authorize(credentials) {
         const username = normalizeUsername(credentials?.username ?? "");
@@ -152,7 +153,8 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === "credentials" && (user)?.mustResetPassword) {
+      const credentialUser = user as { mustResetPassword?: boolean };
+      if (account?.provider === "credentials" && credentialUser?.mustResetPassword) {
         const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
         return `${baseUrl}/auth/force-reset`;
       }
@@ -183,12 +185,20 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user }) {
       if (user) {
-        token.id = (user).id;
-        token.username = (user).username;
-        token.role = (user).role ?? "COACH";
-        token.teamId = (user).teamId ?? null;
-        token.sessionVersion = (user).sessionVersion ?? 1;
-        token.mustResetPassword = (user).mustResetPassword ?? false;
+        const tokenUser = user as {
+          id?: string;
+          username?: string;
+          role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
+          teamId?: string | null;
+          sessionVersion?: number;
+          mustResetPassword?: boolean;
+        };
+        token.id = tokenUser.id;
+        token.username = tokenUser.username;
+        token.role = tokenUser.role ?? "COACH";
+        token.teamId = tokenUser.teamId ?? null;
+        token.sessionVersion = tokenUser.sessionVersion ?? 1;
+        token.mustResetPassword = tokenUser.mustResetPassword ?? false;
       } else if (token.sessionVersion === undefined && token.id) {
         const dbUser = await db.user.findUnique({
           where: { id: token.id as string },

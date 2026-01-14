@@ -18,7 +18,13 @@ export async function resetDb() {
     const username = "admin";
     const passwordHash = await bcrypt.hash("admin1234", 10);
     await db.user.create({
-      data: { username, name: "Admin", passwordHash, mfaEnabled: false },
+      data: {
+        username,
+        name: "Admin",
+        passwordHash,
+        email: `${username}@example.com`,
+        phone: "",
+      },
     });
   } finally {
     await db.$disconnect();

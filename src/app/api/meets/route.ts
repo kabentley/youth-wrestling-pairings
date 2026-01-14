@@ -2,17 +2,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assignMatsForMeet } from "@/lib/assignMats";
+import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
-import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 const MeetSchema = z.object({
   name: z.string().min(2),
   date: z.string(),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
+  homeTeamId: z.string().optional(),
   numMats: z.number().int().min(1).max(10).default(4),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(1),

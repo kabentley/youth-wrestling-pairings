@@ -1,5 +1,5 @@
-import { db } from "./db";
 import { MAX_MATCHES_PER_WRESTLER } from "./constants";
+import { db } from "./db";
 
 export type PairingSettings = {
   maxAgeGapDays: number;
