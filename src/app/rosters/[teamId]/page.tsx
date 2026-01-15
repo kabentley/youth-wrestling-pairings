@@ -21,11 +21,7 @@ const MAX_MATS = CONFIGURED_MATS;
 
 export default function TeamDetail({ params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = use(params);
-  const { data: session } = useSession({
-    refetchInterval: 0,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+  const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const canEdit = role === "ADMIN" || (role === "COACH" && sessionTeamId === teamId);

@@ -91,11 +91,7 @@ function parseCsv(text: string) {
 }
 
 export default function RostersClient() {
-  const { data: session, status } = useSession({
-    refetchInterval: 0,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
+  const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
