@@ -399,11 +399,15 @@ export default function MeetsPage() {
           border-bottom: 1px solid var(--line);
           padding-bottom: 14px;
           margin-bottom: 18px;
+          flex-wrap: wrap;
         }
         .mast-actions {
           display: flex;
           align-items: center;
           gap: 12px;
+          flex: 1;
+          justify-content: flex-end;
+          flex-wrap: wrap;
         }
         .brand {
           display: flex;
@@ -552,7 +556,7 @@ export default function MeetsPage() {
         }
         .row {
           display: flex;
-          gap: 10px;
+          gap: 8px;
           align-items: center;
           flex-wrap: wrap;
         }
@@ -596,10 +600,30 @@ export default function MeetsPage() {
         .team-box {
           border: 1px solid var(--line);
           border-radius: 8px;
-          padding: 12px;
+          padding: 8px;
           background: #fff;
-          max-height: 280px;
+          max-height: 340px;
           overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+        @media (min-height: 940px) {
+          .team-box {
+            max-height: 420px;
+          }
+        }
+        @media (max-height: 720px) {
+          .team-box {
+            max-height: 180px;
+          }
+        }
+        .team-option {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 2px 0;
+          font-size: 13px;
         }
         .meet-list {
           display: grid;
@@ -667,29 +691,48 @@ export default function MeetsPage() {
         .modal {
           background: #fff;
           border-radius: 16px;
-          width: min(560px, 100%);
-          padding: 24px;
+          width: min(720px, 100%);
+          padding: 26px;
           box-shadow: 0 25px 70px rgba(12, 23, 64, 0.3);
           position: relative;
-          max-height: 90vh;
+          max-height: min(98vh, 100vh - 16px);
+          min-height: 70vh;
+          display: flex;
+          flex-direction: column;
           overflow: hidden;
         }
         .modal-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 16px;
+          margin-bottom: 8px;
+          flex-shrink: 0;
         }
         .modal-body {
-          max-height: 70vh;
+          flex: 1;
+          min-height: 0;
           overflow-y: auto;
         }
         .modal-actions {
           display: flex;
           gap: 10px;
-          justify-content: flex-end;
+          justify-content: space-between;
+          align-items: flex-end;
           flex-wrap: wrap;
           margin-top: 16px;
+          flex-shrink: 0;
+        }
+        .modal-home-team {
+          flex: 1;
+          min-width: 220px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .modal-action-buttons {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
         }
         .delete-confirm {
           background: #d32f2f;
@@ -828,7 +871,7 @@ export default function MeetsPage() {
               </h3>
             </div>
             <div className="modal-body">
-              <div className="row" style={{ marginBottom: 10 }}>
+              <div className="row" style={{ marginBottom: 6 }}>
                 <input
                   className="input"
                   placeholder="Meet name"
@@ -883,11 +926,11 @@ export default function MeetsPage() {
                 <span className="muted">Attempt same-team matches</span>
               </label>
 
-              <div style={{ marginTop: 12 }}>
-                <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
-                <div className="team-box">
+          <div style={{ marginTop: 8 }}>
+            <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
+            <div className="team-box">
                 {otherTeams.map(t => (
-                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                  <label key={t.id} className="team-option">
                     <input
                       type="checkbox"
                       checked={teamIds.includes(t.id)}
@@ -897,11 +940,6 @@ export default function MeetsPage() {
                     <span style={{ flex: 1 }}>
                       {t.name} {t.symbol ? `(${t.symbol})` : ""}
                     </span>
-                    {t.hasLogo ? (
-                      <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
-                    ) : (
-                      <span style={{ color: t.color }}>{t.symbol}</span>
-                    )}
                   </label>
                 ))}
               </div>
@@ -910,47 +948,47 @@ export default function MeetsPage() {
                 </div>
               </div>
 
-              <div className="row" style={{ marginTop: 12 }}>
-                <label className="row">
-                  <span className="muted">Home team</span>
-                  <select
-                    className="select"
-                    value={homeTeamId}
-                    onChange={e => {
-                      const next = e.target.value;
-                      setHomeTeamId(next);
-                      const t = teams.find(team => team.id === next);
-                      if (t?.address) setLocation(t.address);
-                    }}
-                    disabled={!canManageMeets}
-                  >
-                    {teamIds.length === 0 && <option value="">Select teams first</option>}
-                    {teamIds.map(id => {
-                      const t = teams.find(team => team.id === id);
-                      return (
-                        <option key={id} value={id}>{t?.symbol ?? id}</option>
-                      );
-                    })}
-                  </select>
-                </label>
-              </div>
             </div>
             <div className="modal-actions">
-              <button
-                className="btn"
-                type="button"
-                onClick={handleModalSubmit}
-                disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
-              >
-                {submitLabel}
-              </button>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => closeCreateModal()}
-              >
-                Cancel
-              </button>
+              <label className="modal-home-team">
+                <span className="muted">Home team</span>
+                <select
+                  className="select"
+                  value={homeTeamId}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setHomeTeamId(next);
+                    const t = teams.find(team => team.id === next);
+                    if (t?.address) setLocation(t.address);
+                  }}
+                  disabled={!canManageMeets}
+                >
+                  {teamIds.length === 0 && <option value="">Select teams first</option>}
+                  {teamIds.map(id => {
+                    const t = teams.find(team => team.id === id);
+                    return (
+                      <option key={id} value={id}>{t?.symbol ?? id}</option>
+                    );
+                  })}
+                </select>
+              </label>
+              <div className="modal-action-buttons">
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={handleModalSubmit}
+                  disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
+                >
+                  {submitLabel}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => closeCreateModal()}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
