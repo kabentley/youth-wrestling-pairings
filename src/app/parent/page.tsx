@@ -37,6 +37,7 @@ type Match = {
     time: string | null;
   };
 };
+type MatchWithMeet = Match & { meetName: string; meetDate: string };
 
 type MeetGroup = {
   meet: { id: string; name: string; date: string; location?: string | null };
@@ -90,7 +91,10 @@ export default function ParentPage() {
       setResults([]);
       return;
     }
-    const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(term)}`);
+    const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(term)}`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       setMsg(json?.error ?? "Unable to search wrestlers.");
@@ -151,8 +155,37 @@ export default function ParentPage() {
     return d;
   }, []);
   const upcomingMeets = meetGroups.filter(g => new Date(g.meet.date) >= today);
-  const pastMeets = meetGroups.filter(g => new Date(g.meet.date) < today);
   const daysPerYear = 365;
+  const sortedChildren = useMemo(() => {
+    return [...children].sort((a, b) => {
+      const aName = `${a.first} ${a.last}`.trim().toLowerCase();
+      const bName = `${b.first} ${b.last}`.trim().toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  }, [children]);
+  const pastMatchesByChild = useMemo(() => {
+    const map = new Map<string, MatchWithMeet[]>();
+    const childSet = new Set(children.map(c => c.id));
+    for (const group of meetGroups) {
+      const meetDate = new Date(group.meet.date);
+      if (meetDate >= today) continue;
+      for (const match of group.matches) {
+        if (!childSet.has(match.childId)) continue;
+        const entry: MatchWithMeet = {
+          ...match,
+          meetName: group.meet.name || "Meet",
+          meetDate: group.meet.date,
+        };
+        const list = map.get(match.childId) ?? [];
+        list.push(entry);
+        map.set(match.childId, list);
+      }
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(a.meetDate).getTime() - new Date(b.meetDate).getTime());
+    }
+    return map;
+  }, [children, meetGroups, today]);
 
 
   function nameChip(label: string, team: string | undefined, color?: string) {
@@ -177,6 +210,27 @@ export default function ParentPage() {
     if (!mat || !order) return "";
     const suffix = String(order).padStart(2, "0");
     return `${mat}${suffix}`;
+  }
+  function formatMatchResult(match: Match) {
+    const result = match.result;
+    if (!result) return "";
+    const parts: string[] = [];
+    if (result.winnerId) {
+      parts.push(result.winnerId === match.childId ? "W" : "L");
+    }
+    if (result.type) {
+      parts.push(result.type);
+    }
+    if (result.score) {
+      parts.push(result.score);
+    }
+    if (result.period !== null && result.period !== undefined) {
+      parts.push(`P${result.period}`);
+    }
+    if (result.time) {
+      parts.push(result.time);
+    }
+    return parts.join(" · ");
   }
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -256,6 +310,20 @@ export default function ParentPage() {
           padding: 14px;
           background: var(--card);
           box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+        }
+        .match-history {
+          margin: 16px 0 0;
+          max-width: 1120px;
+          background: #ffffff;
+          border-radius: 12px;
+          border: 1px solid #dfe4ea;
+          padding: 20px;
+          box-shadow: 0 20px 45px rgba(0, 0, 0, 0.08);
+        }
+        .match-history .panel {
+          margin-bottom: 14px;
+          box-shadow: none;
+          border-color: rgba(29, 35, 43, 0.1);
         }
         .muted {
           color: var(--muted);
@@ -340,19 +408,20 @@ export default function ParentPage() {
           </div>
           {group.matches.length === 0 && <div>No scheduled matches yet.</div>}
           {group.matches.length > 0 && (
-            <table cellPadding={10} style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th align="left">Wrestler</th>
-                  <th align="left">Bout #</th>
-                  <th align="left">Opponent</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.matches.map(match => {
-                  const child = childMap.get(match.childId);
-                  return (
-                    <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
+          <table cellPadding={10} style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th align="left">Wrestler</th>
+                <th align="left">Bout #</th>
+                <th align="left">Opponent</th>
+                <th align="left">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.matches.map(match => {
+                const child = childMap.get(match.childId);
+                return (
+                  <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
                       <td>
                         {nameChip(
                           `${child?.first ?? ""} ${child?.last ?? ""}`.trim(),
@@ -364,6 +433,7 @@ export default function ParentPage() {
                       <td>
                         {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
                       </td>
+                      <td>{formatMatchResult(match)}</td>
                     </tr>
                   );
                 })}
@@ -374,51 +444,54 @@ export default function ParentPage() {
       ))}
 
       <h2 style={{ marginTop: 24 }}>Match History</h2>
-      {pastMeets.length === 0 && <div>No past meets yet.</div>}
-      {pastMeets.map(group => (
-        <div key={group.meet.id} className="panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h3 style={{ margin: 0 }}>{group.meet.name}</h3>
-            <a href={`/parent/meets/${group.meet.id}`}>Meet Details</a>
-          </div>
-          <div className="muted" style={{ marginBottom: 8 }}>
-            {new Date(group.meet.date).toISOString().slice(0, 10)}{" "}
-            {group.meet.location ? `• ${group.meet.location}` : "• Location TBD"}
-          </div>
-          {group.matches.length === 0 && <div>No matches recorded.</div>}
-          {group.matches.length > 0 && (
-            <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th align="left">Wrestler</th>
-                  <th align="left">Bout #</th>
-                  <th align="left">Opponent</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.matches.map(match => {
-                  const child = childMap.get(match.childId);
-                  return (
-                    <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
-                      <td>
-                        {nameChip(
-                          `${child?.first ?? ""} ${child?.last ?? ""}`.trim(),
-                          child?.teamSymbol ?? child?.teamName,
-                          child?.teamColor ?? "#000000"
-                        )}
-                      </td>
-                      <td>{boutNumber(match.mat, match.order)}</td>
+      <div className="match-history">
+        {sortedChildren.map(child => {
+        const history = pastMatchesByChild.get(child.id) ?? [];
+        return (
+          <div key={child.id} className="panel" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>{child.first} {child.last}</h3>
+                {child.teamSymbol || child.teamName ? (
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    {child.teamSymbol ?? child.teamName}
+                  </div>
+                ) : null}
+              </div>
+              <div className="muted" style={{ fontSize: 13 }}>
+                {history.length === 0 ? "No past matches yet" : `${history.length} match${history.length === 1 ? "" : "es"}`}
+              </div>
+            </div>
+            {history.length === 0 ? (
+              <div style={{ marginTop: 8 }}>No matches recorded.</div>
+            ) : (
+              <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
+                <thead>
+                  <tr>
+                    <th align="left">Meet</th>
+                    <th align="left">Date</th>
+                    <th align="left">Opponent</th>
+                    <th align="left">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map(match => (
+                    <tr key={`${match.boutId}-${match.meetDate}`} style={{ borderTop: "1px solid #ddd" }}>
+                      <td>{match.meetName}</td>
+                      <td>{new Date(match.meetDate).toLocaleDateString()}</td>
                       <td>
                         {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
                       </td>
+                      <td>{formatMatchResult(match)}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ))}
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+        })}
+      </div>
 
     </main>
   );

@@ -20,8 +20,8 @@ function tokenize(q: string) {
 
 const clauseForToken = (token: string) => ({
   OR: [
-    { first: { contains: token, mode: "insensitive" as const } },
-    { last: { contains: token, mode: "insensitive" as const } },
+    { first: { contains: token } },
+    { last: { contains: token } },
   ],
 });
 
