@@ -277,6 +277,11 @@ async function loadTeamLogo(name: string): Promise<LogoInfo> {
   }
 }
 
+function toUint8Array(buffer?: Buffer) {
+  if (!buffer) return undefined;
+  return new Uint8Array(buffer);
+}
+
 function generateSymbol(name: string, existingSymbols: Set<string>) {
   const cleaned = name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "T";
   let symbol = cleaned;
@@ -306,7 +311,7 @@ async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) 
     address: TEAM_ADDRESSES[name],
     color: metadata?.color ?? undefined,
     website: metadata?.website ?? undefined,
-    logoData: logo.logoData ?? undefined,
+    logoData: toUint8Array(logo.logoData) ?? undefined,
     logoType: logo.logoType ?? undefined,
   };
   const team = await db.team.create({ data });
