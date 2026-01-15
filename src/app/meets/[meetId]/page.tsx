@@ -8,6 +8,7 @@ import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
+import { useMeetLock } from "@/lib/useMeetLock";
 import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
@@ -105,6 +106,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetName, setMeetName] = useState("");
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
+  const [meetLoaded, setMeetLoaded] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
@@ -331,6 +333,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (status === "ABSENT") return "Not Coming";
     return status;
   }
+  function lockStatusText(lock: LockState, status: "DRAFT" | "PUBLISHED") {
+    if (status !== "DRAFT") return "Not applicable";
+    if (lock.status === "acquired") {
+      if (lock.lockExpiresAt) {
+        const expires = new Date(lock.lockExpiresAt);
+        if (!Number.isNaN(expires.getTime())) {
+          return `Held until ${expires.toLocaleTimeString()}`;
+        }
+      }
+      return "Held";
+    }
+    if (lock.status === "locked") {
+      return `Locked by ${lock.lockedByUsername ?? "another user"}`;
+    }
+    return "Checking";
+  }
   function statusColor(status: AttendanceStatus | null | undefined) {
     if (!status) return "#e6f6ea";
     if (status === "COMING") return "#e6f6ea";
@@ -405,21 +423,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     for (const w of wJson.wrestlers as Wrestler[]) map[w.id] = w;
     setWMap(map);
 
-    if (mRes.ok) {
-      const meetJson = await mRes.json();
-      setMeetName(meetJson.name ?? "");
-      lastSavedNameRef.current = meetJson.name ?? "";
-      setMeetDate(meetJson.date ?? null);
-      setSettings(s => ({
-        ...s,
-        allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
-      }));
-      setMeetStatus(meetJson.status ?? "DRAFT");
-      setLastUpdatedAt(meetJson.updatedAt ?? null);
-      setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
-      setHomeTeamId(meetJson.homeTeamId ?? null);
-      setMeetLocation(meetJson.location ?? null);
-    }
+      if (mRes.ok) {
+        const meetJson = await mRes.json();
+        setMeetName(meetJson.name ?? "");
+        lastSavedNameRef.current = meetJson.name ?? "";
+        setMeetDate(meetJson.date ?? null);
+        setSettings(s => ({
+          ...s,
+          allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
+        }));
+        setMeetStatus(meetJson.status ?? "DRAFT");
+        setLastUpdatedAt(meetJson.updatedAt ?? null);
+        setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
+        setHomeTeamId(meetJson.homeTeamId ?? null);
+        setMeetLocation(meetJson.location ?? null);
+      }
+      setMeetLoaded(true);
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
       setCurrentUserRole(meJson?.role ?? null);
@@ -446,7 +465,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
   const canEdit = editAllowed && lockState.status === "acquired" && isDraft;
-  const canChangeStatus = editAllowed && lockState.status === "acquired";
+  const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
   const restartDisabled = !canEdit || isPublished;
   const handleRestartClick = () => {
     if (restartDisabled) return;
@@ -551,7 +570,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
   }, []);
   useEffect(() => {
-    if (!editAllowed) return;
+    if (!editAllowed || !meetLoaded) return;
+    if (meetStatus !== "DRAFT") {
+      updateLockState({ status: "locked", lockedByUsername: null });
+      return;
+    }
     void acquireLock();
     const interval = setInterval(() => {
       if (lockStatusRef.current === "acquired") {
@@ -565,7 +588,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       window.removeEventListener("beforeunload", onBeforeUnload);
       releaseLock();
     };
-  }, [meetId, editAllowed]);
+  }, [meetId, editAllowed, meetLoaded, meetStatus]);
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
@@ -1484,6 +1507,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <span>
               Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
             </span>
+            <span>
+              Lock: <b>{lockStatusText(lockState, meetStatus)}</b>
+            </span>
             {lastUpdatedAt && (
               <span className="meet-last-updated">
                 Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
@@ -1555,7 +1581,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </div>
           )}
 
-          {lockState.status === "locked" && (
+          {isDraft && lockState.status === "locked" && (
             <div className="notice">
               Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
               <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
@@ -2366,6 +2392,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               meetId={meetId}
               onMatAssignmentsChange={refreshAfterMatAssignments}
               meetStatus={meetStatus}
+              lockState={lockState}
             />
           </section>
         )}

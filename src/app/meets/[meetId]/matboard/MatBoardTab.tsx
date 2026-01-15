@@ -24,35 +24,28 @@ type Bout = {
   order?: number | null;
   originalMat?: number | null;
 };
-type LockState = {
-  status: "loading" | "acquired" | "locked";
-  lockedByUsername?: string | null;
-  lockExpiresAt?: string | null;
-};
-
 const keyMat = (m: number) => String(m);
 
-export default function MatBoardTab({
-  meetId,
-  onMatAssignmentsChange,
-  meetStatus,
-}: {
+import type { LockState } from "@/lib/useMeetLock";
+
+interface MatBoardTabProps {
   meetId: string;
   onMatAssignmentsChange?: () => void;
   meetStatus: "DRAFT" | "PUBLISHED";
-}) {
+  lockState: LockState;
+}
+
+export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus, lockState }: MatBoardTabProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(0);
   const [conflictGap] = useState(3);
-  const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
   const [meetSettings, setMeetSettings] = useState<{ numMats: number; homeTeamId?: string | null } | null>(null);
   const [italicizeSingles, setItalicizeSingles] = useState(true);
-  const lockStatusRef = useRef<LockState["status"]>("loading");
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -63,7 +56,6 @@ export default function MatBoardTab({
   const autoSavingRef = useRef(false);
   const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
   const canEdit = lockState.status === "acquired" && meetStatus === "DRAFT";
-
   useEffect(() => {
     void load();
   }, [meetId]);
@@ -116,22 +108,6 @@ export default function MatBoardTab({
     void fetchMatColors();
     return () => {
       cancelled = true;
-    };
-  }, [meetId]);
-
-  useEffect(() => {
-    void acquireLock();
-    const interval = setInterval(() => {
-      if (lockStatusRef.current === "acquired") {
-        void acquireLock();
-      }
-    }, 60_000);
-    const onBeforeUnload = () => releaseLock();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      releaseLock();
     };
   }, [meetId]);
 
@@ -202,26 +178,6 @@ export default function MatBoardTab({
     setDirty(false);
     dirtyRef.current = false;
 
-  }
-
-  async function acquireLock() {
-    const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
-    if (res.ok) {
-      const data = await res.json();
-      lockStatusRef.current = "acquired";
-      setLockState({ status: "acquired", lockExpiresAt: data.lockExpiresAt });
-    } else if (res.status === 409) {
-      const data = await res.json();
-      lockStatusRef.current = "locked";
-      setLockState({ status: "locked", lockedByUsername: data.lockedByUsername });
-    } else if (res.status === 401 || res.status === 403) {
-      const json = await res.json().catch(() => ({}));
-      setAuthMsg(json?.error ?? "You are not authorized to edit meets.");
-    }
-  }
-
-  function releaseLock() {
-    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
   }
 
   const mats = useMemo(() => {
@@ -881,7 +837,6 @@ export default function MatBoardTab({
         </div>
         {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
       </div>
-      <div className="toolbar" style={{ alignItems: "flex-start" }}></div>
       {authMsg && <div className="notice">{authMsg}</div>}
       {lockState.status === "locked" && (
         <div className="lock-notice">
