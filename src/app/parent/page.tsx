@@ -40,7 +40,7 @@ type Match = {
 type MatchWithMeet = Match & { meetName: string; meetDate: string };
 
 type MeetGroup = {
-  meet: { id: string; name: string; date: string; location?: string | null };
+  meet: { id: string; name: string; date: string; location?: string | null; status?: string | null };
   matches: Match[];
 };
 
@@ -154,7 +154,7 @@ export default function ParentPage() {
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-  const upcomingMeets = meetGroups.filter(g => new Date(g.meet.date) >= today);
+  const upcomingMeets = meetGroups.filter(g => g.meet.status === "PUBLISHED" && new Date(g.meet.date) >= today);
   const daysPerYear = 365;
   const sortedChildren = useMemo(() => {
     return [...children].sort((a, b) => {

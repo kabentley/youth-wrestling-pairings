@@ -13,11 +13,28 @@ type RestartDefaults = {
   homeTeamId?: string | null;
   teamIds?: string[];
 };
-const DEFAULT_DATE = "2026-01-15";
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getNextSaturday(): string {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  let daysUntilSaturday = (6 - dayOfWeek + 7) % 7;
+  if (daysUntilSaturday === 0) daysUntilSaturday = 7;
+  const nextSaturday = new Date(today);
+  nextSaturday.setDate(today.getDate() + daysUntilSaturday);
+  return formatLocalDate(nextSaturday);
+}
+
+const DEFAULT_DATE = getNextSaturday();
 
 const MIN_MATS = 1;
 const MAX_MATS = 10;
-const DEFAULT_NUM_MATS = 4;
+const DEFAULT_NUM_MATS = 3;
 
 type Meet = {
   id: string;
@@ -581,6 +598,8 @@ export default function MeetsPage() {
           border-radius: 8px;
           padding: 12px;
           background: #fff;
+          max-height: 280px;
+          overflow-y: auto;
         }
         .meet-list {
           display: grid;
@@ -819,8 +838,14 @@ export default function MeetsPage() {
                 />
               </div>
               <div className="row">
-                <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
-                <input className="input" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
+                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                  <span className="muted">Date</span>
+                  <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
+                </label>
+                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                  <span className="muted">Meet Location (optional)</span>
+                  <input className="input" placeholder="Location" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
+                </label>
               </div>
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="row">
@@ -858,8 +883,9 @@ export default function MeetsPage() {
                 <span className="muted">Attempt same-team matches</span>
               </label>
 
-              <div className="team-box" style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }}>
                 <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
+                <div className="team-box">
                 {otherTeams.map(t => (
                   <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
                     <input
@@ -868,7 +894,9 @@ export default function MeetsPage() {
                       onChange={() => toggleTeam(t.id)}
                       disabled={!canManageMeets || isEditing}
                     />
-                    <span style={{ flex: 1 }}>{t.name}</span>
+                    <span style={{ flex: 1 }}>
+                      {t.name} {t.symbol ? `(${t.symbol})` : ""}
+                    </span>
                     {t.hasLogo ? (
                       <img src={`/api/teams/${t.id}/logo/file`} alt={`${t.name} logo`} style={{ width: 20, height: 20, objectFit: "contain" }} />
                     ) : (
@@ -876,6 +904,7 @@ export default function MeetsPage() {
                     )}
                   </label>
                 ))}
+              </div>
                 <div className="muted" style={{ marginTop: 6 }}>
                   Selected other teams: {otherTeamIds.length} (max 3)
                 </div>

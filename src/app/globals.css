@@ -349,6 +349,16 @@ textarea {
   border-radius: 6px;
 }
 
+.app-header-select {
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
 .app-header-team-chip {
   display: inline-flex;
   align-items: center;

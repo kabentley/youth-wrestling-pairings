@@ -14,7 +14,7 @@ export default async function Home() {
     redirect("/auth/signin");
   }
   const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
-  const teamInfo = session && (session.user as any)?.role === "COACH" && (session.user as any)?.teamId
+  const teamInfo = session && (session.user as any)?.teamId
     ? (await db.team.findUnique({
         where: { id: (session.user as any).teamId },
         select: { symbol: true, name: true, website: true },
@@ -182,6 +182,38 @@ export default async function Home() {
           padding: 14px;
           background: var(--card);
         }
+        .team-news-panel {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          min-height: 320px;
+        }
+        .team-news-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .team-news-title {
+          margin: 0;
+          font-family: "Oswald", Arial, sans-serif;
+          text-transform: uppercase;
+          font-size: 16px;
+        }
+        .team-news-btn {
+          position: absolute;
+          top: 14px;
+          right: 14px;
+        }
+        .team-news-frame {
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          overflow: hidden;
+          background: #fff;
+          flex: 1;
+          min-height: 260px;
+        }
         .panel h3 {
           margin: 0 0 8px;
           font-family: "Oswald", Arial, sans-serif;
@@ -259,32 +291,33 @@ export default async function Home() {
             )}
           </div>
         {teamWebsiteUrl && (
-          <div className="side">
-            <div className="panel">
-              <h3>Team Website</h3>
-              <p style={{ marginBottom: 12 }}>
-                Latest updates for {teamLabel || "your team"}.
-              </p>
-              <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-                <iframe
-                  title="Team website"
-                  src={teamWebsiteUrl}
-                  style={{ width: "100%", height: 240, border: "none" }}
-                />
-              </div>
+        <div className="side">
+          <div className="panel team-news-panel">
+            <div className="team-news-heading">
+              <h3 className="team-news-title">Team News</h3>
               <a
                 href={teamWebsiteUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="btn secondary"
-                style={{ display: "inline-block", marginTop: 12 }}
+                className="btn secondary team-news-btn"
               >
-                Visit team website
+                Visit site
               </a>
             </div>
+            <p style={{ marginBottom: 12 }}>
+              Latest updates for {teamLabel || "your team"}.
+            </p>
+            <div className="team-news-frame">
+              <iframe
+                title="Team news"
+                src={teamWebsiteUrl}
+                style={{ width: "100%", height: "100%", border: "none" }}
+              />
+            </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+    </section>
     </main>
   );
 }

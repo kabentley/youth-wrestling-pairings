@@ -14,7 +14,6 @@ const headerLinks = [
   { href: "/meets", label: "Meets", minRole: "COACH" as const },
   { href: "/parent", label: "My Wrestlers" },
   { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
-  { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
 ];
 
 export type AdminTabKey = "users" | "league";
@@ -38,7 +37,7 @@ export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) 
 
   return (
     <>
-      <AppHeader links={headerLinks} />
+      <AppHeader links={headerLinks} hideTeamSelector />
       <div className="admin-nav admin-tab-bar" role="tablist">
         <button
           type="button"

@@ -57,7 +57,7 @@ const icwlTeamNames = [
   "Abington Bulldogs Youth Wrestling",
   "Archbishop Ryan",
   "Aston Bandits Wrestling",
-  "Avon Grove (Avon Grove Youth Wrestling Association)",
+  "Avon Grove Youth Wrestling Association",
   "Beat The Streets",
   "Bensalem Youth Wrestling",
   "Boyertown Wrestling Demons",
@@ -106,7 +106,7 @@ const TEAM_SYMBOL_OVERRIDES: Record<string, string> = {
   "Abington Bulldogs Youth Wrestling": "AB",
   "Archbishop Ryan": "AR",
   "Aston Bandits Wrestling": "AST",
-  "Avon Grove (Avon Grove Youth Wrestling Association)": "AG",
+  "Avon Grove Youth Wrestling Association": "AG",
   "Beat The Streets": "BTS",
   "Bensalem Youth Wrestling": "BEN",
   "Boyertown Wrestling Demons": "BOY",
@@ -335,6 +335,8 @@ type SeedMeetOptions = {
   matchesPerWrestler?: number;
 };
 
+const DEFAULT_MEET_MATS = 3;
+
 async function finalizeMeet(meetId: string, options: Required<SeedMeetOptions>) {
   const pairingSettings: PairingSettings = {
     maxAgeGapDays: 365,
@@ -358,7 +360,7 @@ async function createMeet(
 ) {
   const now = new Date();
   const opts = {
-    numMats: options.numMats ?? 4,
+    numMats: options.numMats ?? DEFAULT_MEET_MATS,
     allowSameTeamMatches: options.allowSameTeamMatches ?? false,
     matchesPerWrestler: options.matchesPerWrestler ?? 1,
   };
@@ -406,10 +408,10 @@ async function ensureAdmin() {
   return user;
 }
 
-async function ensureLeague(name: string) {
+async function ensureLeague(name: string, website: string) {
   const existing = await db.league.findFirst({ select: { id: true } });
   if (!existing) {
-    await db.league.create({ data: { name } });
+    await db.league.create({ data: { name, website } });
     return;
   }
   await db.league.update({
@@ -429,7 +431,7 @@ async function main() {
   console.log("Seeding demo data...");
   const admin = await ensureAdmin();
   await clearAll();
-  await ensureLeague("ICWL");
+  await ensureLeague("ICWL", "https://www.intercountywrestlingleague.org/");
   await loadLogoManifest();
   await loadTeamMetadata();
 

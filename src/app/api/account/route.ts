@@ -46,8 +46,9 @@ export async function PATCH(req: Request) {
   }
   if (teamId !== undefined) {
     const nextTeamId = teamId.trim() || null;
-    if (user.role !== "PARENT") {
-      return NextResponse.json({ error: "Only parents can change their team." }, { status: 403 });
+    const canChangeTeam = user.role === "PARENT" || user.role === "ADMIN";
+    if (!canChangeTeam) {
+      return NextResponse.json({ error: "Only parents and admins can change their team." }, { status: 403 });
     }
     if (!nextTeamId) {
       return NextResponse.json({ error: "Select a team." }, { status: 400 });

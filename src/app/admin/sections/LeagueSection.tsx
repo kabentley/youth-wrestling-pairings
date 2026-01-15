@@ -149,10 +149,9 @@ export default function LeagueSection() {
     return teamHeadCoachEdits[team.id] ?? team.headCoachId ?? "";
   }
 
-  function normalizeHeadCoachId(value: string | null | undefined) {
-    if (!value) return null;
-    const trimmed = value.trim();
-    return trimmed === "" ? null : trimmed;
+function normalizeHeadCoachId(value: string | null | undefined) {
+    if (!value) return "";
+    return value.trim();
   }
 
   async function saveLeague(nextName = leagueName, nextWebsite = leagueWebsite) {

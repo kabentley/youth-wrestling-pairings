@@ -5,17 +5,22 @@ import { useEffect, useState } from "react";
 
 type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
+type Props = { links: LinkItem[]; hideTeamSelector?: boolean };
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
 const coachNavLink: LinkItem = { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" };
 
-export default function AppHeader({ links }: { links: LinkItem[] }) {
+export default function AppHeader({ links, hideTeamSelector }: Props) {
   const [user, setUser] = useState<{
     username: string;
     role: Role;
+    teamId?: string | null;
     team?: { name?: string | null; symbol?: string | null; color?: string | null } | null;
     teamLogoUrl?: string | null;
   } | null>(null);
+  const [teamOptions, setTeamOptions] = useState<{ id: string; name: string; symbol?: string | null; color?: string | null }[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [updatingTeam, setUpdatingTeam] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -26,10 +31,11 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
         setUser({
           username: json.username,
           role: json.role,
+          teamId: json.teamId ?? null,
           team: json.team ?? null,
           teamLogoUrl: json.teamLogoUrl ?? null,
         });
-    }
+      }
     void load();
     function handleRefresh() {
       void load();
@@ -40,6 +46,34 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
       window.removeEventListener("user:refresh", handleRefresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== "ADMIN") {
+      setTeamOptions([]);
+      return;
+    }
+    let active = true;
+    setLoadingTeams(true);
+    fetch("/api/teams")
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        if (!active) return;
+        const list = Array.isArray(data) ? data : [];
+        setTeamOptions(list.map((team: any) => ({
+          id: team.id,
+          name: team.name,
+          symbol: team.symbol,
+          color: team.color,
+        })));
+      })
+      .catch(() => {
+        // ignore
+      })
+      .finally(() => {
+        if (active) setLoadingTeams(false);
+      });
+    return () => { active = false; };
+  }, [user?.role]);
 
   const allLinks = links.some((link) => link.href === coachNavLink.href)
     ? links
@@ -102,6 +136,49 @@ export default function AppHeader({ links }: { links: LinkItem[] }) {
                 </span>
               ) : null}
             </div>
+            {user.role === "ADMIN" && teamOptions.length > 0 && !hideTeamSelector && (
+              <select
+                className="app-header-select"
+                value={user.teamId ?? ""}
+                onChange={(e) => {
+                  const nextTeamId = e.target.value;
+                  if (!nextTeamId) return;
+                  setUpdatingTeam(true);
+                  fetch("/api/account", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ teamId: nextTeamId }),
+                  })
+                    .then(res => {
+                      if (!res.ok) throw new Error("Failed");
+                      return res.json();
+                    })
+                    .then(() => {
+                      const nextTeam = teamOptions.find(option => option.id === nextTeamId);
+                      setUser(prev => prev ? {
+                        ...prev,
+                        teamId: nextTeamId,
+                        team: nextTeam ?? prev.team,
+                      } : prev);
+                      window.location.reload();
+                    })
+                    .catch(() => {
+                      // ignore
+                    })
+                    .finally(() => {
+                      setUpdatingTeam(false);
+                    });
+                }}
+                disabled={loadingTeams || updatingTeam}
+              >
+                <option value="">Change team</option>
+                {teamOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.symbol ? `${option.symbol} – ${option.name}` : option.name}
+                  </option>
+                ))}
+              </select>
+            )}
             {myWrestlersLink ? (
               <a href={myWrestlersLink.href} className="app-header-link">
                 {myWrestlersLink.label}

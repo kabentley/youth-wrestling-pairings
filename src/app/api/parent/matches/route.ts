@@ -52,6 +52,7 @@ export async function GET() {
           name: true,
           date: true,
           location: true,
+          status: true,
         },
       },
     },
@@ -70,7 +71,7 @@ export async function GET() {
   });
   const wMap = new Map(wrestlers.map((w) => [w.id, w]));
 
-  const meetMap = new Map<string, { meet: { id: string; name: string; date: Date; location: string | null }; matches: any[] }>();
+  const meetMap = new Map<string, { meet: { id: string; name: string; date: Date; location: string | null; status: string | null }; matches: any[] }>();
 
   for (const b of bouts) {
     const meet = b.meet;

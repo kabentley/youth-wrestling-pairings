@@ -1300,7 +1300,7 @@ export default function RostersClient() {
           width: 40px;
           height: 40px;
         }
-          .team-head {
+        .team-head {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -1314,6 +1314,7 @@ export default function RostersClient() {
             width: 100%;
             max-width: 280px;
             justify-content: flex-start;
+            overflow: hidden;
           }
         .team-logo {
           width: 44px;
@@ -1325,20 +1326,26 @@ export default function RostersClient() {
           align-items: baseline;
           gap: 10px;
           flex-wrap: nowrap;
+          flex: 1;
+          min-width: 0;
         }
         .team-symbol {
           font-weight: 700;
           font-size: 18px;
           text-decoration: none;
           white-space: nowrap;
+          flex-shrink: 0;
         }
         .team-name {
-          font-size: 16px;
+          font-size: 14px;
           font-weight: 600;
           color: var(--ink);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          flex: 1 1 auto;
+          min-width: 0;
+          width: 100%;
         }
         .team-link a {
           color: var(--accent);
