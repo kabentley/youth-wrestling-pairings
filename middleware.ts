@@ -4,12 +4,6 @@ import { withAuth } from "next-auth/middleware";
 export default withAuth(function middleware(req) {
   const pathname = req.nextUrl.pathname;
   const token = req.nextauth?.token;
-  if (pathname.startsWith("/auth/force-reset") && !token) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/auth/signin";
-    url.searchParams.set("callbackUrl", "/auth/force-reset");
-    return NextResponse.redirect(url);
-  }
   if (token?.mustResetPassword) {
     const allowed =
       pathname.startsWith("/auth/force-reset") ||

@@ -10,3 +10,4 @@ prisma/e2e.db
 
 # optional
 .env.postgres
+*.log
