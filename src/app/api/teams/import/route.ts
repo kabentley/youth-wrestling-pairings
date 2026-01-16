@@ -57,11 +57,15 @@ export async function POST(req: Request) {
     existing: existingWrestlers,
   });
 
-  for (const u of plan.toUpdate) {
-    await db.wrestler.update({
-      where: { id: u.id },
-      data: { weight: u.weight, experienceYears: u.experienceYears, skill: u.skill },
-    });
+  if (plan.toUpdate.length) {
+    await db.$transaction(
+      plan.toUpdate.map(u =>
+        db.wrestler.update({
+          where: { id: u.id },
+          data: { weight: u.weight, experienceYears: u.experienceYears, skill: u.skill },
+        }),
+      ),
+    );
   }
 
   if (plan.toCreate.length) {
