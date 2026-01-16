@@ -72,7 +72,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ teamId: 
   await db.team.update({
     where: { id: teamId },
     data: {
-      homeTeamPreferSameMat: body.homeTeamPreferSameMat ?? false,
+      homeTeamPreferSameMat: body.homeTeamPreferSameMat ?? true,
       numMats: desiredNumMats,
     },
   });

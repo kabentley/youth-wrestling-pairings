@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
+import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const MeetSchema = z.object({
   name: z.string().min(2),
@@ -16,7 +17,8 @@ const MeetSchema = z.object({
   homeTeamId: z.string().optional(),
   numMats: z.number().int().min(1).max(10).default(4),
   allowSameTeamMatches: z.boolean().default(false),
-  matchesPerWrestler: z.number().int().min(1).max(5).default(1),
+  matchesPerWrestler: z.number().int().min(1).max(5).default(2),
+  maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
 });
 
 export async function GET() {
@@ -52,6 +54,7 @@ export async function POST(req: Request) {
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
       matchesPerWrestler: parsed.matchesPerWrestler,
+      maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
       updatedById: user.id,
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },
@@ -72,6 +75,8 @@ export async function POST(req: Request) {
   await logMeetChange(meet.id, user.id, "Auto-generated pairings.");
   await assignMatsForMeet(meet.id, { numMats: parsed.numMats });
   await logMeetChange(meet.id, user.id, "Auto-assigned mats.");
+  await reorderBoutsForMeet(meet.id);
+  await logMeetChange(meet.id, user.id, "Auto-reordered mats.");
 
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });

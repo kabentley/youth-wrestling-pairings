@@ -107,6 +107,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
   const [meetLoaded, setMeetLoaded] = useState(false);
+  const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState<number | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
@@ -239,6 +240,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
+  const orderedPairingsTeams = useMemo(() => {
+    if (!homeTeamId) return teams;
+    const homeTeam = teams.find(t => t.id === homeTeamId);
+    if (!homeTeam) return teams;
+    return [homeTeam, ...teams.filter(t => t.id !== homeTeamId)];
+  }, [teams, homeTeamId]);
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
@@ -437,6 +444,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
         setMeetLocation(meetJson.location ?? null);
+        setMaxMatchesPerWrestler(
+          typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
+        );
       }
       setMeetLoaded(true);
     if (meRes.ok) {
@@ -494,14 +504,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [teams, activeTeamId]);
   useEffect(() => {
-    if (teams.length === 0) {
+    if (orderedPairingsTeams.length === 0) {
       if (pairingsTeamId) setPairingsTeamId(null);
       return;
     }
-    if (!pairingsTeamId || !teams.some(t => t.id === pairingsTeamId)) {
-      setPairingsTeamId(teams[0]?.id ?? null);
+    if (!pairingsTeamId || !orderedPairingsTeams.some(t => t.id === pairingsTeamId)) {
+      setPairingsTeamId(orderedPairingsTeams[0]?.id ?? null);
     }
-  }, [teams, pairingsTeamId]);
+  }, [orderedPairingsTeams, pairingsTeamId]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -634,6 +644,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     acc[bout.greenId] = (acc[bout.greenId] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+  const selectedMatchCount = selectedPairingId ? (matchCounts[selectedPairingId] ?? 0) : 0;
 
   async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
     if (!wrestlerId) {
@@ -722,9 +733,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCandidates([]);
       return;
     }
+    if (maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler) {
+      setCandidates([]);
+      return;
+    }
     const { version, ...query } = candidateFetchConfig;
     void loadCandidates(selectedPairingId, query);
-  }, [selectedPairingId, candidateFetchConfig]);
+  }, [selectedPairingId, candidateFetchConfig, maxMatchesPerWrestler, selectedMatchCount]);
   const attendanceCounts = attendanceRoster.reduce(
     (acc, w) => {
       const status = w.status ?? null;
@@ -754,6 +769,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const currentMatches = target
     ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
     : [];
+  const targetMatchCount = target ? (matchCounts[target.id] ?? 0) : 0;
   const currentMatchRows = currentMatches.map((b) => {
     const opponentId = b.redId === target?.id ? b.greenId : b.redId;
     return {
@@ -780,6 +796,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), currentSort.dir);
   });
   const availableFiltered = candidates
+    .filter(() => {
+      if (!target) return true;
+      if (maxMatchesPerWrestler === null) return true;
+      return targetMatchCount < maxMatchesPerWrestler;
+    })
     .filter((c) => settings.allowSameTeamMatches || c.opponent.teamId !== target?.teamId)
     .filter((c) => {
       if (!settings.firstYearOnlyWithFirstYear) return true;
@@ -847,15 +868,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function addMatch(redId: string, greenId: string) {
     if (!canEdit) return;
-    await fetch(`/api/meets/${meetId}/pairings/add`, {
+    const res = await fetch(`/api/meets/${meetId}/pairings/add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redId, greenId }),
     });
-    await load();
+    const created = await res.json().catch(() => null);
+    if (res.ok && created?.id) {
+      setBouts(prev => {
+        const next = prev.filter(b => b.id !== created.id);
+        return [...next, created];
+      });
+    } else {
+      await load();
+    }
     await loadActivity();
-    if (selectedPairingId) {
+    if (selectedPairingId && (maxMatchesPerWrestler === null || selectedMatchCount + 1 < maxMatchesPerWrestler)) {
       await loadCandidates(selectedPairingId);
+    } else {
+      setCandidates([]);
     }
   }
 
@@ -871,7 +902,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setTarget(null);
       setCandidates([]);
     } else if (target?.id === wrestlerId) {
-      await loadCandidates(wrestlerId);
+      if (maxMatchesPerWrestler === null || targetMatchCount < maxMatchesPerWrestler) {
+        await loadCandidates(wrestlerId);
+      } else {
+        setCandidates([]);
+      }
     }
   }
 
@@ -1600,7 +1635,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <h3 style={{ margin: 0 }}>Pairings</h3>
           </div>
           <div className="pairings-tab-bar">
-            {teams.map(team => {
+            {orderedPairingsTeams.map(team => {
               const isActive = pairingsTeamId === team.id;
               const activeTextColor = contrastText(team.color);
               return (
@@ -2101,7 +2136,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         );
                       })}
                       {availableSorted.length === 0 && (
-                        <tr><td colSpan={8}>No candidates meet the current limits.</td></tr>
+                        <tr>
+                          <td colSpan={8}>
+                            {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
+                              ? "Wrestler already has maximum number of bouts"
+                              : "No candidates meet the current limits."}
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>

@@ -24,7 +24,7 @@ model Team {
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
   numMats   Int        @default(4)
-  homeTeamPreferSameMat Boolean @default(false)
+  homeTeamPreferSameMat Boolean @default(true)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
   coaches   User[]
@@ -74,7 +74,8 @@ model Meet {
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
-  matchesPerWrestler Int @default(1)
+  matchesPerWrestler Int @default(2)
+  maxMatchesPerWrestler Int @default(5)
   status    String    @default("DRAFT")
   updatedAt DateTime  @updatedAt
   updatedById String?

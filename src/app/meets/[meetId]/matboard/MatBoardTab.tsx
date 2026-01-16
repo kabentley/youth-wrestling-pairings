@@ -395,23 +395,32 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
       return computeConflictSummary(matsCopy, gap);
     }
 
-    let best = base.slice();
-    let bestScore = scoreCandidate(best);
-    const attempts = Math.max(25, closestPowerOfTwo(base.length * 4));
-    for (let iter = 0; iter < attempts; iter++) {
-      if (best.length < 2) break;
-      const next = best.slice();
-      const idx = Math.floor(Math.random() * (next.length - 1));
-      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-      const score = scoreCandidate(next);
-      const delta = compareConflictSummary(score, bestScore);
-      const accept = delta < 0 || Math.random() < 0.05;
-      if (accept) {
-        best = next;
-        bestScore = score;
+    const working = base.slice();
+    let bestScore = scoreCandidate(working);
+    const attempts = Math.max(10, closestPowerOfTwo(base.length * 2));
+    for (let idx = 0; idx < working.length; idx++) {
+      const currentScore = scoreCandidate(working);
+      const hasConflict = currentScore.some((count, index) => index > 0 && count > 0);
+      if (!hasConflict) continue;
+      let bestLocal = working.slice();
+      let bestLocalScore = currentScore;
+      for (let iter = 0; iter < attempts; iter++) {
+        if (working.length < 2) break;
+        const next = working.slice();
+        const swapIdx = Math.floor(Math.random() * (next.length - 1));
+        [next[swapIdx], next[swapIdx + 1]] = [next[swapIdx + 1], next[swapIdx]];
+        const score = scoreCandidate(next);
+        const delta = compareConflictSummary(score, bestLocalScore);
+        if (delta < 0) {
+          bestLocal = next;
+          bestLocalScore = score;
+        }
       }
+      working.splice(0, working.length, ...bestLocal);
+      bestScore = bestLocalScore;
+      idx = Math.max(-1, idx - 1);
     }
-    const resolved = resolveZeroGapConflicts(best, allMats, matIndex, gap);
+    const resolved = resolveZeroGapConflicts(working, allMats, matIndex, gap);
     allMats[matIndex] = resolved.slice();
     return resolved;
   }

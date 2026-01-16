@@ -3,25 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 
 
-enum Role {
-  ADMIN
-  COACH
-  PARENT
-  TABLE_WORKER
-}
-
-enum MeetWrestlerStatusType {
-  COMING
-  NOT_COMING
-  LATE
-  EARLY
-  ABSENT
-}
+// enums are not supported by the sqlite connector; use string fields instead.
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -37,7 +24,7 @@ model Team {
   homeMeets Meet[]     @relation("MeetHomeTeam")
   matRules  TeamMatRule[]
   numMats   Int        @default(4)
-  homeTeamPreferSameMat Boolean @default(false)
+  homeTeamPreferSameMat Boolean @default(true)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
   coaches   User[]
@@ -87,7 +74,8 @@ model Meet {
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
-  matchesPerWrestler Int @default(1)
+  matchesPerWrestler Int @default(2)
+  maxMatchesPerWrestler Int @default(5)
   status    String    @default("DRAFT")
   updatedAt DateTime  @updatedAt
   updatedById String?
@@ -110,7 +98,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     MeetWrestlerStatusType
+  status     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -227,7 +215,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          Role     @default(PARENT)
+  role          String   @default("PARENT")
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -238,6 +226,7 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
+  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -251,7 +240,6 @@ model User {
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   children      UserChild[]
-  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

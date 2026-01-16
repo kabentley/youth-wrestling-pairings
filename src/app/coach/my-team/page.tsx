@@ -69,7 +69,7 @@ export default function CoachMyTeamPage() {
   const [logoVersion, setLogoVersion] = useState(0);
   const [rules, setRules] = useState<MatRule[]>([]);
   const [numMats, setNumMats] = useState(MIN_MATS);
-  const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
+  const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
@@ -679,20 +679,22 @@ export default function CoachMyTeamPage() {
               checked={homeTeamPreferSameMat}
               onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
             />
-            Always assign home team wrestlers to the same mat
+            Home team wrestlers' bouts should all be on the same mat
           </label>
           <div className="mat-summary-box">
             <div>
               <div className="mat-summary-label">Max number of mats for home meets</div>
-              <NumberInput
-                min={MIN_MATS}
-                max={MAX_MATS}
-                value={numMats}
-                onValueChange={(value) => adjustMatCount(value)}
-                normalize={(value) => Math.round(value)}
-              />
+              <div className="mat-summary-row">
+                <NumberInput
+                  min={MIN_MATS}
+                  max={MAX_MATS}
+                  value={numMats}
+                  onValueChange={(value) => adjustMatCount(value)}
+                  normalize={(value) => Math.round(value)}
+                />
+                <div className="mat-summary-note">The table below always lists five mats; use this input to indicate the number of mats you actually have.</div>
+              </div>
             </div>
-            <div className="mat-summary-note">This table always lists five mats; use this input to indicate the number of mats you actually have.</div>
           </div>
           <div className="mat-setup-table">
             <table>
@@ -1127,6 +1129,12 @@ const coachStyles = `
     gap: 12px;
     align-items: center;
   }
+  .mat-summary-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
   .mat-summary-label {
     font-size: 12px;
     color: var(--muted);
@@ -1142,7 +1150,6 @@ const coachStyles = `
     font-weight: 700;
   }
   .mat-summary-note {
-    margin-left: auto;
     font-size: 13px;
     color: var(--muted);
   }

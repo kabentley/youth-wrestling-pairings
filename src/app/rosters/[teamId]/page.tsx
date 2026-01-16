@@ -32,7 +32,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   const [teamLogoVersion, setTeamLogoVersion] = useState(0);
   const [showInactive, setShowInactive] = useState(true);
   const [matRules, setMatRules] = useState<MatRule[]>([]);
-  const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(false);
+  const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
   const [numMats, setNumMats] = useState(MIN_MATS);
   const [ruleMsg, setRuleMsg] = useState("");
   const [formError, setFormError] = useState("");

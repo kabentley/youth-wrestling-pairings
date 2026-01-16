@@ -76,7 +76,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   const newBouts: { redId: string; greenId: string; score: number; notes: string }[] = [];
   const targetMatches = Math.min(
     MAX_MATCHES_PER_WRESTLER,
-    Math.max(1, Math.floor(settings.matchesPerWrestler ?? 1)),
+    Math.max(1, Math.floor(settings.matchesPerWrestler ?? 2)),
   );
 
   function baseScore(a: any, b: any) {

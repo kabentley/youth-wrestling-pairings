@@ -82,11 +82,23 @@ export function getEligibleMatIndexes(
   wMap: Map<string, MatWrestler>,
   meetDate: Date,
   homeTeamId: string | null,
+  homeWrestlerMat: Map<string, number>,
+  lockHomeWrestlerMat: boolean,
 ) {
-  const homeBout = isHomeBout(bout, wMap, homeTeamId);
+  const red = wMap.get(bout.redId);
+  const green = wMap.get(bout.greenId);
+  const redHome = homeTeamId && red?.teamId === homeTeamId;
+  const greenHome = homeTeamId && green?.teamId === homeTeamId;
+  const redMat = redHome && lockHomeWrestlerMat ? homeWrestlerMat.get(bout.redId) : null;
+  const greenMat = greenHome && lockHomeWrestlerMat ? homeWrestlerMat.get(bout.greenId) : null;
+  const lockedMat = redMat ?? greenMat ?? null;
+
+  if (lockedMat !== null) {
+    return { indexes: [lockedMat] };
+  }
+
   const indexes: number[] = [];
   for (let idx = 0; idx < mats.length; idx++) {
-    if (homeBout && idx !== 0) continue;
     if (matchesMatRule(bout, mats[idx].rule, wMap, meetDate)) {
       indexes.push(idx);
     }
@@ -154,6 +166,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
 
   const mats: { boutIds: string[]; rule: MatRule }[] = rules.map(rule => ({ boutIds: [], rule }));
   let homeTeamMatIdx: number | null = null;
+  const homeWrestlerMat = new Map<string, number>();
   const meetDate = meet?.date ?? new Date();
 
   function getWrestler(id: string) {
@@ -196,7 +209,15 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   }
 
   for (const b of bouts) {
-    const { indexes: eligibleMats } = getEligibleMatIndexes(b, mats, wMap, meetDate, homeTeamId);
+    const { indexes: eligibleMats } = getEligibleMatIndexes(
+      b,
+      mats,
+      wMap,
+      meetDate,
+      homeTeamId,
+      homeWrestlerMat,
+      Boolean(homeTeamPrefs?.homeTeamPreferSameMat),
+    );
     let bestMat = eligibleMats.length > 0 ? eligibleMats[0] : pickLeastLoadedMat(mats);
     if (eligibleMats.length > 0) {
       let best = Number.POSITIVE_INFINITY;
@@ -221,13 +242,21 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
       },
     });
 
-    if (homeTeamPrefs?.homeTeamPreferSameMat && homeTeamId) {
+    if (homeTeamId) {
       const red = getWrestler(b.redId);
       const green = getWrestler(b.greenId);
-      const isHomeBout =
-        red?.teamId === homeTeamId ||
-        green?.teamId === homeTeamId;
-      if (isHomeBout && homeTeamMatIdx === null) homeTeamMatIdx = bestMat;
+      if (red?.teamId === homeTeamId) {
+        homeWrestlerMat.set(b.redId, bestMat);
+      }
+      if (green?.teamId === homeTeamId) {
+        homeWrestlerMat.set(b.greenId, bestMat);
+      }
+      if (homeTeamPrefs?.homeTeamPreferSameMat) {
+        const isHomeBout =
+          red?.teamId === homeTeamId ||
+          green?.teamId === homeTeamId;
+        if (isHomeBout && homeTeamMatIdx === null) homeTeamMatIdx = bestMat;
+      }
     }
   }
 

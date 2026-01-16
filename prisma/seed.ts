@@ -1,57 +1,12 @@
-import bcrypt from "bcryptjs";
-import type { Prisma } from "@prisma/client";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
-import { assignMatsForMeet } from "@/lib/assignMats";
+import type { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
+
 import { db } from "@/lib/db";
-import { generatePairingsForMeet, type PairingSettings } from "@/lib/generatePairings";
 
-function d(s: string) {
-  return new Date(s);
-}
-
-type WrestlerSeed = {
-  first: string;
-  last: string;
-  weight: number;
-  birthdate: string;
-  experienceYears: number;
-  skill: number;
-};
-
-const rosterA: WrestlerSeed[] = [
-  { first: "Ben", last: "Jones", weight: 52, birthdate: "2015-03-11", experienceYears: 1, skill: 3 },
-  { first: "Sam", last: "Smith", weight: 55, birthdate: "2014-11-02", experienceYears: 0, skill: 2 },
-  { first: "Max", last: "Miller", weight: 60, birthdate: "2014-08-19", experienceYears: 2, skill: 4 },
-  { first: "Noah", last: "Nelson", weight: 65, birthdate: "2013-12-07", experienceYears: 3, skill: 4 },
-  { first: "Eli", last: "Evans", weight: 70, birthdate: "2013-05-21", experienceYears: 1, skill: 3 },
-];
-
-const rosterB: WrestlerSeed[] = [
-  { first: "Leo", last: "Lopez", weight: 53, birthdate: "2015-01-10", experienceYears: 1, skill: 3 },
-  { first: "Owen", last: "Olsen", weight: 56, birthdate: "2014-10-05", experienceYears: 0, skill: 2 },
-  { first: "Jack", last: "Johnson", weight: 61, birthdate: "2014-07-01", experienceYears: 2, skill: 4 },
-  { first: "Liam", last: "Lee", weight: 66, birthdate: "2013-11-12", experienceYears: 2, skill: 4 },
-  { first: "Mason", last: "Moore", weight: 71, birthdate: "2013-04-02", experienceYears: 1, skill: 3 },
-];
-
-const rosterC: WrestlerSeed[] = [
-  { first: "Aiden", last: "Anderson", weight: 50, birthdate: "2015-06-09", experienceYears: 0, skill: 2 },
-  { first: "Carter", last: "Clark", weight: 57, birthdate: "2014-09-15", experienceYears: 1, skill: 3 },
-  { first: "Wyatt", last: "Walker", weight: 62, birthdate: "2014-06-22", experienceYears: 2, skill: 3 },
-  { first: "Grayson", last: "Green", weight: 67, birthdate: "2013-10-30", experienceYears: 3, skill: 5 },
-  { first: "Hudson", last: "Hall", weight: 72, birthdate: "2013-03-14", experienceYears: 2, skill: 4 },
-];
-
-const rosterD: WrestlerSeed[] = [
-  { first: "Luke", last: "Lewis", weight: 51, birthdate: "2015-04-18", experienceYears: 0, skill: 2 },
-  { first: "Julian", last: "James", weight: 58, birthdate: "2014-08-03", experienceYears: 1, skill: 3 },
-  { first: "Henry", last: "Harris", weight: 63, birthdate: "2014-05-10", experienceYears: 2, skill: 4 },
-  { first: "Sebastian", last: "Scott", weight: 68, birthdate: "2013-09-06", experienceYears: 3, skill: 5 },
-  { first: "David", last: "Davis", weight: 73, birthdate: "2013-02-25", experienceYears: 2, skill: 4 },
-];
 
 const icwlTeamNames = [
   "Abington Bulldogs Youth Wrestling",
@@ -99,8 +54,6 @@ const icwlTeamNames = [
   "West Chester Youth Wrestling",
   "Wilmington Bulldog Wrestling",
 ];
-
-const sampleRosters = [rosterA, rosterB, rosterC, rosterD];
 
 const TEAM_SYMBOL_OVERRIDES: Record<string, string> = {
   "Abington Bulldogs Youth Wrestling": "AB",
@@ -302,7 +255,7 @@ async function clearAll() {
   await db.team.deleteMany();
 }
 
-async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) {
+async function createTeam(name: string, symbol: string) {
   const logo = await loadTeamLogo(name);
   const metadata = teamMetadataMap.get(normalizeTeamName(name));
   const data: Prisma.TeamCreateInput = {
@@ -315,79 +268,14 @@ async function createTeam(name: string, symbol: string, roster: WrestlerSeed[]) 
     logoType: logo.logoType ?? undefined,
   };
   const team = await db.team.create({ data });
-  await db.wrestler.createMany({
-    data: roster.map(w => ({
-      teamId: team.id,
-      first: w.first,
-      last: w.last,
-      weight: w.weight,
-      birthdate: d(w.birthdate),
-      experienceYears: w.experienceYears,
-      skill: w.skill,
-    })),
-  });
   return team;
-}
-
-type SeedMeetOptions = {
-  numMats?: number;
-  allowSameTeamMatches?: boolean;
-  matchesPerWrestler?: number;
-};
-
-const DEFAULT_MEET_MATS = 3;
-
-async function finalizeMeet(meetId: string, options: Required<SeedMeetOptions>) {
-  const pairingSettings: PairingSettings = {
-    maxAgeGapDays: 365,
-    maxWeightDiffPct: 12,
-    firstYearOnlyWithFirstYear: true,
-    allowSameTeamMatches: options.allowSameTeamMatches,
-    matchesPerWrestler: options.matchesPerWrestler,
-    balanceTeamPairs: true,
-    balancePenalty: 0.25,
-  };
-  await generatePairingsForMeet(meetId, pairingSettings);
-  await assignMatsForMeet(meetId, { numMats: options.numMats });
-}
-
-async function createMeet(
-  name: string,
-  date: string,
-  teamIds: string[],
-  updatedById: string,
-  options: SeedMeetOptions = {},
-) {
-  const now = new Date();
-  const opts = {
-    numMats: options.numMats ?? DEFAULT_MEET_MATS,
-    allowSameTeamMatches: options.allowSameTeamMatches ?? false,
-    matchesPerWrestler: options.matchesPerWrestler ?? 1,
-  };
-  const meet = await db.meet.create({
-    data: {
-      name,
-      date: d(date),
-      location: "Local Gym",
-      status: "PUBLISHED",
-      homeTeamId: teamIds[0],
-      numMats: opts.numMats,
-      allowSameTeamMatches: opts.allowSameTeamMatches,
-      matchesPerWrestler: opts.matchesPerWrestler,
-      updatedAt: now,
-      updatedById,
-      meetTeams: { create: teamIds.map(teamId => ({ teamId })) },
-    },
-  });
-  await finalizeMeet(meet.id, opts);
-  return meet;
 }
 
 
 async function ensureAdmin() {
   const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
   const email = (process.env.ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
-  const phone = process.env.ADMIN_PHONE?.trim() || "+15555550100";
+  const phone = process.env.ADMIN_PHONE?.trim() ?? "+15555550100";
   const password = process.env.ADMIN_PASSWORD ?? "admin1234";
   const existing = await db.user.findUnique({ where: { username } });
   if (existing) return existing;
@@ -429,16 +317,14 @@ async function main() {
   }
 
   console.log("Seeding demo data...");
-  const admin = await ensureAdmin();
+  await ensureAdmin();
   await clearAll();
   await ensureLeague("ICWL", "https://www.intercountywrestlingleague.org/");
   await loadLogoManifest();
   await loadTeamMetadata();
 
   const usedSymbols = new Set<string>();
-  const createdTeams: { id: string }[] = [];
-  for (const [index, name] of icwlTeamNames.entries()) {
-    const roster = sampleRosters[index % sampleRosters.length];
+  for (const name of icwlTeamNames) {
     let symbol = TEAM_SYMBOL_OVERRIDES[name];
     if (symbol) {
       if (usedSymbols.has(symbol)) {
@@ -450,16 +336,7 @@ async function main() {
     } else {
       symbol = generateSymbol(name, usedSymbols);
     }
-    const team = await createTeam(name, symbol, roster);
-    createdTeams.push(team);
-  }
-
-  if (createdTeams.length >= 4) {
-    const [teamA, teamB, teamC, teamD] = createdTeams;
-    await createMeet("Week 1 (Teams 1 vs 2)", "2026-01-15", [teamA.id, teamB.id], admin.id);
-    await createMeet("Quad Meet", "2026-01-22", [teamA.id, teamB.id, teamC.id, teamD.id], admin.id);
-  } else {
-    console.warn("Not enough teams created to seed sample meets");
+    await createTeam(name, symbol);
   }
 
   console.log("Seed complete");

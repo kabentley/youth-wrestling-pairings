@@ -46,6 +46,7 @@ type Meet = {
   numMats?: number;
   allowSameTeamMatches?: boolean;
   matchesPerWrestler?: number;
+  maxMatchesPerWrestler?: number;
   status?: "DRAFT" | "PUBLISHED";
   updatedAt?: string;
   updatedBy?: { username?: string | null } | null;
@@ -67,6 +68,7 @@ export default function MeetsPage() {
   const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
+  const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -109,6 +111,7 @@ export default function MeetsPage() {
     setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(2);
+    setMaxMatchesPerWrestler(5);
     setEditingMeet(null);
   }, []);
 
@@ -189,6 +192,7 @@ export default function MeetsPage() {
         numMats,
         allowSameTeamMatches,
         matchesPerWrestler,
+        maxMatchesPerWrestler,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -212,6 +216,7 @@ export default function MeetsPage() {
         numMats,
         allowSameTeamMatches,
         matchesPerWrestler,
+        maxMatchesPerWrestler,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -904,13 +909,25 @@ export default function MeetsPage() {
                   />
                 </label>
                 <label className="row">
-                  <span className="muted">Matches per wrestler</span>
+                  <span className="muted">Target matches per wrestler</span>
                   <NumberInput
                     className="input input-sm"
                     min={1}
                     max={5}
                     value={matchesPerWrestler}
                     onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
+                    normalize={(value) => Math.round(value)}
+                    disabled={!canManageMeets}
+                  />
+                </label>
+                <label className="row">
+                  <span className="muted">Max matches per wrestler</span>
+                  <NumberInput
+                    className="input input-sm"
+                    min={1}
+                    max={5}
+                    value={maxMatchesPerWrestler}
+                    onValueChange={(value) => setMaxMatchesPerWrestler(Math.round(value))}
                     normalize={(value) => Math.round(value)}
                     disabled={!canManageMeets}
                   />

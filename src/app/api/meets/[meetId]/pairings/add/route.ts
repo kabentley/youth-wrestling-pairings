@@ -51,6 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     },
   });
   await assignMatToBout(meetId, bout.id);
+  const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
 
   const [red, green] = await db.wrestler.findMany({
     where: { id: { in: [body.redId, body.greenId] } },
@@ -59,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const redName = red ? `${red.first} ${red.last}` : "wrestler 1";
   const greenName = green ? `${green.first} ${green.last}` : "wrestler 2";
   await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
-  return NextResponse.json(bout);
+  return NextResponse.json(updatedBout ?? bout);
 }
 
 const RANGE_PENALTY_SCALE = 50;
@@ -146,14 +147,20 @@ async function assignMatToBout(meetId: string, boutId: string) {
   }
 
   let homeTeamMatIdx: number | null = null;
+  const homeWrestlerMat = new Map<string, number>();
   for (const b of bouts) {
     if (b.mat == null) continue;
-    if (homeTeamMatIdx !== null) break;
     const red = wMap.get(b.redId);
     const green = wMap.get(b.greenId);
     const isHomeBout = red?.teamId === homeTeamId || green?.teamId === homeTeamId;
-    if (isHomeBout) {
+    if (isHomeBout && homeTeamMatIdx === null) {
       homeTeamMatIdx = Math.max(0, Math.min(numMats - 1, b.mat - 1));
+    }
+    if (homeTeamId && red?.teamId === homeTeamId) {
+      homeWrestlerMat.set(b.redId, Math.max(0, Math.min(numMats - 1, b.mat - 1)));
+    }
+    if (homeTeamId && green?.teamId === homeTeamId) {
+      homeWrestlerMat.set(b.greenId, Math.max(0, Math.min(numMats - 1, b.mat - 1)));
     }
   }
 
@@ -171,6 +178,8 @@ async function assignMatToBout(meetId: string, boutId: string) {
     wMap,
     meetDate,
     homeTeamId,
+    homeWrestlerMat,
+    Boolean(homeTeamPrefs?.homeTeamPreferSameMat),
   );
   const red = getWrestler(bout.redId);
   const green = getWrestler(bout.greenId);
