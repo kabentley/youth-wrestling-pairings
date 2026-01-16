@@ -267,10 +267,13 @@ export default function RostersClient() {
     setImportMsg("");
 
     if (!f) return;
-    const text = await f.text();
-    const parsed = parseCsv(text);
-
-    setPreview({ headers: parsed.headers, rows: parsed.data.slice(0, 8) });
+    try {
+      const text = await f.text();
+      const parsed = parseCsv(text);
+      setPreview({ headers: parsed.headers, rows: parsed.data.slice(0, 8) });
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : "Unable to read CSV.");
+    }
   }
 
   function normalizeRow(r: Record<string, string>) {
@@ -309,69 +312,100 @@ export default function RostersClient() {
   async function importCsv() {
     setImportMsg("");
 
-    if (!file) { setImportMsg("Choose a CSV file first."); return; }
-    const teamId = importTeamId || undefined;
+    try {
+      if (!file) { setImportMsg("Choose a CSV file first."); return; }
+      const teamId = importTeamId || undefined;
 
-    if (!teamId) {
-      setImportMsg("Select an existing team.");
-      return;
+      if (!teamId) {
+        setImportMsg("Select an existing team.");
+        return;
+      }
+
+      const text = await file.text();
+      const parsed = parseCsv(text);
+
+      if (parsed.headers.length === 0) {
+        setImportMsg("CSV looks empty.");
+        return;
+      }
+
+      const normalized = parsed.data.map(normalizeRow);
+      const skippedRows = normalized
+        .map((w, idx) => ({
+          row: idx + 2,
+          first: w.first,
+          last: w.last,
+          missingExp: !Number.isFinite(w.experienceYears),
+          missingSkill: !Number.isFinite(w.skill),
+        }))
+        .filter(r => r.missingExp || r.missingSkill);
+
+      // Convert rows -> API payload
+      const wrestlers = normalized
+        .filter(w =>
+          w.first &&
+          w.last &&
+          Number.isFinite(w.weight) &&
+          w.weight > 0 &&
+          w.birthdate &&
+          Number.isFinite(w.experienceYears) &&
+          Number.isFinite(w.skill)
+        )
+        .map(w => ({
+          first: w.first,
+          last: w.last,
+          weight: Number(w.weight),
+          birthdate: w.birthdate,
+          experienceYears: Math.max(0, Math.floor(w.experienceYears)),
+          skill: Math.min(5, Math.max(0, Math.floor(w.skill))),
+        }));
+
+      if (wrestlers.length === 0) {
+        const preview = skippedRows
+          .slice(0, 8)
+          .map(r => `${r.row}: ${r.first || "?"} ${r.last || "?"} (missing ${r.missingExp ? "experienceYears" : ""}${r.missingExp && r.missingSkill ? " + " : ""}${r.missingSkill ? "skill" : ""})`)
+          .join("; ");
+        const suffix = skippedRows.length > 8 ? ` (and ${skippedRows.length - 8} more)` : "";
+        const skippedDetail = skippedRows.length ? ` Problem rows: ${preview}${suffix}` : "";
+        setImportMsg(`No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill.${skippedDetail}`);
+        return;
+      }
+
+      setImportMsg("Importing...");
+      const payload: Record<string, unknown> = { teamId, wrestlers };
+      const res = await fetch("/api/teams/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (handleUnauthorized(res)) return;
+
+      if (!res.ok) {
+        const txt = await res.text();
+        setImportMsg(`Import failed: ${txt || "Unknown error"}`);
+        return;
+      }
+
+      const json = await res.json();
+      if (skippedRows.length) {
+        const preview = skippedRows
+          .slice(0, 8)
+          .map(r => `${r.row}: ${r.first || "?"} ${r.last || "?"} (missing ${r.missingExp ? "experienceYears" : ""}${r.missingExp && r.missingSkill ? " + " : ""}${r.missingSkill ? "skill" : ""})`)
+          .join("; ");
+        const suffix = skippedRows.length > 8 ? ` (and ${skippedRows.length - 8} more)` : "";
+        setImportMsg(`Imported ${json.created} wrestlers. Skipped ${skippedRows.length} rows: ${preview}${suffix}`);
+      } else {
+        setImportMsg(`Imported ${json.created} wrestlers.`);
+      }
+      setFile(null);
+      setPreview(null);
+      await load();
+      await loadRoster(teamId);
+      setShowImportModal(false);
+      setTimeout(() => setImportMsg(""), 2000);
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : "Import failed.");
     }
-
-    const text = await file.text();
-    const parsed = parseCsv(text);
-
-    if (parsed.headers.length === 0) {
-      setImportMsg("CSV looks empty.");
-      return;
-    }
-
-    const normalized = parsed.data.map(normalizeRow);
-    const missingRequired = normalized.some(w => !Number.isFinite(w.experienceYears) || !Number.isFinite(w.skill));
-    if (missingRequired) {
-      setImportMsg("ExperienceYears and Skill are required for every row.");
-      return;
-    }
-
-    // Convert rows -> API payload
-    const wrestlers = normalized
-      .filter(w => w.first && w.last && Number.isFinite(w.weight) && w.weight > 0 && w.birthdate)
-      .map(w => ({
-        first: w.first,
-        last: w.last,
-        weight: Number(w.weight),
-        birthdate: w.birthdate,
-        experienceYears: Math.max(0, Math.floor(w.experienceYears)),
-        skill: Math.min(5, Math.max(0, Math.floor(w.skill))),
-      }));
-
-    if (wrestlers.length === 0) {
-      setImportMsg("No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill.");
-      return;
-    }
-
-    setImportMsg("Importing...");
-    const payload: Record<string, unknown> = { teamId, wrestlers };
-    const res = await fetch("/api/teams/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (handleUnauthorized(res)) return;
-
-    if (!res.ok) {
-      const txt = await res.text();
-      setImportMsg(`Import failed: ${txt}`);
-      return;
-    }
-
-    const json = await res.json();
-    setImportMsg(`Imported ${json.created} wrestlers.`);
-    setFile(null);
-    setPreview(null);
-    await load();
-    await loadRoster(teamId);
-    setShowImportModal(false);
-    setTimeout(() => setImportMsg(""), 2000);
   }
 
   async function loadRoster(teamId: string) {
@@ -1797,7 +1831,12 @@ export default function RostersClient() {
                       <button
                         type="button"
                         className="btn btn-ghost btn-small header-import"
-                        onClick={() => setShowImportModal(true)}
+                        onClick={() => {
+                          setFile(null);
+                          setPreview(null);
+                          setImportMsg("");
+                          setShowImportModal(true);
+                        }}
                         disabled={hasDirtyChanges || !selectedTeamId}
                       >
                         Import Roster
@@ -1948,7 +1987,23 @@ export default function RostersClient() {
               <div className="muted" style={{ marginTop: 6 }}>
                 Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
               </div>
-              {importMsg && <div className="muted" style={{ marginTop: 8 }}>{importMsg}</div>}
+              {importMsg && (
+                <div
+                  className="muted"
+                  style={{
+                    marginTop: 8,
+                    padding: "8px 10px",
+                    border: "1px solid #dfe3e8",
+                    borderRadius: 6,
+                    background: "#f7f9fb",
+                    position: "sticky",
+                    bottom: 0,
+                    zIndex: 1,
+                  }}
+                >
+                  {importMsg}
+                </div>
+              )}
               {preview && (
                 <div className="import-preview">
                   <div className="muted" style={{ marginBottom: 8 }}>
