@@ -110,6 +110,7 @@ export default function RostersClient() {
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
   const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
+  const spectatorResizeRef = useRef<{ key: ViewerColumnKey; startX: number; startWidth: number } | null>(null);
   const originalRowsRef = useRef<Record<string, EditableWrestler>>({});
   const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
@@ -120,8 +121,11 @@ export default function RostersClient() {
   // Import state
   const [importTeamId, setImportTeamId] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string,string>[] } | null>(null);
+  const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
   const [importMsg, setImportMsg] = useState<string>("");
+  const [importError, setImportError] = useState<string>("");
+  const [importErrorFile, setImportErrorFile] = useState<string>("");
+  const [showImportErrorModal, setShowImportErrorModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const headerTeamButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -265,6 +269,9 @@ export default function RostersClient() {
     setFile(f);
     setPreview(null);
     setImportMsg("");
+    setImportError("");
+    setImportErrorFile("");
+    setShowImportErrorModal(false);
 
     if (!f) return;
     try {
@@ -272,7 +279,10 @@ export default function RostersClient() {
       const parsed = parseCsv(text);
       setPreview({ headers: parsed.headers, rows: parsed.data.slice(0, 8) });
     } catch (err) {
-      setImportMsg(err instanceof Error ? err.message : "Unable to read CSV.");
+      setImportError(err instanceof Error ? err.message : "Unable to read CSV.");
+      setImportErrorFile(f.name);
+      setShowImportModal(false);
+      setShowImportErrorModal(true);
     }
   }
 
@@ -311,9 +321,13 @@ export default function RostersClient() {
 
   async function importCsv() {
     setImportMsg("");
+    setImportError("");
+    setImportErrorFile(file?.name ?? "");
+    setShowImportErrorModal(false);
 
     try {
       if (!file) { setImportMsg("Choose a CSV file first."); return; }
+      setImportErrorFile(file.name);
       const teamId = importTeamId || undefined;
 
       if (!teamId) {
@@ -364,9 +378,9 @@ export default function RostersClient() {
         const preview = skippedRows
           .slice(0, 8)
           .map(r => `${r.row}: ${r.first || "?"} ${r.last || "?"} (missing ${r.missingExp ? "experienceYears" : ""}${r.missingExp && r.missingSkill ? " + " : ""}${r.missingSkill ? "skill" : ""})`)
-          .join("; ");
-        const suffix = skippedRows.length > 8 ? ` (and ${skippedRows.length - 8} more)` : "";
-        const skippedDetail = skippedRows.length ? ` Problem rows: ${preview}${suffix}` : "";
+          .join("\n");
+        const suffix = skippedRows.length > 8 ? `\n(and ${skippedRows.length - 8} more)` : "";
+        const skippedDetail = skippedRows.length ? `\n\nProblem rows:\n${preview}${suffix}` : "";
         setImportMsg(`No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill.${skippedDetail}`);
         return;
       }
@@ -382,7 +396,9 @@ export default function RostersClient() {
 
       if (!res.ok) {
         const txt = await res.text();
-        setImportMsg(`Import failed: ${txt || "Unknown error"}`);
+        setImportError(`Import failed: ${txt || "Unknown error"}`);
+        setShowImportModal(false);
+        setShowImportErrorModal(true);
         return;
       }
 
@@ -391,9 +407,12 @@ export default function RostersClient() {
         const preview = skippedRows
           .slice(0, 8)
           .map(r => `${r.row}: ${r.first || "?"} ${r.last || "?"} (missing ${r.missingExp ? "experienceYears" : ""}${r.missingExp && r.missingSkill ? " + " : ""}${r.missingSkill ? "skill" : ""})`)
-          .join("; ");
-        const suffix = skippedRows.length > 8 ? ` (and ${skippedRows.length - 8} more)` : "";
-        setImportMsg(`Imported ${json.created} wrestlers. Skipped ${skippedRows.length} rows: ${preview}${suffix}`);
+          .join("\n");
+        const suffix = skippedRows.length > 8 ? `\n(and ${skippedRows.length - 8} more)` : "";
+        setImportMsg(`Imported ${json.created} wrestlers.`);
+        setImportError(`Skipped ${skippedRows.length} rows:\n${preview}${suffix}`);
+        setShowImportModal(false);
+        setShowImportErrorModal(true);
       } else {
         setImportMsg(`Imported ${json.created} wrestlers.`);
       }
@@ -401,10 +420,14 @@ export default function RostersClient() {
       setPreview(null);
       await load();
       await loadRoster(teamId);
-      setShowImportModal(false);
+      if (!skippedRows.length) {
+        setShowImportModal(false);
+      }
       setTimeout(() => setImportMsg(""), 2000);
     } catch (err) {
-      setImportMsg(err instanceof Error ? err.message : "Import failed.");
+      setImportError(err instanceof Error ? err.message : "Import failed.");
+      setShowImportModal(false);
+      setShowImportErrorModal(true);
     }
   }
 
@@ -492,8 +515,10 @@ export default function RostersClient() {
 
   const validateRow = (row: EditableWrestler) => {
     const errors = new Set<keyof EditableWrestler>();
-    if (!row.first.trim()) errors.add("first");
-    if (!row.last.trim()) errors.add("last");
+    const first = row.first.trim();
+    const last = row.last.trim();
+    if (!first) errors.add("first");
+    if (!last) errors.add("last");
     const weight = Number(row.weight);
     if (!Number.isFinite(weight) || weight < 35 || weight > 300) errors.add("weight");
     if (!row.birthdate) {
@@ -518,9 +543,25 @@ export default function RostersClient() {
   const persistRow = async (row: EditableWrestler) => {
     if (!selectedTeamId) return false;
     if (!validateRow(row)) return false;
+    const first = row.first.trim();
+    const last = row.last.trim();
+    if (row.isNew) {
+      const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
+      const duplicate = editableRows.some(other => {
+        if (other.id === row.id) return false;
+        const otherFirst = other.first.trim();
+        const otherLast = other.last.trim();
+        if (!otherFirst || !otherLast) return false;
+        return `${otherFirst.toLowerCase()}|${otherLast.toLowerCase()}` === key;
+      });
+      if (duplicate) {
+        window.alert("A wrestler with that name already exists on this team.");
+        return false;
+      }
+    }
     const payload = {
-      first: row.first.trim(),
-      last: row.last.trim(),
+      first,
+      last,
       weight: Number(row.weight),
       birthdate: row.birthdate,
       experienceYears: Math.floor(Number(row.experienceYears)),
@@ -557,6 +598,22 @@ export default function RostersClient() {
 
   const prepareNewRowForSave = (row: EditableWrestler) => {
     if (!row.isNew) return;
+    const first = row.first.trim();
+    const last = row.last.trim();
+    if (first && last) {
+      const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
+      const duplicate = editableRows.some(other => {
+        if (other.id === row.id) return false;
+        const otherFirst = other.first.trim();
+        const otherLast = other.last.trim();
+        if (!otherFirst || !otherLast) return false;
+        return `${otherFirst.toLowerCase()}|${otherLast.toLowerCase()}` === key;
+      });
+      if (duplicate) {
+        window.alert("A wrestler with that name already exists on this team.");
+        return;
+      }
+    }
     setEditableRows(rows => {
       const mapped = rows.map(r =>
         r.id === row.id ? { ...r, isNew: false } : r,
@@ -652,6 +709,16 @@ export default function RostersClient() {
     { key: "skill", label: "Skill" },
     { key: "active", label: "Status" },
   ];
+
+  const [spectatorColWidths, setSpectatorColWidths] = useState<Record<ViewerColumnKey, number>>(() => ({
+    last: 120,
+    first: 120,
+    age: 120,
+    weight: 90,
+    experienceYears: 90,
+    skill: 110,
+    active: 110,
+  }));
 
   const renderColGroup = () => (
     <colgroup>
@@ -768,12 +835,39 @@ export default function RostersClient() {
     };
   }, []);
 
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!spectatorResizeRef.current) return;
+      const { key, startX, startWidth } = spectatorResizeRef.current;
+      const nextWidth = Math.max(60, startWidth + (e.clientX - startX));
+      setSpectatorColWidths(widths => ({ ...widths, [key]: nextWidth }));
+    }
+    function onMouseUp() {
+      spectatorResizeRef.current = null;
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   const handleColMouseDown = (index: number, e: ReactMouseEvent<HTMLSpanElement>) => {
     e.preventDefault();
     rosterResizeRef.current = {
       index,
       startX: e.clientX,
       startWidth: spreadsheetColWidths[index],
+    };
+  };
+
+  const handleSpectatorColMouseDown = (key: ViewerColumnKey, e: ReactMouseEvent<HTMLSpanElement>) => {
+    e.preventDefault();
+    spectatorResizeRef.current = {
+      key,
+      startX: e.clientX,
+      startWidth: spectatorColWidths[key],
     };
   };
 
@@ -1557,6 +1651,7 @@ export default function RostersClient() {
         .spreadsheet-table th {
           background: #f7f9fb;
           font-weight: 700;
+          position: relative;
         }
         .spreadsheet-table tbody tr:hover {
           background: rgba(29, 56, 162, 0.12);
@@ -1585,6 +1680,7 @@ export default function RostersClient() {
           width: 10px;
           height: 100%;
           cursor: col-resize;
+          background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
         }
         .spreadsheet-input,
         .spreadsheet-select {
@@ -1835,6 +1931,8 @@ export default function RostersClient() {
                           setFile(null);
                           setPreview(null);
                           setImportMsg("");
+                          setImportError("");
+                          setShowImportErrorModal(false);
                           setShowImportModal(true);
                         }}
                         disabled={hasDirtyChanges || !selectedTeamId}
@@ -1927,13 +2025,19 @@ export default function RostersClient() {
                     <table>
                       <colgroup>
                         {spectatorColumns.map(col => (
-                          <col key={col.key} style={{ width: col.width }} />
+                          <col key={col.key} style={{ width: spectatorColWidths[col.key] ?? col.width }} />
                         ))}
                       </colgroup>
                       <thead>
                         <tr>
                           {spectatorColumns.map(col => (
-                            <th key={col.key}>{col.label}</th>
+                            <th key={col.key} className="roster-th">
+                              {col.label}
+                              <span
+                                className="col-resizer"
+                                onMouseDown={e => handleSpectatorColMouseDown(col.key, e)}
+                              />
+                            </th>
                           ))}
                         </tr>
                       </thead>
@@ -2052,6 +2156,35 @@ John,Smith,55,2014-11-02,0,2
                 disabled={!file || !importTeamId}
               >
                 Import / Update CSV
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showImportErrorModal && importError && (
+        <div
+          className="import-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-error-title"
+          onClick={() => setShowImportErrorModal(false)}
+        >
+          <div className="import-modal" onClick={event => event.stopPropagation()}>
+            <div className="import-modal-header">
+              <h3 id="import-error-title">
+                Import error{importErrorFile ? `: ${importErrorFile}` : ""}
+              </h3>
+            </div>
+            <div className="import-modal-body">
+              <div className="error-msg" style={{ whiteSpace: "pre-line" }}>{importError}</div>
+            </div>
+            <div className="import-modal-footer">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={() => setShowImportErrorModal(false)}
+              >
+                Close
               </button>
             </div>
           </div>
