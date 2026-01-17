@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import PrintActionsClient from "../PrintActionsClient";
 
 function ageInYears(birthdate: Date, onDate: Date) {
   const diff = onDate.getTime() - birthdate.getTime();
@@ -32,28 +33,21 @@ export default async function PrintRosters({ params }: { params: Promise<{ meetI
   const meetDate = meet.date ?? new Date();
 
   return (
-    <html>
-      <head>
-        <title>Print Rosters</title>
-        <style>{`
-          @media print { .noprint { display: none; } }
-          body { font-family: system-ui; padding: 18px; color: #111; }
-          h1, h2 { margin: 0 0 8px 0; }
-          .small { font-size: 12px; color: #444; }
-          .team { page-break-after: always; margin-top: 18px; }
-          .team:last-of-type { page-break-after: auto; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border-top: 1px solid #ddd; padding: 6px; vertical-align: top; font-size: 12px; }
-          th { text-align: left; }
-          .muted { color: #777; }
-          .not-coming { color: #999; text-decoration: line-through; }
-        `}</style>
-      </head>
-      <body>
-        <div className="noprint" style={{ marginBottom: 12 }}>
-          <a href={`/meets/${meetId}`}><- Back</a> &nbsp;|&nbsp;
-          <button onClick={() => window.print()}>Print</button>
-        </div>
+    <div>
+      <style>{`
+        @media print { .noprint { display: none; } }
+        body { font-family: system-ui; padding: 18px; color: #111; }
+        h1, h2 { margin: 0 0 8px 0; }
+        .small { font-size: 12px; color: #444; }
+        .team { page-break-after: always; margin-top: 18px; }
+        .team:last-of-type { page-break-after: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-top: 1px solid #ddd; padding: 6px; vertical-align: top; font-size: 12px; }
+        th { text-align: left; }
+        .muted { color: #777; }
+        .not-coming { color: #999; text-decoration: line-through; }
+      `}</style>
+      <PrintActionsClient meetId={meetId} />
 
         <h1>{meet.name} - Team Rosters</h1>
         <div className="small">
@@ -107,7 +101,6 @@ export default async function PrintRosters({ params }: { params: Promise<{ meetI
             </div>
           );
         })}
-      </body>
-    </html>
+    </div>
   );
 }

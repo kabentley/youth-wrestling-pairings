@@ -165,7 +165,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   }
 
   const mats: { boutIds: string[]; rule: MatRule }[] = rules.map(rule => ({ boutIds: [], rule }));
-  let homeTeamMatIdx: number | null = null;
   const homeWrestlerMat = new Map<string, number>();
   const meetDate = meet?.date ?? new Date();
 
@@ -193,15 +192,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
       p += (expPenalty + agePenalty) * RANGE_PENALTY_SCALE;
     } else {
       p += INELIGIBLE_PENALTY;
-    }
-
-    if (homeTeamPrefs?.homeTeamPreferSameMat && homeTeamId) {
-      const isHomeBout =
-        red?.teamId === homeTeamId ||
-        green?.teamId === homeTeamId;
-      if (isHomeBout && homeTeamMatIdx !== null && homeTeamMatIdx !== matIdx) {
-        p += HOME_TEAM_PENALTY;
-      }
     }
 
     p += mats[matIdx].boutIds.length * 0.01;
@@ -250,12 +240,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
       }
       if (green?.teamId === homeTeamId) {
         homeWrestlerMat.set(b.greenId, bestMat);
-      }
-      if (homeTeamPrefs?.homeTeamPreferSameMat) {
-        const isHomeBout =
-          red?.teamId === homeTeamId ||
-          green?.teamId === homeTeamId;
-        if (isHomeBout && homeTeamMatIdx === null) homeTeamMatIdx = bestMat;
       }
     }
   }

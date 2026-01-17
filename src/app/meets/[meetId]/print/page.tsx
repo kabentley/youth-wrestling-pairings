@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import PrintActionsClient from "./PrintActionsClient";
 
 export default async function PrintMeet({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
@@ -33,29 +34,22 @@ export default async function PrintMeet({ params }: { params: Promise<{ meetId: 
   }
 
   return (
-    <html>
-      <head>
-        <title>Print Meet</title>
-        <style>{`
-          @media print { .noprint { display: none; } }
-          body { font-family: system-ui; padding: 18px; }
-          h1,h2 { margin: 0 0 8px 0; }
-          .mat { page-break-after: always; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border-top: 1px solid #ddd; padding: 6px; vertical-align: top; }
-          .small { font-size: 12px; color: #444; }
-        `}</style>
-      </head>
-      <body>
-        <div className="noprint" style={{ marginBottom: 12 }}>
-          <a href={`/meets/${meetId}`}>← Back</a> &nbsp;|&nbsp;
-          <button onClick={() => window.print()}>Print</button>
-        </div>
+    <div>
+      <style>{`
+        @media print { .noprint { display: none; } }
+        body { font-family: system-ui; padding: 18px; }
+        h1,h2 { margin: 0 0 8px 0; }
+        .mat { page-break-after: always; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-top: 1px solid #ddd; padding: 6px; vertical-align: top; }
+        .small { font-size: 12px; color: #444; }
+      `}</style>
+      <PrintActionsClient meetId={meetId} />
 
         <h1>{meet?.name ?? "Meet"}</h1>
         <div className="small">
           {meet ? new Date(meet.date).toISOString().slice(0, 10) : ""}{" "}
-          {meet?.location ? `— ${meet.location}` : ""}
+          {meet?.location ? ` - ${meet.location}` : ""}
           <br />
           Teams: {meet?.meetTeams.map(mt => mt.team.symbol).join(", ")}
         </div>
@@ -130,7 +124,8 @@ export default async function PrintMeet({ params }: { params: Promise<{ meetId: 
             </table>
           </div>
         )}
-      </body>
-    </html>
+    </div>
   );
 }
+
+

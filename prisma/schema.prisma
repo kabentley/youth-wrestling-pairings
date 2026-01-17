@@ -25,6 +25,9 @@ model Team {
   matRules  TeamMatRule[]
   numMats   Int        @default(4)
   homeTeamPreferSameMat Boolean @default(true)
+  defaultMaxMatchesPerWrestler Int @default(5)
+  defaultRestGap Int @default(6)
+  defaultMaxAgeGapDays Int @default(365)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
   coaches   User[]
@@ -76,7 +79,7 @@ model Meet {
   allowSameTeamMatches Boolean @default(false)
   matchesPerWrestler Int @default(2)
   maxMatchesPerWrestler Int @default(5)
-  restGap   Int        @default(3)
+  restGap   Int        @default(6)
   status    String    @default("DRAFT")
   updatedAt DateTime  @updatedAt
   updatedById String?

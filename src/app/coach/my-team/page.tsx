@@ -9,6 +9,7 @@ import { DEFAULT_MAT_RULES, MatRule } from "@/lib/matRules";
 
 const CONFIGURED_MATS = 5;
 const MIN_MATS = 1;
+const DEFAULT_NUM_MATS = 3;
 const MAX_MATS = CONFIGURED_MATS;
 
 const createMatRule = (matIndex: number): MatRule => {
@@ -67,9 +68,15 @@ export default function CoachMyTeamPage() {
   const [teamColor, setTeamColor] = useState("#000000");
   const [teamHasLogo, setTeamHasLogo] = useState(false);
   const [logoVersion, setLogoVersion] = useState(0);
-  const [rules, setRules] = useState<MatRule[]>([]);
-  const [numMats, setNumMats] = useState(MIN_MATS);
+  const [rules, setRules] = useState<MatRule[]>(() => padRulesToCount([], CONFIGURED_MATS));
+  const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
+  const [defaultMaxMatchesPerWrestler, setDefaultMaxMatchesPerWrestler] = useState(5);
+  const [defaultRestGap, setDefaultRestGap] = useState(6);
+  const [defaultMaxAgeGapDays, setDefaultMaxAgeGapDays] = useState(365);
+  const [maxAgeGapInput, setMaxAgeGapInput] = useState("1");
+  const [maxMatchesInput, setMaxMatchesInput] = useState("5");
+  const [restGapInput, setRestGapInput] = useState("6");
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
@@ -85,9 +92,13 @@ export default function CoachMyTeamPage() {
   const [infoDirty, setInfoDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageStatus, setMessageStatus] = useState<"success" | "error" | null>(null);
-  const [activeTab, setActiveTab] = useState<"info" | "mat" | "roles">("info");
+  const [meetDefaultsMessage, setMeetDefaultsMessage] = useState<string | null>(null);
+  const [meetDefaultsStatus, setMeetDefaultsStatus] = useState<"success" | "error" | null>(null);
+  const [savingMeetDefaults, setSavingMeetDefaults] = useState(false);
+  const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "roles">("info");
   const tabs = [
     { key: "info", label: "Team Info" },
+    { key: "meet", label: "Meet Setup" },
     { key: "mat", label: "Mat Setup" },
     { key: "roles", label: "Team Roles" },
   ] as const;
@@ -149,13 +160,25 @@ export default function CoachMyTeamPage() {
   };
 
   const snapshotRef = useRef("");
+  const meetDefaultsSnapshotRef = useRef("");
   const [matDirty, setMatDirty] = useState(false);
 
-  const buildSnapshot = (incomingRules: MatRule[], mats: number, homeSame: boolean) => {
+  const buildMeetDefaultsSnapshot = (
+    maxMatches: number,
+    restGap: number,
+    maxAgeGapDays: number,
+    preferSameMat: boolean,
+  ) => JSON.stringify({
+    defaultMaxMatchesPerWrestler: maxMatches,
+    defaultRestGap: restGap,
+    defaultMaxAgeGapDays: maxAgeGapDays,
+    homeTeamPreferSameMat: preferSameMat,
+  });
+
+  const buildSnapshot = (incomingRules: MatRule[], mats: number) => {
     const normalized = padRulesToCount(incomingRules, CONFIGURED_MATS);
     return JSON.stringify({
       numMats: mats,
-      homeTeamPreferSameMat: homeSame,
       rules: normalized.map(rule => ({
         color: rule.color,
         minExperience: rule.minExperience,
@@ -166,16 +189,29 @@ export default function CoachMyTeamPage() {
     });
   };
 
-  const updateSnapshot = (incomingRules: MatRule[], mats: number, homeSame: boolean) => {
-    snapshotRef.current = buildSnapshot(incomingRules, mats, homeSame);
+  const updateSnapshot = (incomingRules: MatRule[], mats: number) => {
+    snapshotRef.current = buildSnapshot(incomingRules, mats);
     setMatDirty(false);
   };
 
   useEffect(() => {
     const normalized = padRulesToCount(rules, CONFIGURED_MATS);
-    const nextSnapshot = buildSnapshot(normalized, numMats, homeTeamPreferSameMat);
+    const nextSnapshot = buildSnapshot(normalized, numMats);
     setMatDirty(nextSnapshot !== snapshotRef.current);
-  }, [rules, numMats, homeTeamPreferSameMat]);
+  }, [rules, numMats]);
+
+  useEffect(() => {
+    const years = defaultMaxAgeGapDays / 365;
+    const rounded = Math.round(years * 2) / 2;
+    setMaxAgeGapInput(Number.isFinite(rounded) ? String(rounded) : "");
+  }, [defaultMaxAgeGapDays]);
+  useEffect(() => {
+    setMaxMatchesInput(String(defaultMaxMatchesPerWrestler));
+  }, [defaultMaxMatchesPerWrestler]);
+  useEffect(() => {
+    setRestGapInput(String(defaultRestGap));
+  }, [defaultRestGap]);
+
 
   const loadMatRules = async (id: string) => {
     const res = await fetch(`/api/teams/${id}/mat-rules`);
@@ -193,12 +229,12 @@ export default function CoachMyTeamPage() {
     const rawNum = payload?.numMats;
     const candidateCount =
       typeof rawNum === "number" && Number.isFinite(rawNum) ? rawNum : parsedRules.length;
-    const desiredNumMats = clampNumMats(Math.max(candidateCount, parsedRules.length, MIN_MATS));
+    const desiredNumMats = clampNumMats(Math.max(candidateCount, parsedRules.length, DEFAULT_NUM_MATS));
     const normalized = padRulesToCount(parsedRules, CONFIGURED_MATS);
     setNumMats(desiredNumMats);
     setRules(normalized);
     setHomeTeamPreferSameMat(Boolean(payload?.homeTeamPreferSameMat));
-    updateSnapshot(normalized, desiredNumMats, Boolean(payload?.homeTeamPreferSameMat));
+    updateSnapshot(normalized, desiredNumMats);
   };
 
   const loadTeamRoles = async (id: string) => {
@@ -229,11 +265,24 @@ export default function CoachMyTeamPage() {
     const locationVal = team.address ?? "";
     setTeamWebsite(websiteVal);
     setTeamLocation(locationVal);
-    setHomeTeamPreferSameMat(Boolean(team.homeTeamPreferSameMat));
+    const preferSameMat = Boolean(team.homeTeamPreferSameMat);
+    setHomeTeamPreferSameMat(preferSameMat);
+    const maxMatches = typeof team.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : 5;
+    const restGap = typeof team.defaultRestGap === "number" ? team.defaultRestGap : 6;
+    const maxAgeGapDays = typeof team.defaultMaxAgeGapDays === "number" ? team.defaultMaxAgeGapDays : 365;
+    setDefaultMaxMatchesPerWrestler(maxMatches);
+    setDefaultRestGap(restGap);
+    setDefaultMaxAgeGapDays(maxAgeGapDays);
     setTeamHasLogo(Boolean(team.hasLogo));
     setInitialInfo({ website: websiteVal, location: locationVal });
     setInfoDirty(false);
     setInfoLoaded(true);
+    meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
+      maxMatches,
+      restGap,
+      maxAgeGapDays,
+      preferSameMat,
+    );
   };
 
   const teamSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -344,8 +393,18 @@ export default function CoachMyTeamPage() {
     setMessageStatus(null);
   };
 
+  const meetDefaultsSnapshot = meetDefaultsSnapshotRef.current;
+  const currentMeetDefaultsSnapshot = buildMeetDefaultsSnapshot(
+    defaultMaxMatchesPerWrestler,
+    defaultRestGap,
+    defaultMaxAgeGapDays,
+    homeTeamPreferSameMat,
+  );
+  const meetDefaultsDirty = Boolean(meetDefaultsSnapshot) && meetDefaultsSnapshot !== currentMeetDefaultsSnapshot;
   const messageIsError = messageStatus === "error";
+  const meetDefaultsIsError = meetDefaultsStatus === "error";
   const canSaveTeamInfo = infoDirty && !savingTeam;
+  const canSaveMeetDefaults = meetDefaultsDirty && !savingMeetDefaults;
 
   const uploadLogo = async (file: File | null) => {
     if (!file || !teamId) return;
@@ -390,9 +449,57 @@ export default function CoachMyTeamPage() {
       console.error(err?.error ?? "Unable to save mat rules.");
     } else {
       console.info("Mat setup saved.");
-      updateSnapshot(normalizedRules, numMats, homeTeamPreferSameMat);
+      updateSnapshot(normalizedRules, numMats);
     }
     setSavingMat(false);
+  };
+
+  const saveMeetDefaults = async () => {
+    if (!teamId) return;
+    setSavingMeetDefaults(true);
+    setMeetDefaultsMessage(null);
+    setMeetDefaultsStatus(null);
+    try {
+      const res = await fetch(`/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          homeTeamPreferSameMat,
+          defaultMaxMatchesPerWrestler,
+          defaultRestGap,
+          defaultMaxAgeGapDays,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        setMeetDefaultsMessage(err?.error ?? "Unable to save meet setup.");
+        setMeetDefaultsStatus("error");
+        return;
+      }
+      const team = await res.json().catch(() => null);
+      const maxMatches = typeof team?.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : defaultMaxMatchesPerWrestler;
+      const restGap = typeof team?.defaultRestGap === "number" ? team.defaultRestGap : defaultRestGap;
+      const maxAgeGapDays = typeof team?.defaultMaxAgeGapDays === "number" ? team.defaultMaxAgeGapDays : defaultMaxAgeGapDays;
+      const preferSameMat = typeof team?.homeTeamPreferSameMat === "boolean" ? team.homeTeamPreferSameMat : homeTeamPreferSameMat;
+      setDefaultMaxMatchesPerWrestler(maxMatches);
+      setDefaultRestGap(restGap);
+      setDefaultMaxAgeGapDays(maxAgeGapDays);
+      setHomeTeamPreferSameMat(preferSameMat);
+      meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
+        maxMatches,
+        restGap,
+        maxAgeGapDays,
+        preferSameMat,
+      );
+      setMeetDefaultsMessage("Meet setup saved.");
+      setMeetDefaultsStatus("success");
+    } catch (error) {
+      console.error("Meet setup save failed", error);
+      setMeetDefaultsMessage("Unable to save meet setup.");
+      setMeetDefaultsStatus("error");
+    } finally {
+      setSavingMeetDefaults(false);
+    }
   };
 
   const updateRule = (idx: number, field: keyof MatRule, value: number | string | null) => {
@@ -673,14 +780,6 @@ export default function CoachMyTeamPage() {
           <div className="coach-card-header">
             <h3>Mat Setup</h3>
           </div>
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={homeTeamPreferSameMat}
-              onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
-            />
-            Home team wrestlers' bouts should all be on the same mat
-          </label>
           <div className="mat-summary-box">
             <div>
               <div className="mat-summary-label">Max number of mats for home meets</div>
@@ -709,68 +808,60 @@ export default function CoachMyTeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {rules.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: "center" }}>
-                      Add a mat to begin defining ranges.
+                {rules.map((rule, idx) => (
+                  <tr key={rule.matIndex}>
+                    <td>
+                    <span>{rule.matIndex}</span>
+                    </td>
+                    <td>
+                      <div className="color-actions">
+                        <ColorPicker
+                          value={rule.color ?? ""}
+                          onChange={(next) => updateRule(idx, "color", next)}
+                          idPrefix={`mat-color-${rule.matIndex}-${idx}`}
+                          buttonClassName="color-swatch"
+                          buttonStyle={{ backgroundColor: rule.color || "#ffffff", width: 32, height: 32 }}
+                        />
+                      </div>
+                    </td>
+                    <td>
+                      <NumberInput
+                        min={0}
+                        max={50}
+                        value={rule.minExperience}
+                        onValueChange={(value) => updateRule(idx, "minExperience", Math.round(value))}
+                        normalize={(value) => Math.round(value)}
+                      />
+                    </td>
+                    <td>
+                      <NumberInput
+                        min={0}
+                        max={50}
+                        value={rule.maxExperience}
+                        onValueChange={(value) => updateRule(idx, "maxExperience", Math.round(value))}
+                        normalize={(value) => Math.round(value)}
+                      />
+                    </td>
+                    <td>
+                      <NumberInput
+                        min={0}
+                        max={100}
+                        value={rule.minAge}
+                        onValueChange={(value) => updateRule(idx, "minAge", Math.round(value))}
+                        normalize={(value) => Math.round(value)}
+                      />
+                    </td>
+                    <td>
+                      <NumberInput
+                        min={0}
+                        max={100}
+                        value={rule.maxAge}
+                        onValueChange={(value) => updateRule(idx, "maxAge", Math.round(value))}
+                        normalize={(value) => Math.round(value)}
+                      />
                     </td>
                   </tr>
-                ) : (
-                  rules.map((rule, idx) => (
-                    <tr key={rule.matIndex}>
-                      <td>
-                      <span>{rule.matIndex}</span>
-                      </td>
-                      <td>
-                        <div className="color-actions">
-                          <ColorPicker
-                            value={rule.color ?? ""}
-                            onChange={(next) => updateRule(idx, "color", next)}
-                            idPrefix={`mat-color-${rule.matIndex}-${idx}`}
-                            buttonClassName="color-swatch"
-                            buttonStyle={{ backgroundColor: rule.color || "#ffffff", width: 32, height: 32 }}
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <NumberInput
-                          min={0}
-                          max={50}
-                          value={rule.minExperience}
-                          onValueChange={(value) => updateRule(idx, "minExperience", Math.round(value))}
-                          normalize={(value) => Math.round(value)}
-                        />
-                      </td>
-                      <td>
-                        <NumberInput
-                          min={0}
-                          max={50}
-                          value={rule.maxExperience}
-                          onValueChange={(value) => updateRule(idx, "maxExperience", Math.round(value))}
-                          normalize={(value) => Math.round(value)}
-                        />
-                      </td>
-                      <td>
-                        <NumberInput
-                          min={0}
-                          max={100}
-                          value={rule.minAge}
-                          onValueChange={(value) => updateRule(idx, "minAge", Math.round(value))}
-                          normalize={(value) => Math.round(value)}
-                        />
-                      </td>
-                      <td>
-                        <NumberInput
-                          min={0}
-                          max={100}
-                          value={rule.maxAge}
-                          onValueChange={(value) => updateRule(idx, "maxAge", Math.round(value))}
-                          normalize={(value) => Math.round(value)}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
@@ -783,6 +874,123 @@ export default function CoachMyTeamPage() {
           >
             {savingMat ? "Saving…" : "Save Mat Setup"}
           </button>
+          </section>
+          )}
+
+          {activeTab === "meet" && (
+          <section className="coach-card">
+          <div className="coach-card-header">
+            <h3>Meet Setup</h3>
+          </div>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={homeTeamPreferSameMat}
+              onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
+            />
+            Assign home team wrestlers' bouts so they are all on the same mat
+          </label>
+          <div className="meet-setup-grid">
+            <label className="meet-setup-row">
+              <span className="meet-setup-label">Limit wrestlers to</span>
+              <div className="meet-setup-line">
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={maxMatchesInput}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setMaxMatchesInput(nextValue);
+                  const parsed = Number(nextValue);
+                  if (Number.isNaN(parsed)) return;
+                  setDefaultMaxMatchesPerWrestler(Math.max(1, Math.min(5, Math.round(parsed))));
+                }}
+                onBlur={() => {
+                  const parsed = Number(maxMatchesInput);
+                  if (Number.isNaN(parsed)) {
+                    setMaxMatchesInput(String(defaultMaxMatchesPerWrestler));
+                  }
+                }}
+                className="meet-setup-input"
+              />
+                <span>matches per meet</span>
+              </div>
+            </label>
+            <label className="meet-setup-row">
+              <span className="meet-setup-label">Flag as conflict if same wrestler has two matches within</span>
+              <div className="meet-setup-line">
+              <input
+                type="number"
+                min={0}
+                max={20}
+                value={restGapInput}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setRestGapInput(nextValue);
+                  const parsed = Number(nextValue);
+                  if (Number.isNaN(parsed)) return;
+                  setDefaultRestGap(Math.max(0, Math.min(20, Math.round(parsed))));
+                }}
+                onBlur={() => {
+                  const parsed = Number(restGapInput);
+                  if (Number.isNaN(parsed)) {
+                    setRestGapInput(String(defaultRestGap));
+                  }
+                }}
+                className="meet-setup-input"
+              />
+                <span>matches</span>
+              </div>
+            </label>
+            <label className="meet-setup-row">
+              <span className="meet-setup-label">Limit automatically selected bouts to an age difference of</span>
+              <div className="meet-setup-line">
+              <input
+                type="number"
+                min={1}
+                step="0.5"
+                value={maxAgeGapInput}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setMaxAgeGapInput(nextValue);
+                  const parsed = Number(nextValue);
+                  if (Number.isNaN(parsed)) return;
+                  const roundedYears = Math.round(parsed * 2) / 2;
+                  const clampedYears = Math.max(1, roundedYears);
+                  const days = Math.round(clampedYears * 365);
+                  setDefaultMaxAgeGapDays(days);
+                }}
+                onBlur={() => {
+                  const parsed = Number(maxAgeGapInput);
+                  if (Number.isNaN(parsed)) return;
+                  const roundedYears = Math.round(parsed * 2) / 2;
+                  const clampedYears = Math.max(1, roundedYears);
+                  setMaxAgeGapInput(String(clampedYears));
+                  setDefaultMaxAgeGapDays(Math.round(clampedYears * 365));
+                }}
+                className="meet-setup-input"
+              />
+                <span>year(s)</span>
+              </div>
+            </label>
+          </div>
+          <div className="meet-setup-actions">
+            <p
+              className={`info-message ${meetDefaultsIsError ? "error" : "success"}${meetDefaultsMessage ? "" : " empty"}`}
+              role={meetDefaultsMessage ? "status" : undefined}
+            >
+              {meetDefaultsMessage ?? "\u00A0"}
+            </p>
+            <button
+              type="button"
+              className="coach-btn coach-btn-primary"
+              onClick={saveMeetDefaults}
+              disabled={!canSaveMeetDefaults}
+            >
+              {savingMeetDefaults ? "Saving..." : "Save Meet Setup"}
+            </button>
+          </div>
           </section>
           )}
 
@@ -990,6 +1198,47 @@ const coachStyles = `
     column-gap: 16px;
     row-gap: 12px;
     margin-top: 16px;
+  }
+  .meet-setup-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .meet-setup-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    max-width: 480px;
+  }
+  .meet-setup-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .meet-setup-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .meet-setup-row input,
+  .meet-setup-input {
+    width: 90px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 16px;
+  }
+  .meet-setup-actions {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
   }
   .info-actions {
     grid-column: 2 / span 2;
@@ -1319,3 +1568,7 @@ const coachStyles = `
     }
   }
 `;
+
+
+
+

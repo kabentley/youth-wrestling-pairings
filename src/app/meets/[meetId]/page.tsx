@@ -113,6 +113,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState<number | null>(null);
+  const [restGap, setRestGap] = useState<number | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
@@ -188,14 +189,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [settings, setSettings] = useState({
     maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
     maxWeightDiffPct: 12,
+    enforceWeightCheck: true,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
   });
-  const [ageDiffInput, setAgeDiffInput] = useState(String(DEFAULT_MAX_AGE_GAP_DAYS / daysPerYear));
-  useEffect(() => {
-    const years = settings.maxAgeGapDays / daysPerYear;
-    setAgeDiffInput(Number.isFinite(years) ? String(years) : "");
-  }, [settings.maxAgeGapDays, daysPerYear]);
   const [candidateRefreshVersion, setCandidateRefreshVersion] = useState(0);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
@@ -215,7 +212,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
       const payload = {
         maxAgeGapDays: settings.maxAgeGapDays,
-        maxWeightDiffPct: settings.maxWeightDiffPct,
+        maxWeightDiffPct: settings.enforceWeightCheck ? settings.maxWeightDiffPct : 999,
         firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
         allowSameTeamMatches: settings.allowSameTeamMatches,
         matchesPerWrestler: matchesPerWrestler ?? undefined,
@@ -561,6 +558,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setMaxMatchesPerWrestler(
           typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
         );
+        setRestGap(
+          typeof meetJson.restGap === "number" ? meetJson.restGap : 6,
+        );
       }
       setMeetLoaded(true);
     if (meRes.ok) {
@@ -598,6 +598,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   };
 
   useEffect(() => { void load(); void loadActivity(); }, [load, loadActivity]);
+  useEffect(() => {
+    if (!homeTeamId) return undefined;
+    let cancelled = false;
+    const loadDefaults = async () => {
+      const res = await fetch(`/api/teams/${homeTeamId}/mat-rules`);
+      if (!res.ok) return;
+      const payload = await res.json().catch(() => null);
+      if (cancelled) return;
+      if (typeof payload?.defaultMaxAgeGapDays === "number") {
+        setSettings(s => ({ ...s, maxAgeGapDays: payload.defaultMaxAgeGapDays }));
+      }
+    };
+    void loadDefaults();
+    return () => {
+      cancelled = true;
+    };
+  }, [homeTeamId]);
   useEffect(() => {
     setWantsEdit(editRequested);
   }, [editRequested]);
@@ -844,7 +861,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       wrestlerId,
       limit: "20",
       maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
-      maxWeightDiffPct: String(effectiveSettings.maxWeightDiffPct),
+      maxWeightDiffPct: String(effectiveSettings.enforceWeightCheck ? effectiveSettings.maxWeightDiffPct : 999),
       firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
       allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
     });
@@ -905,12 +922,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const candidateFetchConfig = useMemo(() => ({
     maxAgeGapDays: settings.maxAgeGapDays,
     maxWeightDiffPct: settings.maxWeightDiffPct,
+    enforceWeightCheck: settings.enforceWeightCheck,
     firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
     allowSameTeamMatches: settings.allowSameTeamMatches,
     version: candidateRefreshVersion,
   }), [
     settings.maxAgeGapDays,
     settings.maxWeightDiffPct,
+    settings.enforceWeightCheck,
     settings.firstYearOnlyWithFirstYear,
     settings.allowSameTeamMatches,
     candidateRefreshVersion,
@@ -1515,10 +1534,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           line-height: 1.2;
           font-size: 14px;
         }
-        .match-row-hover:hover {
-          box-shadow: 0 0 0 2px #1e88e5 inset;
-          background: #f2f8ff;
-        }
+          .match-row-hover:hover {
+            box-shadow: 0 0 0 2px #1e88e5 inset;
+            background: #f2f8ff;
+          }
+          .pairings-pane.readonly .match-row-hover:hover {
+            box-shadow: none;
+            background: transparent;
+          }
         .attendance-th {
           position: relative;
           padding-right: 18px;
@@ -2405,40 +2428,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
                     Note: Click on wrestler name to add or remove.
                   </div>
-                  <div
-                    className="setup-control-row"
-                    style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
-                  >
-                    <label>
-                      Max age diff:
-                      <input
-                        type="number"
-                        step="0.5"
-                        style={{ width: 64 }}
-                        value={ageDiffInput}
-                        disabled={!canEdit}
-                        onChange={async e => {
-                          const nextValue = e.target.value;
-                          setAgeDiffInput(nextValue);
-                          const parsed = Number(nextValue);
-                          if (Number.isNaN(parsed)) return;
-                          const maxAgeGapDays = Math.max(0, parsed * daysPerYear);
-                          setSettings(s => ({ ...s, maxAgeGapDays }));
-                        }}
-                      />
-                    </label>
-                    <label>Max weight diff (%): <input type="number" style={{ width: 64 }} value={settings.maxWeightDiffPct} disabled={!canEdit} onChange={async e => {
-                      const maxWeightDiffPct = Number(e.target.value);
-                      setSettings(s => ({ ...s, maxWeightDiffPct }));
-                    }} /></label>
-                    <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} disabled={!canEdit} onChange={async e => {
-                      const checked = e.target.checked;
-                      setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
-                    }} /> First-year only rule</label>
-                    <label><input type="checkbox" checked={settings.allowSameTeamMatches} disabled={!canEdit} onChange={async e => {
-                      const allowSameTeamMatches = e.target.checked;
-                      setSettings(s => ({ ...s, allowSameTeamMatches }));
-                    }} /> Include same team</label>
+                    <div
+                      className="setup-control-row"
+                      style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
+                    >
+                      <label><input type="checkbox" checked={settings.enforceWeightCheck} onChange={async e => {
+                        const enforceWeightCheck = e.target.checked;
+                        setSettings(s => ({ ...s, enforceWeightCheck }));
+                      }} /> Enforce Weight check</label>
+                      <label><input type="checkbox" checked={settings.firstYearOnlyWithFirstYear} onChange={async e => {
+                        const checked = e.target.checked;
+                        setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
+                      }} /> First-year only rule</label>
+                      <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
+                        const allowSameTeamMatches = e.target.checked;
+                        setSettings(s => ({ ...s, allowSameTeamMatches }));
+                      }} /> Include same team</label>
                   </div>
                 </>
               )}

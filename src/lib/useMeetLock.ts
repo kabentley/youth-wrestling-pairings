@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 
-type LockState = {
+export type LockState = {
   status: "loading" | "acquired" | "locked";
   lockedByUsername?: string | null;
   lockExpiresAt?: string | null;

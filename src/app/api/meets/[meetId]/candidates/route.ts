@@ -95,7 +95,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
-    if (ageGapDays > q.maxAgeGapDays) continue;
 
     const wPct = weightPctDiff(target.weight, opp.weight);
     if (wPct > q.maxWeightDiffPct) continue;

@@ -11,6 +11,10 @@ const PatchSchema = z.object({
   address: z.string().trim().optional(),
   website: z.string().trim().url().optional().or(z.literal("")),
   headCoachId: z.string().trim().optional().or(z.literal("")),
+  homeTeamPreferSameMat: z.boolean().optional(),
+  defaultMaxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
+  defaultRestGap: z.number().int().min(0).max(20).optional(),
+  defaultMaxAgeGapDays: z.number().int().min(0).max(3650).optional(),
 });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ teamId: string }> }) {
@@ -25,6 +29,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
       address: true,
       website: true,
       homeTeamPreferSameMat: true,
+      defaultMaxMatchesPerWrestler: true,
+      defaultRestGap: true,
+      defaultMaxAgeGapDays: true,
       logoData: true,
       headCoachId: true,
       headCoach: { select: { id: true, username: true } },
@@ -39,6 +46,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
     address: team.address,
     website: team.website,
     homeTeamPreferSameMat: team.homeTeamPreferSameMat,
+    defaultMaxMatchesPerWrestler: team.defaultMaxMatchesPerWrestler,
+    defaultRestGap: team.defaultRestGap,
+    defaultMaxAgeGapDays: team.defaultMaxAgeGapDays,
     hasLogo: Boolean(team.logoData),
   });
 }
@@ -76,6 +86,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     address?: string | null;
     website?: string | null;
     headCoachId?: string | null;
+    homeTeamPreferSameMat?: boolean;
+    defaultMaxMatchesPerWrestler?: number;
+    defaultRestGap?: number;
+    defaultMaxAgeGapDays?: number;
   } = {};
   if (body.color) data.color = body.color;
   if (body.name) data.name = body.name.trim();
@@ -86,6 +100,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     const trimmed = body.headCoachId.trim();
     data.headCoachId = trimmed === "" ? null : trimmed;
   }
+  if (body.homeTeamPreferSameMat !== undefined) data.homeTeamPreferSameMat = body.homeTeamPreferSameMat;
+  if (body.defaultMaxMatchesPerWrestler !== undefined) data.defaultMaxMatchesPerWrestler = body.defaultMaxMatchesPerWrestler;
+  if (body.defaultRestGap !== undefined) data.defaultRestGap = body.defaultRestGap;
+  if (body.defaultMaxAgeGapDays !== undefined) data.defaultMaxAgeGapDays = body.defaultMaxAgeGapDays;
 
   const team = await db.team.update({
     where: { id: teamId },
@@ -99,6 +117,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
       address: true,
       website: true,
       headCoachId: true,
+      homeTeamPreferSameMat: true,
+      defaultMaxMatchesPerWrestler: true,
+      defaultRestGap: true,
+      defaultMaxAgeGapDays: true,
       headCoach: { select: { id: true, username: true } },
     },
   });
@@ -112,6 +134,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     hasLogo: Boolean(team.logoData),
     headCoachId: team.headCoachId ?? null,
     headCoach: team.headCoach ? { id: team.headCoach.id, username: team.headCoach.username } : null,
+    homeTeamPreferSameMat: team.homeTeamPreferSameMat,
+    defaultMaxMatchesPerWrestler: team.defaultMaxMatchesPerWrestler,
+    defaultRestGap: team.defaultRestGap,
+    defaultMaxAgeGapDays: team.defaultMaxAgeGapDays,
   });
 }
 

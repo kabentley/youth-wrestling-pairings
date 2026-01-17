@@ -12,7 +12,19 @@ const BodySchema = z.object({
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  await requireRole("COACH");
+  try {
+    await requireRole("COACH");
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "UNAUTHORIZED") {
+        return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      }
+      if (error.message === "FORBIDDEN") {
+        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
+    throw error;
+  }
   const comments = await db.meetComment.findMany({
     where: { meetId },
     orderBy: { createdAt: "desc" },
@@ -24,7 +36,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "UNAUTHORIZED") {
+        return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      }
+      if (error.message === "FORBIDDEN") {
+        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
+    throw error;
+  }
   const body = BodySchema.parse(await req.json());
 
   const comment = await db.meetComment.create({

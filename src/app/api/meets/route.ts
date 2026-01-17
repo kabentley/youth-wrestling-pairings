@@ -4,6 +4,7 @@ import { z } from "zod";
 import { assignMatsForMeet } from "@/lib/assignMats";
 import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 import { db } from "@/lib/db";
+import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
@@ -19,7 +20,7 @@ const MeetSchema = z.object({
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
-  restGap: z.number().int().min(0).max(20).default(3),
+  restGap: z.number().int().min(0).max(20).default(6),
 });
 
 export async function GET() {
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
   }
   const homeTeamId = parsed.homeTeamId ?? creatorTeamId;
 
+  const now = new Date();
   const meet = await db.meet.create({
     data: {
       name: parsed.name,
@@ -58,6 +60,9 @@ export async function POST(req: Request) {
       maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
       restGap: parsed.restGap,
       updatedById: user.id,
+      lockedById: user.id,
+      lockedAt: now,
+      lockExpiresAt: new Date(now.getTime() + MEET_LOCK_TTL_MS),
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },
     include: { meetTeams: { include: { team: true } } },

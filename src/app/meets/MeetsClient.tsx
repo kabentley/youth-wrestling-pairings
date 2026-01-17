@@ -71,7 +71,7 @@ export default function MeetsPage() {
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
-  const [restGap, setRestGap] = useState(3);
+  const [restGap, setRestGap] = useState(6);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export default function MeetsPage() {
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
-    setRestGap(3);
+    setRestGap(6);
     setEditingMeet(null);
   }, []);
 
@@ -358,16 +358,24 @@ export default function MeetsPage() {
       try {
         const res = await fetch(`/api/teams/${homeTeamId}/mat-rules`);
         if (!res.ok) return;
-        const payload = await res.json().catch(() => null);
-        if (didCancel) return;
-        const raw = payload && typeof payload.numMats === "number" ? payload.numMats : DEFAULT_NUM_MATS;
-        const clamped = Math.max(MIN_MATS, Math.min(MAX_MATS, raw));
-        setHomeTeamMaxMats(clamped);
-        setNumMats(clamped);
-      } catch {
-        // ignore
-      }
-    };
+          const payload = await res.json().catch(() => null);
+          if (didCancel) return;
+          const raw = payload && typeof payload.numMats === "number" ? payload.numMats : DEFAULT_NUM_MATS;
+          const clamped = Math.max(MIN_MATS, Math.min(MAX_MATS, raw));
+          setHomeTeamMaxMats(clamped);
+          setNumMats(clamped);
+          if (!hasRestartDefaults) {
+            if (typeof payload?.defaultMaxMatchesPerWrestler === "number") {
+              setMaxMatchesPerWrestler(Math.max(1, Math.min(5, Math.round(payload.defaultMaxMatchesPerWrestler))));
+            }
+            if (typeof payload?.defaultRestGap === "number") {
+              setRestGap(Math.max(0, Math.min(20, Math.round(payload.defaultRestGap))));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      };
     void fetchMatDefaults();
     return () => {
       didCancel = true;
@@ -922,43 +930,19 @@ export default function MeetsPage() {
                     disabled={!canManageMeets}
                   />
                 </label>
-                <label className="row">
-                  <span className="muted">Target matches per wrestler</span>
-                  <NumberInput
-                    className="input input-sm"
-                    min={1}
-                    max={5}
-                    value={matchesPerWrestler}
-                    onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
-                    normalize={(value) => Math.round(value)}
-                    disabled={!canManageMeets}
-                  />
-                </label>
-                <label className="row">
-                  <span className="muted">Max matches per wrestler</span>
-                  <NumberInput
-                    className="input input-sm"
-                    min={1}
-                    max={5}
-                    value={maxMatchesPerWrestler}
-                    onValueChange={(value) => setMaxMatchesPerWrestler(Math.round(value))}
-                    normalize={(value) => Math.round(value)}
-                    disabled={!canManageMeets}
-                  />
-                </label>
-                <label className="row">
-                  <span className="muted">Minimum bouts between matches</span>
-                  <NumberInput
-                    className="input input-sm"
-                    min={0}
-                    max={20}
-                    value={restGap}
-                    onValueChange={(value) => setRestGap(Math.max(0, Math.round(value)))}
-                    normalize={(value) => Math.max(0, Math.round(value))}
-                    disabled={!canManageMeets}
-                  />
-                </label>
-              </div>
+                  <label className="row">
+                    <span className="muted">Target matches per wrestler</span>
+                    <NumberInput
+                      className="input input-sm"
+                      min={1}
+                      max={5}
+                      value={matchesPerWrestler}
+                      onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
+                      normalize={(value) => Math.round(value)}
+                      disabled={!canManageMeets}
+                    />
+                  </label>
+                </div>
               <label className="row" style={{ marginTop: 6 }}>
                 <input
                   type="checkbox"

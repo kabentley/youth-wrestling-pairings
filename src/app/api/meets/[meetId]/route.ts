@@ -156,7 +156,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
       where: { id: meetId },
       data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
     });
-  } else if (meet.lockedById) {
+  } else if (meet.lockedById && meet.lockedById !== user.id) {
     return NextResponse.json(
       {
         error: "Meet is locked",

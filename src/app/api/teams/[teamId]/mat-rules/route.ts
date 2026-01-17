@@ -36,6 +36,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
     select: {
       homeTeamPreferSameMat: true,
       numMats: true,
+      defaultMaxMatchesPerWrestler: true,
+      defaultRestGap: true,
+      defaultMaxAgeGapDays: true,
       matRules: {
         orderBy: { matIndex: "asc" },
         select: {
@@ -55,6 +58,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
   return NextResponse.json({
     homeTeamPreferSameMat: team.homeTeamPreferSameMat,
     numMats: Math.max(MIN_MATS, Math.min(MAX_MATS, team.numMats)),
+    defaultMaxMatchesPerWrestler: team.defaultMaxMatchesPerWrestler,
+    defaultRestGap: team.defaultRestGap,
+    defaultMaxAgeGapDays: team.defaultMaxAgeGapDays,
     rules: team.matRules,
   });
 }
