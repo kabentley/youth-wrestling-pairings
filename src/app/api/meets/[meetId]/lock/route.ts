@@ -6,8 +6,9 @@ import { requireAnyRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
+  let user: Awaited<ReturnType<typeof requireAnyRole>>["user"];
   try {
-    await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]);
+    ({ user } = await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]));
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {

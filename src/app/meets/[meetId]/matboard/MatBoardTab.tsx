@@ -345,6 +345,39 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
     return Boolean(check(bout.redId) || check(bout.greenId));
   }
 
+  function hasConflict(
+    bout: Bout,
+    order: number,
+    otherOrders: Map<string, Set<number>>,
+    gap: number,
+  ) {
+    const conflictsAt = (id: string) => {
+      const orders = otherOrders.get(id);
+      if (!orders) return false;
+      for (let delta = 0; delta <= gap; delta += 1) {
+        if (orders.has(order - delta) || orders.has(order + delta)) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return Boolean(conflictsAt(bout.redId) || conflictsAt(bout.greenId));
+  }
+
+  function hasSameMatConflictAt(list: Bout[], idx: number, gap: number) {
+    const bout = list[idx];
+    if (!bout) return false;
+    const start = Math.max(0, idx - gap);
+    const end = Math.min(list.length - 1, idx + gap);
+    for (let i = start; i <= end; i++) {
+      if (i === idx) continue;
+      const other = list[i];
+      if (other.redId === bout.redId || other.greenId === bout.redId) return true;
+      if (other.redId === bout.greenId || other.greenId === bout.greenId) return true;
+    }
+    return false;
+  }
+
   function trySlide(
     list: Bout[],
     idx: number,
@@ -386,43 +419,71 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
   }
 
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
-    const base = list.slice();
-    if (gap <= 0) return base;
+    const working = list.slice();
+    if (gap <= 0 || working.length < 2) return working;
 
-    function scoreCandidate(candidate: Bout[]) {
-      const matsCopy = allMats.map(m => m.slice());
-      if (matIndex >= 0) matsCopy[matIndex] = candidate;
-      return computeConflictSummary(matsCopy, gap);
-    }
-
-    const working = base.slice();
-    let bestScore = scoreCandidate(working);
-    const attempts = Math.max(10, closestPowerOfTwo(base.length * 2));
+    const otherOrders = buildOtherMatOrders(allMats, matIndex);
     for (let idx = 0; idx < working.length; idx++) {
-      const currentScore = scoreCandidate(working);
-      const hasConflict = currentScore.some((count, index) => index > 0 && count > 0);
-      if (!hasConflict) continue;
-      let bestLocal = working.slice();
-      let bestLocalScore = currentScore;
-      for (let iter = 0; iter < attempts; iter++) {
-        if (working.length < 2) break;
-        const next = working.slice();
-        const swapIdx = Math.floor(Math.random() * (next.length - 1));
-        [next[swapIdx], next[swapIdx + 1]] = [next[swapIdx + 1], next[swapIdx]];
-        const score = scoreCandidate(next);
-        const delta = compareConflictSummary(score, bestLocalScore);
-        if (delta < 0) {
-          bestLocal = next;
-          bestLocalScore = score;
+      const bout = working[idx];
+      const order = idx + 1;
+      if (
+        !hasConflict(bout, order, otherOrders, gap) &&
+        !hasSameMatConflictAt(working, idx, gap)
+      ) {
+        continue;
+      }
+      const topWindow = Math.min(idx, Math.max(5, gap));
+      if (topWindow > 0) {
+        const topTarget = Math.floor(Math.random() * (topWindow + 1));
+        if (topTarget !== idx) {
+          working.splice(idx, 1);
+          working.splice(topTarget, 0, bout);
+          const topOrder = topTarget + 1;
+          if (
+            !hasConflict(bout, topOrder, otherOrders, gap) &&
+            !hasSameMatConflictAt(working, topTarget, gap)
+          ) {
+            idx = Math.max(-1, topTarget - 1);
+            continue;
+          }
+          working.splice(topTarget, 1);
+          working.splice(idx, 0, bout);
         }
       }
-      working.splice(0, working.length, ...bestLocal);
-      bestScore = bestLocalScore;
-      idx = Math.max(-1, idx - 1);
+      const maxShift = Math.max(1, working.length - 1);
+      let moved = false;
+      for (let attempt = 0; attempt < maxShift; attempt++) {
+        const shift = 1 + Math.floor(Math.random() * maxShift);
+        let nextIndex = idx + shift;
+        if (nextIndex >= working.length) {
+          nextIndex = Math.floor(Math.random() * (idx + 1));
+        }
+        if (nextIndex === idx) continue;
+        working.splice(idx, 1);
+        working.splice(nextIndex, 0, bout);
+        const nextOrder = nextIndex + 1;
+        if (
+          !hasConflict(bout, nextOrder, otherOrders, gap) &&
+          !hasSameMatConflictAt(working, nextIndex, gap)
+        ) {
+          moved = true;
+          idx = Math.max(-1, idx - 1);
+          break;
+        }
+        working.splice(nextIndex, 1);
+        working.splice(idx, 0, bout);
+      }
+      if (!moved) {
+        const target = Math.floor(Math.random() * (Math.min(idx, working.length - 1) + 1));
+        if (target !== idx) {
+          working.splice(idx, 1);
+          working.splice(target, 0, bout);
+          idx = Math.max(-1, target - 1);
+        }
+      }
     }
-    const resolved = resolveZeroGapConflicts(working, allMats, matIndex, gap);
-    allMats[matIndex] = resolved.slice();
-    return resolved;
+    allMats[matIndex] = working.slice();
+    return working;
   }
 
   function closestPowerOfTwo(value: number) {
@@ -615,7 +676,7 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
   };
 
   return (
-    <section className="matboard-tab">
+    <section className={`matboard-tab${canEdit ? "" : " readonly"}`}>
       <style>{`
         .matboard-tab {
           background: #fff;
@@ -628,6 +689,9 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
           position: relative;
           z-index: 0;
           font-size: 13px;
+        }
+        .matboard-tab.readonly {
+          user-select: none;
         }
         .matboard-tab h3 {
           margin: 0;
@@ -700,13 +764,6 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
           padding: 10px;
           border-radius: 8px;
           color: #b00020;
-        }
-        .lock-notice {
-          border: 1px solid #ccdff2;
-          background: #eef3fb;
-          padding: 10px;
-          border-radius: 8px;
-          color: #0d3b66;
         }
         .mat-grid {
           display: grid;
@@ -847,11 +904,6 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
         {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
       </div>
       {authMsg && <div className="notice">{authMsg}</div>}
-      {lockState.status === "locked" && (
-        <div className="lock-notice">
-          Editing locked by {lockState.lockedByUsername ?? "another user"}.
-        </div>
-      )}
       <div className="mat-grid">
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];

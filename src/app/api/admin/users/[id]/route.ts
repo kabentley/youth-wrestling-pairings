@@ -52,20 +52,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: `${label} must be assigned a team` }, { status: 400 });
   }
 
-  const user = await db.user.update({
-    where: { id },
-    data,
-    select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
-  });
-  if (finalRole === "COACH" && finalTeamId) {
-    const headCoachId = teamForHeadCheck?.headCoachId;
-    if (!headCoachId) {
-      await db.team.update({
-        where: { id: finalTeamId },
-        data: { headCoachId: id },
+  const user = await db.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id },
+      data,
+      select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
+    });
+    if (finalRole === "COACH" && finalTeamId) {
+      const currentHeadTeam = await tx.team.findFirst({
+        where: { headCoachId: id },
+        select: { id: true },
       });
+      if (currentHeadTeam && currentHeadTeam.id !== finalTeamId) {
+        await tx.team.update({
+          where: { id: currentHeadTeam.id },
+          data: { headCoachId: null },
+        });
+      }
+      const headCoachId = teamForHeadCheck?.headCoachId;
+      if (!headCoachId || headCoachId === id) {
+        await tx.team.update({
+          where: { id: finalTeamId },
+          data: { headCoachId: id },
+        });
+      }
     }
-  }
+    return updatedUser;
+  });
   return NextResponse.json(user);
 }
 

@@ -42,12 +42,20 @@ export async function requireMeetLock(meetId: string, userId: string) {
     err.lockExpiresAt = meet.lockExpiresAt ?? null;
     throw err;
   }
+
+  if (!meet.lockedById) {
+    const err = new Error("MEET_LOCK_REQUIRED");
+    throw err;
+  }
 }
 
 export function getMeetLockError(err: unknown): MeetLockErrorPayload | null {
   if (!(err instanceof Error)) return null;
   if (err.message === "MEET_NOT_FOUND") {
     return { status: 404, body: { error: "Meet not found" } };
+  }
+  if (err.message === "MEET_LOCK_REQUIRED") {
+    return { status: 409, body: { error: "Meet lock required" } };
   }
   if (err.message === "MEET_LOCKED") {
     const info = err as Error & MeetLockInfo;

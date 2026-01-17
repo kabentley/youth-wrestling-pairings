@@ -139,12 +139,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
 export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
+  const now = new Date();
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { id: true, lockedById: true, lockExpiresAt: true, lockedBy: { select: { username: true } } },
+  });
+  if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (meet.lockExpiresAt && meet.lockExpiresAt < now) {
+    await db.meet.update({
+      where: { id: meetId },
+      data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
+    });
+  } else if (meet.lockedById) {
+    return NextResponse.json(
+      {
+        error: "Meet is locked",
+        lockedByUsername: meet.lockedBy?.username ?? "another user",
+        lockExpiresAt: meet.lockExpiresAt ?? null,
+      },
+      { status: 409 },
+    );
   }
 
   try {

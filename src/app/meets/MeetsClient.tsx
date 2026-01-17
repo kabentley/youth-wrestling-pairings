@@ -727,6 +727,11 @@ export default function MeetsPage() {
           margin-top: 16px;
           flex-shrink: 0;
         }
+        .delete-modal {
+          width: min(520px, 100%);
+          min-height: 0;
+          padding: 22px;
+        }
         .modal-home-team {
           flex: 1;
           min-width: 220px;
@@ -831,7 +836,7 @@ export default function MeetsPage() {
                   <div className="meet-item-actions">
                     <button
                       className="nav-btn"
-                      onClick={() => router.push(`/meets/${m.id}`)}
+                      onClick={() => router.push(`/meets/${m.id}?edit=1`)}
                     >
                       Edit
                     </button>
@@ -1012,7 +1017,7 @@ export default function MeetsPage() {
       )}
       {deleteDialog && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteDialog(null)}>
-          <div className="modal" role="document" onClick={e => e.stopPropagation()}>
+          <div className="modal delete-modal" role="document" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
                 Delete meet: {deleteDialog.name} (

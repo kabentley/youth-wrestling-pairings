@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -8,7 +8,6 @@ import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
-import { useMeetLock } from "@/lib/useMeetLock";
 import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
@@ -82,6 +81,8 @@ type MeetComment = {
   author?: { username?: string | null } | null;
 };
 
+const INACTIVITY_RELEASE_MS = 20 * 1000;
+
 const CURRENT_SHARED_COLUMN_MAP: Record<number, number> = {
   0: 0,
   1: 1,
@@ -97,6 +98,9 @@ const AVAILABLE_SHARED_COLUMN_MAP = CURRENT_SHARED_COLUMN_MAP;
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editRequested = searchParams.get("edit") === "1";
+  const [wantsEdit, setWantsEdit] = useState(editRequested);
   const daysPerYear = DAYS_PER_YEAR;
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -169,6 +173,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [editAllowed, setEditAllowed] = useState(true);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
+  const prevLockStatusRef = useRef<LockState["status"]>("loading");
+  const [flashNotice, setFlashNotice] = useState(false);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inactivityDeadlineRef = useRef<number | null>(null);
+  const [inactivityRemainingMs, setInactivityRemainingMs] = useState<number | null>(null);
+  const [meetDeletedNotice, setMeetDeletedNotice] = useState(false);
+  const meetDeletedRef = useRef(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const candidatesReqIdRef = useRef(0);
 
@@ -266,22 +278,83 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
-  function updateLockState(next: LockState) {
+  const updateEditMode = useCallback((next: boolean) => {
+    setWantsEdit(next);
+    router.replace(next ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`);
+  }, [meetId, router]);
+
+  const triggerNoticeFlash = useCallback(() => {
+    setFlashNotice(false);
+    if (flashTimeoutRef.current) {
+      clearTimeout(flashTimeoutRef.current);
+    }
+    setTimeout(() => {
+      setFlashNotice(true);
+      flashTimeoutRef.current = setTimeout(() => setFlashNotice(false), 700);
+    }, 0);
+  }, []);
+
+  const clearInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+    inactivityDeadlineRef.current = null;
+    setInactivityRemainingMs(null);
+  }, []);
+
+  const updateLockState = useCallback((next: LockState) => {
+    const prev = prevLockStatusRef.current;
+    prevLockStatusRef.current = next.status;
     lockStatusRef.current = next.status;
     setLockState(next);
-  }
+    if (next.status !== "acquired") {
+      clearInactivityTimer();
+    }
+    if (prev === "acquired" && next.status !== "acquired" && wantsEdit) {
+      updateEditMode(false);
+    }
+  }, [clearInactivityTimer, updateEditMode, wantsEdit]);
+
+  const releaseLock = useCallback(() => {
+    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
+  }, [meetId]);
+
+  const resetInactivityTimer = useCallback(() => {
+    clearInactivityTimer();
+    inactivityDeadlineRef.current = Date.now() + INACTIVITY_RELEASE_MS;
+    setInactivityRemainingMs(INACTIVITY_RELEASE_MS);
+    inactivityTimerRef.current = setTimeout(() => {
+      releaseLock();
+      updateLockState({ status: "locked", lockedByUsername: null });
+    }, INACTIVITY_RELEASE_MS);
+  }, [clearInactivityTimer, releaseLock, updateLockState]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) {
+        clearTimeout(flashTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearInactivityTimer();
+    };
+  }, [clearInactivityTimer]);
 
   async function acquireLock() {
     const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
     if (res.status === 401) {
       setAuthMsg("Please sign in to edit this meet.");
-      return;
+      return false;
     }
     if (res.status === 403) {
       const json = await res.json().catch(() => ({}));
       setAuthMsg(json?.error ?? "You are not authorized to edit this meet.");
       setEditAllowed(false);
-      return;
+      return false;
     }
     if (res.ok) {
       const json = await res.json();
@@ -289,7 +362,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         status: "acquired",
         lockExpiresAt: json.lockExpiresAt ?? null,
       });
-      return;
+      return true;
     }
 
     if (res.status === 409) {
@@ -299,15 +372,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         lockedByUsername: json.lockedByUsername ?? "another user",
         lockExpiresAt: json.lockExpiresAt ?? null,
       });
-      return;
+      await refreshLockStatus();
+      return false;
     }
 
     updateLockState({ status: "locked", lockedByUsername: "unknown user" });
+    return false;
   }
 
-  function releaseLock() {
-    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
-  }
+  const refreshLockStatus = useCallback(async () => {
+    const res = await fetch(`/api/meets/${meetId}/lock`);
+    if (res.status === 401) {
+      setAuthMsg("Please sign in to view this meet.");
+      return;
+    }
+    if (res.status === 403) {
+      const json = await res.json().catch(() => ({}));
+      setAuthMsg(json?.error ?? "You are not authorized to view this meet.");
+      setEditAllowed(false);
+      return;
+    }
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    updateLockState({
+      status: "locked",
+      lockedByUsername: data.locked ? (data.lockedByUsername ?? null) : null,
+      lockExpiresAt: data.lockExpiresAt ?? null,
+    });
+  }, [meetId, updateLockState]);
 
   function teamName(id: string) {
     const team = teams.find(t => t.id === id);
@@ -342,6 +434,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
   function lockStatusText(lock: LockState, status: "DRAFT" | "PUBLISHED") {
     if (status !== "DRAFT") return "Not applicable";
+    if (!wantsEdit && lock.status !== "acquired" && !lock.lockedByUsername) return "Read-only";
     if (lock.status === "acquired") {
       if (lock.lockExpiresAt) {
         const expires = new Date(lock.lockExpiresAt);
@@ -355,6 +448,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return `Locked by ${lock.lockedByUsername ?? "another user"}`;
     }
     return "Checking";
+  }
+  function formatInactivityCountdown(ms: number) {
+    const totalSeconds = Math.ceil(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
   function statusColor(status: AttendanceStatus | null | undefined) {
     if (!status) return "#e6f6ea";
@@ -417,6 +516,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setEditAllowed(false);
       return;
     }
+    if (mRes.status === 404) {
+      if (!meetDeletedRef.current) {
+        meetDeletedRef.current = true;
+        setMeetDeletedNotice(true);
+        setTimeout(() => {
+          router.replace("/meets");
+        }, 1500);
+      }
+      return;
+    }
 
     const bJson: Bout[] = await bRes.json();
     const wJson = await wRes.json();
@@ -454,7 +563,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCurrentUserRole(meJson?.role ?? null);
       setCurrentUserTeamId(meJson?.teamId ?? null);
     }
-  }, [meetId]);
+  }, [meetId, router]);
 
   const loadActivity = useCallback(async () => {
     const [changesRes, commentsRes] = await Promise.all([
@@ -474,8 +583,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
-  const canEdit = editAllowed && lockState.status === "acquired" && isDraft;
-  const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
+  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
+  const canChangeStatus = editAllowed && wantsEdit && (isPublished || lockState.status === "acquired");
   const restartDisabled = !canEdit || isPublished;
   const handleRestartClick = () => {
     if (restartDisabled) return;
@@ -484,6 +593,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   };
 
   useEffect(() => { void load(); void loadActivity(); }, [load, loadActivity]);
+  useEffect(() => {
+    setWantsEdit(editRequested);
+  }, [editRequested]);
   useEffect(() => {
     const handleFocus = () => {
       void load();
@@ -582,10 +694,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   useEffect(() => {
     if (!editAllowed || !meetLoaded) return;
     if (meetStatus !== "DRAFT") {
+      if (lockStatusRef.current === "acquired") releaseLock();
+      lockStatusRef.current = "locked";
       updateLockState({ status: "locked", lockedByUsername: null });
       return;
     }
-    void acquireLock();
+    if (!wantsEdit) {
+      if (lockStatusRef.current === "acquired") releaseLock();
+      void refreshLockStatus();
+      const interval = setInterval(() => {
+        void refreshLockStatus();
+      }, 60_000);
+      return () => clearInterval(interval);
+    }
+    void (async () => {
+      const ok = await acquireLock();
+      if (!ok) triggerNoticeFlash();
+    })();
     const interval = setInterval(() => {
       if (lockStatusRef.current === "acquired") {
         void acquireLock();
@@ -598,7 +723,65 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       window.removeEventListener("beforeunload", onBeforeUnload);
       releaseLock();
     };
-  }, [meetId, editAllowed, meetLoaded, meetStatus]);
+  }, [meetId, editAllowed, meetLoaded, meetStatus, wantsEdit, refreshLockStatus, triggerNoticeFlash]);
+
+  useEffect(() => {
+    if (!wantsEdit || lockState.status !== "acquired") return;
+    resetInactivityTimer();
+    const handleActivity = () => resetInactivityTimer();
+    window.addEventListener("mousedown", handleActivity);
+    window.addEventListener("mousemove", handleActivity);
+    window.addEventListener("keydown", handleActivity);
+    window.addEventListener("touchstart", handleActivity, { passive: true });
+    window.addEventListener("scroll", handleActivity, { passive: true });
+    return () => {
+      window.removeEventListener("mousedown", handleActivity);
+      window.removeEventListener("mousemove", handleActivity);
+      window.removeEventListener("keydown", handleActivity);
+      window.removeEventListener("touchstart", handleActivity);
+      window.removeEventListener("scroll", handleActivity);
+      clearInactivityTimer();
+    };
+  }, [wantsEdit, lockState.status, resetInactivityTimer, clearInactivityTimer]);
+
+  useEffect(() => {
+    if (!wantsEdit || lockState.status !== "acquired") return;
+    const handleVisibility = () => {
+      if (document.hidden) return;
+      const deadline = inactivityDeadlineRef.current;
+      if (deadline && Date.now() >= deadline) {
+        releaseLock();
+        updateLockState({ status: "locked", lockedByUsername: null });
+        return;
+      }
+      if (deadline) {
+        setInactivityRemainingMs(Math.max(0, deadline - Date.now()));
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleVisibility);
+    };
+  }, [wantsEdit, lockState.status, releaseLock, updateLockState]);
+
+  useEffect(() => {
+    if (!wantsEdit || lockState.status !== "acquired") {
+      setInactivityRemainingMs(null);
+      return;
+    }
+    if (!inactivityDeadlineRef.current) {
+      inactivityDeadlineRef.current = Date.now() + INACTIVITY_RELEASE_MS;
+      setInactivityRemainingMs(INACTIVITY_RELEASE_MS);
+    }
+    const interval = setInterval(() => {
+      if (!inactivityDeadlineRef.current) return;
+      const remaining = Math.max(0, inactivityDeadlineRef.current - Date.now());
+      setInactivityRemainingMs(remaining);
+    }, 200);
+    return () => clearInterval(interval);
+  }, [wantsEdit, lockState.status]);
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
@@ -891,7 +1074,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
-    await fetch(`/api/meets/${meetId}/wrestlers/status`, {
+    const res = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wrestlerId, status }),
@@ -918,7 +1101,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function removeBout(boutId: string) {
     if (!canEdit) return;
-    await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
+    const res = await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
     await load();
     await loadActivity();
     if (target) await loadCandidates(target.id);
@@ -926,7 +1109,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
     if (!canChangeStatus) return;
-    await fetch(`/api/meets/${meetId}`, {
+    const res = await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus }),
@@ -940,7 +1123,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const trimmed = meetName.trim();
     if (trimmed.length < 2) return;
     if (trimmed === lastSavedNameRef.current) return;
-    await fetch(`/api/meets/${meetId}`, {
+    const res = await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: trimmed }),
@@ -953,7 +1136,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function submitComment() {
     const body = commentBody.trim();
     if (!body) return;
-    await fetch(`/api/meets/${meetId}/comments`, {
+    const res = await fetch(`/api/meets/${meetId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body, section: commentSection }),
@@ -965,7 +1148,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null) {
     if (!canEdit) return;
-    await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
+    const res = await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, status: status ?? null, teamId: activeTeamId }),
@@ -1259,6 +1442,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           margin-bottom: 12px;
           color: var(--warn);
         }
+        .notice.flash {
+          animation: notice-flash 0.6s ease;
+        }
+        .toast {
+          position: fixed;
+          top: 16px;
+          right: 16px;
+          background: #1d232b;
+          color: #ffffff;
+          padding: 10px 14px;
+          border-radius: 10px;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+          font-weight: 600;
+          z-index: 50;
+        }
+        @keyframes notice-flash {
+          0% { box-shadow: 0 0 0 0 rgba(178, 0, 32, 0); }
+          30% { box-shadow: 0 0 0 3px rgba(178, 0, 32, 0.35); }
+          100% { box-shadow: 0 0 0 0 rgba(178, 0, 32, 0); }
+        }
         .panel {
           background: #fff;
           border: 1px solid var(--line);
@@ -1292,6 +1495,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           table-layout: fixed;
           width: fit-content;
           max-width: 100%;
+        }
+        .pairings-pane.readonly {
+          user-select: none;
         }
         .pairings-table tbody tr:hover {
           background: #f7f9fb;
@@ -1486,6 +1692,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
       `}</style>
       <AppHeader links={headerLinks} />
+      {meetDeletedNotice && (
+        <div className="toast">
+          Meet was deleted. Returning to Meets...
+        </div>
+      )}
       <div className="meet-heading-row">
         <div className="meet-heading-title">
           {!isEditingName && (
@@ -1545,6 +1756,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <span>
               Lock: <b>{lockStatusText(lockState, meetStatus)}</b>
             </span>
+            {wantsEdit && lockState.status === "acquired" && inactivityRemainingMs !== null && (
+              <span>
+                Inactivity: <b>{formatInactivityCountdown(inactivityRemainingMs)}</b>
+              </span>
+            )}
             {lastUpdatedAt && (
               <span className="meet-last-updated">
                 Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
@@ -1552,6 +1768,38 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {isDraft && lockState.status !== "acquired" && (
+              <button
+                type="button"
+                className="nav-btn"
+                onClick={() => {
+                  if (wantsEdit) {
+                    void (async () => {
+                      const ok = await acquireLock();
+                      if (!ok) triggerNoticeFlash();
+                    })();
+                  } else {
+                    updateEditMode(true);
+                  }
+                }}
+              >
+                Start Editing
+              </button>
+            )}
+            {isDraft && wantsEdit && lockState.status === "acquired" && (
+              <button
+                type="button"
+                className="nav-btn"
+                onClick={() => {
+                  releaseLock();
+                  lockStatusRef.current = "locked";
+                  updateLockState({ status: "locked", lockedByUsername: null });
+                  updateEditMode(false);
+                }}
+              >
+                Release Lock
+              </button>
+            )}
             {activeTab === "pairings" && (
               <>
                 <button
@@ -1585,6 +1833,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
+      {isDraft && lockState.status !== "acquired" && (
+        <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
+          Read-only mode. Click Start Editing to make changes.
+          {lockState.lockedByUsername ? ` Currently locked by ${lockState.lockedByUsername}.` : ""}
+        </div>
+      )}
       {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
       <div className="tab-bar">
           {[
@@ -1609,19 +1863,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       <div className="tab-body">
         {activeTab === "pairings" && (
-          <>
+          <div className={`pairings-pane${canEdit ? "" : " readonly"}`}>
           {authMsg && (
             <div className="notice">
               {authMsg}
             </div>
           )}
 
-          {isDraft && lockState.status === "locked" && (
-            <div className="notice">
-              Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
-              <button className="nav-btn" onClick={acquireLock} style={{ marginLeft: 10 }}>Try again</button>
-            </div>
-          )}
 
       {meetStatus === "PUBLISHED" && (
         <div className="notice" style={{ marginTop: 16 }}>
@@ -2419,7 +2667,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </>
         );
       })()}
-          </>
+          </div>
         )}
 
         {activeTab === "matboard" && (
