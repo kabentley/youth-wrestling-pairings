@@ -34,6 +34,12 @@ export default function LeagueSection() {
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState("");
   const [isResetting, setIsResetting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importConfirm, setImportConfirm] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
   const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -220,6 +226,13 @@ function normalizeHeadCoachId(value: string | null | undefined) {
     setResetError("");
   }
 
+  function closeImportModal() {
+    setShowImportModal(false);
+    setImportConfirm("");
+    setImportError("");
+    setImportFile(null);
+  }
+
   async function confirmYearlyReset() {
     if (resetConfirm.trim().toUpperCase() !== "RESET") {
       setResetError('Type "RESET" to confirm.');
@@ -240,6 +253,60 @@ function normalizeHeadCoachId(value: string | null | undefined) {
       setResetError(error instanceof Error ? error.message : "Unable to reset league data.");
     } finally {
       setIsResetting(false);
+    }
+  }
+
+  async function exportTeamsAndRosters() {
+    setMsg("");
+    setIsExporting(true);
+    try {
+      const res = await fetch("/api/admin/export/teams");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? "Unable to export teams.");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const safeLeague = (leagueName || "league").replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 48);
+      anchor.href = url;
+      anchor.download = `${safeLeague}_${stamp}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Unable to export teams.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  async function importTeamsAndRosters(file: File | null) {
+    if (!file) {
+      setImportError("Choose a zip file to import.");
+      return;
+    }
+    setMsg("");
+    setIsImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/admin/import/teams", { method: "POST", body: form });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? "Unable to import teams.");
+      }
+      await load();
+      setMsg("Import complete.");
+      closeImportModal();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to import teams.";
+      setImportError(message);
+      setMsg(message);
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -297,8 +364,8 @@ function normalizeHeadCoachId(value: string | null | undefined) {
           </div>
           <div className="admin-field admin-row-tight">
             <span className="admin-label">League Logo</span>
-            <div className="logo-row">
-              <div className="logo-cell">
+            <div className="logo-row" style={{ alignItems: "center", gap: 12 }}>
+              <div className="logo-cell" style={{ marginRight: "auto" }}>
                 <input
                   id="league-logo-file"
                   className="file-input"
@@ -317,6 +384,27 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                   )}
                 </label>
               </div>
+              <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                className="admin-btn"
+                onClick={exportTeamsAndRosters}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export Teams + Rosters"}
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger"
+                onClick={() => {
+                  setShowImportModal(true);
+                  setImportConfirm("");
+                  setImportError("");
+                  setImportFile(null);
+                }}
+              >
+                Import Teams + Rosters
+              </button>
               <button
                 type="button"
                 className="admin-btn admin-btn-danger"
@@ -328,6 +416,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
               >
                 Reset For New Year
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -520,6 +609,64 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                 disabled={isResetting || resetConfirm.trim().toUpperCase() !== "RESET"}
               >
                 {isResetting ? "Resetting..." : "Confirm Reset"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showImportModal && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={() => {
+            if (isImporting) return;
+            closeImportModal();
+          }}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h4 id="import-title">Import Teams + Rosters</h4>
+            <p className="reset-message">
+              This will clear all existing rosters before importing the zip.
+            </p>
+            <p className="reset-message">
+              Type{" "}
+              <span className="reset-confirm-term">
+                IMPORT
+              </span>{" "}
+              to confirm.
+            </p>
+            <input
+              className="reset-confirm-input"
+              placeholder="Type IMPORT to confirm"
+              value={importConfirm}
+              onChange={(e) => setImportConfirm(e.target.value)}
+              disabled={isImporting}
+            />
+            <input
+              className="reset-confirm-input"
+              type="file"
+              accept=".zip"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+              disabled={isImporting}
+            />
+            {importError && <div className="reset-error">{importError}</div>}
+            <div className="reset-actions">
+              <button type="button" className="admin-btn admin-btn-ghost" onClick={closeImportModal} disabled={isImporting}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger"
+                onClick={() => void importTeamsAndRosters(importFile)}
+                disabled={isImporting || importConfirm.trim().toUpperCase() !== "IMPORT"}
+              >
+                {isImporting ? "Importing..." : "Confirm Import"}
               </button>
             </div>
           </div>
