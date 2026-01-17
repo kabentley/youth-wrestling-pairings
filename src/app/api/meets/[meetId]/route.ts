@@ -16,6 +16,7 @@ const PatchSchema = z.object({
   allowSameTeamMatches: z.boolean().optional(),
   matchesPerWrestler: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
+  restGap: z.number().int().min(0).max(20).optional(),
   status: z.enum(["DRAFT", "PUBLISHED"]).optional(),
 });
 
@@ -42,6 +43,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       allowSameTeamMatches: true,
       matchesPerWrestler: true,
       maxMatchesPerWrestler: true,
+      restGap: true,
       status: true,
       updatedAt: true,
       updatedBy: { select: { username: true } },
@@ -75,6 +77,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     allowSameTeamMatches?: boolean;
     matchesPerWrestler?: number;
     maxMatchesPerWrestler?: number;
+    restGap?: number;
     status?: string;
     updatedById?: string;
   } = { updatedById: user.id };
@@ -87,6 +90,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.allowSameTeamMatches !== undefined) data.allowSameTeamMatches = body.allowSameTeamMatches;
   if (body.matchesPerWrestler !== undefined) data.matchesPerWrestler = body.matchesPerWrestler;
   if (body.maxMatchesPerWrestler !== undefined) data.maxMatchesPerWrestler = body.maxMatchesPerWrestler;
+  if (body.restGap !== undefined) data.restGap = body.restGap;
   if (body.status) data.status = body.status;
 
   const updated = await db.meet.update({
@@ -102,6 +106,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       allowSameTeamMatches: true,
       matchesPerWrestler: true,
       maxMatchesPerWrestler: true,
+      restGap: true,
       status: true,
       updatedAt: true,
       updatedBy: { select: { username: true } },
@@ -122,6 +127,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.allowSameTeamMatches !== undefined) otherChanges.push("same-team matches");
   if (body.matchesPerWrestler !== undefined) otherChanges.push("matches per wrestler");
   if (body.maxMatchesPerWrestler !== undefined) otherChanges.push("max matches per wrestler");
+  if (body.restGap !== undefined) otherChanges.push("rest gap");
   if (body.status) otherChanges.push(`status set to ${body.status.toLowerCase()}`);
   if (nameChangeMessage || otherChanges.length > 0) {
     const otherMessage = otherChanges.length > 0 ? `Updated ${otherChanges.join(", ")}.` : "";

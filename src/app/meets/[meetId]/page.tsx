@@ -111,6 +111,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
   const [meetLoaded, setMeetLoaded] = useState(false);
+  const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState<number | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
@@ -217,6 +218,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         maxWeightDiffPct: settings.maxWeightDiffPct,
         firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
         allowSameTeamMatches: settings.allowSameTeamMatches,
+        matchesPerWrestler: matchesPerWrestler ?? undefined,
       };
       const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
         method: "POST",
@@ -553,6 +555,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
         setMeetLocation(meetJson.location ?? null);
+        setMatchesPerWrestler(
+          typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
+        );
         setMaxMatchesPerWrestler(
           typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
         );
@@ -1768,6 +1773,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <a className="nav-btn" href={`/meets/${meetId}/print/rosters`} target="_blank" rel="noreferrer">
+              Print Rosters
+            </a>
             {isDraft && lockState.status !== "acquired" && (
               <button
                 type="button"

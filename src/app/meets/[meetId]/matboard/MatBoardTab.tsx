@@ -40,11 +40,15 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(0);
-  const [conflictGap] = useState(3);
+  const [conflictGap, setConflictGap] = useState(3);
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
-  const [meetSettings, setMeetSettings] = useState<{ numMats: number; homeTeamId?: string | null } | null>(null);
+  const [meetSettings, setMeetSettings] = useState<{
+    numMats: number;
+    restGap: number;
+    homeTeamId?: string | null;
+  } | null>(null);
   const [italicizeSingles, setItalicizeSingles] = useState(true);
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -63,6 +67,7 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
   useEffect(() => {
     if (!meetSettings) return;
     setNumMats(typeof meetSettings.numMats === "number" ? meetSettings.numMats : 4);
+    setConflictGap(typeof meetSettings.restGap === "number" ? meetSettings.restGap : 3);
   }, [meetSettings]);
 
   useEffect(() => {
@@ -80,6 +85,7 @@ export default function MatBoardTab({ meetId, onMatAssignmentsChange, meetStatus
       if (!cancelled) {
         setMeetSettings({
           numMats: typeof meet?.numMats === "number" ? meet.numMats : 4,
+          restGap: typeof meet?.restGap === "number" ? meet.restGap : 3,
           homeTeamId: meet?.homeTeamId ?? null,
         });
       }

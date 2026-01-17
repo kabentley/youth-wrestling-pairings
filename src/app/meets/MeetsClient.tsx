@@ -12,6 +12,7 @@ type RestartDefaults = {
   location?: string | null;
   homeTeamId?: string | null;
   teamIds?: string[];
+  restGap?: number;
 };
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
@@ -47,6 +48,7 @@ type Meet = {
   allowSameTeamMatches?: boolean;
   matchesPerWrestler?: number;
   maxMatchesPerWrestler?: number;
+  restGap?: number;
   status?: "DRAFT" | "PUBLISHED";
   updatedAt?: string;
   updatedBy?: { username?: string | null } | null;
@@ -69,6 +71,7 @@ export default function MeetsPage() {
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
+  const [restGap, setRestGap] = useState(3);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -112,6 +115,7 @@ export default function MeetsPage() {
     setAllowSameTeamMatches(false);
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
+    setRestGap(3);
     setEditingMeet(null);
   }, []);
 
@@ -193,6 +197,7 @@ export default function MeetsPage() {
         allowSameTeamMatches,
         matchesPerWrestler,
         maxMatchesPerWrestler,
+        restGap,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -217,6 +222,7 @@ export default function MeetsPage() {
         allowSameTeamMatches,
         matchesPerWrestler,
         maxMatchesPerWrestler,
+        restGap,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -295,6 +301,9 @@ export default function MeetsPage() {
     }
     if (restartDefaults.homeTeamId) {
       setHomeTeamId(restartDefaults.homeTeamId);
+    }
+    if (typeof restartDefaults.restGap === "number") {
+      setRestGap(Math.max(0, Math.round(restartDefaults.restGap)));
     }
   }, [restartDefaults]);
   useEffect(() => {
@@ -934,6 +943,18 @@ export default function MeetsPage() {
                     value={maxMatchesPerWrestler}
                     onValueChange={(value) => setMaxMatchesPerWrestler(Math.round(value))}
                     normalize={(value) => Math.round(value)}
+                    disabled={!canManageMeets}
+                  />
+                </label>
+                <label className="row">
+                  <span className="muted">Minimum bouts between matches</span>
+                  <NumberInput
+                    className="input input-sm"
+                    min={0}
+                    max={20}
+                    value={restGap}
+                    onValueChange={(value) => setRestGap(Math.max(0, Math.round(value)))}
+                    normalize={(value) => Math.max(0, Math.round(value))}
                     disabled={!canManageMeets}
                   />
                 </label>

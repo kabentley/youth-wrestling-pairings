@@ -19,6 +19,7 @@ const MeetSchema = z.object({
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
+  restGap: z.number().int().min(0).max(20).default(3),
 });
 
 export async function GET() {
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
       allowSameTeamMatches: parsed.allowSameTeamMatches,
       matchesPerWrestler: parsed.matchesPerWrestler,
       maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
+      restGap: parsed.restGap,
       updatedById: user.id,
       meetTeams: { create: parsed.teamIds.map(teamId => ({ teamId })) },
     },

@@ -367,17 +367,18 @@ export async function reorderBoutsForMeet(
 ) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { numMats: true },
+    select: { numMats: true, restGap: true },
   });
   const bouts = await db.bout.findMany({
     where: { meetId },
     select: { id: true, redId: true, greenId: true, mat: true, order: true },
   });
   const numMats = Math.max(MIN_MATS, options.numMats ?? meet?.numMats ?? DEFAULT_MAT_COUNT);
+  const conflictGap = options.conflictGap ?? meet?.restGap ?? 3;
   const updates = reorderBoutsSequential(
     bouts,
     numMats,
-    options.conflictGap ?? 3,
+    conflictGap,
   );
   if (updates.length) {
     await db.$transaction(
