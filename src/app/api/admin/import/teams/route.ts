@@ -76,16 +76,16 @@ export async function POST(req: Request) {
     const leagueRow = JSON.parse(await leagueEntry.async("string")) as LeagueRow;
     const existingLeague = await db.league.findFirst();
     const data = {
-      name: leagueRow?.name ?? undefined,
-      website: leagueRow?.website ?? undefined,
+      name: leagueRow.name ?? undefined,
+      website: leagueRow.website ?? undefined,
     };
     if (existingLeague) {
       await db.league.update({ where: { id: existingLeague.id }, data });
-    } else if (leagueRow?.name || leagueRow?.website) {
+    } else if (leagueRow.name || leagueRow.website) {
       await db.league.create({ data });
     }
 
-    if (leagueRow?.logoFile) {
+    if (leagueRow.logoFile) {
       const logoEntry = zip.file(leagueRow.logoFile);
       if (logoEntry) {
         const logoData = await logoEntry.async("nodebuffer");
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
   let leagueUpdated = Boolean(leagueEntry);
 
   for (const teamRow of teams) {
-    if (!teamRow?.name || !teamRow?.symbol) continue;
+    if (!teamRow.name || !teamRow.symbol) continue;
     const symbol = teamRow.symbol.trim().toUpperCase();
     let team = teamRow.id
       ? await db.team.findUnique({ where: { id: teamRow.id } })

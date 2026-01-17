@@ -94,7 +94,8 @@ export default function LeagueSection() {
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "Logo upload failed.");
+      const error = (json as { error?: string }).error;
+      setMsg(error ?? "Logo upload failed.");
       return;
     }
     setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
@@ -122,7 +123,8 @@ export default function LeagueSection() {
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "Unable to update team.");
+      const error = (json as { error?: string }).error;
+      setMsg(error ?? "Unable to update team.");
       return;
     }
     setTeamNameEdits((prev) => {
@@ -183,7 +185,8 @@ function normalizeHeadCoachId(value: string | null | undefined) {
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "League logo upload failed.");
+      const error = (json as { error?: string }).error;
+      setMsg(error ?? "League logo upload failed.");
       return;
     }
     setLeagueLogoVersion(Date.now());
@@ -244,7 +247,8 @@ function normalizeHeadCoachId(value: string | null | undefined) {
       const res = await fetch("/api/admin/reset", { method: "POST" });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json?.error ?? "Unable to reset league data.");
+        const error = (json as { error?: string }).error;
+        throw new Error(error ?? "Unable to reset league data.");
       }
       await load();
       setMsg("League data cleared for the new year.");

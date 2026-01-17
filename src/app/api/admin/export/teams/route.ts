@@ -42,7 +42,8 @@ export async function GET() {
   ]);
 
   const exportStamp = new Date().toISOString();
-  const leagueName = league?.name?.trim() || "league";
+  const trimmedLeagueName = league?.name?.trim();
+  const leagueName = trimmedLeagueName && trimmedLeagueName.length > 0 ? trimmedLeagueName : "league";
   const safeLeague = sanitizeFilePart(leagueName);
   const zip = new JSZip();
   const leagueDir = zip.folder("logos/league");
@@ -120,7 +121,7 @@ export async function GET() {
   zip.file("manifest.json", JSON.stringify(manifest, null, 2));
 
   const zipData = await zip.generateAsync({ type: "nodebuffer" });
-  return new NextResponse(zipData, {
+  return new NextResponse(new Uint8Array(zipData), {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${safeLeague}_${exportStamp.slice(0, 10)}.zip"`,
