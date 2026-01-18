@@ -63,7 +63,12 @@ export async function POST(req: Request) {
   if (!parsed.teamIds.includes(creatorTeamId)) {
     return NextResponse.json({ error: "Creator's team must be part of the meet" }, { status: 400 });
   }
-  const homeTeamId = parsed.homeTeamId ?? creatorTeamId;
+  if (user.role !== "ADMIN" && parsed.homeTeamId && parsed.homeTeamId !== creatorTeamId) {
+    return NextResponse.json({ error: "Only admins can change the home team." }, { status: 403 });
+  }
+  const homeTeamId = user.role === "ADMIN"
+    ? (parsed.homeTeamId ?? creatorTeamId)
+    : creatorTeamId;
 
   const now = new Date();
   const meet = await db.meet.create({

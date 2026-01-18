@@ -336,6 +336,7 @@ export default function MeetsPage() {
     ? teamIds.filter(id => id !== currentTeamId)
     : teamIds;
   const canManageMeets = role === "COACH" || role === "ADMIN";
+  const isAdmin = role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
   const headerTeamName = selectedTeam?.name ?? "Your Team";
   const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Meet For ${headerTeamName}`;
@@ -1003,7 +1004,7 @@ export default function MeetsPage() {
                     const t = teams.find(team => team.id === next);
                     if (t?.address) setLocation(t.address);
                   }}
-                  disabled={!canManageMeets}
+                  disabled={!canManageMeets || !isAdmin}
                 >
                   {teamIds.length === 0 && <option value="">Select teams first</option>}
                   {teamIds.map(id => {

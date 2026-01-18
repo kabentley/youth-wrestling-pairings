@@ -22,6 +22,57 @@ body {
   color: var(--ink);
 }
 
+.help-button {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #0d3b66;
+  color: #fff;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  box-shadow: 0 10px 24px rgba(13, 23, 66, 0.25);
+  z-index: 200;
+}
+.help-button span[aria-hidden="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  color: #0d3b66;
+  font-weight: 900;
+}
+.help-button-label {
+  text-transform: uppercase;
+}
+.help-button:hover {
+  background: #0b3154;
+}
+@media (max-width: 640px) {
+  .help-button {
+    bottom: 12px;
+    right: 12px;
+    padding: 6px 10px;
+  }
+  .help-button-label {
+    display: none;
+  }
+}
+@media print {
+  .help-button {
+    display: none;
+  }
+}
+
 main {
   min-height: 100vh;
   background: var(--bg);

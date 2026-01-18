@@ -51,6 +51,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const label = finalRole === "COACH" ? "Coaches" : finalRole === "PARENT" ? "Parents" : "Table workers";
     return NextResponse.json({ error: `${label} must be assigned a team` }, { status: 400 });
   }
+  if (existing.role === "ADMIN" && finalRole !== "ADMIN") {
+    const adminCount = await db.user.count({ where: { role: "ADMIN" } });
+    if (adminCount <= 1) {
+      return NextResponse.json({ error: "Cannot remove the last admin" }, { status: 400 });
+    }
+  }
 
   const user = await db.$transaction(async (tx) => {
     const updatedUser = await tx.user.update({

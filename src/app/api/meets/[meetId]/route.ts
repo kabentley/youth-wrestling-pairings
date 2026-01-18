@@ -74,6 +74,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
 
   const body = PatchSchema.parse(await req.json());
+  if (body.homeTeamId !== undefined && user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Only admins can change the home team." }, { status: 403 });
+  }
   const current = body.name
     ? await db.meet.findUnique({ where: { id: meetId }, select: { name: true } })
     : null;

@@ -253,7 +253,12 @@ export default function UsersSection() {
                 <td>{u.phone ?? ""}</td>
                 <td>{u.name}</td>
                 <td>
-                  <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value as UserRow["role"])}>
+                  <select
+                    value={u.role}
+                    onChange={(e) => setUserRole(u.id, e.target.value as UserRow["role"])}
+                    disabled={u.role === "ADMIN" && adminCount <= 1}
+                    title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot remove the last admin" : undefined}
+                  >
                     <option value="ADMIN">ADMIN</option>
                     <option value="COACH">COACH</option>
                     <option value="PARENT">PARENT</option>
