@@ -21,7 +21,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Every team has one head coach (Admin > League & Teams > Teams) but may have many assistant coaches. The head coach is the designated primary coach for the team so every team has at least one coach on record, while assistant coaches share the same day to day permissions (Team Settings, Rosters, Meets).",
           "Any coach can create and edit meets and update team and mat settings for their team (Meets, Team Settings). Assistant coaches help with editing and can take the lock during specific phases of the meet (Team Settings > Team Roles).",
           "The head coach designation is mainly for continuity and accountability, not special editing powers. Only admins can remove or change the head coach designation, and teams keep a single head coach for clarity (Admin > Users, Admin > League & Teams).",
-          "When multiple coaches work the same meet, decide who will own the lock during each phase. One coach can build pairings while another reviews in read only mode, then you can hand off the lock for mat ordering or results (Meet > Edit Mode, Meet > Comments).",
+          "When multiple coaches work the same meet, decide who will own the lock during each phase. One coach can build pairings while another reviews in read only mode, then you can hand off the lock for mat ordering or results (Meet > Start Editing, Meet > Release Lock, Meet > Comments).",
         ],
       },
       {
@@ -51,7 +51,7 @@ export const HELP_PAGES: HelpPage[] = [
           "The home team determines which team defaults are used for mats and pairing preferences. The home team will be the team of the coach who creates the meet, and only admins can change it (Admin > Users).",
           "Choose the number of mats and the target matches per wrestler for the day. These values shape how the meet will be laid out and how the initial pairing plan is generated (Meets > New Meet).",
           "Review the settings before saving. Match limits and rest time between bouts settings affect fairness and pacing, and the auto pairing limits affect which opponents are considered good matches (Team Settings > Meet Setup, Meet > Pairings).",
-          "Save the meet to create it, then open it in edit mode to review pairings and mat assignments. Use the lock when making changes so the plan stays consistent (Meet > Edit Mode).",
+          "Press the Create Meet button to create the meet. After creating, the meet opens ready for editing so you can immediately review pairings and mat assignments while you have the lock (Meet > Pairings, Meet > Mat Assignments).",
         ],
       },
       {
@@ -74,7 +74,7 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Locks and collaboration",
         paragraphs: [
-          "Each meet has a \"lock\" to ensure that only one coach at a time may edit it. When you edit a meet (Meets> Edit) or (Meet> Start Editing), you request the lock and become the active editor until you release it (Meet > Edit Mode).",
+          "Each meet has a \"lock\" to ensure that only one coach at a time may edit it. When you click Edit on the Meets list or Start Editing inside a meet, you request the lock and become the active editor until you release it (Meets > Edit, Meet > Start Editing, Meet > Release Lock).",
           "If another coach currently has the lock, you will be advised with the username of that coach. You can still view the meet in read only mode. Use comments to coordinate changes and handoffs between coaches (Meet > Comments).",
           "Locks exist to prevent subtle problems like one coach reordering mats while another coach adds bouts, which can cause confusion and make printouts outdated. Agree on a rhythm: edit, save, communicate, and release (Meet > Comments).",
           "Locks automatically expire if they are not refreshed. The lock timeout is 2 minutes, so if the lock is not renewed it will clear and another coach can request it. A lock might not be refreshed if the browser tab is closed, the device sleeps, the network drops, the page is left open in the background, or the session expires; in those cases the system lets the lock time out so the meet does not stay blocked.",
@@ -87,7 +87,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Begin with automatic pairings, then review and adjust (Meet > Pairings). The goal is a plan that is fair, safe, and realistic for the day, not a perfect mathematical match.",
           "Use weight, age, and experience as the primary matching factors. If the roster data is correct, the highest scoring suggestions are usually the best starting point, but coaches should still apply common sense (Rosters, Meet > Pairings).",
           "Use the additional matches list to add or remove bouts (Meet > Pairings > Additional Matches). Enforce weight checks when required and document exceptions in comments so other coaches understand the decision (Meet > Comments).",
-          "Use rest time between bouts settings to avoid scheduling the same wrestler too close together. This helps pacing and reduces fatigue, especially in tournaments with multiple mats (Team Settings > Meet Setup, Meet > Pairings).",
+          "Use rest time between bouts settings to avoid scheduling the same wrestler too close together. This helps pacing and reduces fatigue, especially in meets with multiple mats (Team Settings > Meet Setup, Meet > Pairings).",
           "As you edit, keep an eye on match counts. A good meet plan spreads opportunities across wrestlers and avoids giving one athlete too many bouts while others get very few (Meet > Pairings).",
         ],
       },
@@ -125,7 +125,7 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Troubleshooting",
         paragraphs: [
-          "If you cannot edit a meet, check whether another coach holds the lock or if you are in read only mode (Meet > Edit Mode). Locks are intentional and protect the plan during edits.",
+          "If you cannot edit a meet, check whether another coach holds the lock or if you are in read only mode. Start Editing will tell you who has the lock and when it expires (Meet > Start Editing).",
           "If a wrestler is missing, confirm they are active on the roster and that their data is complete (Rosters). Pairing quality depends on accurate age, weight, and experience values.",
           "If rest time between bouts looks tight or prints look wrong, review your rest gap setting (minimum spacing), match limits, and mat order, then reprint (Team Settings > Meet Setup, Meet > Mat Assignments, Meet > Wall Charts). Use comments to coordinate with other coaches and table staff.",
         ],
@@ -172,7 +172,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "New accounts begin with a parent role. Parents can view team information but do not have editing permissions by default, and you can confirm this on (Admin > Users).",
           "Head coaches can promote parents to assistant coaches or table workers (Team Settings > Team Roles). Admins can also resolve role issues or correct team assignments from (Admin > Users).",
-          "If a meet is blocked by access problems, confirm the user role and team assignment on (Admin > Users), then confirm lock status on the Meet page under Edit Mode.",
+          "If a meet is blocked by access problems, confirm the user role and team assignment on (Admin > Users), then confirm lock status on the meet page using Start Editing (Meet > Start Editing).",
           "Admins can promote other users to admin when additional league oversight is needed (Admin > Users). There must always be at least one admin in the system, so the last remaining admin cannot be removed.",
           "Keep team assignments clean. Coaches, parents, and table workers should be assigned to a team so the site can show the right rosters and meets, while admins are league wide and are not assigned to a team (Admin > Users).",
         ],
