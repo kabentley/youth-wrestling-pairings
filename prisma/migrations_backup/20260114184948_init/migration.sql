@@ -1,4 +1,4 @@
--- CreateSchema
+﻿-- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
@@ -19,7 +19,10 @@ CREATE TABLE "Team" (
     "logoType" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "numMats" INTEGER NOT NULL DEFAULT 4,
-    "homeTeamPreferSameMat" BOOLEAN NOT NULL DEFAULT false,
+    "homeTeamPreferSameMat" BOOLEAN NOT NULL DEFAULT true,
+    "defaultMaxMatchesPerWrestler" INTEGER NOT NULL DEFAULT 5,
+    "defaultRestGap" INTEGER NOT NULL DEFAULT 6,
+    "defaultMaxAgeGapDays" INTEGER NOT NULL DEFAULT 365,
     "headCoachId" TEXT,
 
     CONSTRAINT "Team_pkey" PRIMARY KEY ("id")
@@ -63,7 +66,9 @@ CREATE TABLE "Meet" (
     "homeTeamId" TEXT,
     "numMats" INTEGER NOT NULL DEFAULT 4,
     "allowSameTeamMatches" BOOLEAN NOT NULL DEFAULT false,
-    "matchesPerWrestler" INTEGER NOT NULL DEFAULT 1,
+    "matchesPerWrestler" INTEGER NOT NULL DEFAULT 2,
+    "maxMatchesPerWrestler" INTEGER NOT NULL DEFAULT 5,
+    "restGap" INTEGER NOT NULL DEFAULT 6,
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "updatedById" TEXT,
