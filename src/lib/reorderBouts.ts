@@ -1,6 +1,7 @@
 import { DEFAULT_MAT_COUNT, MIN_MATS } from "@/lib/assignMats";
 import { db } from "@/lib/db";
 
+/** Minimal bout shape used by the reordering algorithms. */
 type BoutLite = {
   id: string;
   redId: string;
@@ -47,18 +48,6 @@ function compareConflictSummary(a: number[], b: number[]) {
   return a.length - b.length;
 }
 
-function conflictCost(matLists: BoutLite[][], gap: number) {
-  const summary = computeConflictSummary(matLists, gap);
-  let cost = 0;
-  for (let diff = 0; diff < summary.length; diff++) {
-    const count = summary[diff];
-    if (!count) continue;
-    const weight = diff === 0 ? (gap + 1) * 4 : (gap - diff + 1);
-    cost += count * weight;
-  }
-  return cost;
-}
-
 function buildOtherMatOrders(allMats: BoutLite[][], matIndex: number) {
   const map = new Map<string, Set<number>>();
   allMats.forEach((list, idx) => {
@@ -75,8 +64,8 @@ function buildOtherMatOrders(allMats: BoutLite[][], matIndex: number) {
 }
 
 function hasZeroConflict(bout: BoutLite, order: number, otherOrders: Map<string, Set<number>>) {
-  const check = (id: string) => otherOrders.get(id)?.has(order);
-  return Boolean(check(bout.redId) || check(bout.greenId));
+  const check = (id: string): boolean => otherOrders.get(id)?.has(order) ?? false;
+  return check(bout.redId) || check(bout.greenId);
 }
 
 function hasConflict(
@@ -100,7 +89,6 @@ function hasConflict(
 
 function hasSameMatConflictAt(list: BoutLite[], idx: number, gap: number) {
   const bout = list[idx];
-  if (!bout) return false;
   const start = Math.max(0, idx - gap);
   const end = Math.min(list.length - 1, idx + gap);
   for (let i = start; i <= end; i++) {
@@ -134,7 +122,6 @@ function resolveZeroGapConflicts(
   list: BoutLite[],
   allMats: BoutLite[][],
   matIndex: number,
-  gap: number,
 ) {
   const otherOrders = buildOtherMatOrders(allMats, matIndex);
   let changed = true;
@@ -184,11 +171,19 @@ function reorderBoutsForMat(list: BoutLite[], allMats: BoutLite[][], matIndex: n
       bestScore = score;
     }
   }
-  const resolved = resolveZeroGapConflicts(best, allMats, matIndex, gap);
+  const resolved = resolveZeroGapConflicts(best, allMats, matIndex);
   allMats[matIndex] = resolved.slice();
   return resolved;
 }
 
+/**
+ * Reorders bouts independently within each mat to reduce cross-mat conflicts.
+ *
+ * A "conflict" is when the same wrestler is scheduled at the same order on
+ * different mats, or too close together across mats (within `conflictGap`).
+ *
+ * Returns an update list of `{id, mat, order}` for persistence.
+ */
 export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGap = 4) {
   const matLists: BoutLite[][] = Array.from({ length: numMats }, () => []);
   for (const bout of bouts) {
@@ -213,67 +208,12 @@ export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGa
   return updates;
 }
 
-export function reorderBoutsGlobal(
-  bouts: BoutLite[],
-  numMats: number,
-  conflictGap = 4,
-  timeBudgetMs = 5000,
-) {
-  const mats: BoutLite[][] = Array.from({ length: numMats }, () => []);
-  for (const bout of bouts) {
-    const mat = Math.min(Math.max(1, bout.mat ?? 1), numMats);
-    mats[mat - 1].push({ ...bout, mat });
-  }
-  for (const list of mats) {
-    list.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
-  }
-
-  const cloneMats = (source: BoutLite[][]) => source.map(list => list.map(b => ({ ...b })));
-  let current = cloneMats(mats);
-  let best = cloneMats(mats);
-  let currentCost = conflictCost(current, conflictGap);
-  let bestCost = currentCost;
-
-  const start = Date.now();
-  const tempStart = Math.max(1, currentCost / 10);
-  const tempEnd = 0.1;
-
-  while (Date.now() - start < timeBudgetMs) {
-    const elapsed = Date.now() - start;
-    const progress = Math.min(1, elapsed / timeBudgetMs);
-    const temp = tempStart * Math.pow(tempEnd / tempStart, progress);
-
-    const matIndex = Math.floor(Math.random() * current.length);
-    const list = current[matIndex];
-    if (list.length < 2) continue;
-    const i = Math.floor(Math.random() * list.length);
-    let j = Math.floor(Math.random() * list.length);
-    if (i === j) j = (j + 1) % list.length;
-    [list[i], list[j]] = [list[j], list[i]];
-
-    const nextCost = conflictCost(current, conflictGap);
-    const delta = nextCost - currentCost;
-    const accept = delta <= 0 || Math.random() < Math.exp(-delta / temp);
-    if (accept) {
-      currentCost = nextCost;
-      if (nextCost < bestCost) {
-        bestCost = nextCost;
-        best = cloneMats(current);
-      }
-    } else {
-      [list[i], list[j]] = [list[j], list[i]];
-    }
-  }
-
-  const updates: Array<{ id: string; mat: number; order: number }> = [];
-  best.forEach((list, matIndex) => {
-    list.forEach((bout, idx) => {
-      updates.push({ id: bout.id, mat: matIndex + 1, order: idx + 1 });
-    });
-  });
-  return { updates, bestCost };
-}
-
+/**
+ * Fast heuristic reorder pass used by default.
+ *
+ * Iterates through mats and tries small local moves that improve the conflict
+ * summary (fewer near-by appearances of the same wrestler across mats).
+ */
 export function reorderBoutsSequential(
   bouts: BoutLite[],
   numMats: number,
@@ -338,6 +278,13 @@ export function reorderBoutsSequential(
   return updates;
 }
 
+/**
+ * Loads the meet's bouts, applies a reorder strategy, and persists updates.
+ *
+ * Defaults:
+ * - `numMats` comes from the meet (or fallback constants).
+ * - `conflictGap` uses the meet's rest-gap setting.
+ */
 export async function reorderBoutsForMeet(
   meetId: string,
   options: { numMats?: number; conflictGap?: number; timeBudgetMs?: number } = {},

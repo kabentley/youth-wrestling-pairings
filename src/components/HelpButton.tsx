@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 
+/** Floating entry point to the help guide (opens `/help` in a new tab). */
 export default function HelpButton() {
   const pathname = usePathname();
   if (pathname === "/help") return null;

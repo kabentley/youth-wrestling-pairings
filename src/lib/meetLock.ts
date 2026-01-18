@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 
+/** Server-side lock lifetime for a meet (milliseconds). */
 export const MEET_LOCK_TTL_MS = 2 * 60 * 1000;
 
 type MeetLockInfo = {
@@ -12,6 +13,15 @@ type MeetLockErrorPayload = {
   body: Record<string, unknown>;
 };
 
+/**
+ * Ensures the current user holds the meet lock.
+ *
+ * - If the stored lock is expired, it is cleared and the request is allowed to continue.
+ * - If another user holds the lock, throws `MEET_LOCKED` with display metadata.
+ * - If no lock exists, throws `MEET_LOCK_REQUIRED`.
+ *
+ * Callers typically map these errors to `409` responses via `getMeetLockError`.
+ */
 export async function requireMeetLock(meetId: string, userId: string) {
   const now = new Date();
   const meet = await db.meet.findUnique({
@@ -49,6 +59,11 @@ export async function requireMeetLock(meetId: string, userId: string) {
   }
 }
 
+/**
+ * Converts a thrown lock error into an HTTP-friendly payload.
+ *
+ * Returns `null` if the error is not a known meet-lock condition.
+ */
 export function getMeetLockError(err: unknown): MeetLockErrorPayload | null {
   if (!(err instanceof Error)) return null;
   if (err.message === "MEET_NOT_FOUND") {

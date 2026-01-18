@@ -16,6 +16,7 @@ export default [
       "**/test-results/**",
       "**/prisma/migrations/**",
       "**/prisma/*.db",
+      "**/scripts/**",
     ],
   },
 

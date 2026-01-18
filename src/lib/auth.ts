@@ -48,6 +48,16 @@ const authAdapter: Adapter = {
   },
 };
 
+/**
+ * NextAuth configuration for the app.
+ *
+ * Highlights:
+ * - Uses PrismaAdapter with a customized `createUser` to assign a placeholder
+ *   username and default role (`PARENT`).
+ * - Coaches authenticating via credentials are protected by optional 2FA.
+ * - Sessions use JWTs and include `sessionVersion` to allow server-side
+ *   invalidation.
+ */
 export const authOptions: NextAuthOptions = {
   adapter: authAdapter,
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },

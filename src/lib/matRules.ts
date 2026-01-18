@@ -1,5 +1,6 @@
 "use client";
 
+/** Base rule definition used for mat configuration UIs. */
 export type MatRuleBase = {
   color?: string | null;
   minExperience: number;
@@ -8,10 +9,17 @@ export type MatRuleBase = {
   maxAge: number;
 };
 
+/** A mat rule with its mat index (0-based in storage/UI logic). */
 export type MatRule = MatRuleBase & {
   matIndex: number;
 };
 
+/**
+ * Seed/default mat rules used when a team has not configured custom rules.
+ *
+ * Values are intentionally broad; teams typically adjust these to match their
+ * league and gym layout.
+ */
 export const DEFAULT_MAT_RULES: MatRuleBase[] = [
   { color: "#90EE90", minExperience: 0, maxExperience: 0, minAge: 0, maxAge: 8.5 },
   { color: "#FF0000", minExperience: 1, maxExperience: 2, minAge: 8.5, maxAge: 10.5 },

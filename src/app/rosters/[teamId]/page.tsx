@@ -1,9 +1,10 @@
 "use client";
 import { useSession } from "next-auth/react";
 import { use, useEffect, useState, type FormEvent } from "react";
-import { DEFAULT_MAT_RULES, MatRule } from "@/lib/matRules";
 
 import AppHeader from "@/components/AppHeader";
+import type { MatRule } from "@/lib/matRules";
+import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 type Wrestler = {
   id: string;

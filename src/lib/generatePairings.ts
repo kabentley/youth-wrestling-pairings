@@ -1,16 +1,30 @@
 import { MAX_MATCHES_PER_WRESTLER } from "./constants";
 import { db } from "./db";
 
+/**
+ * Settings used by the automatic pairing generator.
+ *
+ * These values are typically derived from team defaults (meet setup) and can be
+ * overridden per meet.
+ */
 export type PairingSettings = {
+  /** Maximum allowed age difference (days). */
   maxAgeGapDays: number;
+  /** Maximum allowed weight difference (percent). */
   maxWeightDiffPct: number;
+  /** If true, first-year wrestlers only pair with first-year wrestlers. */
   firstYearOnlyWithFirstYear: boolean;
 
+  /** If true, allow matchups within the same team. */
   allowSameTeamMatches: boolean;
 
+  /** If true, apply a penalty to over-used team-vs-team pairings. */
   balanceTeamPairs: boolean;
+  /** Weight applied to the "balanceTeamPairs" penalty. */
   balancePenalty: number;
+  /** Target matches per wrestler for this generation pass. */
   matchesPerWrestler?: number;
+  /** Upper bound for matches per wrestler (hard cap per generation pass). */
   maxMatchesPerWrestler?: number;
 };
 
@@ -23,8 +37,18 @@ function weightPctDiff(a: number, b: number) {
   return base <= 0 ? 999 : (100 * diff) / base;
 }
 
+/**
+ * Generates "counting" bouts for a meet using a greedy, weight-sorted search.
+ *
+ * The algorithm:
+ * - Builds a pool of active wrestlers, excluding `NOT_COMING`.
+ * - Avoids duplicates against existing bouts in the meet.
+ * - Prefers nearby weights and small age/experience/skill gaps.
+ * - Optionally balances team-vs-team pair counts with a configurable penalty.
+ *
+ * Returns a summary; created bouts are inserted into the database.
+ */
 export async function generatePairingsForMeet(meetId: string, settings: PairingSettings) {
-
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },

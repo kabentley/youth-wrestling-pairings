@@ -9,6 +9,13 @@ type HelpPage = {
   sections: HelpSection[];
 };
 
+/**
+ * Help content used by `/help`.
+ *
+ * Conventions:
+ * - Navigation paths wrapped in parentheses are rendered in bold on the help UI.
+ * - Content is written as paragraphs (no bullet lists) for a "guide" feel.
+ */
 export const HELP_PAGES: HelpPage[] = [
   {
     id: "coaches",

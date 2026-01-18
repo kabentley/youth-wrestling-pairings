@@ -1,3 +1,4 @@
+/** A single row of roster data, typically parsed from an import file. */
 export type WrestlerRow = {
   first: string;
   last: string;
@@ -7,6 +8,7 @@ export type WrestlerRow = {
   skill?: number;
 };
 
+/** Subset of the existing roster used to match incoming rows deterministically. */
 export type ExistingWrestler = {
   id: string;
   first: string;
@@ -14,6 +16,7 @@ export type ExistingWrestler = {
   birthdate: Date;
 };
 
+/** Update operation produced by `planRosterUpsert`. */
 export type UpdateOp = {
   id: string;
   weight: number;
@@ -21,6 +24,7 @@ export type UpdateOp = {
   skill: number;
 };
 
+/** Create operation produced by `planRosterUpsert`. */
 export type CreateOp = {
   teamId: string;
   first: string;
@@ -31,16 +35,19 @@ export type CreateOp = {
   skill: number;
 };
 
+/** Normalizes user-entered names for deterministic matching. */
 export function normalizeName(s: string) {
   return s.trim();
 }
 
+/** Converts a Date into a YYYY-MM-DD string, normalized to UTC date-only. */
 export function toISODateOnly(d: Date) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
     .toISOString()
     .slice(0, 10);
 }
 
+/** Parses an imported birthdate and normalizes to a date-only UTC Date. */
 export function parseBirthdate(dateStr: string): Date | null {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return null;

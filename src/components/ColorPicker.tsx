@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 
+/** Built-in named swatches used by the picker UI. */
 export const NAMED_COLORS = [
   { name: "Navy", value: "#0d3b66" },
   { name: "Royal Blue", value: "#1e88e5" },
@@ -28,6 +29,7 @@ export const NAMED_COLORS = [
   { name: "Black", value: "#1d232b" },
 ];
 
+/** Props for `ColorPicker`. */
 export type ColorPickerProps = {
   value?: string | null;
   onChange: (color: string) => void;
@@ -39,6 +41,11 @@ export type ColorPickerProps = {
   showSwatches?: boolean;
 };
 
+/**
+ * Small popover color picker with optional native input + swatches.
+ *
+ * The popover renders via a portal to avoid being clipped by parent containers.
+ */
 export default function ColorPicker({
   value,
   onChange,

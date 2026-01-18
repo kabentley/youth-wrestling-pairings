@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useState, type FocusEvent } from "react";
 
+/** Props for `NumberInput` (a controlled numeric input with optional normalization). */
 type NumberInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "type"> & {
   value: number;
   onValueChange: (next: number) => void;
   normalize?: (value: number) => number;
 };
 
+/**
+ * Controlled numeric input that edits as a string and commits on blur.
+ *
+ * This prevents partial inputs (like `-` or `.`) from immediately invalidating
+ * the controlled value, while still enforcing numeric output when committing.
+ */
 export default function NumberInput({
   value,
   onValueChange,

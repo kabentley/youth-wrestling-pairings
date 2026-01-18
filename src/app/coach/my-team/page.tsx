@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
 import NumberInput from "@/components/NumberInput";
-import { DEFAULT_MAT_RULES, MatRule } from "@/lib/matRules";
+import type { MatRule } from "@/lib/matRules";
+import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 const CONFIGURED_MATS = 5;
 const MIN_MATS = 1;

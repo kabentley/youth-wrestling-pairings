@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 
+/**
+ * Client-friendly lock status used by meet pages to show editability state.
+ *
+ * - `loading`: lock status not yet checked.
+ * - `acquired`: current user holds the lock.
+ * - `locked`: another user holds the lock, or the meet is not editable.
+ */
 export type LockState = {
   status: "loading" | "acquired" | "locked";
   lockedByUsername?: string | null;
@@ -14,6 +20,14 @@ interface UseMeetLockOptions {
   meetLoaded: boolean;
 }
 
+/**
+ * React hook for acquiring and refreshing a per-meet edit lock.
+ *
+ * Behavior:
+ * - Attempts to acquire the lock when a draft meet is loaded.
+ * - Refreshes the lock periodically while held (server TTL is `MEET_LOCK_TTL_MS`).
+ * - Releases the lock on unmount and `beforeunload` to reduce stale locks.
+ */
 export function useMeetLock({ meetId, meetStatus, meetLoaded }: UseMeetLockOptions) {
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [lockMessage, setLockMessage] = useState("");

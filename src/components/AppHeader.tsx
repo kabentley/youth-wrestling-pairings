@@ -4,12 +4,22 @@ import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
+/** Single navigation item displayed in the header. */
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
+/** Props for the global app header. */
 type Props = { links: LinkItem[]; hideTeamSelector?: boolean };
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
 const coachNavLink: LinkItem = { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" };
 
+/**
+ * Top navigation bar shown on most pages.
+ *
+ * Responsibilities:
+ * - Loads the current user summary via `/api/me` for role-aware navigation.
+ * - Shows a team switcher for admins (used to impersonate/act as a team).
+ * - Provides sign-out via NextAuth.
+ */
 export default function AppHeader({ links, hideTeamSelector }: Props) {
   const [user, setUser] = useState<{
     username: string;

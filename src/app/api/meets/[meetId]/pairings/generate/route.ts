@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { assignMatsForMeet } from "@/lib/assignMats";
+import { db } from "@/lib/db";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
-import { db } from "@/lib/db";
 import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const SettingsSchema = z.object({

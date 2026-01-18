@@ -1,5 +1,6 @@
-import { db } from "@/lib/db";
 import PrintActionsClient from "./PrintActionsClient";
+
+import { db } from "@/lib/db";
 
 export default async function PrintMeet({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;

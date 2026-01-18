@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     for (let i = 0; i < ids.length; i++) {
       const nextOrder = i + 1;
       const current = currentById.get(ids[i]);
-      if (!current || current.mat !== mat || current.order !== nextOrder) {
+      if (current?.mat !== mat || current.order !== nextOrder) {
         matsChanged.add(mat);
         await db.bout.update({ where: { id: ids[i] }, data: { mat, order: nextOrder } });
       }

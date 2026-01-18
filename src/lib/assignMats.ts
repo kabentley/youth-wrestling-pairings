@@ -1,5 +1,12 @@
 import { db } from "./db";
 
+/**
+ * A rule describing which wrestlers should appear on a mat.
+ *
+ * The mat assignment algorithm uses these as a soft constraint: a bout can be
+ * forced onto a specific mat (home-team preference), otherwise mats that match
+ * the rule are eligible and the "best" eligible mat is chosen.
+ */
 export type MatRule = {
   minExperience: number;
   maxExperience: number;
@@ -8,11 +15,14 @@ export type MatRule = {
   color?: string;
 };
 
+/** Optional overrides used when assigning mats for a meet. */
 export type MatSettings = {
   numMats?: number;
 };
 
+/** Default number of mats used if neither the meet nor caller provides a value. */
 export const DEFAULT_MAT_COUNT = 4;
+/** Minimum mat count enforced by the scheduler. */
 export const MIN_MATS = 1;
 
 const DEFAULT_RULE: MatRule = {
@@ -24,7 +34,6 @@ const DEFAULT_RULE: MatRule = {
 
 const RANGE_PENALTY_SCALE = 50;
 const INELIGIBLE_PENALTY = 100_000;
-const HOME_TEAM_PENALTY = 25;
 
 function ageInYears(birthdate: Date, onDate: Date) {
   const diff = onDate.getTime() - birthdate.getTime();
@@ -69,13 +78,12 @@ function matchesMatRule(bout: { redId: string; greenId: string }, rule: MatRule,
   return expOk && ageOk;
 }
 
-function isHomeBout(bout: { redId: string; greenId: string }, wMap: Map<string, MatWrestler>, homeTeamId: string | null) {
-  if (!homeTeamId) return false;
-  const red = wMap.get(bout.redId);
-  const green = wMap.get(bout.greenId);
-  return Boolean(red?.teamId === homeTeamId || green?.teamId === homeTeamId);
-}
-
+/**
+ * Returns the list of eligible mat indexes for a bout.
+ *
+ * If `lockHomeWrestlerMat` is enabled and one of the wrestlers is on the home
+ * team, the bout may be forced onto a previously chosen mat for that wrestler.
+ */
 export function getEligibleMatIndexes(
   bout: { redId: string; greenId: string },
   mats: { boutIds: string[]; rule: MatRule }[],
@@ -113,6 +121,14 @@ function pickLeastLoadedMat(mats: { boutIds: string[]; rule: MatRule }[]) {
   );
 }
 
+/**
+ * Assigns every bout in a meet to a mat and initial order.
+ *
+ * This function resets existing `mat` and `order` values and then reassigns
+ * bouts in ascending `score` order. When the home team preference is enabled,
+ * bouts involving a home wrestler are biased (or locked) to keep that wrestler
+ * on a consistent mat across the meet.
+ */
 export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },

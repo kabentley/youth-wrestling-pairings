@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
