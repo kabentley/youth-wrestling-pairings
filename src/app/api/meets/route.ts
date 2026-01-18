@@ -31,7 +31,25 @@ export async function GET() {
       updatedBy: { select: { username: true } },
     },
   });
-  return NextResponse.json(meets);
+  const changes = await db.meetChange.findMany({
+    orderBy: { createdAt: "desc" },
+    select: { meetId: true, createdAt: true, actor: { select: { username: true } } },
+  });
+  const lastChangeByMeet = new Map<string, { at: Date; by: string | null }>();
+  for (const change of changes) {
+    if (lastChangeByMeet.has(change.meetId)) continue;
+    lastChangeByMeet.set(change.meetId, {
+      at: change.createdAt,
+      by: change.actor?.username ?? null,
+    });
+  }
+  return NextResponse.json(
+    meets.map(meet => ({
+      ...meet,
+      lastChangeAt: lastChangeByMeet.get(meet.id)?.at ?? null,
+      lastChangeBy: lastChangeByMeet.get(meet.id)?.by ?? null,
+    })),
+  );
 }
 
 export async function POST(req: Request) {
@@ -75,6 +93,7 @@ export async function POST(req: Request) {
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: parsed.allowSameTeamMatches,
     matchesPerWrestler: parsed.matchesPerWrestler,
+    maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
     balanceTeamPairs: true,
     balancePenalty: 0.25,
   };

@@ -13,6 +13,7 @@ type RestartDefaults = {
   homeTeamId?: string | null;
   teamIds?: string[];
   restGap?: number;
+  maxMatchesPerWrestler?: number;
 };
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
@@ -52,6 +53,8 @@ type Meet = {
   status?: "DRAFT" | "PUBLISHED";
   updatedAt?: string;
   updatedBy?: { username?: string | null } | null;
+  lastChangeAt?: string | null;
+  lastChangeBy?: string | null;
 };
 
 export default function MeetsPage() {
@@ -241,7 +244,7 @@ export default function MeetsPage() {
       } else {
         const created = await addMeet();
         if (created?.id) {
-          router.push(`/meets/${created.id}`);
+          router.push(`/meets/${created.id}?edit=1`);
         }
       }
       closeCreateModal({ skipCreateQueryCleanup: true });
@@ -304,6 +307,11 @@ export default function MeetsPage() {
     }
     if (typeof restartDefaults.restGap === "number") {
       setRestGap(Math.max(0, Math.round(restartDefaults.restGap)));
+    }
+    if (typeof restartDefaults.maxMatchesPerWrestler === "number") {
+      setMaxMatchesPerWrestler(
+        Math.max(1, Math.min(5, Math.round(restartDefaults.maxMatchesPerWrestler))),
+      );
     }
   }, [restartDefaults]);
   useEffect(() => {
@@ -853,6 +861,12 @@ export default function MeetsPage() {
                   <div className="meet-item-actions">
                     <button
                       className="nav-btn"
+                      onClick={() => router.push(`/meets/${m.id}`)}
+                    >
+                      View
+                    </button>
+                    <button
+                      className="nav-btn"
                       onClick={() => router.push(`/meets/${m.id}?edit=1`)}
                     >
                       Edit
@@ -867,9 +881,10 @@ export default function MeetsPage() {
                   </div>
                 )}
                 </div>
-                {m.updatedAt && (
+                {(m.lastChangeAt || m.updatedAt) && (
                   <div className="muted" style={{ marginTop: 6 }}>
-                    Last updated {new Date(m.updatedAt).toLocaleString()} by {m.updatedBy?.username ?? "unknown"}
+                    Last edited {new Date(m.lastChangeAt ?? m.updatedAt ?? "").toLocaleString()} by{" "}
+                    {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
                   </div>
                 )}
               </div>

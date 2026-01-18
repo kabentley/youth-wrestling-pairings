@@ -11,6 +11,7 @@ export type PairingSettings = {
   balanceTeamPairs: boolean;
   balancePenalty: number;
   matchesPerWrestler?: number;
+  maxMatchesPerWrestler?: number;
 };
 
 function daysBetween(a: Date, b: Date) {
@@ -74,8 +75,12 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);
   const newBouts: { redId: string; greenId: string; score: number; notes: string }[] = [];
-  const targetMatches = Math.min(
+  const maxMatches = Math.min(
     MAX_MATCHES_PER_WRESTLER,
+    Math.max(1, Math.floor(settings.maxMatchesPerWrestler ?? MAX_MATCHES_PER_WRESTLER)),
+  );
+  const targetMatches = Math.min(
+    maxMatches,
     Math.max(1, Math.floor(settings.matchesPerWrestler ?? 2)),
   );
 
@@ -124,6 +129,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
       made = false;
       for (let i = 0; i < pool.length; i++) {
       const a = pool[i];
+      const currentA = matchCounts.get(a.id) ?? 0;
+      if (currentA >= maxMatches) continue;
       const needA = matchesNeeded(a.id);
 
         let bestJ = -1;
@@ -132,6 +139,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
 
         for (let j = i + 1; j < Math.min(pool.length, i + 20); j++) {
           const b = pool[j];
+        const currentB = matchCounts.get(b.id) ?? 0;
+        if (currentB >= maxMatches) continue;
         const needB = matchesNeeded(b.id);
         if (needA <= 0 && needB <= 0) continue;
           if (!eligible(a, b, allowSameTeam)) continue;

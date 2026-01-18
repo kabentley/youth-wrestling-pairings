@@ -26,7 +26,15 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 }
 
 
-type Team = { id: string; name: string; symbol?: string; color?: string; address?: string | null };
+type Team = {
+  id: string;
+  name: string;
+  symbol?: string;
+  color?: string;
+  address?: string | null;
+  defaultRestGap?: number | null;
+  defaultMaxMatchesPerWrestler?: number | null;
+};
 type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
 type Wrestler = {
   id: string;
@@ -81,7 +89,7 @@ type MeetComment = {
   author?: { username?: string | null } | null;
 };
 
-const INACTIVITY_RELEASE_MS = 20 * 1000;
+const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
 
 const CURRENT_SHARED_COLUMN_MAP: Record<number, number> = {
   0: 0,
@@ -165,6 +173,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const lastSavedNameRef = useRef("");
   const nameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [editDateValue, setEditDateValue] = useState("");
   const [pairingsTeamId, setPairingsTeamId] = useState<string | null>(null);
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
   const [attendanceSort, setAttendanceSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
@@ -216,6 +226,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
         allowSameTeamMatches: settings.allowSameTeamMatches,
         matchesPerWrestler: matchesPerWrestler ?? undefined,
+        maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
       };
       const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
         method: "POST",
@@ -548,8 +559,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
         }));
         setMeetStatus(meetJson.status ?? "DRAFT");
-        setLastUpdatedAt(meetJson.updatedAt ?? null);
-        setLastUpdatedBy(meetJson.updatedBy?.username ?? null);
+        setLastUpdatedAt(meetJson.lastChangeAt ?? null);
+        setLastUpdatedBy(meetJson.lastChangeBy ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
         setMeetLocation(meetJson.location ?? null);
         setMatchesPerWrestler(
@@ -956,9 +967,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     },
     { coming: 0, notComing: 0 }
   );
-  const teamList = teams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
+  const orderedTeams = homeTeamId
+    ? [
+        ...teams.filter(t => t.id === homeTeamId),
+        ...teams.filter(t => t.id !== homeTeamId),
+      ]
+    : teams;
+  const teamList = orderedTeams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
   const formattedDate = meetDate
-    ? new Date(meetDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+    ? new Date(meetDate).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      })
     : null;
   const metadataParts = [formattedDate, teamList].filter(Boolean);
   const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
@@ -1060,6 +1082,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         location: meetLocation ?? undefined,
         homeTeamId: homeTeamId ?? undefined,
         teamIds: teams.map(team => team.id),
+        maxMatchesPerWrestler: (() => {
+          const homeTeam = homeTeamId ? teams.find(team => team.id === homeTeamId) : null;
+          const defaultMax = homeTeam?.defaultMaxMatchesPerWrestler ?? null;
+          return typeof defaultMax === "number" ? defaultMax : (maxMatchesPerWrestler ?? undefined);
+        })(),
+        restGap: (() => {
+          const homeTeam = homeTeamId ? teams.find(team => team.id === homeTeamId) : null;
+          const defaultGap = homeTeam?.defaultRestGap ?? null;
+          return typeof defaultGap === "number" ? defaultGap : (restGap ?? undefined);
+        })(),
       };
       const params = new URLSearchParams();
       params.set("create", "1");
@@ -1153,6 +1185,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       body: JSON.stringify({ name: trimmed }),
     });
     lastSavedNameRef.current = trimmed;
+    await load();
+    await loadActivity();
+  }
+
+  async function saveMeetDate(nextDate: string) {
+    if (!canEdit) return;
+    const trimmed = nextDate.trim();
+    if (!trimmed) return;
+    if (meetDate?.slice(0, 10) === trimmed) return;
+    await fetch(`/api/meets/${meetId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: trimmed }),
+    });
     await load();
     await loadActivity();
   }
@@ -1371,16 +1417,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           justify-content: space-between;
           gap: 12px;
           flex-wrap: wrap;
-          margin-bottom: 8px;
+          margin-bottom: 4px;
         }
         .meet-heading-title {
           display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 4px;
+          flex-wrap: wrap;
+        }
+        .meet-heading-name-row {
+          display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 12px;
           flex-wrap: wrap;
         }
         .meet-home-info {
-          font-size: 14px;
+          font-size: 13px;
           color: var(--muted);
           display: flex;
           gap: 8px;
@@ -1408,17 +1461,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           flex-direction: row;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
           margin-left: auto;
           position: relative;
           z-index: 10;
         }
+        .lock-release-banner {
+          flex: 1;
+          text-align: center;
+          font-size: 15px;
+          font-weight: 700;
+          color: #b91c1c;
+          animation: lock-release-flash 1s infinite;
+        }
+        @keyframes lock-release-flash {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.35;
+          }
+        }
         .meet-status {
-          font-size: 13px;
+          font-size: 12px;
           color: #5b6472;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 2px;
         }
         .meet-last-updated {
           font-size: 11px;
@@ -1438,12 +1508,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .meet-name-btn:focus-visible {
           text-decoration: underline;
         }
-        .meet-metadata {
-          font-size: 16px;
+        .meet-metadata-inline {
+          font-size: 14px;
           font-weight: 600;
           color: var(--ink);
-          margin-bottom: 12px;
-          letter-spacing: 0.8px;
+          letter-spacing: 0.6px;
+        }
+        .meet-date-btn {
+          border: none;
+          padding: 0;
+          background: transparent;
+          font-weight: 600;
+          color: var(--ink);
+          cursor: pointer;
+        }
+        .meet-date-btn:hover,
+        .meet-date-btn:focus-visible {
+          text-decoration: underline;
+        }
+        .meet-date-btn[disabled] {
+          cursor: default;
+          text-decoration: none;
+        }
+        .meet-name-btn[disabled] {
+          cursor: default;
+          text-decoration: none;
         }
         h2 {
           font-family: "Oswald", Arial, sans-serif;
@@ -1727,78 +1816,124 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       <div className="meet-heading-row">
         <div className="meet-heading-title">
-          {!isEditingName && (
-            <button
-              type="button"
-              className="meet-name-btn"
-              onClick={() => setIsEditingName(true)}
-              disabled={!canEdit}
-            >
-              {meetName || "this meet"}
-            </button>
-          )}
-          {isEditingName && (
-            <>
-              <input
-                value={meetName}
-                onChange={(e) => setMeetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    setIsEditingName(false);
-                  }
-                }}
-                placeholder=""
-                disabled={!canEdit}
-                style={{ minWidth: 220 }}
-              />
+          {metadataParts.length > 0 && (
+            <div className="meet-metadata-inline">
+              {isEditingDate ? (
+                <input
+                  type="date"
+                  value={editDateValue}
+                  onChange={(e) => setEditDateValue(e.target.value)}
+                  onBlur={() => {
+                    setIsEditingDate(false);
+                    void saveMeetDate(editDateValue);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setIsEditingDate(false);
+                      void saveMeetDate(editDateValue);
+                    }
+                  }}
+                  disabled={!canEdit}
+                  style={{ minWidth: 140 }}
+                />
+              ) : (
               <button
-                className="nav-btn"
-                onClick={() => setIsEditingName(false)}
+                type="button"
+                className="meet-date-btn"
+                onClick={() => {
+                  if (!canEdit) return;
+                  setEditDateValue(meetDate ? meetDate.slice(0, 10) : "");
+                  setIsEditingDate(true);
+                }}
                 disabled={!canEdit}
               >
-                Done
-              </button>
-            </>
+                  {formattedDate ?? "Set date"}
+                </button>
+              )}
+              {teamList ? ` - ${teamList}` : ""}
+            </div>
           )}
-        </div>
-        {(homeTeam || homeLocationDisplay) && (
-          <div className="meet-home-info">
-            <span className="home-label">Home team:</span>
-            {homeTeam && (
-              <span className="home-team-name">
-                {homeTeam.name}
-                {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
-              </span>
+          <div className="meet-heading-name-row">
+            {!isEditingName && (
+              <button
+                type="button"
+                className="meet-name-btn"
+                onClick={() => {
+                  if (!canEdit) return;
+                  setIsEditingName(true);
+                }}
+                disabled={!canEdit}
+              >
+                {meetName || "this meet"}
+              </button>
             )}
-            {homeLocationDisplay && (
-              <span className="home-location">· {homeLocationDisplay}</span>
+            {isEditingName && (
+              <>
+                <input
+                  value={meetName}
+                  onChange={(e) => setMeetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setIsEditingName(false);
+                    }
+                  }}
+                  placeholder=""
+                  disabled={!canEdit}
+                  style={{ minWidth: 220 }}
+                />
+                <button
+                  className="nav-btn"
+                  onClick={() => setIsEditingName(false)}
+                  disabled={!canEdit}
+                >
+                  Done
+                </button>
+              </>
+            )}
+            {(homeTeam || homeLocationDisplay) && (
+              <div className="meet-home-info">
+                <span className="home-label">Home team:</span>
+                {homeTeam && (
+                  <span className="home-team-name">
+                    {homeTeam.name}
+                    {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
+                  </span>
+                )}
+                {homeLocationDisplay && (
+                  <span className="home-location">- {homeLocationDisplay}</span>
+                )}
+              </div>
             )}
           </div>
-        )}
+        </div>
+        <div
+          className="lock-release-banner"
+          style={{
+            visibility:
+              wantsEdit && lockState.status === "acquired" && inactivityRemainingMs !== null
+                ? inactivityRemainingMs <= 30 * 1000
+                  ? "visible"
+                  : "hidden"
+                : "hidden",
+          }}
+        >
+          Lock will be released due to inactivity in:{" "}
+          <b>{inactivityRemainingMs !== null ? formatInactivityCountdown(inactivityRemainingMs) : ""}</b>
+        </div>
         <div className="meet-heading-actions">
           <div className="meet-status">
             <span>
               Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
             </span>
-            <span>
-              Lock: <b>{lockStatusText(lockState, meetStatus)}</b>
-            </span>
-            {wantsEdit && lockState.status === "acquired" && inactivityRemainingMs !== null && (
-              <span>
-                Inactivity: <b>{formatInactivityCountdown(inactivityRemainingMs)}</b>
-              </span>
-            )}
             {lastUpdatedAt && (
               <span className="meet-last-updated">
-                Last updated {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
+                Last edited {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
               </span>
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <a className="nav-btn" href={`/meets/${meetId}/print/rosters`} target="_blank" rel="noreferrer">
-              Print Rosters
-            </a>
             {isDraft && lockState.status !== "acquired" && (
               <button
                 type="button"
@@ -1870,7 +2005,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           {lockState.lockedByUsername ? ` Currently locked by ${lockState.lockedByUsername}.` : ""}
         </div>
       )}
-      {metadataParts.length > 0 && <div className="meet-metadata">{metadataParts.join(" · ")}</div>}
       <div className="tab-bar">
           {[
             { key: "pairings", label: "Pairings" },
@@ -2708,3 +2842,4 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     </main>
   );
 }
+

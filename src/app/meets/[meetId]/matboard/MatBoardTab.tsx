@@ -943,11 +943,11 @@ export default function MatBoardTab({
       const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
       const conflictOpacity = (value?: number) => {
         if (value === undefined) return undefined;
-                    if (value <= 0) return 0.45;
-                    const maxGap = Math.max(1, conflictGap);
-                    const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
-                    return 0.25 + 0.15 * ratio;
-                  };
+        if (value <= 0) return 0.65;
+        const maxGap = Math.max(1, conflictGap);
+        const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
+        return 0.1 + 0.5 * ratio;
+      };
                   const conflictBgRed =
                     severityRed !== undefined ? `rgba(255,138,160,${conflictOpacity(severityRed)})` : undefined;
                   const conflictBgGreen =

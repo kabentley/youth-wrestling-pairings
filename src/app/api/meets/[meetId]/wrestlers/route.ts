@@ -26,6 +26,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     name: mt.team.name,
     symbol: mt.team.symbol,
     color: mt.team.color,
+    defaultRestGap: mt.team.defaultRestGap,
+    defaultMaxMatchesPerWrestler: mt.team.defaultMaxMatchesPerWrestler,
   }));
   const wrestlers = meetTeams.flatMap(mt =>
     mt.team.wrestlers.map(w => ({

@@ -50,7 +50,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     },
   });
   if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
-  return NextResponse.json(meet);
+  const lastChange = await db.meetChange.findFirst({
+    where: { meetId },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true, actor: { select: { username: true } } },
+  });
+  return NextResponse.json({
+    ...meet,
+    lastChangeAt: lastChange?.createdAt ?? null,
+    lastChangeBy: lastChange?.actor?.username ?? null,
+  });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ meetId: string }> }) {

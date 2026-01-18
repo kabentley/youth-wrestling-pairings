@@ -6,6 +6,7 @@ import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { db } from "@/lib/db";
 import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const SettingsSchema = z.object({
@@ -14,6 +15,7 @@ const SettingsSchema = z.object({
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
+  maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   balanceTeamPairs: z.boolean().default(true),
   balancePenalty: z.number().min(0).default(0.25),
 });
@@ -30,7 +32,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const body = await req.json();
   const settings = SettingsSchema.parse(body);
-  const result = await generatePairingsForMeet(meetId, settings);
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { maxMatchesPerWrestler: true },
+  });
+  const result = await generatePairingsForMeet(meetId, {
+    ...settings,
+    maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet?.maxMatchesPerWrestler ?? undefined,
+  });
   await logMeetChange(meetId, user.id, "Generated pairings.");
   const assignResult = await assignMatsForMeet(meetId);
   await logMeetChange(meetId, user.id, "Assigned mats.");
