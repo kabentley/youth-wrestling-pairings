@@ -189,7 +189,7 @@ function reorderBoutsForMat(list: BoutLite[], allMats: BoutLite[][], matIndex: n
   return resolved;
 }
 
-export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGap = 3) {
+export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGap = 4) {
   const matLists: BoutLite[][] = Array.from({ length: numMats }, () => []);
   for (const bout of bouts) {
     const mat = Math.min(Math.max(1, bout.mat ?? 1), numMats);
@@ -216,7 +216,7 @@ export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGa
 export function reorderBoutsGlobal(
   bouts: BoutLite[],
   numMats: number,
-  conflictGap = 3,
+  conflictGap = 4,
   timeBudgetMs = 5000,
 ) {
   const mats: BoutLite[][] = Array.from({ length: numMats }, () => []);
@@ -277,7 +277,7 @@ export function reorderBoutsGlobal(
 export function reorderBoutsSequential(
   bouts: BoutLite[],
   numMats: number,
-  conflictGap = 3,
+  conflictGap = 4,
 ) {
   const matLists: BoutLite[][] = Array.from({ length: numMats }, () => []);
   for (const bout of bouts) {
@@ -291,62 +291,39 @@ export function reorderBoutsSequential(
   for (let matIndex = 0; matIndex < matLists.length; matIndex++) {
     const list = matLists[matIndex];
     const otherOrders = buildOtherMatOrders(matLists, matIndex);
-    for (let idx = 0; idx < list.length; idx++) {
-      const bout = list[idx];
-      const order = idx + 1;
-      if (
-        !hasConflict(bout, order, otherOrders, conflictGap) &&
-        !hasSameMatConflictAt(list, idx, conflictGap)
-      ) {
-        continue;
-      }
-      const topWindow = Math.min(idx, Math.max(5, conflictGap));
-      if (topWindow > 0) {
-        const topTarget = Math.floor(Math.random() * (topWindow + 1));
-        if (topTarget !== idx) {
-          list.splice(idx, 1);
-          list.splice(topTarget, 0, bout);
-          const topOrder = topTarget + 1;
-          if (
-            !hasConflict(bout, topOrder, otherOrders, conflictGap) &&
-            !hasSameMatConflictAt(list, topTarget, conflictGap)
-          ) {
-            idx = Math.max(-1, topTarget - 1);
-            continue;
-          }
-          list.splice(topTarget, 1);
-          list.splice(idx, 0, bout);
-        }
-      }
-      const maxShift = Math.max(1, list.length - 1);
-      let moved = false;
-      for (let attempt = 0; attempt < maxShift; attempt++) {
-        const shift = 1 + Math.floor(Math.random() * maxShift);
-        let nextIndex = idx + shift;
-        if (nextIndex >= list.length) {
-          nextIndex = Math.floor(Math.random() * (idx + 1));
-        }
-        if (nextIndex === idx) continue;
-        list.splice(idx, 1);
-        list.splice(nextIndex, 0, bout);
-        const nextOrder = nextIndex + 1;
+    for (let pass = 0; pass < 10; pass++) {
+      for (let idx = 0; idx < list.length; idx++) {
+        const bout = list[idx];
+        const order = idx + 1;
         if (
-          !hasConflict(bout, nextOrder, otherOrders, conflictGap) &&
-          !hasSameMatConflictAt(list, nextIndex, conflictGap)
+          !hasConflict(bout, order, otherOrders, conflictGap) &&
+          !hasSameMatConflictAt(list, idx, conflictGap)
         ) {
-          moved = true;
-          idx = Math.max(-1, idx - 1);
-          break;
+          continue;
         }
-        list.splice(nextIndex, 1);
-        list.splice(idx, 0, bout);
-      }
-      if (!moved) {
-        const target = Math.floor(Math.random() * (Math.min(idx, list.length - 1) + 1));
-        if (target !== idx) {
+        const baseScore = computeConflictSummary(matLists, conflictGap);
+        const attempts = Math.min(8, Math.max(1, list.length - 1));
+        let moved = false;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          let target = Math.floor(Math.random() * list.length);
+          if (target === idx) {
+            target = (target + 1) % list.length;
+          }
+          if (target === idx) continue;
           list.splice(idx, 1);
           list.splice(target, 0, bout);
-          idx = Math.max(-1, target - 1);
+          const candidateScore = computeConflictSummary(matLists, conflictGap);
+          if (compareConflictSummary(candidateScore, baseScore) < 0) {
+            moved = true;
+            idx = Math.max(-1, target - 1);
+            break;
+          }
+          list.splice(target, 1);
+          list.splice(idx, 0, bout);
+        }
+        if (!moved) {
+          list.splice(idx, 1);
+          list.splice(idx, 0, bout);
         }
       }
     }
@@ -374,7 +351,7 @@ export async function reorderBoutsForMeet(
     select: { id: true, redId: true, greenId: true, mat: true, order: true },
   });
   const numMats = Math.max(MIN_MATS, options.numMats ?? meet?.numMats ?? DEFAULT_MAT_COUNT);
-  const conflictGap = options.conflictGap ?? meet?.restGap ?? 3;
+  const conflictGap = options.conflictGap ?? meet?.restGap ?? 4;
   const updates = reorderBoutsSequential(
     bouts,
     numMats,

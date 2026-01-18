@@ -72,11 +72,11 @@ export default function CoachMyTeamPage() {
   const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
   const [defaultMaxMatchesPerWrestler, setDefaultMaxMatchesPerWrestler] = useState(5);
-  const [defaultRestGap, setDefaultRestGap] = useState(6);
+  const [defaultRestGap, setDefaultRestGap] = useState(4);
   const [defaultMaxAgeGapDays, setDefaultMaxAgeGapDays] = useState(365);
   const [maxAgeGapInput, setMaxAgeGapInput] = useState("1");
   const [maxMatchesInput, setMaxMatchesInput] = useState("5");
-  const [restGapInput, setRestGapInput] = useState("6");
+  const [restGapInput, setRestGapInput] = useState("4");
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
@@ -268,7 +268,7 @@ export default function CoachMyTeamPage() {
     const preferSameMat = Boolean(team.homeTeamPreferSameMat);
     setHomeTeamPreferSameMat(preferSameMat);
     const maxMatches = typeof team.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : 5;
-    const restGap = typeof team.defaultRestGap === "number" ? team.defaultRestGap : 6;
+    const restGap = typeof team.defaultRestGap === "number" ? team.defaultRestGap : 4;
     const maxAgeGapDays = typeof team.defaultMaxAgeGapDays === "number" ? team.defaultMaxAgeGapDays : 365;
     setDefaultMaxMatchesPerWrestler(maxMatches);
     setDefaultRestGap(restGap);

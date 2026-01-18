@@ -45,7 +45,7 @@ export default function MatBoardTab({
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [numMats, setNumMats] = useState(0);
-  const [conflictGap, setConflictGap] = useState(6);
+  const [conflictGap, setConflictGap] = useState(4);
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
@@ -72,7 +72,7 @@ export default function MatBoardTab({
   useEffect(() => {
     if (!meetSettings) return;
     setNumMats(typeof meetSettings.numMats === "number" ? meetSettings.numMats : 4);
-    setConflictGap(typeof meetSettings.restGap === "number" ? meetSettings.restGap : 6);
+    setConflictGap(typeof meetSettings.restGap === "number" ? meetSettings.restGap : 4);
   }, [meetSettings]);
 
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function MatBoardTab({
       if (!cancelled) {
         setMeetSettings({
           numMats: typeof meet?.numMats === "number" ? meet.numMats : 4,
-          restGap: typeof meet?.restGap === "number" ? meet.restGap : 6,
+          restGap: typeof meet?.restGap === "number" ? meet.restGap : 4,
           homeTeamId: meet?.homeTeamId ?? null,
         });
       }
@@ -415,8 +415,12 @@ export default function MatBoardTab({
   ) {
     const otherOrders = buildOtherMatOrders(allMats, matIndex);
     let changed = true;
+    let iterations = 0;
+    const maxIterations = Math.max(10, list.length * 10);
     while (changed) {
       changed = false;
+      iterations += 1;
+      if (iterations > maxIterations) break;
       for (let idx = 0; idx < list.length; idx++) {
         const order = idx + 1;
         if (!hasZeroConflict(list[idx], order, otherOrders)) continue;
@@ -432,64 +436,42 @@ export default function MatBoardTab({
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
     const working = list.slice();
     if (gap <= 0 || working.length < 2) return working;
-
+    allMats[matIndex] = working;
     const otherOrders = buildOtherMatOrders(allMats, matIndex);
-    for (let idx = 0; idx < working.length; idx++) {
-      const bout = working[idx];
-      const order = idx + 1;
-      if (
-        !hasConflict(bout, order, otherOrders, gap) &&
-        !hasSameMatConflictAt(working, idx, gap)
-      ) {
-        continue;
-      }
-      const topWindow = Math.min(idx, Math.max(5, gap));
-      if (topWindow > 0) {
-        const topTarget = Math.floor(Math.random() * (topWindow + 1));
-        if (topTarget !== idx) {
-          working.splice(idx, 1);
-          working.splice(topTarget, 0, bout);
-          const topOrder = topTarget + 1;
-          if (
-            !hasConflict(bout, topOrder, otherOrders, gap) &&
-            !hasSameMatConflictAt(working, topTarget, gap)
-          ) {
-            idx = Math.max(-1, topTarget - 1);
-            continue;
-          }
-          working.splice(topTarget, 1);
-          working.splice(idx, 0, bout);
-        }
-      }
-      const maxShift = Math.max(1, working.length - 1);
-      let moved = false;
-      for (let attempt = 0; attempt < maxShift; attempt++) {
-        const shift = 1 + Math.floor(Math.random() * maxShift);
-        let nextIndex = idx + shift;
-        if (nextIndex >= working.length) {
-          nextIndex = Math.floor(Math.random() * (idx + 1));
-        }
-        if (nextIndex === idx) continue;
-        working.splice(idx, 1);
-        working.splice(nextIndex, 0, bout);
-        const nextOrder = nextIndex + 1;
+
+    for (let pass = 0; pass < 10; pass++) {
+      for (let idx = 0; idx < working.length; idx++) {
+        const bout = working[idx];
+        const order = idx + 1;
         if (
-          !hasConflict(bout, nextOrder, otherOrders, gap) &&
-          !hasSameMatConflictAt(working, nextIndex, gap)
+          !hasConflict(bout, order, otherOrders, gap) &&
+          !hasSameMatConflictAt(working, idx, gap)
         ) {
-          moved = true;
-          idx = Math.max(-1, idx - 1);
-          break;
+          continue;
         }
-        working.splice(nextIndex, 1);
-        working.splice(idx, 0, bout);
-      }
-      if (!moved) {
-        const target = Math.floor(Math.random() * (Math.min(idx, working.length - 1) + 1));
-        if (target !== idx) {
+        const baseScore = computeConflictSummary(allMats, gap);
+        const attempts = Math.min(8, Math.max(1, working.length - 1));
+        let moved = false;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          let target = Math.floor(Math.random() * working.length);
+          if (target === idx) {
+            target = (target + 1) % working.length;
+          }
+          if (target === idx) continue;
           working.splice(idx, 1);
           working.splice(target, 0, bout);
-          idx = Math.max(-1, target - 1);
+          const candidateScore = computeConflictSummary(allMats, gap);
+          if (compareConflictSummary(candidateScore, baseScore) < 0) {
+            moved = true;
+            idx = Math.max(-1, target - 1);
+            break;
+          }
+          working.splice(target, 1);
+          working.splice(idx, 0, bout);
+        }
+        if (!moved) {
+          working.splice(idx, 1);
+          working.splice(idx, 0, bout);
         }
       }
     }
@@ -507,13 +489,10 @@ export default function MatBoardTab({
     if (!canEdit) return;
     setBouts(prev => {
       const next = prev.map(b => ({ ...b }));
-      const byMat = new Map<number, Bout[]>();
-      for (const b of next) {
-        const m = b.mat ?? 1;
-        byMat.set(m, [...(byMat.get(m) ?? []), b]);
-      }
       const matKeys = Array.from({ length: numMats }, (_, i) => i + 1);
-      const matLists = matKeys.map(key => byMat.get(key) ?? []);
+      const matLists = matKeys.map(key =>
+        (mats[keyMat(key)] ?? []).map(b => ({ ...b })),
+      );
       const matIndex = matKeys.indexOf(matNum);
       if (matIndex === -1) return next;
       const targetList = matLists[matIndex];

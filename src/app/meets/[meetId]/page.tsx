@@ -559,7 +559,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
         );
         setRestGap(
-          typeof meetJson.restGap === "number" ? meetJson.restGap : 6,
+          typeof meetJson.restGap === "number" ? meetJson.restGap : 4,
         );
       }
       setMeetLoaded(true);
