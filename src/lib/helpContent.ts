@@ -72,6 +72,15 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: "Attendance panel",
+        paragraphs: [
+          "Use the Attendance panel to mark who is actually available before you spend time fine-tuning pairings. Open the meet, go to Pairings, and click Show next to Attendance. You must have the lock to edit attendance, so click Start Editing first if needed (Meet > Start Editing, Meet > Pairings).",
+          "Coming is the default. Not Coming means the wrestler should not be scheduled at all; they will be removed from pairing suggestions and any existing bouts for that wrestler are deleted so the meet plan reflects the scratch immediately.",
+          "Arrive Late and Leave Early are planning flags. The wrestler is still considered coming, but their name is highlighted in a different color so it is easy to spot them while scheduling. The flag is a reminder that you may need to manually drag their bouts toward the top or bottom of the bout list as appropriate. These flags do not automatically move bouts for you; use Mat Assignments to adjust the running order (Meet > Mat Assignments).",
+          "Best practice: update attendance first, then re-run auto pairings to fill gaps created by scratches and refresh the recommended matchups. After auto pairings completes, review pairings and mat order again (Meet > Pairings).",
+        ],
+      },
+      {
         title: "Locks and collaboration",
         paragraphs: [
           "Each meet has a \"lock\" to ensure that only one coach at a time may edit it. When you click Edit on the Meets list or Start Editing inside a meet, you request the lock and become the active editor until you release it (Meets > Edit, Meet > Start Editing, Meet > Release Lock).",
@@ -112,6 +121,15 @@ export const HELP_PAGES: HelpPage[] = [
           "Confirm weigh ins are complete before final pairing changes (Meet > Pairings). Assign a coach or table worker to keep results entry current as bouts finish (Results).",
           "If mat order shifts due to delays or substitutions, update the plan and reprint the affected sheets (Meet > Mat Assignments, Meet > Wall Charts). Keep the roster updated if late scratches occur (Rosters).",
           "During the meet, keep the workflow simple. Make pairing changes only when necessary, communicate them clearly, and then stabilize the plan again so table workers and coaches can trust what they see (Meet > Comments).",
+        ],
+      },
+      {
+        title: "Best practices for meet preparation",
+        paragraphs: [
+          "Start early in the week by verifying roster data and making corrections. Update weights, birthdates, experience, and skill so the matching suggestions reflect reality. The best pairing plan comes from accurate data more than from complex settings (Rosters).",
+          "Before you generate or review pairings, confirm your mat plan. Set the number of mats, mat colors, and age or experience ranges per mat so coaches can cover the right wrestlers and table workers can stay organized. A common best practice is to use a minimum rest time between bouts of about 6 matches so wrestlers are not asked to go again too quickly (Team Settings > Mat Setup, Team Settings > Meet Setup).",
+          "After you run auto pairings, scan for outliers and edge cases. Look for unusual age or weight combinations, verify that high skill wrestlers have appropriate opponents, and identify wrestlers who are unlikely to get matches. Coordinate scratches and changes with other coaches early so the final plan does not require last minute reshuffling (Meet > Pairings, Meet > Comments).",
+          "When the plan looks solid, communicate a handoff. Use comments to document major decisions, release the lock so another coach can review, and publish only when you want the meet to be treated as stable for families and table staff (Meet > Comments, Meet > Release Lock, Meet > Publish).",
         ],
       },
       {
