@@ -20,17 +20,23 @@ export async function GET() {
   });
 }
 
+function normalizeWebsite(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 export async function PUT(req: Request) {
   await requireAdmin();
   const body = BodySchema.parse(await req.json());
   const existing = await db.league.findFirst({ select: { id: true } });
 
   if (!existing) {
-    await db.league.create({ data: { name: body.name ?? null, website: body.website?.trim() || null } });
+    await db.league.create({ data: { name: body.name ?? null, website: normalizeWebsite(body.website) } });
   } else {
     await db.league.update({
       where: { id: existing.id },
-      data: { name: body.name ?? null, website: body.website?.trim() || null },
+      data: { name: body.name ?? null, website: normalizeWebsite(body.website) },
     });
   }
 

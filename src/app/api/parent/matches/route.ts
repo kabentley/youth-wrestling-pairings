@@ -60,6 +60,19 @@ export async function GET() {
   });
 
   const wrestlerIds = new Set<string>();
+  const formatOpponent = (
+    wrestler: { teamId: string; team?: { name?: string | null; symbol?: string | null; color?: string | null } } | undefined,
+  ) => {
+    const team = wrestler?.team ?? null;
+    const opponentTeam =
+      team?.symbol ??
+      team?.name ??
+      wrestler?.teamId ??
+      "";
+    const opponentTeamColor = team?.color ?? "#000000";
+    return { opponentTeam, opponentTeamColor };
+  };
+
   for (const b of bouts) {
     wrestlerIds.add(b.redId);
     wrestlerIds.add(b.greenId);
@@ -81,14 +94,15 @@ export async function GET() {
 
     if (childIds.includes(b.redId)) {
       const opp = wMap.get(b.greenId);
+      const { opponentTeam, opponentTeamColor } = formatOpponent(opp);
       meetMap.get(meet.id)!.matches.push({
         boutId: b.id,
         childId: b.redId,
         corner: "red",
         opponentId: b.greenId,
         opponentName: opp ? `${opp.first} ${opp.last}` : b.greenId,
-        opponentTeam: opp?.team?.symbol ?? opp?.team?.name ?? opp?.teamId ?? "",
-        opponentTeamColor: opp?.team?.color ?? "#000000",
+        opponentTeam,
+        opponentTeamColor,
         mat: b.mat,
         order: b.order,
         result: {
@@ -102,14 +116,15 @@ export async function GET() {
     }
     if (childIds.includes(b.greenId)) {
       const opp = wMap.get(b.redId);
+      const { opponentTeam, opponentTeamColor } = formatOpponent(opp);
       meetMap.get(meet.id)!.matches.push({
         boutId: b.id,
         childId: b.greenId,
         corner: "green",
         opponentId: b.redId,
         opponentName: opp ? `${opp.first} ${opp.last}` : b.redId,
-        opponentTeam: opp?.team?.symbol ?? opp?.team?.name ?? opp?.teamId ?? "",
-        opponentTeamColor: opp?.team?.color ?? "#000000",
+        opponentTeam,
+        opponentTeamColor,
         mat: b.mat,
         order: b.order,
         result: {

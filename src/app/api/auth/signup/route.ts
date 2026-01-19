@@ -19,6 +19,12 @@ function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
 }
 
+function normalizeNullableString(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -29,13 +35,14 @@ export async function POST(req: Request) {
   const email = body.email.trim().toLowerCase();
   const phone = body.phone ? body.phone.trim() : "";
   const teamId = body.teamId.trim();
+  const normalizedName = normalizeNullableString(body.name);
 
   const existing = await db.user.findUnique({
     where: { username },
     select: { id: true, email: true, emailVerified: true },
   });
   if (existing) {
-    const sameEmail = existing.email?.trim().toLowerCase() === email;
+    const sameEmail = existing.email.trim().toLowerCase() === email;
     if (sameEmail && !existing.emailVerified) {
       const passwordHash = await bcrypt.hash(body.password, 10);
       await db.user.update({
@@ -44,10 +51,7 @@ export async function POST(req: Request) {
           email,
           phone: phone === "" ? "" : phone,
           teamId,
-          name: (() => {
-            const trimmed = body.name?.trim();
-            return trimmed === "" ? null : (trimmed ?? null);
-          })(),
+      name: normalizedName,
           passwordHash,
           role: "PARENT",
         },
@@ -69,10 +73,7 @@ export async function POST(req: Request) {
         email,
         phone: phone === "" ? "" : phone,
         teamId,
-        name: (() => {
-          const trimmed = body.name?.trim();
-          return trimmed === "" ? null : (trimmed ?? null);
-        })(),
+        name: normalizedName,
         passwordHash,
         role: "PARENT",
       },

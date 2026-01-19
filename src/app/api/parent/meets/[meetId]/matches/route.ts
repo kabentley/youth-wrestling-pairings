@@ -67,14 +67,20 @@ export async function GET(
     const out: any[] = [];
     if (childIds.includes(b.redId)) {
       const opp = wMap.get(b.greenId);
+      const opponentTeam = opp
+        ? opp.team.symbol || opp.team.name || opp.teamId || ""
+        : "";
+      const opponentTeamColor = opp
+        ? opp.team.color || "#000000"
+        : "#000000";
       out.push({
         boutId: b.id,
         childId: b.redId,
         corner: "red",
         opponentId: b.greenId,
         opponentName: opp ? `${opp.first} ${opp.last}` : b.greenId,
-        opponentTeam: opp?.team?.symbol ?? opp?.team?.name ?? opp?.teamId ?? "",
-        opponentTeamColor: opp?.team?.color ?? "#000000",
+        opponentTeam,
+        opponentTeamColor,
         mat: b.mat,
         order: b.order,
         result: {
@@ -88,14 +94,20 @@ export async function GET(
     }
     if (childIds.includes(b.greenId)) {
       const opp = wMap.get(b.redId);
+      const opponentTeam = opp
+        ? opp.team.symbol || opp.team.name || opp.teamId || ""
+        : "";
+      const opponentTeamColor = opp
+        ? opp.team.color || "#000000"
+        : "#000000";
       out.push({
         boutId: b.id,
         childId: b.greenId,
         corner: "green",
         opponentId: b.redId,
         opponentName: opp ? `${opp.first} ${opp.last}` : b.redId,
-        opponentTeam: opp?.team?.symbol ?? opp?.team?.name ?? opp?.teamId ?? "",
-        opponentTeamColor: opp?.team?.color ?? "#000000",
+        opponentTeam,
+        opponentTeamColor,
         mat: b.mat,
         order: b.order,
         result: {

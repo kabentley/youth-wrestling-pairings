@@ -57,7 +57,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       meetId,
       authorId: user.id,
       body: body.body.trim(),
-      section: body.section?.trim() || null,
+      section: (() => {
+        const value = body.section?.trim();
+        if (!value) return null;
+        return value;
+      })(),
     },
     include: { author: { select: { username: true } } },
   });

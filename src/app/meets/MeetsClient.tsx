@@ -60,8 +60,6 @@ type Meet = {
 export default function MeetsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
-  const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
-  const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [name, setName] = useState("");
   const [date, setDate] = useState(DEFAULT_DATE);
   const [location, setLocation] = useState("");
@@ -140,10 +138,9 @@ export default function MeetsPage() {
   ];
 
   async function load() {
-    const [t, m, l, me] = await Promise.all([
+    const [t, m, me] = await Promise.all([
       fetch("/api/teams"),
       fetch("/api/meets"),
-      fetch("/api/league"),
       fetch("/api/me"),
     ]);
     if (t.ok) {
@@ -159,12 +156,6 @@ export default function MeetsPage() {
       setMeets(list);
     } else {
       setMeets([]);
-    }
-    if (l.ok) {
-      const lJson = await l.json().catch(() => ({}));
-      const name = String(lJson?.name ?? "").trim();
-      setLeagueName(name || "Wrestling Scheduler");
-      setLeagueHasLogo(Boolean(lJson?.hasLogo));
     }
     if (me.ok) {
       const meJson = await me.json().catch(() => ({}));
@@ -421,48 +412,6 @@ export default function MeetsPage() {
           background: var(--bg);
           min-height: 100vh;
           padding: 28px 22px 40px;
-        }
-        .mast {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          border-bottom: 1px solid var(--line);
-          padding-bottom: 14px;
-          margin-bottom: 18px;
-          flex-wrap: wrap;
-        }
-        .mast-actions {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex: 1;
-          justify-content: flex-end;
-          flex-wrap: wrap;
-        }
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-        }
-        .logo {
-          width: 56px;
-          height: 56px;
-          object-fit: contain;
-        }
-        .title {
-          font-family: "Oswald", Arial, sans-serif;
-          font-size: clamp(26px, 3vw, 38px);
-          letter-spacing: 0.5px;
-          margin: 0;
-          text-transform: uppercase;
-        }
-        .tagline {
-          color: var(--muted);
-          font-size: 13px;
-          margin-top: 4px;
-          text-transform: uppercase;
-          letter-spacing: 1.6px;
         }
         .nav {
           display: flex;
@@ -806,37 +755,6 @@ export default function MeetsPage() {
         }
       `}</style>
       <AppHeader links={headerLinks} />
-      <header className="mast">
-        <div className="brand">
-          {leagueHasLogo ? (
-            <img className="logo" src="/api/league/logo/file" alt="League logo" />
-          ) : null}
-          <div>
-            <h1 className="title">{leagueName}</h1>
-            <div className="tagline">Meets</div>
-          </div>
-        </div>
-        <div className="mast-actions">
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              resetFormFields();
-              if (currentTeamId) {
-                setTeamIds([currentTeamId]);
-                setHomeTeamId(currentTeamId);
-              } else {
-                setTeamIds([]);
-                setHomeTeamId("");
-              }
-              setIsCreateModalOpen(true);
-            }}
-            disabled={!canManageMeets}
-          >
-            Create New Meet
-          </button>
-        </div>
-      </header>
 
       <div className="grid">
         <section className="card">
@@ -882,10 +800,10 @@ export default function MeetsPage() {
                   </div>
                 )}
                 </div>
-                {(m.lastChangeAt || m.updatedAt) && (
+                {(m.lastChangeAt ?? m.updatedAt) && (
                   <div className="muted" style={{ marginTop: 6 }}>
                     Last edited {new Date(m.lastChangeAt ?? m.updatedAt ?? "").toLocaleString()} by{" "}
-                    {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
+                      {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
                   </div>
                 )}
               </div>
@@ -908,7 +826,7 @@ export default function MeetsPage() {
                       className="modal-logo"
                     />
                   ) : (
-                    <span className="modal-logo-dot" style={{ backgroundColor: selectedTeam.color ?? "#ddd" }} />
+                    <span className="modal-logo-dot" style={{ backgroundColor: selectedTeam.color || "#ddd" }} />
                   )
                 ) : null}
               </h3>

@@ -187,6 +187,8 @@ export default function ParentPage() {
     return map;
   }, [children, meetGroups, today]);
 
+  const dashboardTitle = profile?.name ? `${profile.name}'s Wrestlers` : "My Wrestlers";
+
 
   function nameChip(label: string, team: string | undefined, color?: string) {
     const teamLabel = team ? ` (${team})` : "";
@@ -213,7 +215,6 @@ export default function ParentPage() {
   }
   function formatMatchResult(match: Match) {
     const result = match.result;
-    if (!result) return "";
     const parts: string[] = [];
     if (result.winnerId) {
       parts.push(result.winnerId === match.childId ? "W" : "L");
@@ -224,7 +225,7 @@ export default function ParentPage() {
     if (result.score) {
       parts.push(result.score);
     }
-    if (result.period !== null && result.period !== undefined) {
+    if (result.period !== null) {
       parts.push(`P${result.period}`);
     }
     if (result.time) {
@@ -339,7 +340,7 @@ export default function ParentPage() {
       `}</style>
       <AppHeader links={headerLinks} />
 
-      <h2>My Wrestlers</h2>
+      <h2>{dashboardTitle}</h2>
 
       <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
         <div style={{ display: "flex", gap: 8 }}>

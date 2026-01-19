@@ -33,22 +33,34 @@ export async function GET() {
   });
   const changes = await db.meetChange.findMany({
     orderBy: { createdAt: "desc" },
-    select: { meetId: true, createdAt: true, actor: { select: { username: true } } },
+    select: { meetId: true, createdAt: true, actorId: true },
   });
-  const lastChangeByMeet = new Map<string, { at: Date; by: string | null }>();
+  const actorIds = Array.from(new Set(changes.map(change => change.actorId).filter((id): id is string => Boolean(id))));
+  const actors = actorIds.length > 0
+    ? await db.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, username: true },
+      })
+    : [];
+  const actorMap = new Map(actors.map(actor => [actor.id, actor.username]));
+  const lastChangeByMeet = new Map<string, { at: Date; by?: string | null }>();
   for (const change of changes) {
     if (lastChangeByMeet.has(change.meetId)) continue;
+    const actorName = change.actorId ? actorMap.get(change.actorId) ?? null : null;
     lastChangeByMeet.set(change.meetId, {
       at: change.createdAt,
-      by: change.actor?.username ?? null,
+      by: actorName,
     });
   }
   return NextResponse.json(
-    meets.map(meet => ({
-      ...meet,
-      lastChangeAt: lastChangeByMeet.get(meet.id)?.at ?? null,
-      lastChangeBy: lastChangeByMeet.get(meet.id)?.by ?? null,
-    })),
+    meets.map(meet => {
+      const entry = lastChangeByMeet.get(meet.id);
+      return {
+        ...meet,
+        lastChangeAt: entry ? entry.at : null,
+        lastChangeBy: entry?.by ?? null,
+      };
+    }),
   );
 }
 
@@ -71,11 +83,17 @@ export async function POST(req: Request) {
     : creatorTeamId;
 
   const now = new Date();
+  const normalizeLocation = (value?: string | null) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return undefined;
+    return trimmed;
+  };
+
   const meet = await db.meet.create({
     data: {
       name: parsed.name,
       date: new Date(parsed.date),
-      location: parsed.location?.trim() || undefined,
+      location: normalizeLocation(parsed.location),
       homeTeamId,
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,

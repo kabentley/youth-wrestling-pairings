@@ -7,7 +7,13 @@ type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
 /** Single navigation item displayed in the header. */
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
 /** Props for the global app header. */
-type Props = { links: LinkItem[]; hideTeamSelector?: boolean };
+type Props = {
+  links: LinkItem[];
+  hideTeamSelector?: boolean;
+  leagueLogoSrc?: string | null;
+  leagueName?: string;
+  hideLeagueBrand?: boolean;
+};
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
 const coachNavLink: LinkItem = { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" };
@@ -20,7 +26,13 @@ const coachNavLink: LinkItem = { href: "/coach/my-team", label: "Team Settings",
  * - Shows a team switcher for admins (used to impersonate/act as a team).
  * - Provides sign-out via NextAuth.
  */
-export default function AppHeader({ links, hideTeamSelector }: Props) {
+export default function AppHeader({
+  links,
+  hideTeamSelector,
+  leagueLogoSrc,
+  leagueName,
+  hideLeagueBrand = false,
+}: Props) {
   const [user, setUser] = useState<{
     username: string;
     role: Role;
@@ -89,6 +101,31 @@ export default function AppHeader({ links, hideTeamSelector }: Props) {
     ? links
     : [...links, coachNavLink];
 
+  const [leagueInfo, setLeagueInfo] = useState<{ name: string | null; hasLogo: boolean }>({
+    name: null,
+    hasLogo: false,
+  });
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/league")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data) return;
+        setLeagueInfo({ name: data.name ?? null, hasLogo: Boolean(data.hasLogo) });
+      })
+      .catch(() => {
+        // ignore
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const brandName = leagueName ?? leagueInfo.name ?? undefined;
+  const brandLogoSrc = leagueLogoSrc ?? (leagueInfo.hasLogo ? "/api/league/logo/file" : null);
+  const showBrand = hideLeagueBrand ? false : Boolean(brandLogoSrc ?? brandName);
+
   const visibleLinks = user
     ? allLinks.filter(link => {
         if (link.roles && !link.roles.includes(user.role)) return false;
@@ -111,7 +148,114 @@ export default function AppHeader({ links, hideTeamSelector }: Props) {
 
   return (
     <div className="app-header">
+      <style>{`
+        .app-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          border-bottom: 1px solid #d5dbe2;
+          padding-bottom: 12px;
+        }
+        .app-header-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .app-header-link {
+          color: #1d232b;
+          text-decoration: none;
+          font-size: 14px;
+          font-weight: 600;
+          border: 1px solid transparent;
+          padding: 6px 10px;
+          border-radius: 6px;
+        }
+        .app-header-link:hover {
+          border-color: #d5dbe2;
+          background: #f7f9fb;
+        }
+        .app-header-brand {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding-right: 8px;
+          margin-right: 6px;
+          border-right: 1px solid #d5dbe2;
+        }
+        .app-header-brand-logo,
+        .app-header-brand-placeholder {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          object-fit: contain;
+          background: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          color: #5a6673;
+          border: 1px solid #d5dbe2;
+        }
+        .app-header-brand-name {
+          font-size: 15px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          color: #1d232b;
+        }
+        .app-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .app-header-btn {
+          border: 1px solid #d5dbe2;
+          background: transparent;
+          color: #1d232b;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .app-header-team-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 6px;
+          border: 1px solid #d5dbe2;
+          border-radius: 999px;
+          font-size: 12px;
+        }
+        .app-header-team-logo {
+          width: 22px;
+          height: 22px;
+          border-radius: 999px;
+          object-fit: cover;
+        }
+        .app-header-team-name span:first-child {
+          margin-right: 4px;
+        }
+        .app-header-select {
+          border-radius: 6px;
+          border: 1px solid #d5dbe2;
+          padding: 4px 8px;
+          font-size: 12px;
+        }
+      `}</style>
       <div className="app-header-left">
+        {showBrand && (
+          <div className="app-header-brand">
+            {brandLogoSrc ? (
+              <img src={brandLogoSrc} alt={`${brandName ?? "League"} logo`} className="app-header-brand-logo" />
+            ) : (
+              <span className="app-header-brand-placeholder" aria-hidden="true">
+                {brandName ? brandName[0] : "L"}
+              </span>
+            )}
+            {brandName && <span className="app-header-brand-name">{brandName}</span>}
+          </div>
+        )}
         {mainLinks.map(link => (
           <a key={link.href} href={link.href} className="app-header-link">
             {link.label}

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth/next";
 
@@ -14,15 +13,17 @@ export default async function Home() {
     redirect("/auth/signin");
   }
   const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
-  const teamInfo = session && (session.user as any)?.teamId
+  const teamId = (session.user as any)?.teamId ?? null;
+  const teamInfo = teamId
     ? (await db.team.findUnique({
-        where: { id: (session.user as any).teamId },
+        where: { id: teamId },
         select: { symbol: true, name: true, website: true },
       }))
     : null;
   const trimmedLeagueName = league?.name?.trim();
   const leagueName = trimmedLeagueName ?? "";
   const hasLeagueLogo = Boolean(league?.logoData);
+  const leagueLogoSrc = hasLeagueLogo ? "/api/league/logo/file" : null;
   const leagueWebsite = league?.website?.trim() ?? null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
   const teamLabel = teamInfo?.symbol ? `${teamInfo.symbol} ${teamInfo.name}` : teamInfo?.name ?? "";
@@ -67,14 +68,28 @@ export default async function Home() {
           margin-bottom: 18px;
         }
         .brand {
+          grid-column: 1 / -1;
           display: flex;
           align-items: center;
           gap: 14px;
+          margin-bottom: 12px;
         }
         .logo {
           width: 56px;
           height: 56px;
           object-fit: contain;
+        }
+        .logo-placeholder {
+          width: 56px;
+          height: 56px;
+          border-radius: 8px;
+          background: #e1e4ea;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--muted);
         }
         .title {
           font-family: "Oswald", Arial, sans-serif;
@@ -267,17 +282,25 @@ export default async function Home() {
       `}</style>
 
       <header className="mast">
-        {session ? (
-          <AppHeader links={headerLinks} />
-        ) : (
-          <nav className="nav">
-            <Link href="/auth/signin">Sign in</Link>
-            <Link href="/auth/signup">Create account</Link>
-          </nav>
-        )}
+        <AppHeader links={headerLinks} leagueLogoSrc={leagueLogoSrc} leagueName={leagueName} />
       </header>
 
       <section className="hero">
+        <div className="brand">
+          {hasLeagueLogo && leagueLogoSrc ? (
+            <img className="logo" src={leagueLogoSrc} alt={`${leagueName || "League"} logo`} />
+          ) : (
+            <span className="logo-placeholder" aria-hidden="true">
+              {leagueName ? leagueName[0] : "W"}
+            </span>
+          )}
+          <div>
+            <h1 className="title">{leagueName || "Wrestling Scheduler"}</h1>
+            {leagueWebsite && (
+              <p className="tagline">{leagueWebsite.replace(/^https?:\/\//, "").replace(/\/$/, "")}</p>
+            )}
+          </div>
+        </div>
         <div className="hero-card">
           <h2 className="hero-title">League News</h2>
           {leagueNewsUrl && (

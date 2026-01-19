@@ -10,6 +10,14 @@ type BoutLite = {
   order: number | null;
 };
 
+/**
+ * Computes how many conflicts each distance from 0..`gap` appears for all mats.
+ *
+ * A "conflict" occurs when a wrestler is appearing too close together across mats
+ * (within `gap` slots) or in the same slot on another mat. The returned array is
+ * indexed by the separation distance so callers can weight near collisions more
+ * heavily.
+ */
 function computeConflictSummary(matLists: BoutLite[][], gap: number) {
   const counts = Array(gap + 1).fill(0);
   if (gap < 0) return counts;
@@ -38,6 +46,10 @@ function computeConflictSummary(matLists: BoutLite[][], gap: number) {
   return counts;
 }
 
+/**
+ * Returns whether summary `a` is worse than `b`. Used to decide when a reorder
+ * move improved the conflict profile.
+ */
 function compareConflictSummary(a: number[], b: number[]) {
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i++) {
@@ -48,6 +60,7 @@ function compareConflictSummary(a: number[], b: number[]) {
   return a.length - b.length;
 }
 
+/** Builds a map of wrestler ids → set of orders used on other mats. */
 function buildOtherMatOrders(allMats: BoutLite[][], matIndex: number) {
   const map = new Map<string, Set<number>>();
   allMats.forEach((list, idx) => {
@@ -68,6 +81,10 @@ function hasZeroConflict(bout: BoutLite, order: number, otherOrders: Map<string,
   return check(bout.redId) || check(bout.greenId);
 }
 
+/**
+ * Detects if moving `bout` to `order` would collide with entries from the same
+ * wrestler living on other mats within `gap` slots.
+ */
 function hasConflict(
   bout: BoutLite,
   order: number,
@@ -87,6 +104,10 @@ function hasConflict(
   return Boolean(conflictsAt(bout.redId) || conflictsAt(bout.greenId));
 }
 
+/**
+ * Checks whether `list[idx]` conflicts with other bouts on the same mat within
+ * `gap` slots.
+ */
 function hasSameMatConflictAt(list: BoutLite[], idx: number, gap: number) {
   const bout = list[idx];
   const start = Math.max(0, idx - gap);
@@ -145,6 +166,12 @@ function closestPowerOfTwo(value: number) {
   return power;
 }
 
+/**
+ * Attempts to locally reorder bouts on a single mat so conflicts shrink.
+ *
+ * The heuristics keep sliding bouts and accept moves that lower the conflict
+ * summary while occasionally trying random swaps.
+ */
 function reorderBoutsForMat(list: BoutLite[], allMats: BoutLite[][], matIndex: number, gap: number) {
   const base = list.slice();
   if (gap <= 0) return base;
@@ -214,7 +241,7 @@ export function reorderBoutsByMat(bouts: BoutLite[], numMats: number, conflictGa
  * Iterates through mats and tries small local moves that improve the conflict
  * summary (fewer near-by appearances of the same wrestler across mats).
  */
-export function reorderBoutsSequential(
+function reorderBoutsSequential(
   bouts: BoutLite[],
   numMats: number,
   conflictGap = 4,

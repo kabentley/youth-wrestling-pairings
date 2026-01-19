@@ -32,6 +32,12 @@ async function generatePlaceholderUsername() {
   return `oauth-${crypto.randomBytes(8).toString("hex")}`;
 }
 
+type CallbacksType = NonNullable<NextAuthOptions["callbacks"]>;
+type SignInCallback = NonNullable<CallbacksType["signIn"]>;
+type JwtCallback = NonNullable<CallbacksType["jwt"]>;
+type SignInCallbackArgs = Parameters<SignInCallback>[0];
+type JwtCallbackArgs = Parameters<JwtCallback>[0];
+
 const adapter = PrismaAdapter(db);
 const authAdapter: Adapter = {
   ...adapter,
@@ -163,39 +169,45 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
-      const credentialUser = user as { mustResetPassword?: boolean };
-      if (account?.provider === "credentials" && credentialUser?.mustResetPassword) {
+    async signIn({ user, account }: SignInCallbackArgs) {
+      const needsReset = (user as { mustResetPassword?: boolean }).mustResetPassword ?? false;
+      const isCredentials = account?.provider === "credentials";
+      if (isCredentials && needsReset) {
         const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
         return `${baseUrl}/auth/force-reset`;
       }
-      if (user?.id) {
-        await db.user.updateMany({
-          where: { id: user.id },
-          data: { lastLoginAt: new Date() },
-        });
-      }
+      const userId = user.id;
+      await db.user.updateMany({
+        where: { id: userId },
+        data: { lastLoginAt: new Date() },
+      });
       if (account?.provider && account.provider !== "credentials") {
-        if (user?.email) {
+        const userEmail = user.email;
+        if (userEmail) {
           await db.user.updateMany({
-            where: { email: user.email.toLowerCase().trim(), emailVerified: null },
+            where: { email: userEmail.toLowerCase().trim(), emailVerified: null },
             data: { emailVerified: new Date() },
           });
         }
-        if (user?.id) {
-          const dbUser = await db.user.findUnique({
-            where: { id: user.id },
-            select: { username: true, role: true, teamId: true },
-          });
-          if (dbUser?.username.startsWith("oauth-") || ((dbUser?.role === "PARENT" || dbUser?.role === "COACH" || dbUser?.role === "TABLE_WORKER") && !dbUser.teamId)) {
-            return "/auth/choose-username";
-          }
+        const dbUser = await db.user.findUnique({
+          where: { id: userId },
+          select: { username: true, role: true, teamId: true },
+        });
+        const username = dbUser?.username;
+        const role = dbUser?.role;
+        const teamId = dbUser?.teamId ?? null;
+        if (
+          username?.startsWith("oauth-") ||
+          ((role === "PARENT" || role === "COACH" || role === "TABLE_WORKER") && !teamId)
+        ) {
+          return "/auth/choose-username";
         }
       }
       return true;
     },
-    async jwt({ token, user }) {
-      if (user) {
+    async jwt({ token, user }: JwtCallbackArgs) {
+      const hasUser = Boolean(user);
+      if (hasUser) {
         const tokenUser = user as {
           id?: string;
           username?: string;
@@ -210,7 +222,9 @@ export const authOptions: NextAuthOptions = {
         token.teamId = tokenUser.teamId ?? null;
         token.sessionVersion = tokenUser.sessionVersion ?? 1;
         token.mustResetPassword = tokenUser.mustResetPassword ?? false;
-      } else if (token.sessionVersion === undefined && token.id) {
+        return token;
+      }
+      if (token.sessionVersion === undefined && token.id) {
         const dbUser = await db.user.findUnique({
           where: { id: token.id as string },
           select: { sessionVersion: true, mustResetPassword: true },

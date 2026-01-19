@@ -86,7 +86,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ teamId: 
   await db.teamMatRule.deleteMany({ where: { teamId } });
   await db.teamMatRule.createMany({
     data: Array.from({ length: desiredNumMats }, (_, index) => {
-      const rule = body.rules[index];
+      const rule = body.rules[index] as (typeof body.rules)[number] | undefined;
       if (rule) {
         return {
           teamId,

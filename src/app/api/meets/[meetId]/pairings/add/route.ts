@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { DEFAULT_MAT_COUNT, MIN_MATS, getEligibleMatIndexes } from "@/lib/assignMats";
+import { MIN_MATS, getEligibleMatIndexes } from "@/lib/assignMats";
 import type { MatWrestler } from "@/lib/assignMats";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
@@ -53,9 +53,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
 
-  const [red, green] = await db.wrestler.findMany({
-    where: { id: { in: [body.redId, body.greenId] } },
-    select: { id: true, first: true, last: true },
+  const red = await db.wrestler.findUnique({
+    where: { id: body.redId },
+    select: { first: true, last: true },
+  });
+  const green = await db.wrestler.findUnique({
+    where: { id: body.greenId },
+    select: { first: true, last: true },
   });
   const redName = red ? `${red.first} ${red.last}` : "wrestler 1";
   const greenName = green ? `${green.first} ${green.last}` : "wrestler 2";
@@ -104,7 +108,7 @@ async function assignMatToBout(meetId: string, boutId: string) {
   });
   const wMap = new Map<string, MatWrestler>(wrestlers.map(w => [w.id, w]));
 
-  const homeTeamId = meet?.homeTeamId ?? null;
+  const homeTeamId = meet.homeTeamId ?? null;
   const teamRules = homeTeamId
     ? await db.teamMatRule.findMany({
         where: { teamId: homeTeamId },
@@ -126,7 +130,7 @@ async function assignMatToBout(meetId: string, boutId: string) {
     color: rule.color ?? undefined,
   }));
 
-  const numMats = Math.max(MIN_MATS, meet?.numMats ?? DEFAULT_MAT_COUNT);
+  const numMats = Math.max(MIN_MATS, meet.numMats);
   const rules = baseRules.length > 0 ? baseRules.slice(0, numMats) : [];
   while (rules.length < numMats) {
     rules.push({ ...DEFAULT_RULE });
@@ -171,7 +175,7 @@ async function assignMatToBout(meetId: string, boutId: string) {
     return wMap.get(id) ?? null;
   }
 
-  const meetDate = meet.date ? new Date(meet.date) : new Date();
+  const meetDate = new Date(meet.date);
   const { indexes: eligibleMats } = getEligibleMatIndexes(
     bout,
     mats,

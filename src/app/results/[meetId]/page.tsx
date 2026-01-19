@@ -117,14 +117,14 @@ export default function EnterResultsPage() {
       const res = await fetch(`/api/bouts/${bout.id}/result`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          winnerId: bout.resultWinnerId ?? null,
-          type: bout.resultType?.trim() ?? null,
-          score: bout.resultScore?.trim() ?? null,
-          period: bout.resultPeriod ?? null,
-          time: bout.resultTime?.trim() || null,
-          notes: bout.resultNotes?.trim() || null,
-        }),
+          body: JSON.stringify({
+            winnerId: bout.resultWinnerId ?? null,
+            type: bout.resultType?.trim() ?? null,
+            score: bout.resultScore?.trim() ?? null,
+            period: bout.resultPeriod ?? null,
+            time: bout.resultTime?.trim() ?? null,
+            notes: bout.resultNotes?.trim() ?? null,
+          }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -174,6 +174,9 @@ export default function EnterResultsPage() {
     const pieces = [dateLabel, meet.location].filter(Boolean);
     return pieces.join(" - ");
   }, [meet]);
+
+  const meetNameDisplay = meet?.name ?? "Meet";
+  const subtitleSuffix = subtitle ? ` - ${subtitle}` : "";
 
   return (
     <main className="results-entry">
@@ -307,7 +310,7 @@ export default function EnterResultsPage() {
       <div className="header">
         <div>
           <h1 className="title">Enter Results</h1>
-          <div className="subtitle">{meet?.name || "Meet"} {subtitle ? `- ${subtitle}` : ""}</div>
+          <div className="subtitle">{meetNameDisplay}{subtitleSuffix}</div>
         </div>
         <div>
           <button className="btn" onClick={load}>Refresh</button>
@@ -360,14 +363,14 @@ export default function EnterResultsPage() {
                   <td>{boutLabel(b.mat, b.order)}</td>
                   <td>
                     <span className="wrestler">
-                      <span className="dot" style={{ background: b.red.team?.color ?? "#000000" }} />
-                      {redLabel} ({b.red.team?.symbol ?? b.red.team?.name ?? ""})
+                      <span className="dot" style={{ background: b.red.team.color ?? "#000000" }} />
+                      {redLabel} ({b.red.team.symbol ?? b.red.team.name})
                     </span>
                   </td>
                   <td>
                     <span className="wrestler">
-                      <span className="dot" style={{ background: b.green.team?.color ?? "#000000" }} />
-                      {greenLabel} ({b.green.team?.symbol ?? b.green.team?.name ?? ""})
+                      <span className="dot" style={{ background: b.green.team.color ?? "#000000" }} />
+                      {greenLabel} ({b.green.team.symbol ?? b.green.team.name})
                     </span>
                   </td>
                   <td>

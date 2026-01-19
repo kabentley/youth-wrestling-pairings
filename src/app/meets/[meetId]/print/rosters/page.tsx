@@ -2,6 +2,8 @@ import PrintActionsClient from "../PrintActionsClient";
 
 import { db } from "@/lib/db";
 
+type AttendanceStatusRecord = "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT";
+
 function ageInYears(birthdate: Date, onDate: Date) {
   const diff = onDate.getTime() - birthdate.getTime();
   return diff / (365.25 * 24 * 60 * 60 * 1000);
@@ -30,8 +32,10 @@ export default async function PrintRosters({ params }: { params: Promise<{ meetI
     where: { meetId },
     select: { wrestlerId: true, status: true },
   });
-  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s.status]));
-  const meetDate = meet.date ?? new Date();
+  const statusMap: Map<string, AttendanceStatusRecord> = new Map(
+    statuses.map(s => [s.wrestlerId, s.status as AttendanceStatusRecord]),
+  );
+  const meetDate = meet.date;
 
   return (
     <div>

@@ -118,11 +118,9 @@ export async function POST(req: Request) {
     let team = teamRow.id
       ? await db.team.findUnique({ where: { id: teamRow.id } })
       : null;
-    if (!team) {
-      team = await db.team.findFirst({
-        where: { OR: [{ symbol }, { name: teamRow.name.trim() }] },
-      });
-    }
+    team ??= await db.team.findFirst({
+      where: { OR: [{ symbol }, { name: teamRow.name.trim() }] },
+    });
 
     if (!team) {
       team = await db.team.create({

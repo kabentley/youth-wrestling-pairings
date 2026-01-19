@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 import { HELP_PAGES } from "@/lib/helpContent";
 
+const DEFAULT_HELP_PAGE = HELP_PAGES[0];
+
 const renderParagraph = (paragraph: string) => {
   const parts = paragraph.split(/(\([^)]*\))/g).filter(Boolean);
   return parts.map((part, index) =>
@@ -16,9 +18,9 @@ const renderParagraph = (paragraph: string) => {
 };
 
 export default function HelpPage() {
-  const [activePageId, setActivePageId] = useState(HELP_PAGES[0]?.id ?? "");
+  const [activePageId, setActivePageId] = useState(DEFAULT_HELP_PAGE.id);
   const activePage = useMemo(
-    () => HELP_PAGES.find((page) => page.id === activePageId) ?? HELP_PAGES[0],
+    () => HELP_PAGES.find((page) => page.id === activePageId) ?? DEFAULT_HELP_PAGE,
     [activePageId],
   );
 
@@ -170,7 +172,7 @@ export default function HelpPage() {
             <button
               key={page.id}
               type="button"
-              className={`help-tab-button${page.id === activePage?.id ? " active" : ""}`}
+              className={`help-tab-button${page.id === activePage.id ? " active" : ""}`}
               onClick={() => setActivePageId(page.id)}
             >
               {page.title}
@@ -178,23 +180,21 @@ export default function HelpPage() {
           ))}
         </div>
 
-        {activePage ? (
-          <div className="help-tab-body">
-            <section id={activePage.id} className="help-section">
-              <h3>{activePage.title}</h3>
-              <div className="help-columns">
-                {activePage.sections.map((section) => (
-                  <div key={section.title} className="help-card">
-                    <h4>{section.title}</h4>
-                    {section.paragraphs.map((paragraph) => (
-                      <p key={paragraph}>{renderParagraph(paragraph)}</p>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        ) : null}
+        <div className="help-tab-body">
+          <section id={activePage.id} className="help-section">
+            <h3>{activePage.title}</h3>
+            <div className="help-columns">
+              {activePage.sections.map((section) => (
+                <div key={section.title} className="help-card">
+                  <h4>{section.title}</h4>
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{renderParagraph(paragraph)}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );

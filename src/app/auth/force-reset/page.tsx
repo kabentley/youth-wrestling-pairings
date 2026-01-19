@@ -1,12 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 export default function ForceResetPage() {
-  const { status, data: session } = useSession();
-  const router = useRouter();
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [hasLogo, setHasLogo] = useState(false);
   const [username, setUsername] = useState("");
@@ -16,13 +13,7 @@ export default function ForceResetPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
-  const isDev = process.env.NODE_ENV !== "production";
-
-  useEffect(() => {
-    if (status === "authenticated" && session?.user?.mustResetPassword === false) {
-      router.replace("/auth/post-login");
-    }
-  }, [status, session, router]);
+  const { status } = useSession();
 
   useEffect(() => {
     let active = true;

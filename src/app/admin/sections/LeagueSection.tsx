@@ -25,9 +25,9 @@ export default function LeagueSection() {
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
   const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
-  const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string>>({});
-  const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string>>({});
-  const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string>>({});
+  const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string | undefined>>({});
+  const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string | undefined>>({});
+  const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string | undefined>>({});
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
   const [showResetModal, setShowResetModal] = useState(false);
@@ -40,9 +40,9 @@ export default function LeagueSection() {
   const [importConfirm, setImportConfirm] = useState("");
   const [importError, setImportError] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
-  const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
 
   async function load() {
     const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
@@ -197,7 +197,8 @@ function normalizeHeadCoachId(value: string | null | undefined) {
     const cleanName = name.trim();
     const cleanSymbol = symbol.trim();
     if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) return;
-    if (detailTimers.current[teamId]) clearTimeout(detailTimers.current[teamId]);
+    const existingDetailTimer = detailTimers.current[teamId];
+    if (existingDetailTimer) clearTimeout(existingDetailTimer);
     detailTimers.current[teamId] = setTimeout(() => {
       void updateTeamDetails(teamId, cleanName, cleanSymbol, headCoachId);
     }, 500);
@@ -205,14 +206,16 @@ function normalizeHeadCoachId(value: string | null | undefined) {
 
   function scheduleColorSave(teamId: string, color: string) {
     if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
-    if (colorTimers.current[teamId]) clearTimeout(colorTimers.current[teamId]);
+    const existingColorTimer = colorTimers.current[teamId];
+    if (existingColorTimer) clearTimeout(existingColorTimer);
     colorTimers.current[teamId] = setTimeout(() => {
       void updateTeamColor(teamId, color);
     }, 300);
   }
 
   function scheduleLeagueSave(nextName: string, nextWebsite: string) {
-    if (leagueTimers.current.league) clearTimeout(leagueTimers.current.league);
+    const existingLeagueTimer = leagueTimers.current.league;
+    if (existingLeagueTimer) clearTimeout(existingLeagueTimer);
     leagueTimers.current.league = setTimeout(() => {
       void saveLeague(nextName, nextWebsite);
     }, 500);
@@ -521,36 +524,36 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                       />
                     </div>
                   </td>
-                  <td>
-                    <select
-                      value={getTeamHeadCoachId(t)}
-                      onChange={(e) => {
-                        const nextHeadCoachId = e.target.value;
-                        setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
-                        scheduleTeamDetailsSave(
-                          t.id,
-                          getTeamName(t),
-                          getTeamSymbol(t),
-                          normalizeHeadCoachId(nextHeadCoachId),
-                        );
-                      }}
-                    >
-                      <option value="">Select head coach</option>
-                      {t.coaches.map((coach) => (
-                        <option key={coach.id} value={coach.id}>
-                          {coach.username}
-                        </option>
-                      ))}
-                      {t.headCoach && !t.coaches.some((coach) => coach.id === t.headCoach?.id) && (
-                        <option value={t.headCoach.id}>{t.headCoach.username}</option>
-                      )}
-                    </select>
-                    {!t.coaches.length && (
-                      <div className="admin-muted" style={{ marginTop: 4 }}>
-                        No coaches assigned yet.
-                      </div>
-                    )}
-                  </td>
+              <td>
+                <select
+                  value={getTeamHeadCoachId(t)}
+                  onChange={(e) => {
+                    const nextHeadCoachId = e.target.value;
+                    setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
+                    scheduleTeamDetailsSave(
+                      t.id,
+                      getTeamName(t),
+                      getTeamSymbol(t),
+                      normalizeHeadCoachId(nextHeadCoachId),
+                    );
+                  }}
+                >
+                  <option value="">Select head coach</option>
+                  {t.coaches.map((coach) => (
+                    <option key={coach.id} value={coach.id}>
+                      {coach.username}
+                    </option>
+                  ))}
+                  {t.headCoach && !t.coaches.some((coach) => coach.id === t.headCoach?.id) && (
+                    <option value={t.headCoach.id}>{t.headCoach.username}</option>
+                  )}
+                </select>
+                {!t.coaches.length && (
+                  <div className="admin-muted" style={{ marginTop: 4 }}>
+                    No coaches assigned yet.
+                  </div>
+                )}
+              </td>
                   <td className="admin-actions">
                     <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>
                       Delete Team

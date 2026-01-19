@@ -22,7 +22,7 @@ export default async function VerifyEmailPage({ searchParams }: { searchParams: 
   }
 
   const league = await db.league.findFirst({ select: { name: true, logoData: true } });
-  const leagueName = league?.name?.trim() || "Wrestling Scheduler";
+  const leagueName = league?.name?.trim() ?? "Wrestling Scheduler";
   const hasLogo = Boolean(league?.logoData);
 
   return (

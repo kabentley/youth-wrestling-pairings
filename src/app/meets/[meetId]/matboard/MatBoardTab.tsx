@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import type { LockState } from "@/lib/useMeetLock";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
@@ -26,8 +27,6 @@ type Bout = {
   originalMat?: number | null;
 };
 const keyMat = (m: number) => String(m);
-
-import type { LockState } from "@/lib/useMeetLock";
 
 interface MatBoardTabProps {
   meetId: string;
@@ -107,14 +106,15 @@ export default function MatBoardTab({
       }
       const payload = await rulesRes.json().catch(() => null);
       if (cancelled) return;
-      const colors: Record<number, string | null> = {};
-      const rules = Array.isArray(payload?.rules) ? payload.rules : [];
-      for (const rule of rules) {
-        if (typeof rule.matIndex === "number") {
-          const suggestedColor = typeof rule.color === "string" ? rule.color.trim() : "";
-          colors[rule.matIndex] = suggestedColor || null;
-        }
+    const colors: Record<number, string | null> = {};
+    const rules = Array.isArray(payload?.rules) ? payload.rules : [];
+    for (const rule of rules) {
+      if (typeof rule.matIndex === "number") {
+        const trimmedColor =
+          typeof rule.color === "string" ? rule.color.trim() : "";
+        colors[rule.matIndex] = trimmedColor.length > 0 ? trimmedColor : null;
       }
+    }
       setMatRuleColors(colors);
     };
     void fetchMatColors();
@@ -162,6 +162,10 @@ export default function MatBoardTab({
     };
   }, [dirty, canEdit]);
 
+  /**
+   * Load the meet pairings and associated wrestlers, then stash them in state.
+   * Also resets error messaging and dirty tracking after a successful refresh.
+   */
   async function load() {
     const [bRes, wRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/pairings`),
@@ -264,6 +268,10 @@ export default function MatBoardTab({
     return severity;
   }, [mats, conflictGap]);
 
+  /**
+   * Move a bout to a specific mat and position, reordering the surrounding bouts
+   * while preserving their computed ordering.
+   */
   function moveBout(boutId: string, toMat: number, toIndex: number) {
     setBouts(prev => {
       const next = prev.map(x => ({ ...x }));
@@ -271,9 +279,7 @@ export default function MatBoardTab({
       if (!b) return prev;
 
       const fromMat = b.mat ?? 1;
-      if (b.originalMat == null) {
-        b.originalMat = fromMat;
-      }
+      b.originalMat ??= fromMat;
 
       const fromList = next
         .filter(x => (x.mat ?? 1) === fromMat && x.id !== boutId)
@@ -299,6 +305,9 @@ export default function MatBoardTab({
     dirtyRef.current = true;
   }
 
+  /**
+   * Build a histogram of conflict distances for all wrestlers across the mats given the target gap.
+   */
   function computeConflictSummary(matLists: Bout[][], gap: number) {
     const counts = Array(gap + 1).fill(0);
     if (gap < 0) return counts;
@@ -327,6 +336,9 @@ export default function MatBoardTab({
     return counts;
   }
 
+  /**
+   * Compare two conflict histograms so that lower values and shorter sequences are preferred.
+   */
   function compareConflictSummary(a: number[], b: number[]) {
     const len = Math.min(a.length, b.length);
     for (let i = 0; i < len; i++) {
@@ -337,6 +349,9 @@ export default function MatBoardTab({
     return a.length - b.length;
   }
 
+  /**
+   * Collect all bout orders from mats other than the provided index to check cross-mat conflicts.
+   */
   function buildOtherMatOrders(allMats: Bout[][], matIndex: number) {
     const map = new Map<string, Set<number>>();
     allMats.forEach((list, idx) => {
@@ -352,11 +367,9 @@ export default function MatBoardTab({
     return map;
   }
 
-  function hasZeroConflict(bout: Bout, order: number, otherOrders: Map<string, Set<number>>) {
-    const check = (id: string) => otherOrders.get(id)?.has(order);
-    return Boolean(check(bout.redId) || check(bout.greenId));
-  }
-
+  /**
+   * Determine if moving a bout to the supplied order would create a conflict with other mats.
+   */
   function hasConflict(
     bout: Bout,
     order: number,
@@ -376,9 +389,11 @@ export default function MatBoardTab({
     return Boolean(conflictsAt(bout.redId) || conflictsAt(bout.greenId));
   }
 
+  /**
+   * Check whether the bout at the given index conflicts with any nearby bout on the same mat.
+   */
   function hasSameMatConflictAt(list: Bout[], idx: number, gap: number) {
     const bout = list[idx];
-    if (!bout) return false;
     const start = Math.max(0, idx - gap);
     const end = Math.min(list.length - 1, idx + gap);
     for (let i = start; i <= end; i++) {
@@ -390,50 +405,9 @@ export default function MatBoardTab({
     return false;
   }
 
-  function trySlide(
-    list: Bout[],
-    idx: number,
-    direction: -1 | 1,
-    otherOrders: Map<string, Set<number>>,
-  ) {
-    const target = idx + direction;
-    if (target < 0 || target >= list.length) return false;
-    const current = list[idx];
-    const neighbor = list[target];
-    const newCurrentOrder = target + 1;
-    const newNeighborOrder = idx + 1;
-    if (hasZeroConflict(current, newCurrentOrder, otherOrders)) return false;
-    if (hasZeroConflict(neighbor, newNeighborOrder, otherOrders)) return false;
-    [list[idx], list[target]] = [list[target], list[idx]];
-    return true;
-  }
-
-  function resolveZeroGapConflicts(
-    list: Bout[],
-    allMats: Bout[][],
-    matIndex: number,
-    gap: number,
-  ) {
-    const otherOrders = buildOtherMatOrders(allMats, matIndex);
-    let changed = true;
-    let iterations = 0;
-    const maxIterations = Math.max(10, list.length * 10);
-    while (changed) {
-      changed = false;
-      iterations += 1;
-      if (iterations > maxIterations) break;
-      for (let idx = 0; idx < list.length; idx++) {
-        const order = idx + 1;
-        if (!hasZeroConflict(list[idx], order, otherOrders)) continue;
-        if (trySlide(list, idx, -1, otherOrders) || trySlide(list, idx, 1, otherOrders)) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    return list;
-  }
-
+  /**
+   * Attempt to reorder a single mat to reduce conflicts by shuffling bouts within the local list.
+   */
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
     const working = list.slice();
     if (gap <= 0 || working.length < 2) return working;
@@ -480,12 +454,9 @@ export default function MatBoardTab({
     return working;
   }
 
-  function closestPowerOfTwo(value: number) {
-    let power = 1;
-    while (power < value) power <<= 1;
-    return power;
-  }
-
+  /**
+   * Trigger a reorder for the specified mat and propagate the new ordering to the stored bouts.
+   */
   function reorderMat(matNum: number) {
     if (!canEdit) return;
     setBouts(prev => {
@@ -512,6 +483,9 @@ export default function MatBoardTab({
     dirtyRef.current = true;
   }
 
+  /**
+   * Persist the current bout ordering for every mat back to the server and refresh the view.
+   */
   async function saveOrder(opts?: { silent?: boolean; keepalive?: boolean }) {
     if (!canEdit) return;
     const silent = Boolean(opts?.silent);
@@ -558,15 +532,24 @@ export default function MatBoardTab({
     saveOrderRef.current = saveOrder;
   });
 
+  /**
+   * Render a team label that prefers the symbol and falls back to the name or ID.
+   */
   function teamName(teamId: string) {
     const team = teams.find(t => t.id === teamId);
     return team?.symbol ?? team?.name ?? teamId;
   }
 
+  /**
+   * Return the stored color for a team, or a default fallback.
+   */
   function teamColor(teamId: string) {
     return teams.find(t => t.id === teamId)?.color ?? "#000000";
   }
 
+  /**
+   * Build all metadata needed to display a bout row, including text, colors, and status flags.
+   */
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
@@ -598,51 +581,6 @@ export default function MatBoardTab({
     const b = num & 255;
     return { r, g, b };
   };
-  const hexToRGBA = (hex: string, alpha: number) => {
-    const { r, g, b } = parseHexColor(hex);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-  const toHSL = (r: number, g: number, b: number) => {
-    const rp = r / 255;
-    const gp = g / 255;
-    const bp = b / 255;
-    const max = Math.max(rp, gp, bp);
-    const min = Math.min(rp, gp, bp);
-    const l = (max + min) / 2;
-    let h = 0;
-    let s = 0;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      if (max === rp) h = ((gp - bp) / d + (gp < bp ? 6 : 0)) * 60;
-      else if (max === gp) h = ((bp - rp) / d + 2) * 60;
-      else h = ((rp - gp) / d + 4) * 60;
-    }
-    return { h, s, l };
-  };
-  const hslToRgb = ({ h, s, l }: { h: number; s: number; l: number }) => {
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 360;
-      if (t >= 360) t -= 360;
-      if (t < 60) return p + (q - p) * t / 60;
-      if (t < 180) return q;
-      if (t < 240) return p + (q - p) * (240 - t) / 60;
-      return p;
-    };
-    let r: number;
-    let g: number;
-    let b: number;
-    if (s === 0) {
-      r = g = b = l;
-    } else {
-      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-      const p = 2 * l - q;
-      r = hue2rgb(p, q, h + 120);
-      g = hue2rgb(p, q, h);
-      b = hue2rgb(p, q, h - 120);
-    }
-    return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
-  };
   const mixWithWhite = (hex: string, weight = 0.85) => {
     const { r, g, b } = parseHexColor(hex);
     const mix = (channel: number) => Math.round(channel + (255 - channel) * weight);
@@ -650,12 +588,12 @@ export default function MatBoardTab({
   };
   const getDefaultMatColor = (matIndex: number) => {
     const preset = DEFAULT_MAT_RULES[(matIndex - 1) % DEFAULT_MAT_RULES.length];
-    return preset?.color ?? "#f2f2f2";
+    return preset.color ?? "#f2f2f2";
   };
   const getMatColor = (matIndex: number) => {
     if (!matIndex || matIndex < 1) return "#f2f2f2";
     const stored = matRuleColors[matIndex];
-    if (stored && stored.trim()) return stored.trim();
+    if (stored?.trim()) return stored.trim();
     return getDefaultMatColor(matIndex);
   };
   const getMatNumberBackground = (color?: string | null) => {
@@ -996,19 +934,19 @@ export default function MatBoardTab({
           key={b.id}
           className={`bout${dragging?.boutId === b.id ? " dragging" : ""}`}
           draggable={canEdit}
-          onDragStart={e => {
-            if (!canEdit) return;
-                        const target = e.target as HTMLElement | null;
-                        if (target?.dataset?.role === "wrestler") {
-                          e.preventDefault();
-                          return;
-                        }
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", b.id);
-                        const next = { boutId: b.id, fromMat: matNum };
-                        draggingRef.current = next;
-                        setDragging(next);
-                      }}
+              onDragStart={e => {
+                if (!canEdit) return;
+                const target = e.target as HTMLElement | null;
+                if (target?.dataset.role === "wrestler") {
+                  e.preventDefault();
+                  return;
+                }
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", b.id);
+                const next = { boutId: b.id, fromMat: matNum };
+                draggingRef.current = next;
+                setDragging(next);
+              }}
                       onDragEnd={() => {
                         draggingRef.current = null;
                         setDragging(null);

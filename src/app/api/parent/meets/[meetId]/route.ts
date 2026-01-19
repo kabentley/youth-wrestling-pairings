@@ -41,11 +41,13 @@ export async function GET(
   });
   if (!meet) return NextResponse.json({ error: "Meet not found." }, { status: 404 });
 
+  const location = meet.location ?? (meet.homeTeam ? meet.homeTeam.address : null);
+  const homeTeamLabel = meet.homeTeam ? `${meet.homeTeam.name} (${meet.homeTeam.symbol})`.trim() : null;
   return NextResponse.json({
     id: meet.id,
     name: meet.name,
     date: meet.date,
-    location: meet.location ?? meet.homeTeam?.address ?? null,
-    homeTeam: meet.homeTeam ? `${meet.homeTeam.name} (${meet.homeTeam.symbol ?? ""})`.trim() : null,
+    location,
+    homeTeam: homeTeamLabel,
   });
 }

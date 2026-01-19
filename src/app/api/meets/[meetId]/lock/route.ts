@@ -6,9 +6,8 @@ import { requireAnyRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  let user: Awaited<ReturnType<typeof requireAnyRole>>["user"];
   try {
-    ({ user } = await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]));
+    await requireAnyRole(["COACH", "TABLE_WORKER", "ADMIN"]);
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {
@@ -37,9 +36,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     return NextResponse.json({ locked: false });
   }
 
+  const lockedByUsername = meet.lockedBy ? meet.lockedBy.username : null;
   return NextResponse.json({
     locked: Boolean(meet.lockedById),
-    lockedByUsername: meet.lockedBy?.username ?? null,
+    lockedByUsername,
     lockExpiresAt: meet.lockExpiresAt ?? null,
   });
 }
@@ -86,7 +86,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json(
       {
         error: "Meet is locked",
-        lockedByUsername: meet.lockedBy?.username ?? null,
+        lockedByUsername: meet.lockedBy ? meet.lockedBy.username : null,
         lockExpiresAt: meet.lockExpiresAt ?? null,
       },
       { status: 409 },

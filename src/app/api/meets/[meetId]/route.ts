@@ -20,6 +20,12 @@ const PatchSchema = z.object({
   status: z.enum(["DRAFT", "PUBLISHED"]).optional(),
 });
 
+function normalizeNullableString(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   try {
@@ -55,10 +61,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     orderBy: { createdAt: "desc" },
     select: { createdAt: true, actor: { select: { username: true } } },
   });
+  const lastChangeAt = lastChange ? lastChange.createdAt : null;
+  const lastChangeBy = lastChange?.actor ? lastChange.actor.username : null;
   return NextResponse.json({
     ...meet,
-    lastChangeAt: lastChange?.createdAt ?? null,
-    lastChangeBy: lastChange?.actor?.username ?? null,
+    lastChangeAt,
+    lastChangeBy,
   });
 }
 
@@ -96,7 +104,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
 
   if (body.name) data.name = body.name.trim();
   if (body.date) data.date = new Date(body.date);
-  if (body.location !== undefined) data.location = body.location?.trim() || null;
+  if (body.location !== undefined) data.location = normalizeNullableString(body.location);
   if (body.homeTeamId !== undefined) data.homeTeamId = body.homeTeamId;
   if (body.numMats !== undefined) data.numMats = body.numMats;
   if (body.allowSameTeamMatches !== undefined) data.allowSameTeamMatches = body.allowSameTeamMatches;
@@ -172,7 +180,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
     return NextResponse.json(
       {
         error: "Meet is locked",
-        lockedByUsername: meet.lockedBy?.username ?? "another user",
+        lockedByUsername: meet.lockedBy ? meet.lockedBy.username : "another user",
         lockExpiresAt: meet.lockExpiresAt ?? null,
       },
       { status: 409 },

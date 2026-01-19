@@ -56,9 +56,13 @@ export default function ResultsLandingPage() {
         let list = Array.isArray(json) ? json : [];
         if (role === "COACH" || role === "TABLE_WORKER") {
           const teamId = String(meJson?.teamId ?? "");
-          list = list.filter((meet: Meet) =>
-            teamId && meet.meetTeams?.some(mt => mt.team?.id === teamId),
-          );
+          if (teamId) {
+            list = list.filter((meet: Meet) =>
+              meet.meetTeams.some(mt => mt.team.id === teamId),
+            );
+          } else {
+            list = [];
+          }
         }
         list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setMeets(list);

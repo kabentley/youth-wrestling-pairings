@@ -99,7 +99,6 @@ export default function RostersClient() {
   const role = (session?.user as any)?.role as string | undefined;
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const [teams, setTeams] = useState<Team[]>([]);
-  const [leagueName, setLeagueName] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [rosterMsg, setRosterMsg] = useState("");
@@ -108,10 +107,10 @@ export default function RostersClient() {
   const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 80, 80, 90, 90, 90]);
   const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
-  const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler> | undefined>>({});
   const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
   const spectatorResizeRef = useRef<{ key: ViewerColumnKey; startX: number; startWidth: number } | null>(null);
-  const originalRowsRef = useRef<Record<string, EditableWrestler>>({});
+  const originalRowsRef = useRef<Record<string, EditableWrestler | undefined>>({});
   const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
   const hasFieldValidationErrors = useMemo(
@@ -183,7 +182,7 @@ export default function RostersClient() {
     ];
 
   const redirectToLogin = () => {
-    const callbackUrl = pathname ?? "/rosters";
+    const callbackUrl = pathname || "/rosters";
     router.replace(`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   };
 
@@ -209,14 +208,9 @@ export default function RostersClient() {
   };
 
   async function load() {
-    const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
+    const tRes = await fetch("/api/teams");
     if (handleUnauthorized(tRes)) return;
-    if (handleUnauthorized(lRes)) return;
     if (tRes.ok) setTeams(await tRes.json());
-    if (lRes.ok) {
-      const league = await lRes.json();
-      setLeagueName(String(league.name ?? "").trim());
-    }
   }
 
   function ageYears(birthdate: string) {
@@ -470,16 +464,16 @@ export default function RostersClient() {
   };
 
   const isRowDirty = (row: EditableWrestler) => {
-    if (row.isNew) {
-      return Boolean(
-        row.first.trim() ||
-        row.last.trim() ||
-        row.weight.trim() ||
-        row.birthdate ||
-        row.experienceYears.trim() ||
-        row.skill.trim()
-      );
-    }
+      if (row.isNew) {
+        return Boolean(
+          row.first.trim() ||
+          row.last.trim() ||
+          row.weight.trim() ||
+          row.birthdate.trim() ||
+          row.experienceYears.trim() ||
+          row.skill.trim()
+        );
+      }
     const original = originalRowsRef.current[row.id];
     if (!original) return true;
     return (
@@ -950,19 +944,13 @@ export default function RostersClient() {
     target?.focus();
   };
 
-  const addEmptyRow = () => {
-    setEditableRows(rows => [createEmptyRow(), ...rows]);
-  };
-
   const focusAdjacentRow = (rowId: string, field: keyof EditableWrestler, direction: "up" | "down") => {
     const allRows = [...newRows, ...sortedEditableRows];
     const idx = allRows.findIndex(r => r.id === rowId);
     if (idx === -1) return;
     const nextIdx = direction === "down" ? Math.min(allRows.length - 1, idx + 1) : Math.max(0, idx - 1);
     const nextRow = allRows[nextIdx];
-    if (nextRow) {
-      focusField(nextRow.id, field);
-    }
+    focusField(nextRow.id, field);
   };
 
   const handleInputKeyDown = (
@@ -1117,7 +1105,7 @@ export default function RostersClient() {
     if (downloadableRoster.length === 0) return;
 
     const escape = (value: string | number | boolean) => {
-      const text = String(value ?? "");
+      const text = String(value);
       if (text.includes(",") || text.includes("\n") || text.includes("\"")) {
         return `"${text.replace(/"/g, '""')}"`;
       }
@@ -1167,29 +1155,6 @@ export default function RostersClient() {
           background: var(--bg);
           min-height: 100vh;
           padding: 18px 12px 30px;
-        }
-        .mast {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          border-bottom: 1px solid var(--line);
-          padding-bottom: 14px;
-          margin-bottom: 18px;
-        }
-        .title {
-          font-family: "Oswald", Arial, sans-serif;
-          font-size: clamp(26px, 3vw, 38px);
-          letter-spacing: 0.5px;
-          margin: 0;
-          text-transform: uppercase;
-        }
-        .tagline {
-          color: var(--muted);
-          font-size: 13px;
-          margin-top: 4px;
-          text-transform: uppercase;
-          letter-spacing: 1.6px;
         }
         .nav {
           display: flex;
@@ -1314,29 +1279,6 @@ export default function RostersClient() {
         .team-card-active {
           border-color: var(--accent);
           box-shadow: 0 0 0 2px rgba(30, 136, 229, 0.15);
-        }
-        .mast-title {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        .mast-logo {
-          display: inline-flex;
-          width: 78px;
-          height: 78px;
-          margin-left: 12px;
-          vertical-align: middle;
-        }
-        .league-logo {
-          width: 100%;
-          height: 100%;
-          object-fit: contain;
-          border-radius: 10px;
-        }
-        .mast .title {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
         }
         .team-selector-wrapper {
           position: relative;
@@ -1568,10 +1510,6 @@ export default function RostersClient() {
           background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
         }
         @media (max-width: 900px) {
-          .mast {
-            flex-direction: column;
-            align-items: flex-start;
-          }
           .grid {
             gap: 14px;
           }
@@ -1813,21 +1751,6 @@ export default function RostersClient() {
 
       `}</style>
       <AppHeader links={headerLinks} />
-      <header className="mast">
-        <div className="mast-title">
-          <h1 className="title">
-            <span>Team Rosters for {leagueName || "League Directory"}</span>
-            <span className="mast-logo">
-              <img
-                src="/api/league/logo/file"
-                alt={`${leagueName || "League"} logo`}
-                className="league-logo"
-              />
-            </span>
-          </h1>
-          <div className="tagline">League Directory</div>
-        </div>
-      </header>
 
       <div className="grid">
 
@@ -2025,7 +1948,7 @@ export default function RostersClient() {
                     <table>
                       <colgroup>
                         {spectatorColumns.map(col => (
-                          <col key={col.key} style={{ width: spectatorColWidths[col.key] ?? col.width }} />
+                          <col key={col.key} style={{ width: spectatorColWidths[col.key] }} />
                         ))}
                       </colgroup>
                       <thead>

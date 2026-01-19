@@ -91,7 +91,7 @@ type MeetComment = {
 
 const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
 
-const CURRENT_SHARED_COLUMN_MAP: Record<number, number> = {
+const CURRENT_SHARED_COLUMN_MAP: Record<number, number | undefined> = {
   0: 0,
   1: 1,
   3: 2,
@@ -433,31 +433,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     return luminance > 0.6 ? "#111111" : "#ffffff";
   }
-  function statusLabel(status: AttendanceStatus | string | null | undefined) {
-    if (!status || status === "NO_RESPONSE") return "Coming";
-    if (status === "NOT_COMING") return "Not Coming";
-    if (status === "COMING") return "Coming";
-    if (status === "LATE") return "Arrive Late";
-    if (status === "EARLY") return "Leave Early";
-    if (status === "ABSENT") return "Not Coming";
-    return status;
-  }
-  function lockStatusText(lock: LockState, status: "DRAFT" | "PUBLISHED") {
-    if (status !== "DRAFT") return "Not applicable";
-    if (!wantsEdit && lock.status !== "acquired" && !lock.lockedByUsername) return "Read-only";
-    if (lock.status === "acquired") {
-      if (lock.lockExpiresAt) {
-        const expires = new Date(lock.lockExpiresAt);
-        if (!Number.isNaN(expires.getTime())) {
-          return `Held until ${expires.toLocaleTimeString()}`;
-        }
-      }
-      return "Held";
-    }
-    if (lock.status === "locked") {
-      return `Locked by ${lock.lockedByUsername ?? "another user"}`;
-    }
-    return "Checking";
+  const STATUS_LABELS: Record<AttendanceStatus, string> = {
+    COMING: "Coming",
+    NOT_COMING: "Not Coming",
+    LATE: "Arrive Late",
+    EARLY: "Leave Early",
+  };
+  function statusLabel(status: AttendanceStatus | null | undefined) {
+    if (!status) return "Coming";
+    return STATUS_LABELS[status];
   }
   function formatInactivityCountdown(ms: number) {
     const totalSeconds = Math.ceil(ms / 1000);
@@ -465,16 +449,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
+  const STATUS_COLORS: Record<AttendanceStatus, string> = {
+    COMING: "#e6f6ea",
+    NOT_COMING: "#f0f0f0",
+    EARLY: "#f3eadf",
+    LATE: "#dff1ff",
+  };
+
   function statusColor(status: AttendanceStatus | null | undefined) {
     if (!status) return "#e6f6ea";
-    if (status === "COMING") return "#e6f6ea";
-    if (status === "NOT_COMING" || (status as string) === "ABSENT") return "#f0f0f0";
-    if (status === "LATE") return "#dff1ff";
-    if (status === "EARLY") return "#f3eadf";
-    return "#ffffff";
+    return STATUS_COLORS[status];
   }
+
   function isNotAttending(status: AttendanceStatus | null | undefined) {
-    return status === "NOT_COMING" || (status as string) === "ABSENT";
+    return status === "NOT_COMING";
   }
   function ageYears(birthdate?: string) {
     if (!birthdate) return null;
@@ -955,7 +943,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCandidates([]);
       return;
     }
-    const { version, ...query } = candidateFetchConfig;
+    const { version: _version, ...query } = candidateFetchConfig;
     void loadCandidates(selectedPairingId, query);
   }, [selectedPairingId, candidateFetchConfig, maxMatchesPerWrestler, selectedMatchCount]);
   const attendanceCounts = attendanceRoster.reduce(
@@ -984,10 +972,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     : null;
   const metadataParts = [formattedDate, teamList].filter(Boolean);
   const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
-  const homeLocationDisplay = meetLocation?.trim() || homeTeam?.address?.trim() || null;
-  const addWrestlerTeamLabel = attendanceTeamId
-    ? teams.find(t => t.id === attendanceTeamId)?.name ?? "Selected Team"
-    : "Selected Team";
+  const trimmedMeetLocation = meetLocation?.trim();
+  const trimmedHomeAddress = homeTeam?.address?.trim();
+  let homeLocationDisplay: string | null = null;
+  if (trimmedMeetLocation) {
+    homeLocationDisplay = trimmedMeetLocation;
+  } else if (trimmedHomeAddress) {
+    homeLocationDisplay = trimmedHomeAddress;
+  }
+  const hasHomeInfo = Boolean(homeTeam ?? homeLocationDisplay);
+  const attendanceTeam = attendanceTeamId ? teams.find(t => t.id === attendanceTeamId) : undefined;
+  const addWrestlerTeamLabel = attendanceTeam?.name ?? "Selected Team";
   const isAttendanceTeamCoach =
     currentUserRole === "COACH" &&
     attendanceTeamId !== null &&
@@ -1077,9 +1072,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
       setShowRestartModal(false);
       const defaults = {
-        name: meetName ?? undefined,
+        name: meetName || undefined,
         date: meetDate ? meetDate.slice(0, 10) : undefined,
-        location: meetLocation ?? undefined,
+        location: meetLocation ? meetLocation.trim() : undefined,
         homeTeamId: homeTeamId ?? undefined,
         teamIds: teams.map(team => team.id),
         maxMatchesPerWrestler: (() => {
@@ -1130,7 +1125,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
-    const res = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
+    await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wrestlerId, status }),
@@ -1157,7 +1152,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function removeBout(boutId: string) {
     if (!canEdit) return;
-    const res = await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
+    await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
     await load();
     await loadActivity();
     if (target) await loadCandidates(target.id);
@@ -1165,7 +1160,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
     if (!canChangeStatus) return;
-    const res = await fetch(`/api/meets/${meetId}`, {
+    await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus }),
@@ -1179,7 +1174,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const trimmed = meetName.trim();
     if (trimmed.length < 2) return;
     if (trimmed === lastSavedNameRef.current) return;
-    const res = await fetch(`/api/meets/${meetId}`, {
+    await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: trimmed }),
@@ -1206,7 +1201,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function submitComment() {
     const body = commentBody.trim();
     if (!body) return;
-    const res = await fetch(`/api/meets/${meetId}/comments`, {
+    await fetch(`/api/meets/${meetId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body, section: commentSection }),
@@ -1218,7 +1213,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null) {
     if (!canEdit) return;
-    const res = await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
+    await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, status: status ?? null, teamId: activeTeamId }),
@@ -1808,7 +1803,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           }
         }
       `}</style>
-      <AppHeader links={headerLinks} />
+      <AppHeader links={headerLinks} hideLeagueBrand />
       {meetDeletedNotice && (
         <div className="toast">
           Meet was deleted. Returning to Meets...
@@ -1892,7 +1887,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 </button>
               </>
             )}
-            {(homeTeam || homeLocationDisplay) && (
+            {hasHomeInfo && (
               <div className="meet-home-info">
                 <span className="home-label">Home team:</span>
                 {homeTeam && (
@@ -2380,10 +2375,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                      minWidth: 0,
                    }}
                  >
-                  <span>Age: {targetAge ? `${targetAge}` : "—"}</span>
-                  <span>Weight: {target.weight ?? "—"}</span>
-                  <span>Exp: {target.experienceYears ?? "—"}</span>
-                  <span>Skill: {target.skill ?? "—"}</span>
+                   <span>Age: {targetAge ? `${targetAge}` : "—"}</span>
+                   <span>Weight: {target.weight}</span>
+                   <span>Exp: {target.experienceYears}</span>
+                   <span>Skill: {target.skill}</span>
                 </div>
               </>
             )}
@@ -2527,7 +2522,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             key={o.id}
                             className="match-row-hover"
                             onClick={() => {
-                              if (!canEdit || !target) return;
+                              if (!canEdit) return;
                               void addMatch(target.id, o.id);
                             }}
                             style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}

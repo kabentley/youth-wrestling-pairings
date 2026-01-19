@@ -20,6 +20,6 @@ export async function GET() {
     username: user.username,
     name: user.name ?? null,
     role: user.role,
-    team: user.team ? `${user.team.name} (${user.team.symbol ?? ""})`.trim() : null,
+    team: user.team ? `${user.team.name} (${user.team.symbol})`.trim() : null,
   });
 }

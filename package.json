@@ -39,7 +39,7 @@
     "seed:pg": "npm run db:postgres && npm run seed",
     "dev:pg:reset": "npm run pg:up && npm run db:postgres && prisma migrate reset --force && prisma db seed && next dev",
     "dev:sqlite:reset": "npm run db:sqlite && prisma migrate reset --force && prisma db seed && next dev",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {

@@ -47,21 +47,21 @@ export default function WallChartTab({
   const [error, setError] = useState<string | null>(null);
   const wallChartRef = useRef<HTMLDivElement | null>(null);
 
-  function formatWrestlerName(w?: Wrestler | null) {
-    if (!w) return "";
-    const last = w.last?.trim();
-    const first = w.first?.trim();
-    if (last && first) return `${last}, ${first}`;
-    return last || first || "";
-  }
+function formatWrestlerName(w?: Wrestler | null) {
+  if (!w) return "";
+  const last = w.last.trim();
+  const first = w.first.trim();
+  if (last && first) return `${last}, ${first}`;
+  return last || first || "";
+}
 
-  function formatWrestlerFirstLast(w?: Wrestler | null) {
-    if (!w) return "";
-    const first = w.first?.trim();
-    const last = w.last?.trim();
-    if (first && last) return `${first} ${last}`;
-    return first || last || "";
-  }
+function formatWrestlerFirstLast(w?: Wrestler | null) {
+  if (!w) return "";
+  const first = w.first.trim();
+  const last = w.last.trim();
+  if (first && last) return `${first} ${last}`;
+  return first || last || "";
+}
 
   useEffect(() => {
     const signal = refreshIndex ?? 0;
@@ -343,7 +343,6 @@ export default function WallChartTab({
   const statuses = payload.statuses;
   const absentIds = new Set(statuses.filter(s => s.status === "NOT_COMING" || s.status === "ABSENT").map(s => s.wrestlerId));
   const filteredBouts = payload.bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
-  const teamIds = meet.meetTeams.map(mt => mt.team.id);
   const wMap = new Map(payload.wrestlers.map(w => [w.id, w]));
   const tMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
   const teamSymbolMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
@@ -377,14 +376,14 @@ export default function WallChartTab({
         ? {
             opponentName: formatWrestlerFirstLast(green) || `${green.first} ${green.last}`.trim(),
             opponentColor: tColor.get(green.teamId) ?? "#000",
-            opponentTeamLabel: teamSymbolMap.get(green.teamId) || tMap.get(green.teamId) || "",
+            opponentTeamLabel: teamSymbolMap.get(green.teamId) ?? tMap.get(green.teamId) ?? "",
           }
         : { opponentName: bout.greenId, opponentColor: "#000", opponentTeamLabel: "" };
       const redInfo = red
         ? {
             opponentName: formatWrestlerFirstLast(red) || `${red.first} ${red.last}`.trim(),
             opponentColor: tColor.get(red.teamId) ?? "#000",
-            opponentTeamLabel: teamSymbolMap.get(red.teamId) || tMap.get(red.teamId) || "",
+            opponentTeamLabel: teamSymbolMap.get(red.teamId) ?? tMap.get(red.teamId) ?? "",
           }
         : { opponentName: bout.redId, opponentColor: "#000", opponentTeamLabel: "" };
 
@@ -432,8 +431,8 @@ export default function WallChartTab({
   const headerLabel =
     meet.name && meet.date
       ? `${meet.name} · ${new Date(meet.date).toISOString().slice(0, 10)} · ${meet.meetTeams.map(mt => mt.team.name).join(", ")}`
-      : meet.name ?? "Meet";
-  const cardLabel = meet.name && meet.date ? `${meet.name} · ${new Date(meet.date).toISOString().slice(0, 10)}` : meet.name ?? "Meet";
+      : meet.name;
+  const cardLabel = meet.name && meet.date ? `${meet.name} · ${new Date(meet.date).toISOString().slice(0, 10)}` : meet.name;
 
   function cellText(bout: Bout) {
     const red = wMap.get(bout.redId);

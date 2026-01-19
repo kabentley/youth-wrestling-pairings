@@ -3,7 +3,7 @@ import { withAuth } from "next-auth/middleware";
 
 export default withAuth(function middleware(req) {
   const pathname = req.nextUrl.pathname;
-  const token = req.nextauth?.token;
+  const token = req.nextauth.token;
   if (token?.mustResetPassword) {
     const allowed =
       pathname.startsWith("/auth/force-reset") ||

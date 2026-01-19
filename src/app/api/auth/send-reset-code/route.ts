@@ -13,7 +13,7 @@ const BodySchema = z.object({
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
   method: z.enum(["email", "sms"]).optional(),
-}).refine(v => Boolean(v.email || v.phone), {
+}).refine(v => Boolean(v.email ?? v.phone), {
   message: "Provide email or phone",
 });
 

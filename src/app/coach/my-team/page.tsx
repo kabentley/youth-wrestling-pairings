@@ -14,14 +14,26 @@ const DEFAULT_NUM_MATS = 3;
 const MAX_MATS = CONFIGURED_MATS;
 
 const createMatRule = (matIndex: number): MatRule => {
-  const preset = DEFAULT_MAT_RULES[matIndex - 1];
+  const fallback: MatRule = {
+    matIndex,
+    color: null,
+    minExperience: 0,
+    maxExperience: 5,
+    minAge: 0,
+    maxAge: 20,
+  };
+  const safeIndex =
+    DEFAULT_MAT_RULES.length === 0
+      ? 0
+      : Math.min(DEFAULT_MAT_RULES.length - 1, Math.max(0, matIndex - 1));
+  const preset = DEFAULT_MAT_RULES[safeIndex] ?? fallback;
   return {
     matIndex,
-    color: preset?.color ?? null,
-    minExperience: preset?.minExperience ?? 0,
-    maxExperience: preset?.maxExperience ?? 5,
-    minAge: preset?.minAge ?? 0,
-    maxAge: preset?.maxAge ?? 20,
+    color: preset.color ?? fallback.color,
+    minExperience: preset.minExperience,
+    maxExperience: preset.maxExperience,
+    minAge: preset.minAge,
+    maxAge: preset.maxAge,
   };
 };
 
@@ -81,7 +93,6 @@ export default function CoachMyTeamPage() {
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [savingTeam, setSavingTeam] = useState(false);
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
@@ -89,7 +100,6 @@ export default function CoachMyTeamPage() {
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [role, setRole] = useState<UserRole | null>(null);
   const [initialInfo, setInitialInfo] = useState({ website: "", location: "" });
-  const [infoLoaded, setInfoLoaded] = useState(false);
   const [infoDirty, setInfoDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageStatus, setMessageStatus] = useState<"success" | "error" | null>(null);
@@ -124,12 +134,10 @@ export default function CoachMyTeamPage() {
 
 
   const load = async () => {
-    setLoading(true);
     try {
       const meRes = await fetch("/api/me");
       if (!meRes.ok) {
         console.warn("Sign in required.");
-        setLoading(false);
         return;
       }
       const profile = await meRes.json();
@@ -137,7 +145,6 @@ export default function CoachMyTeamPage() {
       setTeamSymbol(profile.team?.symbol ?? null);
       if (!profile.teamId && profile.role !== "ADMIN") {
         console.warn("You must be assigned to a team to use this page.");
-        setLoading(false);
         return;
       }
       if (profile.teamId) {
@@ -155,8 +162,6 @@ export default function CoachMyTeamPage() {
       }
     } catch {
       console.error("Unable to load team settings.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -238,7 +243,7 @@ export default function CoachMyTeamPage() {
     updateSnapshot(normalized, desiredNumMats);
   };
 
-  const loadTeamRoles = async (id: string) => {
+  const loadTeamRoles = async () => {
     const res = await fetch("/api/coach/parents");
     if (!res.ok) return;
     const payload = await res.json().catch(() => null);
@@ -277,7 +282,6 @@ export default function CoachMyTeamPage() {
     setTeamHasLogo(Boolean(team.hasLogo));
     setInitialInfo({ website: websiteVal, location: locationVal });
     setInfoDirty(false);
-    setInfoLoaded(true);
     meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
       maxMatches,
       restGap,
@@ -294,9 +298,7 @@ export default function CoachMyTeamPage() {
       clearTimeout(teamSaveTimer.current);
     }
     teamSaveTimer.current = setTimeout(() => {
-      if (updateTeamRef.current) {
-        void updateTeamRef.current();
-      }
+      void updateTeamRef.current();
     }, 500);
   };
 
@@ -331,11 +333,10 @@ export default function CoachMyTeamPage() {
 
   useEffect(() => {
     if (!teamId) return;
-    setInfoLoaded(false);
     void loadTeamDetails(teamId);
     void loadMatRules(teamId);
     if (role === "COACH") {
-      void loadTeamRoles(teamId);
+      void loadTeamRoles();
     }
   }, [teamId, role]);
 
@@ -406,6 +407,7 @@ export default function CoachMyTeamPage() {
   const meetDefaultsIsError = meetDefaultsStatus === "error";
   const canSaveTeamInfo = infoDirty && !savingTeam;
   const canSaveMeetDefaults = meetDefaultsDirty && !savingMeetDefaults;
+  const sanitizedTeamColor = teamColor.trim();
 
   const uploadLogo = async (file: File | null) => {
     if (!file || !teamId) return;
@@ -431,14 +433,17 @@ export default function CoachMyTeamPage() {
     const payload = {
       homeTeamPreferSameMat,
       numMats,
-      rules: normalizedRules.map(rule => ({
-        matIndex: rule.matIndex,
-        color: rule.color?.trim() || null,
-        minExperience: rule.minExperience,
-        maxExperience: rule.maxExperience,
-        minAge: rule.minAge,
-        maxAge: rule.maxAge,
-      })),
+      rules: normalizedRules.map(rule => {
+        const trimmedColor = rule.color?.trim();
+        return {
+          matIndex: rule.matIndex,
+          color: trimmedColor && trimmedColor.length > 0 ? trimmedColor : null,
+          minExperience: rule.minExperience,
+          maxExperience: rule.maxExperience,
+          minAge: rule.minAge,
+          maxAge: rule.maxAge,
+        };
+      }),
     };
     const res = await fetch(`/api/teams/${teamId}/mat-rules`, {
       method: "PUT",
@@ -508,10 +513,10 @@ export default function CoachMyTeamPage() {
       prev.map((rule, index) =>
         index !== idx
           ? rule
-          : {
-              ...rule,
-              [field]: typeof value === "number" ? value : value === null ? null : value,
-            },
+      : {
+          ...rule,
+          [field]: typeof value === "number" ? value : value ?? null,
+        },
       ),
     );
   };
@@ -711,14 +716,21 @@ export default function CoachMyTeamPage() {
               <div className="color-field color-inline">
                 <span className="color-field-label">Color</span>
                 <div className="color-actions">
-                  <ColorPicker
-                    value={teamColor}
-                    onChange={handleTeamColorChange}
-                    idPrefix="team-color"
-                    buttonClassName="color-swatch"
-                    buttonStyle={{ backgroundColor: teamColor || "#ffffff", width: 44, height: 32 }}
-                    showNativeColorInput={true}
-                  />
+                    <ColorPicker
+                      value={teamColor}
+                      onChange={handleTeamColorChange}
+                      idPrefix="team-color"
+                      buttonClassName="color-swatch"
+                      buttonStyle={{
+                        backgroundColor:
+                          sanitizedTeamColor && sanitizedTeamColor.length > 0
+                            ? sanitizedTeamColor
+                            : "#ffffff",
+                        width: 44,
+                        height: 32,
+                      }}
+                      showNativeColorInput={true}
+                    />
                 </div>
               </div>
             </div>
@@ -809,22 +821,26 @@ export default function CoachMyTeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {rules.map((rule, idx) => (
-                  <tr key={rule.matIndex}>
-                    <td>
-                    <span>{rule.matIndex}</span>
-                    </td>
-                    <td>
-                      <div className="color-actions">
-                        <ColorPicker
-                          value={rule.color ?? ""}
-                          onChange={(next) => updateRule(idx, "color", next)}
-                          idPrefix={`mat-color-${rule.matIndex}-${idx}`}
-                          buttonClassName="color-swatch"
-                          buttonStyle={{ backgroundColor: rule.color || "#ffffff", width: 32, height: 32 }}
-                        />
-                      </div>
-                    </td>
+                {rules.map((rule, idx) => {
+                  const trimmedRuleColor = rule.color?.trim();
+                  const matSwatchColor =
+                    trimmedRuleColor && trimmedRuleColor.length > 0 ? trimmedRuleColor : "#ffffff";
+                  return (
+                    <tr key={rule.matIndex}>
+                      <td>
+                        <span>{rule.matIndex}</span>
+                      </td>
+                      <td>
+                        <div className="color-actions">
+                          <ColorPicker
+                            value={rule.color ?? ""}
+                            onChange={(next) => updateRule(idx, "color", next)}
+                            idPrefix={`mat-color-${rule.matIndex}-${idx}`}
+                            buttonClassName="color-swatch"
+                            buttonStyle={{ backgroundColor: matSwatchColor, width: 32, height: 32 }}
+                          />
+                        </div>
+                      </td>
                     <td>
                       <NumberInput
                         min={0}
@@ -862,7 +878,8 @@ export default function CoachMyTeamPage() {
                       />
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

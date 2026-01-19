@@ -22,7 +22,7 @@ export async function GET() {
     },
   });
   if (!full) return NextResponse.json({ error: "User not found" }, { status: 404 });
-  const teamLabel = full.team ? `${full.team.name} (${full.team.symbol ?? ""})`.trim() : null;
+  const teamLabel = full.team ? `${full.team.name} (${full.team.symbol})`.trim() : null;
   return NextResponse.json({
     username: full.username,
     email: full.email,

@@ -12,6 +12,12 @@ const TeamSchema = z.object({
   website: z.string().trim().url().optional().or(z.literal("")),
 });
 
+function normalizeNullableString(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 async function ensureSession() {
   try {
     await requireSession();
@@ -65,8 +71,8 @@ export async function POST(req: Request) {
       name: parsed.name.trim(),
       symbol: parsed.symbol.trim().toUpperCase(),
       color: parsed.color?.trim() ?? "#000000",
-      address: parsed.address?.trim() || null,
-      website: parsed.website?.trim() || null,
+      address: normalizeNullableString(parsed.address),
+      website: normalizeNullableString(parsed.website),
     },
   });
   return NextResponse.json(team);

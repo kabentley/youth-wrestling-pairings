@@ -56,14 +56,31 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
   ];
 
 function defaultMatRule(index: number): MatRule {
-  const preset = DEFAULT_MAT_RULES[index] ?? DEFAULT_MAT_RULES[DEFAULT_MAT_RULES.length - 1];
+  const fallback: MatRule = {
+    matIndex: index + 1,
+    color: "",
+    minExperience: 0,
+    maxExperience: 5,
+    minAge: 0,
+    maxAge: 20,
+  };
+
+  if (DEFAULT_MAT_RULES.length === 0) {
+    return fallback;
+  }
+
+  const safeIndex = Math.min(
+    Math.max(0, index),
+    DEFAULT_MAT_RULES.length - 1,
+  );
+  const preset = DEFAULT_MAT_RULES[safeIndex];
   return {
     matIndex: index + 1,
-    color: preset.color ?? "",
-    minExperience: preset.minExperience ?? 0,
-    maxExperience: preset.maxExperience ?? 5,
-    minAge: preset.minAge ?? 0,
-    maxAge: preset.maxAge ?? 20,
+    color: preset.color ?? fallback.color,
+    minExperience: preset.minExperience,
+    maxExperience: preset.maxExperience,
+    minAge: preset.minAge,
+    maxAge: preset.maxAge,
   };
 }
 

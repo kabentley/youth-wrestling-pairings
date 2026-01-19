@@ -22,7 +22,11 @@ export default function SignInClient() {
   const [info, setInfo] = useState("");
   const [resendEmail, setResendEmail] = useState("");
   const [bypassEmailVerification, setBypassEmailVerification] = useState(process.env.NODE_ENV !== "production");
-  const [oauthProviders, setOauthProviders] = useState<Record<string, { id: string }>>({});
+  type OauthProviderKey = "google" | "apple" | "facebook";
+  const providerKeys: OauthProviderKey[] = ["google", "apple", "facebook"];
+  const [oauthProviders, setOauthProviders] = useState<Partial<Record<OauthProviderKey, { id: string }>>>({});
+
+  const hasOauthProviders = providerKeys.some(key => Boolean(oauthProviders[key]));
 
   useEffect(() => {
     let active = true;
@@ -43,7 +47,7 @@ export default function SignInClient() {
       .then(res => res.ok ? res.json() : {})
       .then(json => {
         if (!active) return;
-        setOauthProviders(json ?? {});
+        setOauthProviders(json);
       })
       .catch(() => {});
     return () => { active = false; };
@@ -330,7 +334,7 @@ export default function SignInClient() {
               </button>
               {err && <div className="error">{err}</div>}
               {info && <div style={{ color: "#2e7d32", fontSize: 12, marginTop: 6 }}>{info}</div>}
-              {(oauthProviders.google || oauthProviders.apple || oauthProviders.facebook) && (
+            {hasOauthProviders && (
                 <div className="center-links" style={{ marginTop: 12 }}>
                   <div style={{ marginBottom: 8 }}>Or sign in with</div>
                   <div style={{ display: "grid", gap: 8 }}>

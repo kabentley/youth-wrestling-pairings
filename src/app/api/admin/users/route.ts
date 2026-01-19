@@ -101,9 +101,9 @@ export async function POST(req: Request) {
       email,
       username: user.username,
       tempPassword,
-      teamLabel: team ? `${team.name} (${team.symbol ?? ""})`.trim() : null,
+      teamLabel: team ? `${team.name} (${team.symbol})`.trim() : null,
     });
-  } catch (err) {
+  } catch {
     if (process.env.NODE_ENV === "production") {
       return NextResponse.json({ error: "User created, but the welcome email could not be sent." }, { status: 201 });
     }
@@ -132,7 +132,7 @@ async function sendWelcomeEmail(
   const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const link = `${origin}/auth/signin`;
   const league = await db.league.findFirst({ select: { name: true } });
-  const leagueName = league?.name?.trim() || "the league";
+  const leagueName = league?.name?.trim() ?? "the league";
   const teamLine = teamLabel ? `Team: ${teamLabel}\n` : "";
   const key = process.env.SENDGRID_API_KEY;
   const from = process.env.SENDGRID_FROM;
