@@ -16,8 +16,6 @@ const SettingsSchema = z.object({
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
-  balanceTeamPairs: z.boolean().default(true),
-  balancePenalty: z.number().min(0).default(0.25),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {

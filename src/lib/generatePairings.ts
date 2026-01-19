@@ -18,10 +18,6 @@ export type PairingSettings = {
   /** If true, allow matchups within the same team. */
   allowSameTeamMatches: boolean;
 
-  /** If true, apply a penalty to over-used team-vs-team pairings. */
-  balanceTeamPairs: boolean;
-  /** Weight applied to the "balanceTeamPairs" penalty. */
-  balancePenalty: number;
   /** Target matches per wrestler for this generation pass. */
   matchesPerWrestler?: number;
   /** Upper bound for matches per wrestler (hard cap per generation pass). */
@@ -65,22 +61,9 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   const wrestlers = meetTeams
     .flatMap(mt => mt.team.wrestlers)
     .filter(w => w.active && !absentIds.has(w.id));
-  const wrestlerMap = new Map(wrestlers.map(w => [w.id, w]));
-
   const matchCounts = new Map<string, number>();
   const paired = new Set<string>();
 
-  const pairCount = new Map<string, number>();
-  function teamPairKey(t1: string, t2: string) {
-    return t1 < t2 ? `${t1}|${t2}` : `${t2}|${t1}`;
-  }
-  function bumpPair(t1: string, t2: string) {
-    const k = teamPairKey(t1, t2);
-    pairCount.set(k, (pairCount.get(k) ?? 0) + 1);
-  }
-  function getPairCount(t1: string, t2: string) {
-    return pairCount.get(teamPairKey(t1, t2)) ?? 0;
-  }
 
   const existingBouts = await db.bout.findMany({
     where: { meetId },
@@ -90,11 +73,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     matchCounts.set(bout.redId, (matchCounts.get(bout.redId) ?? 0) + 1);
     matchCounts.set(bout.greenId, (matchCounts.get(bout.greenId) ?? 0) + 1);
     paired.add(pairKey(bout.redId, bout.greenId));
-    const red = wrestlerMap.get(bout.redId);
-    const green = wrestlerMap.get(bout.greenId);
-    if (red && green) {
-      bumpPair(red.teamId, green.teamId);
-    }
   }
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);
@@ -147,64 +125,86 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   function pairKey(a: string, b: string) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
-  function pickMatches(allowSameTeam: boolean) {
-    let made = true;
-    while (made) {
-      made = false;
-      for (let i = 0; i < pool.length; i++) {
-      const a = pool[i];
-      const currentA = matchCounts.get(a.id) ?? 0;
-      if (currentA >= maxMatches) continue;
-      const needA = matchesNeeded(a.id);
+  const wrestlersByTeam = new Map<string, typeof pool>();
+  for (const mt of meetTeams) {
+    const teamWrestlers = mt.team.wrestlers
+      .filter(w => w.active && !absentIds.has(w.id))
+      .sort((a, b) => a.weight - b.weight || a.last.localeCompare(b.last) || a.first.localeCompare(b.first));
+    wrestlersByTeam.set(mt.teamId, teamWrestlers);
+  }
 
-        let bestJ = -1;
-        let bestScore = Number.POSITIVE_INFINITY;
-        let bestNotes = "";
-
-        for (let j = i + 1; j < Math.min(pool.length, i + 20); j++) {
-          const b = pool[j];
-        const currentB = matchCounts.get(b.id) ?? 0;
-        if (currentB >= maxMatches) continue;
-        const needB = matchesNeeded(b.id);
-        if (needA <= 0 && needB <= 0) continue;
-          if (!eligible(a, b, allowSameTeam)) continue;
+  for (const mt of meetTeams) {
+    const teamRoster = wrestlersByTeam.get(mt.teamId) ?? [];
+    for (const a of teamRoster) {
+      let currentA = matchCounts.get(a.id) ?? 0;
+      while (currentA < maxMatches && matchesNeeded(a.id) > 0) {
+        const candidates: { b: typeof a; score: number; notes: string; count: number }[] = [];
+        for (const b of pool) {
+          if (a.id === b.id) continue;
+          const currentB = matchCounts.get(b.id) ?? 0;
+          if (currentB >= maxMatches) continue;
+          if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
           if (paired.has(pairKey(a.id, b.id))) continue;
-
           const d = baseScore(a, b);
-
-          let penalty = 0;
-          if (settings.balanceTeamPairs && a.teamId !== b.teamId) {
-            const c = getPairCount(a.teamId, b.teamId);
-            penalty += settings.balancePenalty * c;
-          }
-          if (a.teamId === b.teamId) penalty += 10;
-
-          const score = d.score + penalty;
-
-          if (score < bestScore) {
-            bestScore = score;
-            bestJ = j;
-            bestNotes =
-              `wDiff=${d.wDiff.toFixed(1)} ageGapDays=${d.ageGap} expGap=${d.expGap} skillGap=${d.skillGap} wPct=${d.wPct.toFixed(1)}%` +
-              (penalty ? ` penalty=${penalty.toFixed(2)}` : "");
-          }
+          candidates.push({
+            b,
+            score: d.score,
+            count: currentB,
+            notes: `wDiff=${d.wDiff.toFixed(1)} ageGapDays=${d.ageGap} expGap=${d.expGap} skillGap=${d.skillGap} wPct=${d.wPct.toFixed(1)}%`,
+          });
         }
-
-        if (bestJ >= 0) {
-          const b = pool[bestJ];
-          matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
-          matchCounts.set(b.id, (matchCounts.get(b.id) ?? 0) + 1);
-          paired.add(pairKey(a.id, b.id));
-          newBouts.push({ redId: a.id, greenId: b.id, score: bestScore, notes: bestNotes });
-          if (a.teamId !== b.teamId) bumpPair(a.teamId, b.teamId);
-          made = true;
-        }
+        candidates.sort((x, y) => (x.score - y.score) || (x.count - y.count));
+        if (candidates.length === 0) break;
+        const pick = candidates[0];
+        matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
+        matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
+        paired.add(pairKey(a.id, pick.b.id));
+        newBouts.push({ redId: a.id, greenId: pick.b.id, score: pick.score, notes: pick.notes });
+        currentA += 1;
       }
     }
   }
 
-  pickMatches(false);
-  if (settings.allowSameTeamMatches) pickMatches(true);
+  function fillZeroMatches() {
+    let made = true;
+    while (made) {
+      made = false;
+      const zeroes = pool.filter(w => (matchCounts.get(w.id) ?? 0) === 0);
+      if (zeroes.length === 0) return;
+      for (const a of zeroes) {
+        const currentA = matchCounts.get(a.id) ?? 0;
+        if (currentA >= maxMatches) continue;
+        const candidates: { b: typeof a; score: number; notes: string; count: number }[] = [];
+        for (const b of pool) {
+          if (a.id === b.id) continue;
+          const currentB = matchCounts.get(b.id) ?? 0;
+          if (currentB >= maxMatches) continue;
+          if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
+          if (paired.has(pairKey(a.id, b.id))) continue;
+          const d = baseScore(a, b);
+          candidates.push({
+            b,
+            score: d.score,
+            count: currentB,
+            notes: `wDiff=${d.wDiff.toFixed(1)} ageGapDays=${d.ageGap} expGap=${d.expGap} skillGap=${d.skillGap} wPct=${d.wPct.toFixed(1)}%`,
+          });
+        }
+        if (candidates.length === 0) continue;
+        const zeroCandidates = candidates.filter(c => c.count === 0);
+        const usable = zeroCandidates.length > 0 ? zeroCandidates : candidates;
+        usable.sort((x, y) => (x.score - y.score) || (x.count - y.count));
+        if (usable.length === 0) continue;
+        const pick = usable[0];
+        matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
+        matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
+        paired.add(pairKey(a.id, pick.b.id));
+        newBouts.push({ redId: a.id, greenId: pick.b.id, score: pick.score, notes: pick.notes });
+        made = true;
+      }
+    }
+  }
+
+  fillZeroMatches();
 
   let removedExtra = true;
   while (removedExtra) {

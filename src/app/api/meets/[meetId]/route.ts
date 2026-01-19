@@ -176,6 +176,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
       where: { id: meetId },
       data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
     });
+  } else if (meet.lockedById && !meet.lockExpiresAt) {
+    await db.meet.update({
+      where: { id: meetId },
+      data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
+    });
   } else if (meet.lockedById && meet.lockedById !== user.id) {
     return NextResponse.json(
       {

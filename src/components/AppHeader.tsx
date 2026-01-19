@@ -250,6 +250,53 @@ export default function AppHeader({
           padding: 4px 8px;
           font-size: 12px;
         }
+        @media (max-width: 1600px) {
+          .app-header {
+            gap: 8px;
+            padding-bottom: 8px;
+          }
+          .app-header-left {
+            gap: 8px;
+            flex-wrap: wrap;
+          }
+          .app-header-link {
+            font-size: 12px;
+            padding: 4px 8px;
+          }
+          .app-header-brand {
+            gap: 4px;
+            padding-right: 6px;
+            margin-right: 4px;
+          }
+          .app-header-brand-logo,
+          .app-header-brand-placeholder {
+            width: 32px;
+            height: 32px;
+          }
+          .app-header-brand-name {
+            font-size: 12px;
+            letter-spacing: 0.3px;
+          }
+          .app-header-actions {
+            gap: 6px;
+            flex-wrap: wrap;
+          }
+          .app-header-btn {
+            padding: 4px 10px;
+            font-size: 12px;
+          }
+          .app-header-team-chip {
+            font-size: 11px;
+          }
+          .app-header-team-logo {
+            width: 18px;
+            height: 18px;
+          }
+          .app-header-select {
+            font-size: 11px;
+            padding: 4px 6px;
+          }
+        }
       `}</style>
       <div className="app-header-left">
         {showBrand && (

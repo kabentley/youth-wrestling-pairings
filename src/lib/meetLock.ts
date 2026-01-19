@@ -45,6 +45,13 @@ export async function requireMeetLock(meetId: string, userId: string) {
     });
     return;
   }
+  if (meet.lockedById && !meet.lockExpiresAt) {
+    await db.meet.update({
+      where: { id: meetId },
+      data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
+    });
+    return;
+  }
 
   if (meet.lockedById && meet.lockedById !== userId) {
     const err = new Error("MEET_LOCKED") as Error & MeetLockInfo;

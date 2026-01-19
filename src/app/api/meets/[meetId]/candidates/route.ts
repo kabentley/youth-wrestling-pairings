@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
+import { DEFAULT_MAX_AGE_GAP_DAYS, MAX_MATCHES_PER_WRESTLER } from "@/lib/constants";
 import { db } from "@/lib/db";
 
 const boolFromQuery = z.preprocess((value) => {
@@ -19,6 +19,7 @@ const QuerySchema = z.object({
 
   maxAgeGapDays: z.coerce.number().min(0).default(DEFAULT_MAX_AGE_GAP_DAYS),
   maxWeightDiffPct: z.coerce.number().min(0).default(12),
+  enforceAgeGap: boolFromQuery.default(true),
   firstYearOnlyWithFirstYear: boolFromQuery.default(true),
   allowSameTeamMatches: boolFromQuery.default(false),
 });
@@ -36,6 +37,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   const { meetId } = await params;
   const url = new URL(req.url);
   const q = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { matchesPerWrestler: true, maxMatchesPerWrestler: true },
+  });
+  const maxMatches = Math.min(
+    MAX_MATCHES_PER_WRESTLER,
+    Math.max(1, Math.floor(meet?.maxMatchesPerWrestler ?? MAX_MATCHES_PER_WRESTLER)),
+  );
 
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
@@ -78,12 +87,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   const currentBouts = await db.bout.findMany({
     where: {
       meetId,
-      OR: [{ redId: target.id }, { greenId: target.id }],
     },
     select: { redId: true, greenId: true },
   });
   const currentOpponentIds = new Set<string>();
+  const matchCounts = new Map<string, number>();
   for (const b of currentBouts) {
+    matchCounts.set(b.redId, (matchCounts.get(b.redId) ?? 0) + 1);
+    matchCounts.set(b.greenId, (matchCounts.get(b.greenId) ?? 0) + 1);
     const opponentId = b.redId === target.id ? b.greenId : b.redId;
     currentOpponentIds.add(opponentId);
   }
@@ -91,10 +102,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   const rows: any[] = [];
   for (const opp of wrestlers) {
     if (opp.id === target.id) continue;
+    if ((matchCounts.get(opp.id) ?? 0) >= maxMatches) continue;
     if (currentOpponentIds.has(opp.id)) continue;
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
+    if (q.enforceAgeGap && ageGapDays > q.maxAgeGapDays) continue;
 
     const wPct = weightPctDiff(target.weight, opp.weight);
     if (wPct > q.maxWeightDiffPct) continue;

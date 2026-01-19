@@ -93,6 +93,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     );
   }
 
+  if (process.env.LOCK_ACTIVITY_LOG === "true") {
+    console.log("meet-lock-acquire", {
+      meetId,
+      userId: user.id,
+      role: user.role,
+      at: new Date().toISOString(),
+    });
+  }
   return NextResponse.json({
     locked: true,
     lockedByUsername: null,
@@ -117,9 +125,39 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
       ? { id: meetId }
       : { id: meetId, lockedById: user.id };
 
-  await db.meet.updateMany({
+  const updated = await db.meet.updateMany({
     where,
     data: { lockedById: null, lockedAt: null, lockExpiresAt: null },
   });
+  if (updated.count === 0) {
+    const meet = await db.meet.findUnique({
+      where: { id: meetId },
+      select: {
+        lockedById: true,
+        lockedBy: { select: { username: true } },
+        lockExpiresAt: true,
+      },
+    });
+    if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    if (meet.lockedById) {
+      return NextResponse.json(
+        {
+          error: "Meet is locked",
+          lockedByUsername: meet.lockedBy ? meet.lockedBy.username : null,
+          lockExpiresAt: meet.lockExpiresAt ?? null,
+        },
+        { status: 409 },
+      );
+    }
+  }
+  if (process.env.LOCK_ACTIVITY_LOG === "true") {
+    console.log("meet-lock-release", {
+      meetId,
+      userId: user.id,
+      role: user.role,
+      at: new Date().toISOString(),
+      reason: new URL(_req.url).searchParams.get("reason") ?? null,
+    });
+  }
   return NextResponse.json({ ok: true });
 }

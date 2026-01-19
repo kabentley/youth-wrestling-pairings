@@ -21,6 +21,7 @@ const MeetSchema = z.object({
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
   restGap: z.number().int().min(0).max(20).default(4),
+  autoPairings: z.boolean().optional().default(true),
 });
 
 export async function GET() {
@@ -110,22 +111,22 @@ export async function POST(req: Request) {
   });
 
   await logMeetChange(meet.id, user.id, "Meet created.");
-  const pairingSettings = {
-    maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
-    maxWeightDiffPct: 12,
-    firstYearOnlyWithFirstYear: true,
-    allowSameTeamMatches: parsed.allowSameTeamMatches,
-    matchesPerWrestler: parsed.matchesPerWrestler,
-    maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
-    balanceTeamPairs: true,
-    balancePenalty: 0.25,
-  };
-  await generatePairingsForMeet(meet.id, pairingSettings);
-  await logMeetChange(meet.id, user.id, "Auto-generated pairings.");
-  await assignMatsForMeet(meet.id, { numMats: parsed.numMats });
-  await logMeetChange(meet.id, user.id, "Auto-assigned mats.");
-  await reorderBoutsForMeet(meet.id, { numMats: parsed.numMats, conflictGap: parsed.restGap });
-  await logMeetChange(meet.id, user.id, "Auto-reordered mats.");
+  if (parsed.autoPairings) {
+    const pairingSettings = {
+      maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
+      maxWeightDiffPct: 12,
+      firstYearOnlyWithFirstYear: true,
+      allowSameTeamMatches: parsed.allowSameTeamMatches,
+      matchesPerWrestler: parsed.matchesPerWrestler,
+      maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
+    };
+    await generatePairingsForMeet(meet.id, pairingSettings);
+    await logMeetChange(meet.id, user.id, "Auto-generated pairings.");
+    await assignMatsForMeet(meet.id, { numMats: parsed.numMats });
+    await logMeetChange(meet.id, user.id, "Auto-assigned mats.");
+    await reorderBoutsForMeet(meet.id, { numMats: parsed.numMats, conflictGap: parsed.restGap });
+    await logMeetChange(meet.id, user.id, "Auto-reordered mats.");
+  }
 
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });

@@ -192,6 +192,7 @@ export default function MeetsPage() {
         matchesPerWrestler,
         maxMatchesPerWrestler,
         restGap,
+        autoPairings: false,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -235,7 +236,7 @@ export default function MeetsPage() {
       } else {
         const created = await addMeet();
         if (created?.id) {
-          router.push(`/meets/${created.id}?edit=1`);
+          router.push(`/meets/${created.id}?edit=1&autopair=1`);
         }
       }
       closeCreateModal({ skipCreateQueryCleanup: true });
@@ -251,6 +252,11 @@ export default function MeetsPage() {
       const res = await fetch(`/api/meets/${id}`, { method: "DELETE" });
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
+        if (payload?.error === "Meet is locked") {
+          const lockedBy = payload?.lockedByUsername ? `Locked by ${payload.lockedByUsername}.` : "Locked by another user.";
+          const expiresAt = payload?.lockExpiresAt ? ` Expires ${new Date(payload.lockExpiresAt).toLocaleString()}.` : "";
+          throw new Error(`${payload.error}. ${lockedBy}${expiresAt}`);
+        }
         throw new Error(payload?.error ?? "Unable to delete meet.");
       }
       await load();
@@ -500,9 +506,17 @@ export default function MeetsPage() {
           padding: 18px;
           box-shadow: 0 10px 24px rgba(0,0,0,0.08);
         }
+        .card-header-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          margin-bottom: 10px;
+        }
         .card-title {
           font-family: "Oswald", Arial, sans-serif;
-          margin: 0 0 10px;
+          margin: 0;
           text-transform: uppercase;
           display: flex;
           align-items: center;
@@ -758,7 +772,14 @@ export default function MeetsPage() {
 
       <div className="grid">
         <section className="card">
-          <h2 className="card-title">Existing Meets</h2>
+          <div className="card-header-row">
+            <h2 className="card-title">Existing Meets</h2>
+            {canManageMeets && (
+              <button className="btn" type="button" onClick={() => setIsCreateModalOpen(true)}>
+                Create New Meet
+              </button>
+            )}
+          </div>
           <div className="meet-list">
             {visibleMeets.map(m => (
               <div key={m.id} className="meet-item">

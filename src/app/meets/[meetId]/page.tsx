@@ -108,6 +108,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const router = useRouter();
   const searchParams = useSearchParams();
   const editRequested = searchParams.get("edit") === "1";
+  const autoPairingsRequested = searchParams.get("autopair") === "1";
+  const [autoPairingsPending, setAutoPairingsPending] = useState(false);
   const [wantsEdit, setWantsEdit] = useState(editRequested);
   const daysPerYear = DAYS_PER_YEAR;
 
@@ -128,11 +130,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [comments, setComments] = useState<MeetComment[]>([]);
   const [showComments, setShowComments] = useState(false);
   const [commentBody, setCommentBody] = useState("");
-  const [commentSection, setCommentSection] = useState("General");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 90]);
+  const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(90);
   const [currentBoutColWidth, setCurrentBoutColWidth] = useState(90);
   const [availableTeamColWidth, setAvailableTeamColWidth] = useState(90);
@@ -182,10 +185,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const currentSort = useMemo(() => ({ key: "last", dir: "asc" as const }), []);
   const [availableSort, setAvailableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "score", dir: "asc" });
   const [authMsg, setAuthMsg] = useState("");
+  const [lockActionError, setLockActionError] = useState<string | null>(null);
   const [editAllowed, setEditAllowed] = useState(true);
   const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const lockStatusRef = useRef<LockState["status"]>("loading");
   const prevLockStatusRef = useRef<LockState["status"]>("loading");
+  const isUnmountingRef = useRef(false);
+  const suppressEditRequestedRef = useRef(false);
   const [flashNotice, setFlashNotice] = useState(false);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -199,6 +205,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [settings, setSettings] = useState({
     maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
     maxWeightDiffPct: 12,
+    enforceAgeGapCheck: true,
     enforceWeightCheck: true,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
@@ -210,6 +217,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+  const [autoPairingsTeamId, setAutoPairingsTeamId] = useState<string | null>(null);
+  const [autoPairingsPrompted, setAutoPairingsPrompted] = useState(false);
 
   async function rerunAutoPairings() {
     setAutoPairingsError(null);
@@ -250,6 +259,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showAttendance, setShowAttendance] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [showAddWrestler, setShowAddWrestler] = useState(false);
   const [newWrestlerFirst, setNewWrestlerFirst] = useState("");
   const [newWrestlerLast, setNewWrestlerLast] = useState("");
@@ -288,7 +298,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
-  const updateEditMode = useCallback((next: boolean) => {
+  const updateEditMode = useCallback((next: boolean, _reason?: string) => {
+    if (!next) {
+      suppressEditRequestedRef.current = true;
+    }
     setWantsEdit(next);
     router.replace(next ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`);
   }, [meetId, router]);
@@ -314,20 +327,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, []);
 
   const updateLockState = useCallback((next: LockState) => {
-    const prev = prevLockStatusRef.current;
     prevLockStatusRef.current = next.status;
     lockStatusRef.current = next.status;
     setLockState(next);
+    if (next.status === "acquired") {
+      setLockActionError(null);
+    }
     if (next.status !== "acquired") {
       clearInactivityTimer();
     }
-    if (prev === "acquired" && next.status !== "acquired" && wantsEdit) {
-      updateEditMode(false);
-    }
-  }, [clearInactivityTimer, updateEditMode, wantsEdit]);
+  }, [clearInactivityTimer]);
 
-  const releaseLock = useCallback(() => {
-    fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
+  const releaseLock = useCallback(async (reason?: string, keepalive = false) => {
+    const url = reason
+      ? `/api/meets/${meetId}/lock?reason=${encodeURIComponent(reason)}`
+      : `/api/meets/${meetId}/lock`;
+    try {
+      const res = await fetch(url, { method: "DELETE", keepalive });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const lockedBy = payload?.lockedByUsername ? ` Locked by ${payload.lockedByUsername}.` : "";
+        const expiresAt = payload?.lockExpiresAt ? ` Expires ${new Date(payload.lockExpiresAt).toLocaleString()}.` : "";
+        const message = payload?.error ?? `Unable to release lock (${res.status}).`;
+        return { ok: false, message: `${message}${lockedBy}${expiresAt}` };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, message: "Unable to reach the server to release the lock." };
+    }
   }, [meetId]);
 
   const resetInactivityTimer = useCallback(() => {
@@ -335,7 +362,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     inactivityDeadlineRef.current = Date.now() + INACTIVITY_RELEASE_MS;
     setInactivityRemainingMs(INACTIVITY_RELEASE_MS);
     inactivityTimerRef.current = setTimeout(() => {
-      releaseLock();
+      void releaseLock("inactivity-timeout");
       updateLockState({ status: "locked", lockedByUsername: null });
     }, INACTIVITY_RELEASE_MS);
   }, [clearInactivityTimer, releaseLock, updateLockState]);
@@ -353,6 +380,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       clearInactivityTimer();
     };
   }, [clearInactivityTimer]);
+  useEffect(() => {
+    return () => {
+      isUnmountingRef.current = true;
+    };
+  }, []);
 
   async function acquireLock() {
     const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
@@ -364,6 +396,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const json = await res.json().catch(() => ({}));
       setAuthMsg(json?.error ?? "You are not authorized to edit this meet.");
       setEditAllowed(false);
+      return false;
+    }
+    if (res.status === 404) {
+      if (!meetDeletedRef.current) {
+        meetDeletedRef.current = true;
+        setMeetDeletedNotice(true);
+        setTimeout(() => {
+          router.replace("/meets");
+        }, 1500);
+      }
       return false;
     }
     if (res.ok) {
@@ -566,6 +608,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const meJson = await meRes.json().catch(() => ({}));
       setCurrentUserRole(meJson?.role ?? null);
       setCurrentUserTeamId(meJson?.teamId ?? null);
+      setCurrentUsername(meJson?.username ?? null);
     }
   }, [meetId, router]);
 
@@ -615,18 +658,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
   }, [homeTeamId]);
   useEffect(() => {
-    setWantsEdit(editRequested);
-  }, [editRequested]);
-  useEffect(() => {
-    const handleFocus = () => {
-      void load();
-      void loadActivity();
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [load, loadActivity]);
+    if (!editRequested) {
+      suppressEditRequestedRef.current = false;
+      return;
+    }
+    if (!wantsEdit && !suppressEditRequestedRef.current) {
+      setWantsEdit(true);
+    }
+  }, [editRequested, wantsEdit]);
+  // Avoid automatic reloads on tab visibility changes.
   useEffect(() => {
     if (teams.length === 0) {
       if (activeTeamId) setActiveTeamId(null);
@@ -715,13 +755,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   useEffect(() => {
     if (!editAllowed || !meetLoaded) return;
     if (meetStatus !== "DRAFT") {
-      if (lockStatusRef.current === "acquired") releaseLock();
       lockStatusRef.current = "locked";
       updateLockState({ status: "locked", lockedByUsername: null });
       return;
     }
     if (!wantsEdit) {
-      if (lockStatusRef.current === "acquired") releaseLock();
       void refreshLockStatus();
       const interval = setInterval(() => {
         void refreshLockStatus();
@@ -737,12 +775,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         void acquireLock();
       }
     }, 60_000);
-    const onBeforeUnload = () => releaseLock();
+    const onBeforeUnload = () => { void releaseLock("beforeunload", true); };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       clearInterval(interval);
       window.removeEventListener("beforeunload", onBeforeUnload);
-      releaseLock();
+      if (isUnmountingRef.current) {
+        void releaseLock("unmount", true);
+      }
     };
   }, [meetId, editAllowed, meetLoaded, meetStatus, wantsEdit, refreshLockStatus, triggerNoticeFlash]);
 
@@ -771,7 +811,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (document.hidden) return;
       const deadline = inactivityDeadlineRef.current;
       if (deadline && Date.now() >= deadline) {
-        releaseLock();
+        void releaseLock("visibility-inactivity");
         updateLockState({ status: "locked", lockedByUsername: null });
         return;
       }
@@ -804,6 +844,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return () => clearInterval(interval);
   }, [wantsEdit, lockState.status]);
 
+  const sortAttendanceRoster = useCallback((roster: Wrestler[]) => {
+    return [...roster].sort((a, b) => {
+      const getValue = (w: Wrestler) => {
+        if (attendanceSort.key === "last") return w.last;
+        if (attendanceSort.key === "first") return w.first;
+        if (attendanceSort.key === "status") return statusLabel(w.status ?? null);
+        return "";
+      };
+      return sortValueCompare(getValue(a), getValue(b), attendanceSort.dir);
+    });
+  }, [attendanceSort]);
+
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   const rosterSorted = [...wrestlers].sort((a, b) => {
@@ -814,22 +866,84 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (last !== 0) return last;
     return a.first.localeCompare(b.first);
   });
-  const attendanceTeamId = pairingsTeamId ?? activeTeamId;
+  const attendanceTeamId: string | null = pairingsTeamId ?? activeTeamId;
   const attendanceRoster = attendanceTeamId
     ? rosterSorted.filter(w => w.teamId === attendanceTeamId)
     : rosterSorted;
-  const attendanceSorted = [...attendanceRoster].sort((a, b) => {
-    const getValue = (w: Wrestler) => {
-      if (attendanceSort.key === "last") return w.last;
-      if (attendanceSort.key === "first") return w.first;
-      if (attendanceSort.key === "status") return statusLabel(w.status ?? null);
-      return "";
-    };
-    return sortValueCompare(getValue(a), getValue(b), attendanceSort.dir);
-  });
+  const attendanceSorted = useMemo(
+    () => sortAttendanceRoster(attendanceRoster),
+    [attendanceRoster, sortAttendanceRoster],
+  );
+  const modalAttendanceTeamId = autoPairingsTeamId ?? attendanceTeamId;
+  const modalAttendanceRoster = modalAttendanceTeamId
+    ? rosterSorted.filter(w => w.teamId === modalAttendanceTeamId)
+    : rosterSorted;
+  const modalAttendanceSorted = useMemo(
+    () => sortAttendanceRoster(modalAttendanceRoster),
+    [modalAttendanceRoster, sortAttendanceRoster],
+  );
   const attendingByTeam = pairingsTeamId
     ? rosterSorted.filter(w => w.teamId === pairingsTeamId && !isNotAttending(w.status))
     : rosterSorted.filter(w => !isNotAttending(w.status));
+  useEffect(() => {
+    if (autoPairingsPrompted) return;
+    if (!meetLoaded || bouts.length > 0) return;
+    if (meetStatus !== "DRAFT") return;
+    if (!autoPairingsPending) return;
+    setAutoPairingsPrompted(true);
+    setAutoPairingsPending(false);
+    setAutoPairingsError(null);
+    setShowAutoPairingsModal(true);
+    if (autoPairingsRequested) {
+      const nextUrl = editRequested ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`;
+      router.replace(nextUrl);
+    }
+  }, [
+    autoPairingsPrompted,
+    meetLoaded,
+    bouts.length,
+    meetStatus,
+    autoPairingsPending,
+    autoPairingsRequested,
+    editRequested,
+    meetId,
+    router,
+  ]);
+  useEffect(() => {
+    if (!showAutoPairingsModal) return;
+    if (autoPairingsTeamId) return;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const nextTeamId = attendanceTeamId ?? orderedPairingsTeams[0]?.id ?? null;
+    setAutoPairingsTeamId(nextTeamId);
+  }, [showAutoPairingsModal, autoPairingsTeamId, attendanceTeamId, orderedPairingsTeams]);
+  useEffect(() => {
+    const wrapper = pairingsTableWrapperRef.current;
+    if (!wrapper) return;
+    const observer = new ResizeObserver(entries => {
+      setPairingsTableWidth(Math.floor(entries[0].contentRect.width));
+    });
+    observer.observe(wrapper);
+    setPairingsTableWidth(Math.floor(wrapper.getBoundingClientRect().width));
+    return () => observer.disconnect();
+  }, []);
+  const pairingsEffectiveColWidths = useMemo(() => {
+    if (pairingsTableWidth === null) return pairingsColWidths;
+    const totalWidth = pairingsColWidths.reduce((sum, w) => sum + w, 0);
+    if (totalWidth <= pairingsTableWidth) return pairingsColWidths;
+    const overflow = totalWidth - pairingsTableWidth;
+    const minNameWidth = 70;
+    const shrinkBy = Math.ceil(overflow / 2);
+    const lastWidth = Math.max(minNameWidth, pairingsColWidths[0] - shrinkBy);
+    const firstWidth = Math.max(minNameWidth, pairingsColWidths[1] - shrinkBy);
+    return [lastWidth, firstWidth, ...pairingsColWidths.slice(2)];
+  }, [pairingsColWidths, pairingsTableWidth]);
+  const matchCounts = bouts.reduce((acc, bout) => {
+    acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
+    acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
+    return acc;
+  }, new Map<string, number>());
+  const getMatchCount = (id: string) => matchCounts.get(id) ?? 0;
+
   const pairingsSorted = [...attendingByTeam].sort((a, b) => {
     const getValue = (w: Wrestler) => {
       if (pairingsSort.key === "last") return w.last;
@@ -838,17 +952,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (pairingsSort.key === "weight") return w.weight;
       if (pairingsSort.key === "exp") return w.experienceYears;
       if (pairingsSort.key === "skill") return w.skill;
-      if (pairingsSort.key === "matches") return matchCounts[w.id] ?? 0;
+      if (pairingsSort.key === "matches") return getMatchCount(w.id);
       return "";
     };
     return sortValueCompare(getValue(a), getValue(b), pairingsSort.dir);
   });
-  const matchCounts = bouts.reduce((acc, bout) => {
-    acc[bout.redId] = (acc[bout.redId] ?? 0) + 1;
-    acc[bout.greenId] = (acc[bout.greenId] ?? 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  const selectedMatchCount = selectedPairingId ? (matchCounts[selectedPairingId] ?? 0) : 0;
+  const selectedMatchCount = selectedPairingId ? getMatchCount(selectedPairingId) : 0;
 
   async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
     if (!wrestlerId) {
@@ -860,6 +969,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       wrestlerId,
       limit: "20",
       maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
+      enforceAgeGap: String(effectiveSettings.enforceAgeGapCheck),
       maxWeightDiffPct: String(effectiveSettings.enforceWeightCheck ? effectiveSettings.maxWeightDiffPct : 999),
       firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
       allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
@@ -921,6 +1031,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const candidateFetchConfig = useMemo(() => ({
     maxAgeGapDays: settings.maxAgeGapDays,
     maxWeightDiffPct: settings.maxWeightDiffPct,
+    enforceAgeGapCheck: settings.enforceAgeGapCheck,
     enforceWeightCheck: settings.enforceWeightCheck,
     firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
     allowSameTeamMatches: settings.allowSameTeamMatches,
@@ -928,6 +1039,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }), [
     settings.maxAgeGapDays,
     settings.maxWeightDiffPct,
+    settings.enforceAgeGapCheck,
     settings.enforceWeightCheck,
     settings.firstYearOnlyWithFirstYear,
     settings.allowSameTeamMatches,
@@ -946,14 +1058,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const { version: _version, ...query } = candidateFetchConfig;
     void loadCandidates(selectedPairingId, query);
   }, [selectedPairingId, candidateFetchConfig, maxMatchesPerWrestler, selectedMatchCount]);
-  const attendanceCounts = attendanceRoster.reduce(
-    (acc, w) => {
-      const status = w.status ?? null;
-      if (status === "NOT_COMING") acc.notComing += 1;
-      else acc.coming += 1;
-      return acc;
-    },
-    { coming: 0, notComing: 0 }
+  const countAttendance = useCallback((roster: Wrestler[]) => {
+    return roster.reduce(
+      (acc, w) => {
+        const status = w.status ?? null;
+        if (status === "NOT_COMING") acc.notComing += 1;
+        else acc.coming += 1;
+        return acc;
+      },
+      { coming: 0, notComing: 0 }
+    );
+  }, []);
+  const attendanceCounts = useMemo(
+    () => countAttendance(attendanceRoster),
+    [attendanceRoster, countAttendance],
+  );
+  const modalAttendanceCounts = useMemo(
+    () => countAttendance(modalAttendanceRoster),
+    [modalAttendanceRoster, countAttendance],
   );
   const orderedTeams = homeTeamId
     ? [
@@ -961,6 +1083,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         ...teams.filter(t => t.id !== homeTeamId),
       ]
     : teams;
+  useEffect(() => {
+    if (autoPairingsRequested && !autoPairingsPending) {
+      setAutoPairingsPending(true);
+    }
+  }, [autoPairingsRequested, autoPairingsPending]);
   const teamList = orderedTeams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
   const formattedDate = meetDate
     ? new Date(meetDate).toLocaleDateString(undefined, {
@@ -982,6 +1109,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
   const hasHomeInfo = Boolean(homeTeam ?? homeLocationDisplay);
   const attendanceTeam = attendanceTeamId ? teams.find(t => t.id === attendanceTeamId) : undefined;
+  const modalAttendanceTeam = modalAttendanceTeamId ? teams.find(t => t.id === modalAttendanceTeamId) : undefined;
   const addWrestlerTeamLabel = attendanceTeam?.name ?? "Selected Team";
   const isAttendanceTeamCoach =
     currentUserRole === "COACH" &&
@@ -989,11 +1117,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId !== null &&
     currentUserTeamId === attendanceTeamId;
   const canEditRoster = currentUserRole === "ADMIN" || isAttendanceTeamCoach;
+  const isModalAttendanceTeamCoach =
+    currentUserRole === "COACH" &&
+    modalAttendanceTeamId !== null &&
+    currentUserTeamId !== null &&
+    currentUserTeamId === modalAttendanceTeamId;
+  const canEditModalRoster = currentUserRole === "ADMIN" || isModalAttendanceTeamCoach;
 
   const currentMatches = target
     ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
     : [];
-  const targetMatchCount = target ? (matchCounts[target.id] ?? 0) : 0;
+  const targetMatchCount = target ? getMatchCount(target.id) : 0;
   const currentMatchRows = currentMatches.map((b) => {
     const opponentId = b.redId === target?.id ? b.greenId : b.redId;
     return {
@@ -1013,7 +1147,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (currentSort.key === "weight") return o?.weight ?? null;
       if (currentSort.key === "exp") return o?.experienceYears ?? null;
       if (currentSort.key === "skill") return o?.skill ?? null;
-      if (currentSort.key === "matches") return matchCounts[row.opponentId] ?? 0;
+      if (currentSort.key === "matches") return getMatchCount(row.opponentId);
       if (currentSort.key === "bout") return row.boutOrder;
       return "";
     };
@@ -1053,7 +1187,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (availableSort.key === "weight") return w.weight;
       if (availableSort.key === "exp") return w.experienceYears;
       if (availableSort.key === "skill") return w.skill;
-      if (availableSort.key === "matches") return matchCounts[w.id] ?? 0;
+      if (availableSort.key === "matches") return getMatchCount(w.id);
       return "";
     };
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
@@ -1204,19 +1338,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await fetch(`/api/meets/${meetId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body, section: commentSection }),
+      body: JSON.stringify({ body }),
     });
     setCommentBody("");
     await load();
     await loadActivity();
   }
 
-  async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null) {
+  async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null, teamIdOverride?: string | null) {
     if (!canEdit) return;
+    const teamId = teamIdOverride ?? activeTeamId;
     await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, status: status ?? null, teamId: activeTeamId }),
+      body: JSON.stringify({ action, status: status ?? null, teamId }),
     });
     await load();
     await loadActivity();
@@ -1610,6 +1745,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .pairings-table tbody tr:hover {
           background: #f7f9fb;
         }
+        .pairings-table tbody td.zero-matches-cell {
+          background: #fff7cc;
+        }
         .pairings-table th,
         .pairings-table td,
         .attendance-table th,
@@ -1617,6 +1755,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           padding: 3px 6px;
           line-height: 1.2;
           font-size: 14px;
+        }
+        .pairings-name-cell {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
           .match-row-hover:hover {
             box-shadow: 0 0 0 2px #1e88e5 inset;
@@ -1734,6 +1877,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           width: min(460px, 92vw);
           display: grid;
           gap: 10px;
+        }
+        .modal-card.attendance-modal {
+          width: min(980px, 96vw);
+          max-height: 86vh;
+        }
+        .attendance-modal-body {
+          display: grid;
+          gap: 12px;
+          min-height: 0;
+        }
+        .attendance-modal-table {
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          overflow: auto;
+          max-height: 52vh;
+          background: #fff;
         }
         .modal-row {
           display: grid;
@@ -1940,7 +2099,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       if (!ok) triggerNoticeFlash();
                     })();
                   } else {
-                    updateEditMode(true);
+                    updateEditMode(true, "start-edit");
                   }
                 }}
               >
@@ -1952,10 +2111,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 type="button"
                 className="nav-btn"
                 onClick={() => {
-                  releaseLock();
-                  lockStatusRef.current = "locked";
-                  updateLockState({ status: "locked", lockedByUsername: null });
-                  updateEditMode(false);
+                  void (async () => {
+                    const released = await releaseLock("manual-release");
+                    if (!released.ok) {
+                      const message = released.message ?? "Unable to release lock.";
+                      setLockActionError(message);
+                      window.alert(message);
+                      await refreshLockStatus();
+                      triggerNoticeFlash();
+                      return;
+                    }
+                    setLockActionError(null);
+                    lockStatusRef.current = "locked";
+                    updateLockState({ status: "locked", lockedByUsername: null });
+                    updateEditMode(false, "release-lock");
+                  })();
                 }}
               >
                 Release Lock
@@ -1997,7 +2167,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       {isDraft && lockState.status !== "acquired" && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
           Read-only mode. Click Start Editing to make changes.
-          {lockState.lockedByUsername ? ` Currently locked by ${lockState.lockedByUsername}.` : ""}
+          {lockState.lockedByUsername ? (
+            lockState.lockedByUsername === currentUsername
+              ? " Currently locked by you (another tab or device may be refreshing the lock)."
+              : ` Currently locked by ${lockState.lockedByUsername}.`
+          ) : ""}
+        </div>
+      )}
+      {lockActionError && (
+        <div className="notice" style={{ marginTop: 10 }}>
+          {lockActionError}
         </div>
       )}
       <div className="tab-bar">
@@ -2067,16 +2246,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             );
             })}
           </div>
-        <div className="pairings-table-wrapper">
+        <div className="pairings-table-wrapper" ref={pairingsTableWrapperRef}>
         <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
             <colgroup>
-              <col style={{ width: pairingsColWidths[0] }} />
-              <col style={{ width: pairingsColWidths[1] }} />
-              <col style={{ width: pairingsColWidths[2] }} />
-              <col style={{ width: pairingsColWidths[3] }} />
-              <col style={{ width: pairingsColWidths[4] }} />
-              <col style={{ width: pairingsColWidths[5] }} />
-              <col style={{ width: pairingsColWidths[6] }} />
+              <col style={{ width: pairingsEffectiveColWidths[0] }} />
+              <col style={{ width: pairingsEffectiveColWidths[1] }} />
+              <col style={{ width: pairingsEffectiveColWidths[2] }} />
+              <col style={{ width: pairingsEffectiveColWidths[3] }} />
+              <col style={{ width: pairingsEffectiveColWidths[4] }} />
+              <col style={{ width: pairingsEffectiveColWidths[5] }} />
+              <col style={{ width: pairingsEffectiveColWidths[6] }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
@@ -2089,7 +2268,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   { label: "Skill", key: "skill" },
                   { label: "Matches", key: "matches" },
                 ].map((col, index) => (
-                  <th key={col.label} className="pairings-th sortable-th" onClick={() => toggleSort(setPairingsSort, col.key)}>
+                  <th
+                    key={col.label}
+                    className={`pairings-th sortable-th${index < 2 ? " pairings-name-cell" : ""}`}
+                    onClick={() => toggleSort(setPairingsSort, col.key)}
+                  >
                     {col.label}{sortIndicator(pairingsSort, col.key)}
                     <span
                       className="col-resizer"
@@ -2112,6 +2295,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             {pairingsSorted.map(w => (
                 <tr
                   key={w.id}
+                  className={selectedPairingId === w.id ? "selected" : undefined}
                   onClick={() => {
                     setSelectedPairingId(w.id);
                     setTarget(w);
@@ -2124,17 +2308,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   }}
                   style={{
                     borderTop: "1px solid #eee",
-                    background: selectedPairingId === w.id ? "#e8f4ff" : undefined,
+                    backgroundColor: selectedPairingId === w.id ? "#e8f4ff" : undefined,
                     cursor: "pointer",
                   }}
                 >
-                    <td style={{ color: teamColor(w.teamId) }}>{w.last}</td>
-                    <td style={{ color: teamColor(w.teamId) }}>{w.first}</td>
+                    <td className="pairings-name-cell" style={{ color: teamColor(w.teamId) }}>{w.last}</td>
+                    <td className="pairings-name-cell" style={{ color: teamColor(w.teamId) }}>{w.first}</td>
                     <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
                     <td>{w.experienceYears}</td>
                     <td>{w.skill}</td>
-                    <td>{matchCounts[w.id] ?? 0}</td>
+                    <td className={getMatchCount(w.id) === 0 ? "zero-matches-cell" : undefined}>
+                      {getMatchCount(w.id)}
+                    </td>
                   </tr>
                 ))}
               {attendingByTeam.length === 0 && (
@@ -2159,7 +2345,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                   <button
                     className="nav-btn"
-                    onClick={() => bulkAttendance("SET", null)}
+                    onClick={() => bulkAttendance("SET", null, attendanceTeamId)}
                     disabled={!canEdit}
                   >
                     Set all coming
@@ -2460,7 +2646,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
-                            <td align="left">{matchCounts[opponentId] ?? 0}</td>
+                            <td align="left">{getMatchCount(opponentId)}</td>
                             <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                             </tr>
                           );
@@ -2539,7 +2725,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{o.weight}</td>
                             <td align="left">{o.experienceYears}</td>
                             <td align="left">{o.skill}</td>
-                            <td align="left">{matchCounts[o.id] ?? 0}</td>
+                            <td align="left">{getMatchCount(o.id)}</td>
                           </tr>
                         );
                       })}
@@ -2561,6 +2747,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       className="setup-control-row"
                       style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
                     >
+                      <label><input type="checkbox" checked={settings.enforceAgeGapCheck} onChange={async e => {
+                        const enforceAgeGapCheck = e.target.checked;
+                        setSettings(s => ({ ...s, enforceAgeGapCheck }));
+                      }} /> Enforce Age check</label>
                       <label><input type="checkbox" checked={settings.enforceWeightCheck} onChange={async e => {
                         const enforceWeightCheck = e.target.checked;
                         setSettings(s => ({ ...s, enforceWeightCheck }));
@@ -2592,35 +2782,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <div className="panel fill" style={{ marginTop: 10 }}>
             <h3 className="panel-title">Comments</h3>
             <div style={{ display: "grid", gap: 8 }}>
-              <label style={{ fontSize: 12 }}>Section</label>
-              <select value={commentSection} onChange={(e) => setCommentSection(e.target.value)} disabled={!canEdit}>
-                <option value="General">General</option>
-                <option value="Schedule">Schedule</option>
-                <option value="Mat Rules">Mat Rules</option>
-                <option value="Roster">Roster</option>
-                <option value="Pairings">Pairings</option>
-                <option value="Suggestion">Suggestion</option>
-              </select>
-              <textarea
-                rows={3}
+              <input
+                type="text"
                 value={commentBody}
                 onChange={(e) => setCommentBody(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void submitComment();
+                  }
+                }}
                 placeholder="Leave a note for other coaches..."
-                disabled={!canEdit}
               />
-              <button onClick={submitComment} disabled={!canEdit || !commentBody.trim()}>
-                Add Comment
-              </button>
             </div>
-            <div className="panel-scroll fill" style={{ display: "grid", gap: 10, marginTop: 12, fontSize: 13 }}>
+            <div className="panel-scroll fill" style={{ display: "block", marginTop: 12, fontSize: 13 }}>
               {comments.map(comment => (
-                <div key={comment.id} style={{ borderTop: "1px solid #eee", paddingTop: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 600 }}>{comment.author?.username ?? "unknown"}</div>
-                    {comment.section && <span className="tag">{comment.section}</span>}
-                  </div>
-                  <div style={{ marginTop: 6 }}>{comment.body}</div>
-                  <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(comment.createdAt).toLocaleString()}</div>
+                <div key={comment.id} style={{ margin: "2px 0", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontWeight: 600 }}>
+                    {comment.author?.username ?? "unknown"}
+                  </span>{" "}
+                  <span style={{ fontSize: 11, color: "#666", marginRight: 10 }}>
+                    {new Date(comment.createdAt).toLocaleString()}
+                  </span>
+                  <span>{comment.body}</span>
                 </div>
               ))}
               {comments.length === 0 && <div style={{ color: "#666", fontSize: 12 }}>No comments yet.</div>}
@@ -2724,14 +2908,211 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       {showAutoPairingsModal && (
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setShowAutoPairingsModal(false)}>
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: 0 }}>Re-run auto pairings</h3>
-              <p style={{ marginTop: 8, marginBottom: 12 }}>
-                This will clear every existing bout for the meet before generating a fresh set of auto pairings and mat assignments.
-                Make sure you want to start over, as this cannot be undone.
+            <div className="modal-card attendance-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Auto pairings attendance check</h3>
+              <p style={{ marginTop: 4, marginBottom: 6 }}>
+                Review attendance for each team before generating pairings. Only wrestlers marked as coming will be matched.
               </p>
+              <div className="attendance-modal-body">
+                <div>
+                  <div style={{ fontSize: 12, color: "#5b6472", marginBottom: 6 }}>
+                    Select team
+                  </div>
+                  <div className="pairings-tab-bar" style={{ marginTop: 0 }}>
+                    {orderedPairingsTeams.map(team => {
+                      const isActive = modalAttendanceTeamId === team.id;
+                      const activeTextColor = contrastText(team.color);
+                      return (
+                        <button
+                          key={team.id}
+                          onClick={() => setAutoPairingsTeamId(team.id)}
+                          className={`pairing-tab ${isActive ? "active" : ""}`}
+                          style={{
+                            background: isActive
+                              ? (team.color ?? "#ffffff")
+                              : team.color ? `${team.color}22` : undefined,
+                            borderColor: team.color ?? undefined,
+                            color: isActive && team.color ? activeTextColor : team.color ?? undefined,
+                            borderWidth: isActive ? 2 : undefined,
+                            fontWeight: isActive ? 700 : undefined,
+                            boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
+                          }}
+                        >
+                          {team.symbol ? `${team.symbol} - ${team.name}` : team.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    {modalAttendanceTeam?.name ? `${modalAttendanceTeam.name} - ` : ""}Coming: {modalAttendanceCounts.coming} - Not Coming: {modalAttendanceCounts.notComing}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      className="nav-btn"
+                      onClick={() => bulkAttendance("SET", null, modalAttendanceTeamId)}
+                      disabled={!canEdit || !modalAttendanceTeamId}
+                    >
+                      Set all coming
+                    </button>
+                    {modalAttendanceTeamId && (
+                      <button
+                        className="nav-btn"
+                        onClick={() => {
+                          if (!modalAttendanceTeamId) return;
+                          router.push(`/rosters?team=${modalAttendanceTeamId}`);
+                        }}
+                        disabled={!canEdit || !modalAttendanceTeamId || !canEditModalRoster}
+                      >
+                        Edit roster
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="attendance-modal-table">
+                  <table
+                    className="attendance-table"
+                    cellPadding={6}
+                    style={{ borderCollapse: "collapse", tableLayout: "auto", width: "100%" }}
+                  >
+                    <colgroup>
+                      <col style={{ width: attendanceColWidths[0] }} />
+                      <col style={{ width: attendanceColWidths[1] }} />
+                      <col />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                        {[
+                          { label: "Last", key: "last", resizable: true },
+                          { label: "First", key: "first", resizable: true },
+                          { label: "Status", key: "status", resizable: false },
+                        ].map((col, index) => (
+                          <th key={col.label} className="attendance-th sortable-th" onClick={() => toggleSort(setAttendanceSort, col.key)}>
+                            {col.label}{sortIndicator(attendanceSort, col.key)}
+                            {col.resizable && (
+                              <span
+                                className="col-resizer"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  resizeRef.current = {
+                                    kind: "attendance",
+                                    index,
+                                    startX: e.clientX,
+                                    startWidth: attendanceColWidths[index],
+                                  };
+                                }}
+                              />
+                            )}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modalAttendanceSorted.map(w => {
+                        const isComing = !isNotAttending(w.status);
+                        const isLate = w.status === "LATE";
+                        const isEarly = w.status === "EARLY";
+                        const nameBg = w.status === "NOT_COMING"
+                          ? "#f0f0f0"
+                          : w.status === "LATE" || w.status === "EARLY"
+                            ? statusColor(w.status)
+                            : undefined;
+                        const nameColor = w.status === "NOT_COMING" ? "#8a8a8a" : undefined;
+                        const nameDecoration = w.status === "NOT_COMING" ? "line-through" : undefined;
+                        const toggleLabelStyle: React.CSSProperties = {
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 4,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          border: `1px solid ${isComing ? "#bcd8c1" : "#cfcfcf"}`,
+                          background: isComing ? "#e6f6ea" : "#f0f0f0",
+                          color: isComing ? "#1d232b" : "#5f6772",
+                          cursor: canEdit ? "pointer" : "default",
+                          transition: "background 0.2s, border-color 0.2s",
+                          fontWeight: 600,
+                          fontSize: 12,
+                          minWidth: 0,
+                        };
+                        const activeStyle = (active: boolean, base: React.CSSProperties) =>
+                          active
+                            ? {
+                                ...base,
+                                fontWeight: 700,
+                                opacity: 1,
+                                color: "#1d232b",
+                                WebkitTextFillColor: "#1d232b",
+                              }
+                            : base;
+                        return (
+                          <tr key={w.id} style={{ borderTop: "1px solid #eee" }}>
+                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.last}</td>
+                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.first}</td>
+                            <td style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  flexWrap: "nowrap",
+                                  alignItems: "center",
+                                  overflowX: "auto",
+                                  paddingBottom: 2,
+                                  whiteSpace: "nowrap",
+                                  width: "100%",
+                                }}
+                              >
+                                <label style={toggleLabelStyle}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isComing}
+                                    disabled={!canEdit}
+                                    onChange={(event) => {
+                                      const nextStatus = event.target.checked ? null : "NOT_COMING";
+                                      void updateWrestlerStatus(w.id, nextStatus);
+                                    }}
+                                    aria-label="Coming"
+                                  />
+                                  Coming
+                                </label>
+                                <button
+                                  onClick={() => {
+                                    const nextStatus = isLate ? null : "LATE";
+                                    void updateWrestlerStatus(w.id, nextStatus);
+                                  }}
+                                  disabled={!canEdit || !isComing}
+                                  style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
+                                >
+                                  Arrive late
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const nextStatus = isEarly ? null : "EARLY";
+                                    void updateWrestlerStatus(w.id, nextStatus);
+                                  }}
+                                  disabled={!canEdit || !isComing}
+                                  style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
+                                >
+                                  Leave early
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {modalAttendanceRoster.length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ color: "#666" }}>No wrestlers on this team.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               {autoPairingsError && (
-                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
+                <div style={{ color: "#b00020", fontSize: 13 }}>
                   {autoPairingsError}
                 </div>
               )}
@@ -2750,7 +3131,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   onClick={rerunAutoPairings}
                   disabled={!canEdit || autoPairingsLoading}
                 >
-                  {autoPairingsLoading ? "Running…" : "Re-run auto pairings"}
+                  {autoPairingsLoading ? "Running..." : "Run auto pairings"}
                 </button>
               </div>
             </div>

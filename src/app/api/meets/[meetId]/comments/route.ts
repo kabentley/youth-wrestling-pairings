@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { logMeetChange } from "@/lib/meetActivity";
 import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
@@ -66,6 +65,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     include: { author: { select: { username: true } } },
   });
 
-  await logMeetChange(meetId, user.id, "Added a comment.");
   return NextResponse.json(comment);
 }
