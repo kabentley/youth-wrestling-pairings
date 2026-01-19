@@ -129,7 +129,6 @@ export default function RostersClient() {
   const [showTeamSelector, setShowTeamSelector] = useState(false);
   const headerTeamButtonRef = useRef<HTMLButtonElement | null>(null);
   const teamSelectRef = useRef<HTMLDivElement | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wrestler: EditableWrestler } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EditableWrestler | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingWrestler, setIsDeletingWrestler] = useState(false);
@@ -153,14 +152,8 @@ export default function RostersClient() {
     };
   }, [showTeamSelector]);
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener("click", handleClick);
-    return () => window.removeEventListener("click", handleClick);
-  }, []);
-  useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setContextMenu(null);
         setShowDeleteModal(false);
       }
     };
@@ -622,14 +615,12 @@ export default function RostersClient() {
     setDeleteError("");
     setDeleteTarget(row);
     setShowDeleteModal(true);
-    setContextMenu(null);
   };
 
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setDeleteTarget(null);
     setDeleteError("");
-    setContextMenu(null);
   };
 
   const confirmDeleteWrestler = async () => {
@@ -702,6 +693,7 @@ export default function RostersClient() {
     { key: "experienceYears", label: "Exp" },
     { key: "skill", label: "Skill" },
     { key: "active", label: "Status" },
+    { key: "actions", label: "Actions" },
   ];
 
   const [spectatorColWidths, setSpectatorColWidths] = useState<Record<ViewerColumnKey, number>>(() => ({
@@ -783,12 +775,6 @@ export default function RostersClient() {
     });
     return rows;
   }, [filteredEditableRows, sortConfig]);
-
-  const handleRowContextMenu = (event: ReactMouseEvent<HTMLTableRowElement>, row: EditableWrestler) => {
-    if (!canEditRoster || row.isNew) return;
-    event.preventDefault();
-    setContextMenu({ x: event.clientX, y: event.clientY, wrestler: row });
-  };
 
   useEffect(() => {
     const rows: EditableWrestler[] = roster.map(w => ({
@@ -981,7 +967,6 @@ export default function RostersClient() {
       <tr
         key={row.id}
         className={`spreadsheet-row${isNewRow ? " new-row" : ""}${rowDirty ? " dirty-row" : ""}${row.active ? "" : " inactive-row"}${hasErrors ? " error-row" : ""}`}
-        onContextMenu={event => handleRowContextMenu(event, row)}
       >
         <td>
           <input
@@ -1083,6 +1068,21 @@ export default function RostersClient() {
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+          )}
+        </td>
+        <td className="action-cell">
+          {!isNewRow && canEditRoster ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-small delete-row-btn"
+              onClick={() => openDeleteModal(row)}
+              disabled={hasDirtyChanges || isDeletingWrestler}
+              title={hasDirtyChanges ? "Save or cancel pending changes before deleting" : undefined}
+            >
+              Delete
+            </button>
+          ) : (
+            <span aria-hidden="true">&nbsp;</span>
           )}
         </td>
       </tr>
@@ -1591,6 +1591,17 @@ export default function RostersClient() {
           font-weight: 700;
           position: relative;
         }
+        .spreadsheet-table th.action-cell,
+        .spreadsheet-table td.action-cell {
+          text-align: center;
+        }
+        .delete-row-btn {
+          padding: 4px 10px;
+          min-width: 68px;
+        }
+        .actions-header {
+          font-weight: 600;
+        }
         .spreadsheet-table tbody tr:hover {
           background: rgba(29, 56, 162, 0.12);
         }
@@ -1708,27 +1719,6 @@ export default function RostersClient() {
           margin-top: 14px;
           gap: 12px;
           flex-wrap: wrap;
-        }
-        .roster-context-menu {
-          position: fixed;
-          background: #fff;
-          border: 1px solid var(--line);
-          border-radius: 8px;
-          box-shadow: 0 16px 30px rgba(0, 0, 0, 0.25);
-          z-index: 40;
-        }
-        .roster-context-menu button {
-          border: none;
-          background: transparent;
-          padding: 10px 16px;
-          width: 100%;
-          text-align: left;
-          color: var(--ink);
-          font-weight: 600;
-          cursor: pointer;
-        }
-        .roster-context-menu button:hover {
-          background: #f2f5f8;
         }
         .import-preview table {
           width: 100%;
@@ -1896,15 +1886,19 @@ export default function RostersClient() {
                         <thead>
                           <tr>
                             {rosterSheetColumns.map((col, idx) => (
-                              <th key={col.key}>
-                                <button
-                                  type="button"
-                                  className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
-                                  onClick={() => handleSortColumn(col.key)}
-                                >
-                                  {col.label}
-                                  {renderSortArrow(col.key)}
-                                </button>
+                              <th key={col.key} className={col.key === "actions" ? "action-cell" : ""}>
+                                {col.key === "actions" ? (
+                                  <span className="actions-header">{col.label}</span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
+                                    onClick={() => handleSortColumn(col.key)}
+                                  >
+                                    {col.label}
+                                    {renderSortArrow(col.key)}
+                                  </button>
+                                )}
                                 <span
                                   className="col-resizer"
                                   onMouseDown={e => handleColMouseDown(idx, e)}
@@ -2113,31 +2107,6 @@ John,Smith,55,2014-11-02,0,2
           </div>
         </div>
       )}
-      {contextMenu && (() => {
-        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
-        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
-        const menuWidth = 220;
-        const menuHeight = 48;
-        const left = viewportWidth ? Math.min(contextMenu.x, viewportWidth - menuWidth) : contextMenu.x;
-        const top = viewportHeight ? Math.min(contextMenu.y, viewportHeight - menuHeight) : contextMenu.y;
-        return (
-          <div
-            className="roster-context-menu"
-            style={{ left, top }}
-            onClick={event => event.stopPropagation()}
-            onContextMenu={event => event.preventDefault()}
-          >
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => openDeleteModal(contextMenu.wrestler)}
-            >
-              Delete {contextMenu.wrestler.first} {contextMenu.wrestler.last}
-            </button>
-          </div>
-        );
-      })()}
-
       {showDeleteModal && deleteTarget && (
         <div className="import-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-wrestler-title" onClick={cancelDelete}>
           <div className="import-modal" onClick={event => event.stopPropagation()}>

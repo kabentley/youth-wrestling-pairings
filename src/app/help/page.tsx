@@ -7,14 +7,16 @@ import { HELP_PAGES } from "@/lib/helpContent";
 const DEFAULT_HELP_PAGE = HELP_PAGES[0];
 
 const renderParagraph = (paragraph: string) => {
-  const parts = paragraph.split(/(\([^)]*\))/g).filter(Boolean);
-  return parts.map((part, index) =>
-    part.startsWith("(") && part.endsWith(")") ? (
-      <strong key={`${part}-${index}`}>{part}</strong>
-    ) : (
-      <span key={`${part}-${index}`}>{part}</span>
-    ),
-  );
+  const parts = paragraph.split(/(\([^)]*\)|\[[^\]]*\]|\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("[") && part.endsWith("]")) {
+      return <strong key={`${part}-${index}`}>{part}</strong>;
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
 };
 
 export default function HelpPage() {

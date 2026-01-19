@@ -16,8 +16,6 @@ type Meet = {
 
 export default function ResultsLandingPage() {
   const [meets, setMeets] = useState<Meet[]>([]);
-  const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
-  const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [msg, setMsg] = useState("");
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -34,10 +32,9 @@ export default function ResultsLandingPage() {
     let active = true;
     async function load() {
       setMsg("");
-      const [meRes, meetsRes, leagueRes] = await Promise.all([
+      const [meRes, meetsRes] = await Promise.all([
         fetch("/api/me"),
         fetch("/api/meets"),
-        fetch("/api/league"),
       ]);
       if (!active) return;
       const meJson = meRes.ok ? await meRes.json().catch(() => ({})) : {};
@@ -67,12 +64,6 @@ export default function ResultsLandingPage() {
         list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setMeets(list);
       }
-      if (leagueRes.ok) {
-        const leagueJson = await leagueRes.json().catch(() => ({}));
-        const name = String(leagueJson?.name ?? "").trim();
-        setLeagueName(name || "Wrestling Scheduler");
-        setLeagueHasLogo(Boolean(leagueJson?.hasLogo));
-      }
     }
     void load();
     return () => { active = false; };
@@ -96,37 +87,6 @@ export default function ResultsLandingPage() {
           background: var(--bg);
           min-height: 100vh;
           padding: 28px 22px 40px;
-        }
-        .mast {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 18px;
-          border-bottom: 1px solid var(--line);
-          padding-bottom: 14px;
-          margin-bottom: 18px;
-        }
-        .brand {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-        }
-        .logo {
-          width: 56px;
-          height: 56px;
-          object-fit: contain;
-        }
-        .title {
-          font-family: "Oswald", Arial, sans-serif;
-          font-size: clamp(24px, 3vw, 36px);
-          margin: 0;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-        }
-        .subtitle {
-          margin: 6px 0 0;
-          color: var(--muted);
-          font-size: 14px;
         }
         .grid {
           display: grid;
@@ -190,15 +150,6 @@ export default function ResultsLandingPage() {
         }
       `}</style>
       <AppHeader links={headerLinks} />
-      <div className="mast">
-        <div className="brand">
-          {leagueHasLogo ? <img className="logo" src="/api/league/logo/file" alt="League logo" /> : null}
-          <div>
-            <h1 className="title">Enter Results</h1>
-            <div className="subtitle">{leagueName}</div>
-          </div>
-        </div>
-      </div>
 
       {msg && <div style={{ marginBottom: 12 }}>{msg}</div>}
 

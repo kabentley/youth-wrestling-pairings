@@ -1803,7 +1803,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           }
         }
       `}</style>
-      <AppHeader links={headerLinks} hideLeagueBrand />
+      <AppHeader links={headerLinks} />
       {meetDeletedNotice && (
         <div className="toast">
           Meet was deleted. Returning to Meets...

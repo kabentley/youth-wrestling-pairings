@@ -13,17 +13,17 @@ export default async function Home() {
     redirect("/auth/signin");
   }
   const league = await db.league.findFirst({ select: { name: true, logoData: true, website: true } });
-  const teamId = (session.user as any)?.teamId ?? null;
-  const teamInfo = teamId
-    ? (await db.team.findUnique({
-        where: { id: teamId },
-        select: { symbol: true, name: true, website: true },
-      }))
-    : null;
-  const trimmedLeagueName = league?.name?.trim();
-  const leagueName = trimmedLeagueName ?? "";
-  const hasLeagueLogo = Boolean(league?.logoData);
-  const leagueLogoSrc = hasLeagueLogo ? "/api/league/logo/file" : null;
+  const userId = (session.user as any)?.id ?? null;
+  const userWithTeam =
+    userId && typeof userId === "string"
+      ? await db.user.findUnique({
+          where: { id: userId },
+          select: { team: { select: { symbol: true, name: true, website: true } } },
+        })
+      : null;
+  const teamInfo = userWithTeam?.team ?? null;
+  const leagueName = league?.name?.trim() ?? "Wrestling Scheduler";
+  const leagueLogoSrc = league?.logoData ? "/api/league/logo/file" : null;
   const leagueWebsite = league?.website?.trim() ?? null;
   const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
   const teamLabel = teamInfo?.symbol ? `${teamInfo.symbol} ${teamInfo.name}` : teamInfo?.name ?? "";
@@ -67,44 +67,6 @@ export default async function Home() {
           padding-bottom: 14px;
           margin-bottom: 18px;
         }
-        .brand {
-          grid-column: 1 / -1;
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          margin-bottom: 12px;
-        }
-        .logo {
-          width: 56px;
-          height: 56px;
-          object-fit: contain;
-        }
-        .logo-placeholder {
-          width: 56px;
-          height: 56px;
-          border-radius: 8px;
-          background: #e1e4ea;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--muted);
-        }
-        .title {
-          font-family: "Oswald", Arial, sans-serif;
-          font-size: clamp(26px, 3vw, 38px);
-          letter-spacing: 0.5px;
-          margin: 0;
-          text-transform: uppercase;
-        }
-        .tagline {
-          color: var(--muted);
-          font-size: 13px;
-          margin-top: 4px;
-          text-transform: uppercase;
-          letter-spacing: 1.6px;
-        }
         .nav {
           display: flex;
           gap: 12px;
@@ -139,96 +101,6 @@ export default async function Home() {
           border-color: var(--line);
           background: #f7f9fb;
         }
-        .hero {
-          display: grid;
-          grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-          gap: 18px;
-          align-items: stretch;
-        }
-        .hero-card {
-          background: var(--card);
-          border: 1px solid var(--line);
-          border-radius: 8px;
-          padding: 18px;
-          box-shadow: 0 10px 24px rgba(0,0,0,0.08);
-        }
-        .hero-title {
-          font-family: "Oswald", Arial, sans-serif;
-          font-size: clamp(30px, 4.2vw, 52px);
-          margin: 0 0 8px;
-          text-transform: uppercase;
-          line-height: 1.05;
-        }
-        .hero-sub {
-          color: var(--muted);
-          font-size: 16px;
-          line-height: 1.5;
-          margin: 0 0 14px;
-        }
-        .cta-row {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-        .btn {
-          display: inline-block;
-          text-decoration: none;
-          color: #ffffff;
-          background: var(--accent);
-          padding: 10px 14px;
-          border-radius: 4px;
-          font-weight: 700;
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
-          font-size: 13px;
-        }
-        .btn.secondary {
-          background: transparent;
-          color: var(--ink);
-          border: 1px solid var(--line);
-        }
-        .side {
-          display: grid;
-          gap: 12px;
-        }
-        .panel {
-          border: 1px solid var(--line);
-          border-radius: 8px;
-          padding: 14px;
-          background: var(--card);
-        }
-        .team-news-panel {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          min-height: 320px;
-        }
-        .team-news-heading {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 8px;
-        }
-        .team-news-title {
-          margin: 0;
-          font-family: "Oswald", Arial, sans-serif;
-          text-transform: uppercase;
-          font-size: 16px;
-        }
-        .team-news-btn {
-          position: absolute;
-          top: 14px;
-          right: 14px;
-        }
-        .team-news-frame {
-          border: 1px solid var(--line);
-          border-radius: 8px;
-          overflow: hidden;
-          background: #fff;
-          flex: 1;
-          min-height: 260px;
-        }
         .panel h3 {
           margin: 0 0 8px;
           font-family: "Oswald", Arial, sans-serif;
@@ -245,6 +117,58 @@ export default async function Home() {
           grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 12px;
           margin-top: 18px;
+        }
+        .hero-grid {
+          display: grid;
+          gap: 16px;
+          grid-template-columns: minmax(0, 1fr);
+          margin-bottom: 16px;
+        }
+        .hero-card,
+        .side-panel {
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: var(--card);
+          padding: 18px;
+        }
+        .hero-card h2,
+        .side-panel h3 {
+          margin: 0 0 12px;
+          font-family: "Oswald", Arial, sans-serif;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .panel-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .btn.secondary {
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 6px 10px;
+          text-transform: uppercase;
+          font-weight: 600;
+          color: var(--ink);
+        }
+        .btn.secondary:hover {
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+        .news-frame {
+          margin-top: 12px;
+          border-radius: 8px;
+          overflow: hidden;
+          min-height: 220px;
+          border: 1px solid var(--line);
+          background: #fff;
+        }
+        .news-frame iframe {
+          width: 100%;
+          height: 320px;
+          border: none;
         }
         .card {
           border: 1px solid var(--line);
@@ -274,73 +198,67 @@ export default async function Home() {
         .status strong {
           color: var(--ink);
         }
-        @media (max-width: 900px) {
-          .hero {
-            grid-template-columns: 1fr;
+        @media (max-width: 940px) {
+          .hero-card,
+          .side-panel {
+            width: 100%;
           }
         }
       `}</style>
 
       <header className="mast">
-        <AppHeader links={headerLinks} leagueLogoSrc={leagueLogoSrc} leagueName={leagueName} />
+        <AppHeader
+          links={headerLinks}
+          leagueLogoSrc={leagueLogoSrc}
+          leagueName={leagueName}
+        />
       </header>
 
-      <section className="hero">
-        <div className="brand">
-          {hasLeagueLogo && leagueLogoSrc ? (
-            <img className="logo" src={leagueLogoSrc} alt={`${leagueName || "League"} logo`} />
-          ) : (
-            <span className="logo-placeholder" aria-hidden="true">
-              {leagueName ? leagueName[0] : "W"}
-            </span>
-          )}
-          <div>
-            <h1 className="title">{leagueName || "Wrestling Scheduler"}</h1>
-            {leagueWebsite && (
-              <p className="tagline">{leagueWebsite.replace(/^https?:\/\//, "").replace(/\/$/, "")}</p>
-            )}
-          </div>
-        </div>
+      <section className="hero-grid">
         <div className="hero-card">
-          <h2 className="hero-title">League News</h2>
-          {leagueNewsUrl && (
-            <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
-              <iframe
-                title="League news"
-                src={leagueNewsUrl}
-                style={{ width: "100%", height: 420, border: "none" }}
-                />
-              </div>
-            )}
-          </div>
-        {teamWebsiteUrl && (
-        <div className="side">
-          <div className="panel team-news-panel">
-            <div className="team-news-heading">
-              <h3 className="team-news-title">Team News</h3>
+          <h2>League News</h2>
+          {leagueNewsUrl ? (
+            <div className="news-frame">
+              <iframe title="League news" src={leagueNewsUrl} />
+            </div>
+          ) : (
+            <p className="muted">No league news available yet.</p>
+          )}
+        </div>
+        <div className="side-panel">
+          <div className="panel-head">
+            <h3>Team News</h3>
+            {teamWebsiteUrl ? (
               <a
+                className="btn secondary"
                 href={teamWebsiteUrl}
                 target="_blank"
-                rel="noreferrer"
-                className="btn secondary team-news-btn"
+                rel="noopener noreferrer"
               >
                 Visit site
               </a>
-            </div>
-            <p style={{ marginBottom: 12 }}>
-              Latest updates for {teamLabel || "your team"}.
+            ) : (
+              <span className="btn secondary" aria-disabled="true" style={{ cursor: "default" }}>
+                No website yet
+              </span>
+            )}
+          </div>
+            <p>
+              {teamWebsiteUrl
+                ? `Latest updates for ${teamLabel}.`
+                : `Updates for ${teamLabel || "your team"} will appear here once a website is published.`}
             </p>
-            <div className="team-news-frame">
-              <iframe
-                title="Team news"
-                src={teamWebsiteUrl}
-                style={{ width: "100%", height: "100%", border: "none" }}
-              />
-            </div>
+          <div className="news-frame">
+            {teamWebsiteUrl ? (
+              <iframe title="Team news" src={teamWebsiteUrl} />
+            ) : (
+              <div className="muted" style={{ padding: 20 }}>
+                No team news iframe available.
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </section>
+      </section>
     </main>
   );
 }

@@ -13,6 +13,7 @@ type Props = {
   leagueLogoSrc?: string | null;
   leagueName?: string;
   hideLeagueBrand?: boolean;
+  disableCoachShortcut?: boolean;
 };
 
 const roleOrder: Record<Role, number> = { PARENT: 0, TABLE_WORKER: 0, COACH: 1, ADMIN: 2 };
@@ -32,6 +33,7 @@ export default function AppHeader({
   leagueLogoSrc,
   leagueName,
   hideLeagueBrand = false,
+  disableCoachShortcut = false,
 }: Props) {
   const [user, setUser] = useState<{
     username: string;
@@ -97,9 +99,11 @@ export default function AppHeader({
     return () => { active = false; };
   }, [user?.role]);
 
-  const allLinks = links.some((link) => link.href === coachNavLink.href)
+  const allLinks = disableCoachShortcut
     ? links
-    : [...links, coachNavLink];
+    : links.some((link) => link.href === coachNavLink.href)
+      ? links
+      : [...links, coachNavLink];
 
   const [leagueInfo, setLeagueInfo] = useState<{ name: string | null; hasLogo: boolean }>({
     name: null,
@@ -142,9 +146,11 @@ export default function AppHeader({
       );
   const accountLink = user ? visibleLinks.find(link => link.href === "/account") : null;
   const myWrestlersLink = user ? visibleLinks.find(link => link.href === "/parent") : null;
-  const mainLinks = accountLink
-    ? visibleLinks.filter(link => link.href !== "/account" && link.href !== "/parent")
-    : visibleLinks.filter(link => link.href !== "/parent");
+  const mainLinks = (
+    accountLink
+      ? visibleLinks.filter(link => link.href !== "/account" && link.href !== "/parent")
+      : visibleLinks.filter(link => link.href !== "/parent")
+  ).filter(link => link.href !== "/");
 
   return (
     <div className="app-header">
@@ -182,6 +188,8 @@ export default function AppHeader({
           padding-right: 8px;
           margin-right: 6px;
           border-right: 1px solid #d5dbe2;
+          text-decoration: none;
+          cursor: pointer;
         }
         .app-header-brand-logo,
         .app-header-brand-placeholder {
@@ -245,7 +253,7 @@ export default function AppHeader({
       `}</style>
       <div className="app-header-left">
         {showBrand && (
-          <div className="app-header-brand">
+          <a href="/" className="app-header-brand">
             {brandLogoSrc ? (
               <img src={brandLogoSrc} alt={`${brandName ?? "League"} logo`} className="app-header-brand-logo" />
             ) : (
@@ -254,7 +262,7 @@ export default function AppHeader({
               </span>
             )}
             {brandName && <span className="app-header-brand-name">{brandName}</span>}
-          </div>
+          </a>
         )}
         {mainLinks.map(link => (
           <a key={link.href} href={link.href} className="app-header-link">

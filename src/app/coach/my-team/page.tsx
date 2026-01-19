@@ -68,6 +68,7 @@ const headerLinks = [
   { href: "/", label: "Home" },
   { href: "/rosters", label: "Rosters" },
   { href: "/meets", label: "Meets", minRole: "COACH" as const },
+  { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
   { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   { href: "/parent", label: "My Wrestlers" },
 ];
@@ -627,10 +628,10 @@ export default function CoachMyTeamPage() {
     <main className="coach">
       <style>{coachStyles}</style>
       <div className="coach-shell">
-        <AppHeader links={headerLinks} />
-        <div className="team-header">
-          <div className="team-header-main">
-            <h1>
+        <AppHeader links={headerLinks} disableCoachShortcut />
+        <div className="team-info">
+          <div>
+            <h1 className="team-title">
               Team Settings For: {teamName}
               {teamSymbol ? (
                 <span style={{ color: teamColor, marginLeft: 6 }}>
@@ -1115,11 +1116,20 @@ const coachStyles = `
     max-width: 640px;
     line-height: 1.4;
   }
-  .team-header-main {
+  .team-info {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-width: 640px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding-top: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .team-title {
+    margin: 0;
+    font-size: 32px;
+    font-weight: 600;
   }
   .coach-card {
     margin-top: 16px;
@@ -1133,14 +1143,6 @@ const coachStyles = `
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-  }
-  .team-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 20px;
-    margin-bottom: 8px;
   }
   .team-picker {
     font-size: 12px;
