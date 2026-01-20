@@ -22,6 +22,19 @@ function formatLocalDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function formatMeetDisplayDate(dateStr: string) {
+  const iso = dateStr.slice(0, 10);
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return dateStr;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function getNextSaturday(): string {
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -979,13 +992,9 @@ export default function MeetsPage() {
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteDialog(null)}>
           <div className="modal delete-modal" role="document" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>
+                <h3>
                 Delete meet: {deleteDialog.name} (
-                {new Date(deleteDialog.date).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
+                {formatMeetDisplayDate(deleteDialog.date)}
                 )
               </h3>
             </div>

@@ -586,7 +586,7 @@ export default function MatBoardTab({
   }
 
   const formatBoutNumber = (matNum: number, order?: number | null, fallback?: number) => {
-    const ordValue = order ?? fallback ?? 0;
+    const ordValue = Math.max(0, (order ?? fallback ?? 1) - 1);
     const ordStr = String(ordValue);
     const paddedOrder = ordStr.length >= 2 ? ordStr : ordStr.padStart(2, "0");
     return `${matNum}${paddedOrder}`;

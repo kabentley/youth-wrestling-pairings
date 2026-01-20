@@ -219,6 +219,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+  const [exportingMeet, setExportingMeet] = useState(false);
   const [autoPairingsTeamId, setAutoPairingsTeamId] = useState<string | null>(null);
   const [autoPairingsPrompted, setAutoPairingsPrompted] = useState(false);
   const [autoPairingsModalMode, setAutoPairingsModalMode] = useState<"manual" | "auto">("manual");
@@ -462,6 +463,36 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
   }
+
+  async function exportMeet() {
+    setExportingMeet(true);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/export`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        const message = payload?.error ?? `Unable to export meet (${res.status}).`;
+        window.alert(message);
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const filename = match?.[1] ?? "meet-export.zip";
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to export meet.";
+      window.alert(message);
+    } finally {
+      setExportingMeet(false);
+    }
+  }
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
   }
@@ -542,7 +573,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
   function boutNumber(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "";
-    const suffix = String(order).padStart(2, "0");
+    const displayOrder = Math.max(0, order - 1);
+    const suffix = String(displayOrder).padStart(2, "0");
     return `${mat}${suffix}`;
   }
   function sortValueCompare(a: string | number | null | undefined, b: string | number | null | undefined, dir: "asc" | "desc") {
@@ -1847,6 +1879,43 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           max-height: calc(23 * 25px + 48px);
           overflow-y: auto;
         }
+        .pairings-side-card {
+          min-height: calc(23 * 25px + 145px);
+        }
+        .additional-matches-wrapper {
+          margin-top: 0;
+          max-height: clamp(220px, 32vh, calc(12 * 25px + 36px));
+        }
+        @media (max-height: 800px) {
+          .pairings-table-wrapper {
+            max-height: calc(16 * 25px + 36px);
+          }
+          .pairings-side-card {
+            min-height: calc(16 * 25px + 145px);
+          }
+          .additional-matches-wrapper {
+            max-height: clamp(200px, 28vh, calc(10 * 25px + 32px));
+          }
+          .pairings-side-card {
+            max-height: calc(16 * 25px + 120px);
+            overflow-y: visible;
+          }
+        }
+        @media (max-height: 680px) {
+          .pairings-table-wrapper {
+            max-height: calc(12 * 25px + 32px);
+          }
+          .pairings-side-card {
+            min-height: calc(12 * 25px + 135px);
+          }
+          .additional-matches-wrapper {
+            max-height: clamp(170px, 24vh, calc(8 * 25px + 28px));
+          }
+          .pairings-side-card {
+            max-height: calc(12 * 25px + 110px);
+            overflow-y: visible;
+          }
+        }
         .pairings-table thead th {
           position: sticky;
           top: 0;
@@ -2025,6 +2094,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .pairings-context-item:hover {
           transform: translateY(-1px);
+        }
+        .setup-control-row {
+          max-width: 100%;
+          flex-wrap: wrap;
+          gap: 12px;
+        }
+        .setup-control-row label {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          flex: 0 1 auto;
         }
         .wall-chart-section {
           margin-top: 24px;
@@ -2312,6 +2392,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             >
               Attendance
             </button>
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={exportMeet}
+              disabled={!meetLoaded || exportingMeet}
+            >
+              {exportingMeet ? "Exporting..." : "Export Meet"}
+            </button>
             </div>
           </div>
           <div className="pairings-tab-bar">
@@ -2427,7 +2515,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
         </div>
 
-        <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
+        <div className="pairings-side-card" style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
           <div
             style={{
               display: "flex",
@@ -2575,6 +2663,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <h3 className="pairings-heading" style={{ margin: "10px 0 6px" }}>
                     Possible additional matches:
                   </h3>
+                  <div className="pairings-table-wrapper additional-matches-wrapper">
                   <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
                       {availableColumnWidths.map((w, idx) => (
@@ -2658,6 +2747,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       )}
                     </tbody>
                   </table>
+                  </div>
                   <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
                     Note: Click on wrestler name to add or remove.
                   </div>
@@ -3016,8 +3106,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </div>
-              </div>
               {autoPairingsError && (
                 <div style={{ color: "#b00020", fontSize: 13 }}>
                   {autoPairingsError}
