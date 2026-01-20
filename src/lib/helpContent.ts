@@ -134,6 +134,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Plan prints around stability. Rosters are best printed early for check in and weigh ins, while wall charts and mat sheets should be printed after the mat order is stable [Meet > Wall Charts].",
           "If pairings or mat assignments change, assume that any paper already handed out is now outdated. Communicate changes and reprint what table workers and coaches will reference during the meet [Meet > Comments].",
+          "Use Export Meet on the Pairings card to download a zip with the legacy Pairings2010 files (.wrs, .web.xml, .excel.xml, and pairings.xsl). This is useful for sharing with coaches who still use the old program or for archival backups [Meet > Pairings].",
         ],
       },
       {
