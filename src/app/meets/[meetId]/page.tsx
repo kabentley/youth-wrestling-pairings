@@ -133,7 +133,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
-  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 90]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70]);
+  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(90);
@@ -141,13 +142,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [availableTeamColWidth, setAvailableTeamColWidth] = useState(90);
 
   const sharedColumnWidths = {
-    last: pairingsColWidths[0],
-    first: pairingsColWidths[1],
-    age: pairingsColWidths[2],
-    weight: pairingsColWidths[3],
-    exp: pairingsColWidths[4],
-    skill: pairingsColWidths[5],
-    matches: pairingsColWidths[6],
+    last: sharedPairingsColWidths[0],
+    first: sharedPairingsColWidths[1],
+    age: sharedPairingsColWidths[2],
+    weight: sharedPairingsColWidths[3],
+    exp: sharedPairingsColWidths[4],
+    skill: sharedPairingsColWidths[5],
+    matches: sharedPairingsColWidths[6],
   };
 
   const currentColumnWidths = [
@@ -214,11 +215,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+  const [showAutoPairingsConfirm, setShowAutoPairingsConfirm] = useState(false);
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
   const [autoPairingsTeamId, setAutoPairingsTeamId] = useState<string | null>(null);
   const [autoPairingsPrompted, setAutoPairingsPrompted] = useState(false);
+  const [autoPairingsModalMode, setAutoPairingsModalMode] = useState<"manual" | "auto">("manual");
+  const [modalAttendanceOverrides, setModalAttendanceOverrides] = useState<Map<string, AttendanceStatus | null>>(new Map());
 
   async function rerunAutoPairings() {
     setAutoPairingsError(null);
@@ -256,9 +260,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
-  const [showAttendance, setShowAttendance] = useState(false);
-  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
-  const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [showAddWrestler, setShowAddWrestler] = useState(false);
   const [newWrestlerFirst, setNewWrestlerFirst] = useState("");
@@ -464,6 +465,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
   }
+  function darkenHex(color: string, amount: number) {
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const factor = Math.max(0, Math.min(1, 1 - amount));
+    const nr = Math.round(r * factor);
+    const ng = Math.round(g * factor);
+    const nb = Math.round(b * factor);
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+  }
+  function teamTextColor(id: string) {
+    const color = teamColor(id);
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (luminance > 0.8) return darkenHex(color, 0.6);
+    if (luminance > 0.7) return darkenHex(color, 0.45);
+    if (luminance > 0.6) return darkenHex(color, 0.3);
+    return color;
+  }
   function contrastText(color?: string) {
     if (!color?.startsWith("#")) return "#ffffff";
     const hex = color.slice(1);
@@ -606,8 +632,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setMeetLoaded(true);
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
-      setCurrentUserRole(meJson?.role ?? null);
-      setCurrentUserTeamId(meJson?.teamId ?? null);
       setCurrentUsername(meJson?.username ?? null);
     }
   }, [meetId, router]);
@@ -721,7 +745,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         const pairingsIndex = CURRENT_SHARED_COLUMN_MAP[index];
         if (pairingsIndex !== undefined) {
           const nextWidth = Math.max(40, startWidth + delta);
-          setPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
+          setSharedPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
         } else if (index === 2) {
           const nextWidth = Math.max(60, startWidth + delta);
           setCurrentTeamColWidth(nextWidth);
@@ -733,7 +757,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         const pairingsIndex = AVAILABLE_SHARED_COLUMN_MAP[index];
         if (pairingsIndex !== undefined) {
           const nextWidth = Math.max(40, startWidth + delta);
-          setPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
+          setSharedPairingsColWidths((prev) => prev.map((w, i) => (i === pairingsIndex ? nextWidth : w)));
         } else if (index === 2) {
           const nextWidth = Math.max(60, startWidth + delta);
           setAvailableTeamColWidth(nextWidth);
@@ -867,20 +891,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return a.first.localeCompare(b.first);
   });
   const attendanceTeamId: string | null = pairingsTeamId ?? activeTeamId;
-  const attendanceRoster = attendanceTeamId
-    ? rosterSorted.filter(w => w.teamId === attendanceTeamId)
-    : rosterSorted;
-  const attendanceSorted = useMemo(
-    () => sortAttendanceRoster(attendanceRoster),
-    [attendanceRoster, sortAttendanceRoster],
-  );
   const modalAttendanceTeamId = autoPairingsTeamId ?? attendanceTeamId;
   const modalAttendanceRoster = modalAttendanceTeamId
     ? rosterSorted.filter(w => w.teamId === modalAttendanceTeamId)
     : rosterSorted;
+  const modalAttendanceRosterWithOverrides = useMemo(
+    () => modalAttendanceRoster.map(w => {
+      if (!modalAttendanceOverrides.has(w.id)) return w;
+      return { ...w, status: modalAttendanceOverrides.get(w.id) ?? null };
+    }),
+    [modalAttendanceRoster, modalAttendanceOverrides],
+  );
   const modalAttendanceSorted = useMemo(
-    () => sortAttendanceRoster(modalAttendanceRoster),
-    [modalAttendanceRoster, sortAttendanceRoster],
+    () => sortAttendanceRoster(modalAttendanceRosterWithOverrides),
+    [modalAttendanceRosterWithOverrides, sortAttendanceRoster],
   );
   const attendingByTeam = pairingsTeamId
     ? rosterSorted.filter(w => w.teamId === pairingsTeamId && !isNotAttending(w.status))
@@ -893,7 +917,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setAutoPairingsPrompted(true);
     setAutoPairingsPending(false);
     setAutoPairingsError(null);
+    setAutoPairingsModalMode("auto");
     setShowAutoPairingsModal(true);
+    setModalAttendanceOverrides(new Map());
     if (autoPairingsRequested) {
       const nextUrl = editRequested ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`;
       router.replace(nextUrl);
@@ -916,6 +942,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const nextTeamId = attendanceTeamId ?? orderedPairingsTeams[0]?.id ?? null;
     setAutoPairingsTeamId(nextTeamId);
   }, [showAutoPairingsModal, autoPairingsTeamId, attendanceTeamId, orderedPairingsTeams]);
+  useEffect(() => {
+    if (showAutoPairingsModal) {
+      setModalAttendanceOverrides(new Map());
+    }
+  }, [showAutoPairingsModal]);
   useEffect(() => {
     const wrapper = pairingsTableWrapperRef.current;
     if (!wrapper) return;
@@ -1069,13 +1100,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       { coming: 0, notComing: 0 }
     );
   }, []);
-  const attendanceCounts = useMemo(
-    () => countAttendance(attendanceRoster),
-    [attendanceRoster, countAttendance],
-  );
   const modalAttendanceCounts = useMemo(
-    () => countAttendance(modalAttendanceRoster),
-    [modalAttendanceRoster, countAttendance],
+    () => countAttendance(modalAttendanceRosterWithOverrides),
+    [modalAttendanceRosterWithOverrides, countAttendance],
   );
   const orderedTeams = homeTeamId
     ? [
@@ -1111,18 +1138,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const attendanceTeam = attendanceTeamId ? teams.find(t => t.id === attendanceTeamId) : undefined;
   const modalAttendanceTeam = modalAttendanceTeamId ? teams.find(t => t.id === modalAttendanceTeamId) : undefined;
   const addWrestlerTeamLabel = attendanceTeam?.name ?? "Selected Team";
-  const isAttendanceTeamCoach =
-    currentUserRole === "COACH" &&
-    attendanceTeamId !== null &&
-    currentUserTeamId !== null &&
-    currentUserTeamId === attendanceTeamId;
-  const canEditRoster = currentUserRole === "ADMIN" || isAttendanceTeamCoach;
-  const isModalAttendanceTeamCoach =
-    currentUserRole === "COACH" &&
-    modalAttendanceTeamId !== null &&
-    currentUserTeamId !== null &&
-    currentUserTeamId === modalAttendanceTeamId;
-  const canEditModalRoster = currentUserRole === "ADMIN" || isModalAttendanceTeamCoach;
 
   const currentMatches = target
     ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
@@ -1345,18 +1360,52 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await loadActivity();
   }
 
-  async function bulkAttendance(action: "CLEAR" | "SET", status?: AttendanceStatus | null, teamIdOverride?: string | null) {
-    if (!canEdit) return;
-    const teamId = teamIdOverride ?? activeTeamId;
-    await fetch(`/api/meets/${meetId}/wrestlers/status/bulk`, {
+  const updateModalAttendanceStatus = (wrestlerId: string, status: AttendanceStatus | null) => {
+    setModalAttendanceOverrides(prev => {
+      const next = new Map(prev);
+      next.set(wrestlerId, status);
+      return next;
+    });
+  };
+
+  const setModalAttendanceForTeam = (status: AttendanceStatus | null) => {
+    setModalAttendanceOverrides(prev => {
+      const next = new Map(prev);
+      for (const wrestler of modalAttendanceRoster) {
+        next.set(wrestler.id, status);
+      }
+      return next;
+    });
+  };
+
+  const saveModalAttendanceChanges = useCallback(async () => {
+    if (!canEdit) return false;
+    const changes: { wrestlerId: string; status: AttendanceStatus | null }[] = [];
+    for (const wrestler of modalAttendanceRoster) {
+      const baseStatus = wrestler.status ?? null;
+      const nextStatus = modalAttendanceOverrides.has(wrestler.id)
+        ? (modalAttendanceOverrides.get(wrestler.id) ?? null)
+        : baseStatus;
+      if (nextStatus !== baseStatus) {
+        changes.push({ wrestlerId: wrestler.id, status: nextStatus });
+      }
+    }
+    if (changes.length === 0) return true;
+    const res = await fetch(`/api/meets/${meetId}/wrestlers/status/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, status: status ?? null, teamId }),
+      body: JSON.stringify({ changes }),
     });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setAutoPairingsError(json?.error ?? "Unable to save attendance changes.");
+      return false;
+    }
     await load();
     await loadActivity();
     setSelectedPairingId(null);
-  }
+    return true;
+  }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, modalAttendanceRoster]);
 
   async function submitAddWrestler() {
     if (!attendanceTeamId) return;
@@ -1879,13 +1928,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 10px;
         }
         .modal-card.attendance-modal {
-          width: min(980px, 96vw);
+          width: min(640px, 92vw);
           max-height: 86vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         .attendance-modal-body {
           display: grid;
           gap: 12px;
           min-height: 0;
+          flex: 1;
+          overflow: auto;
         }
         .attendance-modal-table {
           border: 1px solid var(--line);
@@ -1902,6 +1956,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           gap: 10px;
           justify-content: flex-end;
+        }
+        .modal-card.attendance-modal .modal-actions {
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid var(--line);
+          background: #ffffff;
+        }
+        @media (max-width: 720px) {
+          .modal-card.attendance-modal {
+            width: 92vw;
+            max-height: 92vh;
+            padding: 12px;
+          }
+          .modal-card.attendance-modal .modal-actions {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .modal-card.attendance-modal .modal-actions .nav-btn {
+            width: 100%;
+          }
         }
         .pairings-context-backdrop {
           position: fixed;
@@ -2135,17 +2209,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <>
                 <button
                   type="button"
-                  className="nav-btn"
-                  onClick={() => {
-                    setAutoPairingsError(null);
-                    setShowAutoPairingsModal(true);
-                  }}
-                  disabled={!canEdit || autoPairingsLoading}
-                >
-                  {autoPairingsLoading ? "Running..." : "Re-run auto pairings"}
-                </button>
-                <button
-                  type="button"
                   className="nav-btn delete-btn"
                   onClick={handleRestartClick}
                   disabled={restartDisabled}
@@ -2220,11 +2283,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>Pairings</h3>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="nav-btn"
+                onClick={() => setShowAutoPairingsConfirm(true)}
+                disabled={!canEdit || autoPairingsLoading}
+              >
+                {autoPairingsLoading ? "Running..." : "Run Auto Pairings"}
+              </button>
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => {
+                setAutoPairingsError(null);
+                setAutoPairingsModalMode("manual");
+                setShowAutoPairingsModal(true);
+              }}
+              disabled={!canEdit}
+            >
+              Attendance
+            </button>
+            </div>
           </div>
           <div className="pairings-tab-bar">
             {orderedPairingsTeams.map(team => {
               const isActive = pairingsTeamId === team.id;
               const activeTextColor = contrastText(team.color);
+              const textColor = team.color ? teamTextColor(team.id) : undefined;
               return (
               <button
                 key={team.id}
@@ -2235,7 +2321,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     ? (team.color ?? "#ffffff")
                     : team.color ? `${team.color}22` : undefined,
                   borderColor: team.color ?? undefined,
-                  color: isActive && team.color ? activeTextColor : team.color ?? undefined,
+                  color: isActive && team.color ? activeTextColor : textColor ?? undefined,
                   borderWidth: isActive ? 2 : undefined,
                   fontWeight: isActive ? 700 : undefined,
                   boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
@@ -2312,8 +2398,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     cursor: "pointer",
                   }}
                 >
-                    <td className="pairings-name-cell" style={{ color: teamColor(w.teamId) }}>{w.last}</td>
-                    <td className="pairings-name-cell" style={{ color: teamColor(w.teamId) }}>{w.first}</td>
+                    <td className="pairings-name-cell" style={{ color: teamTextColor(w.teamId) }}>{w.last}</td>
+                    <td className="pairings-name-cell" style={{ color: teamTextColor(w.teamId) }}>{w.first}</td>
                     <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
                     <td>{w.experienceYears}</td>
@@ -2331,182 +2417,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </tbody>
           </table>
         </div>
-          <div style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <h3 style={{ margin: 0 }}>
-                  Attendance {attendanceTeamId ? `- ${teams.find(t => t.id === attendanceTeamId)?.name ?? ""}` : ""}
-                </h3>
-                <button className="nav-btn" onClick={() => setShowAttendance(s => !s)}>
-                  {showAttendance ? "Hide" : "Show"}
-                </button>
-              </div>
-            {showAttendance && (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                  <button
-                    className="nav-btn"
-                    onClick={() => bulkAttendance("SET", null, attendanceTeamId)}
-                    disabled={!canEdit}
-                  >
-                    Set all coming
-                  </button>
-                  {attendanceTeamId && (
-                    <button
-                      className="nav-btn"
-                      onClick={() => {
-                if (!attendanceTeamId) return;
-                router.push(`/rosters?team=${attendanceTeamId}`);
-              }}
-              disabled={!canEdit || !attendanceTeamId || !canEditRoster}
-            >
-              Edit Roster
-            </button>
-          )}
-        </div>
-                <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
-                  Coming: {attendanceCounts.coming} - Not Coming: {attendanceCounts.notComing}
-                </div>
-                <table
-                  className="attendance-table"
-                  cellPadding={6}
-                  style={{ borderCollapse: "collapse", tableLayout: "auto", width: "100%" }}
-                >
-                    <colgroup>
-                      <col style={{ width: attendanceColWidths[0] }} />
-                      <col style={{ width: attendanceColWidths[1] }} />
-                      <col />
-                    </colgroup>
-                  <thead>
-                    <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                      {[
-                        { label: "Last", key: "last", resizable: true },
-                        { label: "First", key: "first", resizable: true },
-                        { label: "Status", key: "status", resizable: false },
-                      ].map((col, index) => (
-                        <th key={col.label} className="attendance-th sortable-th" onClick={() => toggleSort(setAttendanceSort, col.key)}>
-                          {col.label}{sortIndicator(attendanceSort, col.key)}
-                          {col.resizable && (
-                            <span
-                              className="col-resizer"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                resizeRef.current = {
-                                  kind: "attendance",
-                                  index,
-                                  startX: e.clientX,
-                                  startWidth: attendanceColWidths[index],
-                                };
-                              }}
-                            />
-                          )}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                      {attendanceSorted.map(w => {
-                        const isComing = !isNotAttending(w.status);
-                        const isLate = w.status === "LATE";
-                        const isEarly = w.status === "EARLY";
-                        const nameBg = w.status === "NOT_COMING"
-                          ? "#f0f0f0"
-                          : w.status === "LATE" || w.status === "EARLY"
-                            ? statusColor(w.status)
-                            : undefined;
-                        const nameColor = w.status === "NOT_COMING" ? "#8a8a8a" : undefined;
-                        const nameDecoration = w.status === "NOT_COMING" ? "line-through" : undefined;
-                        const toggleLabelStyle: React.CSSProperties = {
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 4,
-                          padding: "2px 8px",
-                          borderRadius: 6,
-                          border: `1px solid ${isComing ? "#bcd8c1" : "#cfcfcf"}`,
-                          background: isComing ? "#e6f6ea" : "#f0f0f0",
-                          color: isComing ? "#1d232b" : "#5f6772",
-                          cursor: canEdit ? "pointer" : "default",
-                          transition: "background 0.2s, border-color 0.2s",
-                          fontWeight: 600,
-                          fontSize: 12,
-                          minWidth: 0,
-                        };
-                        const activeStyle = (active: boolean, base: React.CSSProperties) =>
-                          active
-                            ? {
-                                ...base,
-                                fontWeight: 700,
-                                opacity: 1,
-                                color: "#1d232b",
-                                WebkitTextFillColor: "#1d232b",
-                              }
-                            : base;
-                        return (
-                          <tr key={w.id} style={{ borderTop: "1px solid #eee" }}>
-                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.last}</td>
-                            <td style={{ background: nameBg, color: nameColor, textDecoration: nameDecoration }}>{w.first}</td>
-                            <td style={{ minWidth: 0 }}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 8,
-                                  flexWrap: "nowrap",
-                                  alignItems: "center",
-                                  overflowX: "auto",
-                                  paddingBottom: 2,
-                                  whiteSpace: "nowrap",
-                                  width: "100%",
-                                }}
-                              >
-                                <label style={toggleLabelStyle}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isComing}
-                                    disabled={!canEdit}
-                                    onChange={(event) => {
-                                      const nextStatus = event.target.checked ? null : "NOT_COMING";
-                                      void updateWrestlerStatus(w.id, nextStatus);
-                                    }}
-                                    aria-label="Coming"
-                                  />
-                                  Coming
-                                </label>
-                                <button
-                                  onClick={() => {
-                                    const nextStatus = isLate ? null : "LATE";
-                                    void updateWrestlerStatus(w.id, nextStatus);
-                                  }}
-                                  disabled={!canEdit || !isComing}
-                                  style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
-                                >
-                                  Arrive Late
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    const nextStatus = isEarly ? null : "EARLY";
-                                    void updateWrestlerStatus(w.id, nextStatus);
-                                  }}
-                                  disabled={!canEdit || !isComing}
-                                  style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
-                                >
-                                  Leave Early
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    {attendanceRoster.length === 0 && (
-                      <tr>
-                        <td colSpan={3} style={{ color: "#666" }}>No wrestlers on this team.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
         </div>
 
         <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
@@ -2621,7 +2531,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           </tr>
                         )}
                         {currentSorted.map(({ bout, opponentId, opponent }) => {
-                          const opponentColor = opponent ? teamColor(opponent.teamId) : undefined;
+                          const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
                           return (
                             <tr
                               key={bout.id}
@@ -2702,7 +2612,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </thead>
                     <tbody>
                       {availableSorted.map(({ opponent: o }) => {
-                        const matchColor = teamColor(o.teamId);
+                        const matchColor = teamTextColor(o.teamId);
                         return (
                           <tr
                             key={o.id}
@@ -2922,6 +2832,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     {orderedPairingsTeams.map(team => {
                       const isActive = modalAttendanceTeamId === team.id;
                       const activeTextColor = contrastText(team.color);
+                      const textColor = team.color ? teamTextColor(team.id) : undefined;
                       return (
                         <button
                           key={team.id}
@@ -2932,7 +2843,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               ? (team.color ?? "#ffffff")
                               : team.color ? `${team.color}22` : undefined,
                             borderColor: team.color ?? undefined,
-                            color: isActive && team.color ? activeTextColor : team.color ?? undefined,
+                            color: isActive && team.color ? activeTextColor : textColor ?? undefined,
                             borderWidth: isActive ? 2 : undefined,
                             fontWeight: isActive ? 700 : undefined,
                             boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
@@ -2945,29 +2856,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: 12, color: "#666" }}>
+                  <div style={{ fontSize: 14, color: "#444", fontWeight: 600 }}>
                     {modalAttendanceTeam?.name ? `${modalAttendanceTeam.name} - ` : ""}Coming: {modalAttendanceCounts.coming} - Not Coming: {modalAttendanceCounts.notComing}
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       className="nav-btn"
-                      onClick={() => bulkAttendance("SET", null, modalAttendanceTeamId)}
+                      onClick={() => setModalAttendanceForTeam(null)}
                       disabled={!canEdit || !modalAttendanceTeamId}
                     >
                       Set all coming
                     </button>
-                    {modalAttendanceTeamId && (
-                      <button
-                        className="nav-btn"
-                        onClick={() => {
-                          if (!modalAttendanceTeamId) return;
-                          router.push(`/rosters?team=${modalAttendanceTeamId}`);
-                        }}
-                        disabled={!canEdit || !modalAttendanceTeamId || !canEditModalRoster}
-                      >
-                        Edit roster
-                      </button>
-                    )}
                   </div>
                 </div>
                 <div className="attendance-modal-table">
@@ -3071,7 +2970,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     disabled={!canEdit}
                                     onChange={(event) => {
                                       const nextStatus = event.target.checked ? null : "NOT_COMING";
-                                      void updateWrestlerStatus(w.id, nextStatus);
+                                      updateModalAttendanceStatus(w.id, nextStatus);
                                     }}
                                     aria-label="Coming"
                                   />
@@ -3080,7 +2979,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 <button
                                   onClick={() => {
                                     const nextStatus = isLate ? null : "LATE";
-                                    void updateWrestlerStatus(w.id, nextStatus);
+                                    updateModalAttendanceStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
                                   style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
@@ -3090,7 +2989,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 <button
                                   onClick={() => {
                                     const nextStatus = isEarly ? null : "EARLY";
-                                    void updateWrestlerStatus(w.id, nextStatus);
+                                    updateModalAttendanceStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
                                   style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
@@ -3119,8 +3018,43 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <div className="modal-actions">
                 <button
                   className="nav-btn"
-                  onClick={() => setShowAutoPairingsModal(false)}
+                  onClick={() => {
+                    void (async () => {
+                      if (!canEdit) {
+                        setShowAutoPairingsModal(false);
+                        return;
+                      }
+                      const saved = await saveModalAttendanceChanges();
+                      if (!saved) return;
+                      if (autoPairingsModalMode === "auto") {
+                        await rerunAutoPairings();
+                      }
+                      setShowAutoPairingsModal(false);
+                    })();
+                  }}
                   type="button"
+                  disabled={autoPairingsLoading}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showAutoPairingsConfirm && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowAutoPairingsConfirm(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Run Auto Pairings</h3>
+              <div style={{ fontSize: 13, color: "#5b6472" }}>
+                This will clear all current bouts and generate new pairings.
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="nav-btn"
+                  type="button"
+                  onClick={() => setShowAutoPairingsConfirm(false)}
                   disabled={autoPairingsLoading}
                 >
                   Cancel
@@ -3128,10 +3062,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <button
                   className="nav-btn delete-btn"
                   type="button"
-                  onClick={rerunAutoPairings}
+                  onClick={() => {
+                    void (async () => {
+                      setShowAutoPairingsConfirm(false);
+                      await rerunAutoPairings();
+                    })();
+                  }}
                   disabled={!canEdit || autoPairingsLoading}
                 >
-                  {autoPairingsLoading ? "Running..." : "Run auto pairings"}
+                  {autoPairingsLoading ? "Running..." : "Run Auto Pairings"}
                 </button>
               </div>
             </div>

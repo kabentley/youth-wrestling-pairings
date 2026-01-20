@@ -347,6 +347,31 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   const tMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
   const teamSymbolMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
   const tColor = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.color ?? "#000"]));
+  const darkenHex = (color: string, amount: number) => {
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const factor = Math.max(0, Math.min(1, 1 - amount));
+    const nr = Math.round(r * factor);
+    const ng = Math.round(g * factor);
+    const nb = Math.round(b * factor);
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+  };
+  const teamTextColor = (teamId?: string | null) => {
+    const color = teamId ? (tColor.get(teamId) ?? "#000") : "#000";
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (luminance > 0.8) return darkenHex(color, 0.6);
+    if (luminance > 0.7) return darkenHex(color, 0.45);
+    if (luminance > 0.6) return darkenHex(color, 0.3);
+    return color;
+  };
   const maxMat = Math.max(1, ...filteredBouts.map(b => b.mat ?? 1));
   const mats = Array.from({ length: maxMat }, (_, i) => i + 1);
 
@@ -375,14 +400,14 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
       const greenInfo = green
         ? {
             opponentName: formatWrestlerFirstLast(green) || `${green.first} ${green.last}`.trim(),
-            opponentColor: tColor.get(green.teamId) ?? "#000",
+            opponentColor: teamTextColor(green.teamId),
             opponentTeamLabel: teamSymbolMap.get(green.teamId) ?? tMap.get(green.teamId) ?? "",
           }
         : { opponentName: bout.greenId, opponentColor: "#000", opponentTeamLabel: "" };
       const redInfo = red
         ? {
             opponentName: formatWrestlerFirstLast(red) || `${red.first} ${red.last}`.trim(),
-            opponentColor: tColor.get(red.teamId) ?? "#000",
+            opponentColor: teamTextColor(red.teamId),
             opponentTeamLabel: teamSymbolMap.get(red.teamId) ?? tMap.get(red.teamId) ?? "",
           }
         : { opponentName: bout.redId, opponentColor: "#000", opponentTeamLabel: "" };
@@ -442,8 +467,8 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
     return {
       red: red ? `${red.first} ${red.last}${redTeam ? ` (${redTeam})` : ""}` : bout.redId,
       green: green ? `${green.first} ${green.last}${greenTeam ? ` (${greenTeam})` : ""}` : bout.greenId,
-      redColor: red ? (tColor.get(red.teamId) ?? "#000") : "#000",
-      greenColor: green ? (tColor.get(green.teamId) ?? "#000") : "#000",
+      redColor: red ? teamTextColor(red.teamId) : "#000",
+      greenColor: green ? teamTextColor(green.teamId) : "#000",
     };
   }
 

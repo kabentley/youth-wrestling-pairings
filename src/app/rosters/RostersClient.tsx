@@ -532,7 +532,9 @@ export default function RostersClient() {
     if (!validateRow(row)) return false;
     const first = row.first.trim();
     const last = row.last.trim();
-    if (row.isNew) {
+    const hasOriginal = originalRowsRef.current[row.id] !== undefined;
+    const isNewRecord = row.isNew ?? !hasOriginal;
+    if (isNewRecord) {
       const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
       const duplicate = editableRows.some(other => {
         if (other.id === row.id) return false;
@@ -555,7 +557,7 @@ export default function RostersClient() {
       skill: Math.floor(Number(row.skill)),
       active: row.active,
     };
-    if (row.isNew) {
+    if (isNewRecord) {
       const res = await fetch(`/api/teams/${selectedTeamId}/wrestlers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1177,9 +1179,9 @@ export default function RostersClient() {
           background: transparent;
           border: 1px solid var(--line);
           border-radius: 6px;
-          padding: 8px 10px;
+          padding: 10px 14px;
           font-weight: 600;
-          font-size: 14px;
+          font-size: 15px;
           letter-spacing: 0.5px;
           cursor: pointer;
         }
@@ -1231,21 +1233,21 @@ export default function RostersClient() {
           background: var(--accent);
           color: #fff;
           font-weight: 700;
-          padding: 10px 12px;
+          padding: 12px 16px;
           border-radius: 6px;
           text-transform: uppercase;
           letter-spacing: 0.6px;
           cursor: pointer;
         }
         .btn-small {
-          padding: 4px 10px;
-          font-size: 11px;
+          padding: 6px 12px;
+          font-size: 12px;
           text-transform: none;
-          letter-spacing: 0.4px;
+          letter-spacing: 0.5px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 72px;
+          min-width: 88px;
         }
         .btn:disabled {
           opacity: 0.45;

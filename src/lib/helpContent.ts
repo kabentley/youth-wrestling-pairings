@@ -70,7 +70,8 @@ export const HELP_PAGES: HelpPage[] = [
           "The home team determines which team defaults are used for mats and pairing preferences. The home team will be the team of the coach who creates the meet, and only admins can change it [Admin > Users].",
           "Choose the number of mats and the target matches per wrestler for the day. These values shape how the meet will be laid out and how the initial pairing plan is generated [Meets > New Meet].",
           "Review the settings before saving. Match limits and rest time between bouts settings affect fairness and pacing, and the auto pairing limits affect which opponents are considered good matches [Team Settings > Meet Setup, Meet > Pairings].",
-          "Press the Create Meet button to create the meet. After creating, the meet opens ready for editing so you can immediately review pairings and mat assignments while you have the lock [Meet > Pairings, Meet > Mat Assignments].",
+          "Press the Create Meet button to create the meet. The meet opens in edit mode and prompts you to confirm attendance for each team before pairings run [Meet > Pairings].",
+          "After you click Done in the attendance modal, the system runs auto pairings and updates the meet plan. Review the results and adjust as needed [Meet > Pairings, Meet > Mat Assignments].",
         ],
       },
       {
@@ -93,10 +94,10 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Attendance panel",
         paragraphs: [
-          "Use the Attendance panel to mark who is actually available before you spend time fine-tuning pairings. Open the meet, go to Pairings, and click Show next to Attendance. You must have the lock to edit attendance, so click Start Editing first if needed [Meet > Start Editing, Meet > Pairings].",
+          "Use Attendance to mark who is actually available before you spend time fine-tuning pairings. Open the meet, go to Pairings, and click the Attendance button. You must have the lock to edit attendance, so click Start Editing first if needed [Meet > Start Editing, Meet > Pairings].",
           "Coming is the default. Not Coming means the wrestler should not be scheduled at all; they will be removed from pairing suggestions and any existing bouts for that wrestler are deleted so the meet plan reflects the scratch immediately.",
           "Arrive Late and Leave Early are planning flags. The wrestler is still considered coming, but their name is highlighted in a different color so it is easy to spot them while scheduling. The flag is a reminder that you may need to manually drag their bouts toward the top or bottom of the bout list as appropriate. These flags do not automatically move bouts for you; use Mat Assignments to adjust the running order [Meet > Mat Assignments].",
-          "Best practice: update attendance first, then re-run auto pairings to fill gaps created by scratches and refresh the recommended matchups. After auto pairings completes, review pairings and mat order again [Meet > Pairings].",
+          "Best practice: update attendance first, then run auto pairings to fill gaps created by scratches and refresh the recommended matchups. After auto pairings completes, review pairings and mat order again [Meet > Pairings].",
         ],
       },
       {
@@ -114,6 +115,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Begin with automatic pairings, then review and adjust [Meet > Pairings]. The goal is a plan that is fair, safe, and realistic for the day, not a perfect mathematical match.",
           "Use weight, age, and experience as the primary matching factors. If the roster data is correct, the highest scoring suggestions are usually the best starting point, but coaches should still apply common sense [Rosters, Meet > Pairings].",
+          "Run Auto Pairings will clear current bouts and generate a new set of pairings, so confirm before running it if you have manual edits you want to keep [Meet > Pairings].",
           "Use the additional matches list to add or remove bouts [Meet > Pairings > Additional Matches]. Enforce weight checks when required and document exceptions in comments so other coaches understand the decision [Meet > Comments].",
           "Use rest time between bouts settings to avoid scheduling the same wrestler too close together. This helps pacing and reduces fatigue, especially in meets with multiple mats [Team Settings > Meet Setup, Meet > Pairings].",
           "As you edit, keep an eye on match counts. A good meet plan spreads opportunities across wrestlers and avoids giving one athlete too many bouts while others get very few [Meet > Pairings].",

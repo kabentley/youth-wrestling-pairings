@@ -546,6 +546,31 @@ export default function MatBoardTab({
   function teamColor(teamId: string) {
     return teams.find(t => t.id === teamId)?.color ?? "#000000";
   }
+  function darkenHex(color: string, amount: number) {
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const factor = Math.max(0, Math.min(1, 1 - amount));
+    const nr = Math.round(r * factor);
+    const ng = Math.round(g * factor);
+    const nb = Math.round(b * factor);
+    return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
+  }
+  function teamTextColor(teamId: string) {
+    const color = teamColor(teamId);
+    if (!color.startsWith("#") || color.length !== 7) return color;
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return color;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    if (luminance > 0.8) return darkenHex(color, 0.6);
+    if (luminance > 0.7) return darkenHex(color, 0.45);
+    if (luminance > 0.6) return darkenHex(color, 0.3);
+    return color;
+  }
 
   /**
    * Build all metadata needed to display a bout row, including text, colors, and status flags.
@@ -555,8 +580,8 @@ export default function MatBoardTab({
     const g = wMap[b.greenId];
     const rTxt = r ? `${r.first} ${r.last} (${teamName(r.teamId)})` : b.redId;
     const gTxt = g ? `${g.first} ${g.last} (${teamName(g.teamId)})` : b.greenId;
-    const rColor = r ? teamColor(r.teamId) : "";
-    const gColor = g ? teamColor(g.teamId) : "";
+    const rColor = r ? teamTextColor(r.teamId) : "";
+    const gColor = g ? teamTextColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
   }
 
