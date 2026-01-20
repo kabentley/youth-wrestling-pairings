@@ -959,14 +959,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, []);
   const pairingsEffectiveColWidths = useMemo(() => {
     if (pairingsTableWidth === null) return pairingsColWidths;
-    const totalWidth = pairingsColWidths.reduce((sum, w) => sum + w, 0);
-    if (totalWidth <= pairingsTableWidth) return pairingsColWidths;
-    const overflow = totalWidth - pairingsTableWidth;
-    const minNameWidth = 70;
-    const shrinkBy = Math.ceil(overflow / 2);
-    const lastWidth = Math.max(minNameWidth, pairingsColWidths[0] - shrinkBy);
-    const firstWidth = Math.max(minNameWidth, pairingsColWidths[1] - shrinkBy);
-    return [lastWidth, firstWidth, ...pairingsColWidths.slice(2)];
+    const widths = [...pairingsColWidths];
+    const minWidths = [70, 70, 50, 50, 45, 45, 50];
+    const totalWidth = widths.reduce((sum, w) => sum + w, 0);
+    if (totalWidth <= pairingsTableWidth) return widths;
+    let overflow = totalWidth - pairingsTableWidth;
+    const shrinkOrder = [6, 5, 4, 3, 2, 1, 0];
+    for (const index of shrinkOrder) {
+      if (overflow <= 0) break;
+      const minWidth = minWidths[index] ?? 40;
+      const available = widths[index] - minWidth;
+      if (available <= 0) continue;
+      const delta = Math.min(available, overflow);
+      widths[index] -= delta;
+      overflow -= delta;
+    }
+    return widths;
   }, [pairingsColWidths, pairingsTableWidth]);
   const matchCounts = bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);

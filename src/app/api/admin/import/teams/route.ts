@@ -131,7 +131,7 @@ export async function POST(req: Request) {
           address: teamRow.address ?? null,
           website: teamRow.website ?? null,
           numMats: typeof teamRow.numMats === "number" ? teamRow.numMats : 4,
-          homeTeamPreferSameMat: Boolean(teamRow.homeTeamPreferSameMat),
+          homeTeamPreferSameMat: teamRow.homeTeamPreferSameMat ?? true,
         },
       });
       createdTeams += 1;
