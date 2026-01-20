@@ -71,7 +71,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Choose the number of mats and the target matches per wrestler for the day. These values shape how the meet will be laid out and how the initial pairing plan is generated [Meets > New Meet].",
           "Review the settings before saving. Match limits and rest time between bouts settings affect fairness and pacing, and the auto pairing limits affect which opponents are considered good matches [Team Settings > Meet Setup, Meet > Pairings].",
           "Press the Create Meet button to create the meet. The meet opens in edit mode and prompts you to confirm attendance for each team before pairings run [Meet > Pairings].",
-          "After you click Done in the attendance modal, the system runs auto pairings and updates the meet plan. Review the results and adjust as needed [Meet > Pairings, Meet > Mat Assignments].",
+          "After you click Done in the attendance dialog, the system runs auto pairings and updates the meet plan. Review the results and adjust as needed [Meet > Pairings, Meet > Mat Assignments].",
         ],
       },
       {
@@ -79,7 +79,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "The Meets page lists your meets in date order and shows the meet name, date, location, team symbols, and draft or published status [Meets]. Coaches see meets that include their team, while admins see every meet.",
           "Use View to open a meet, Edit to open it in edit mode, and Delete to remove a meet you no longer need. The list also shows who last edited the meet and when [Meets].",
-          "Create New Meet opens the setup modal where you enter the name and date, choose teams, and adjust settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > New Meet].",
+          "Create New Meet opens the setup dialog where you enter the name and date, choose teams, and adjust settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > New Meet].",
           "Draft means the meet is still being prepared. Draft meets support full editing with the lock so coaches can build pairings, adjust mat order, and coordinate changes.",
           "Published means the meet plan is ready for broader sharing and day of use. Publishing is a signal to other coaches and table workers that the plan should be stable, even though you may still reopen the meet as a draft if changes are required [Meet > Publish].",
         ],
@@ -97,6 +97,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Use Attendance to mark who is actually available before you spend time fine-tuning pairings. Open the meet, go to Pairings, and click the Attendance button. You must have the lock to edit attendance, so click Start Editing first if needed [Meet > Start Editing, Meet > Pairings].",
           "Coming is the default. Not Coming means the wrestler should not be scheduled at all; they will be removed from pairing suggestions and any existing bouts for that wrestler are deleted so the meet plan reflects the scratch immediately.",
           "Arrive Late and Leave Early are planning flags. The wrestler is still considered coming, but their name is highlighted in a different color so it is easy to spot them while scheduling. The flag is a reminder that you may need to manually drag their bouts toward the top or bottom of the bout list as appropriate. These flags do not automatically move bouts for you; use Mat Assignments to adjust the running order [Meet > Mat Assignments].",
+          "You can also right click a wrestler in the Pairings roster list to quickly mark Not Coming, Arrive Late, or Leave Early without opening the attendance dialog [Meet > Pairings].",
           "Best practice: update attendance first, then run auto pairings to fill gaps created by scratches and refresh the recommended matchups. After auto pairings completes, review pairings and mat order again [Meet > Pairings].",
         ],
       },
