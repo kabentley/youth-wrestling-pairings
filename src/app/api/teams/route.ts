@@ -44,8 +44,23 @@ export async function GET() {
       headCoachId: true,
       headCoach: { select: { id: true, username: true } },
       coaches: { where: { role: "COACH" }, select: { id: true, username: true } },
+      _count: { select: { wrestlers: true } },
     },
   });
+  const [activeCounts, inactiveCounts] = await Promise.all([
+    db.wrestler.groupBy({
+      by: ["teamId"],
+      where: { active: true },
+      _count: { _all: true },
+    }),
+    db.wrestler.groupBy({
+      by: ["teamId"],
+      where: { active: false },
+      _count: { _all: true },
+    }),
+  ]);
+  const activeMap = new Map(activeCounts.map((row) => [row.teamId, row._count._all]));
+  const inactiveMap = new Map(inactiveCounts.map((row) => [row.teamId, row._count._all]));
   return NextResponse.json(
     teams.map((t) => ({
       id: t.id,
@@ -55,6 +70,19 @@ export async function GET() {
       address: t.address,
       website: t.website,
       hasLogo: Boolean(t.logoData),
+      activeWrestlerCount: (() => {
+        const active = activeMap.get(t.id) ?? 0;
+        const inactive = inactiveMap.get(t.id) ?? 0;
+        if (active + inactive === 0 && t._count.wrestlers > 0) return t._count.wrestlers;
+        return active;
+      })(),
+      inactiveWrestlerCount: (() => {
+        const active = activeMap.get(t.id) ?? 0;
+        const inactive = inactiveMap.get(t.id) ?? 0;
+        if (active + inactive === 0) return 0;
+        return inactive;
+      })(),
+      wrestlerCount: t._count.wrestlers,
       headCoachId: t.headCoachId ?? null,
       headCoach: t.headCoach ? { id: t.headCoach.id, username: t.headCoach.username } : null,
       coaches: t.coaches.map((c) => ({ id: c.id, username: c.username })),

@@ -1100,6 +1100,12 @@ export default function RostersClient() {
       });
   }, [roster, includeInactiveRows]);
 
+  const rosterTotals = useMemo(() => {
+    const total = roster.length;
+    const inactive = roster.filter(w => !w.active).length;
+    return { total, inactive };
+  }, [roster]);
+
   const downloadableRoster = useMemo(() => displayRoster.filter(row => row.active), [displayRoster]);
 
   const downloadRosterCsv = () => {
@@ -1878,6 +1884,10 @@ export default function RostersClient() {
                 ) : (
                   <span aria-hidden="true">&nbsp;</span>
                 )}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+                Wrestlers: {rosterTotals.total}
+                {rosterTotals.inactive > 0 ? ` (inactive: ${rosterTotals.inactive})` : ""}
               </div>
               <div className="roster-wrapper">
                 {canEditRoster ? (

@@ -11,6 +11,9 @@ type TeamRow = {
   color: string;
   address?: string | null;
   hasLogo?: boolean;
+  wrestlerCount?: number;
+  activeWrestlerCount?: number;
+  inactiveWrestlerCount?: number;
   headCoachId?: string | null;
   headCoach?: { id: string; username: string } | null;
   coaches: { id: string; username: string }[];
@@ -24,6 +27,12 @@ export default function LeagueSection() {
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
+  const [leagueStats, setLeagueStats] = useState<{
+    teamCount: number;
+    activeWrestlers: number;
+    inactiveWrestlers: number;
+    totalWrestlers: number;
+  } | null>(null);
   const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string | undefined>>({});
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string | undefined>>({});
@@ -45,13 +54,20 @@ export default function LeagueSection() {
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
 
   async function load() {
-    const [tRes, lRes] = await Promise.all([fetch("/api/teams"), fetch("/api/league")]);
+    const [tRes, lRes, sRes] = await Promise.all([
+      fetch("/api/teams"),
+      fetch("/api/league"),
+      fetch("/api/league/stats"),
+    ]);
     if (tRes.ok) setTeams(await tRes.json());
     if (lRes.ok) {
       const league = await lRes.json();
       setLeagueName(league.name ?? "");
       setLeagueHasLogo(Boolean(league.hasLogo));
       setLeagueWebsite(league.website ?? "");
+    }
+    if (sRes.ok) {
+      setLeagueStats(await sRes.json());
     }
   }
 
@@ -430,7 +446,14 @@ function normalizeHeadCoachId(value: string | null | undefined) {
       </div>
 
       <div className="admin-card">
-        <h3>Teams</h3>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Teams</h3>
+          {leagueStats && (
+            <div className="admin-muted" style={{ fontSize: 16, fontWeight: 600 }}>
+              {leagueStats.teamCount} teams | {leagueStats.totalWrestlers} wrestlers ({leagueStats.activeWrestlers} active, {leagueStats.inactiveWrestlers} inactive)
+            </div>
+          )}
+        </div>
         <div className="admin-row">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
           <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" className="admin-input-sm" />
@@ -447,6 +470,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                 <th>Logo</th>
                 <th>Symbol</th>
                 <th>Team</th>
+                <th>Wrestlers</th>
                 <th>Color</th>
                 <th>Head Coach</th>
                 <th>Actions</th>
@@ -512,6 +536,10 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                     />
                   </td>
                   <td>
+                    {(t.wrestlerCount ?? 0)}
+                    {(t.inactiveWrestlerCount ?? 0) > 0 ? ` (inactive: ${t.inactiveWrestlerCount})` : ""}
+                  </td>
+                  <td>
                     <div className="color-cell">
                       <ColorPicker
                         value={colorEdits[t.id] ?? t.color}
@@ -563,7 +591,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
               ))}
               {teams.length === 0 && (
                 <tr>
-                  <td colSpan={6}>No teams yet.</td>
+                  <td colSpan={7}>No teams yet.</td>
                 </tr>
               )}
             </tbody>
