@@ -183,7 +183,7 @@ export async function POST(req: Request) {
     }));
     const existingWrestlers = await db.wrestler.findMany({
       where: { teamId: team.id },
-      select: { id: true, first: true, last: true, birthdate: true },
+      select: { id: true, first: true, last: true, birthdate: true, weight: true, experienceYears: true, skill: true },
     });
     const plan = planRosterUpsert({
       teamId: team.id,

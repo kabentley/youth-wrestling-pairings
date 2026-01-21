@@ -14,6 +14,9 @@ export type ExistingWrestler = {
   first: string;
   last: string;
   birthdate: Date;
+  weight: number;
+  experienceYears: number;
+  skill: number;
 };
 
 /** Update operation produced by `planRosterUpsert`. */
@@ -104,12 +107,19 @@ export function planRosterUpsert(args: {
 
     const existing = existingMap.get(k);
     if (existing) {
-      toUpdate.push({
-        id: existing.id,
-        weight: row.weight,
-        experienceYears,
-        skill,
-      });
+      const weight = row.weight;
+      if (
+        existing.weight !== weight ||
+        existing.experienceYears !== experienceYears ||
+        existing.skill !== skill
+      ) {
+        toUpdate.push({
+          id: existing.id,
+          weight,
+          experienceYears,
+          skill,
+        });
+      }
     } else {
       toCreate.push({
         teamId,

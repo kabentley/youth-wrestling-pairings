@@ -3,6 +3,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
 
@@ -124,6 +125,7 @@ export default function RostersClient() {
   const [importMsg, setImportMsg] = useState<string>("");
   const [importError, setImportError] = useState<string>("");
   const [importErrorFile, setImportErrorFile] = useState<string>("");
+  const [importSummary, setImportSummary] = useState<string>("");
   const [showImportErrorModal, setShowImportErrorModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showTeamSelector, setShowTeamSelector] = useState(false);
@@ -197,6 +199,7 @@ export default function RostersClient() {
     }
     setSelectedTeamId(teamId);
     setImportTeamId(teamId);
+    setImportSummary("");
     setShowTeamSelector(false);
   };
 
@@ -230,6 +233,10 @@ export default function RostersClient() {
   }, [role, sessionTeamId, selectedTeamId]);
 
   useEffect(() => {
+    setImportSummary("");
+  }, [selectedTeamId]);
+
+  useEffect(() => {
     if (!teamQueryParam) return;
     if (hasDirtyChanges) return;
     if (selectedTeamId === teamQueryParam) return;
@@ -252,6 +259,56 @@ export default function RostersClient() {
     };
   }, [showImportModal]);
 
+  function normalizeDateValue(value: unknown) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const parsed = XLSX.SSF.parse_date_code(value);
+      if (parsed?.y && parsed.m && parsed.d) {
+        const mm = String(parsed.m).padStart(2, "0");
+        const dd = String(parsed.d).padStart(2, "0");
+        return `${parsed.y}-${mm}-${dd}`;
+      }
+    }
+    return null;
+  }
+
+  function normalizeCellValue(key: string, value: unknown) {
+    if (value == null) return "";
+    if (value instanceof Date || typeof value === "number") {
+      if (/birth|dob|dateofbirth/i.test(key)) {
+        const normalized = normalizeDateValue(value);
+        if (normalized) return normalized;
+      }
+    }
+    return String(value).trim();
+  }
+
+  async function parseRosterFile(f: File) {
+    const lower = f.name.toLowerCase();
+    if (lower.endsWith(".xlsx")) {
+      const buffer = await f.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      if (!sheetName) return { headers: [], data: [] };
+      const sheet = workbook.Sheets[sheetName];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+      const data = rawRows.map(row => {
+        const normalized: Record<string, string> = {};
+        for (const [key, value] of Object.entries(row)) {
+          normalized[key] = normalizeCellValue(key, value);
+        }
+        return normalized;
+      });
+      return { headers, data };
+    }
+    const text = await f.text();
+    const parsed = parseCsv(text);
+    return { headers: parsed.headers, data: parsed.data };
+  }
+
   async function onChooseFile(f: File | null) {
     setFile(f);
     setPreview(null);
@@ -262,32 +319,60 @@ export default function RostersClient() {
 
     if (!f) return;
     try {
-      const text = await f.text();
-      const parsed = parseCsv(text);
+      const parsed = await parseRosterFile(f);
       setPreview({ headers: parsed.headers, rows: parsed.data.slice(0, 8) });
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Unable to read CSV.");
+      setImportError(err instanceof Error ? err.message : "Unable to read roster file.");
       setImportErrorFile(f.name);
       setShowImportModal(false);
       setShowImportErrorModal(true);
     }
   }
 
+  function normalizeKey(key: string) {
+    return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
   function normalizeRow(r: Record<string, string>) {
+    const normalizedMap = Object.entries(r).reduce<Record<string, string>>((acc, [key, value]) => {
+      acc[normalizeKey(key)] = value;
+      return acc;
+    }, {});
+
     const get = (...keys: string[]) => {
       for (const k of keys) {
-        const v = r[k];
-        if (typeof v === "string" && v.trim() !== "") return v.trim();
+        const direct = r[k];
+        if (typeof direct === "string" && direct.trim() !== "") return direct.trim();
+        const normalized = normalizedMap[normalizeKey(k)];
+        if (typeof normalized === "string" && normalized.trim() !== "") return normalized.trim();
       }
       return "";
     };
 
-    const first = get("first", "First", "FIRST");
-    const last = get("last", "Last", "LAST");
-    const weightStr = get("weight", "Weight", "WEIGHT", "wt", "Wt");
-    let birthdate = get("birthdate", "Birthdate", "DOB", "dob", "DateOfBirth", "dateOfBirth");
-    const expStr = get("experienceYears", "ExperienceYears", "experience", "Experience", "expYears", "ExpYears");
-    const skillStr = get("skill", "Skill", "SKILL");
+    const first = get("first", "First", "FIRST", "First Name", "firstname");
+    const last = get("last", "Last", "LAST", "Last Name", "lastname");
+    const weightStr = get("weight", "Weight", "WEIGHT", "wt", "Wt", "Actual Wt", "Actual Wt.", "Actual Weight");
+    let birthdate = get(
+      "birthdate",
+      "Birthdate",
+      "DOB",
+      "dob",
+      "DateOfBirth",
+      "dateOfBirth",
+      "Date of Birth",
+      "Birth Date",
+    );
+    const expStr = get(
+      "experienceYears",
+      "ExperienceYears",
+      "experience",
+      "Experience",
+      "expYears",
+      "ExpYears",
+      "Exp",
+      "Experience Years",
+    );
+    const skillStr = get("skill", "Skill", "SKILL", "Skill Level");
 
     const weight = Number(weightStr);
     const experienceYears = expStr ? Number(expStr) : Number.NaN;
@@ -306,6 +391,10 @@ export default function RostersClient() {
     return { first, last, weight, birthdate, experienceYears, skill };
   }
 
+  function buildRosterKey(first: string, last: string, birthdate: string) {
+    return `${first.trim().toLowerCase()}|${last.trim().toLowerCase()}|${birthdate}`;
+  }
+
   async function importCsv() {
     setImportMsg("");
     setImportError("");
@@ -313,7 +402,7 @@ export default function RostersClient() {
     setShowImportErrorModal(false);
 
     try {
-      if (!file) { setImportMsg("Choose a CSV file first."); return; }
+      if (!file) { setImportMsg("Choose a CSV or XLSX file first."); return; }
       setImportErrorFile(file.name);
       const teamId = importTeamId || undefined;
 
@@ -322,11 +411,10 @@ export default function RostersClient() {
         return;
       }
 
-      const text = await file.text();
-      const parsed = parseCsv(text);
+      const parsed = await parseRosterFile(file);
 
       if (parsed.headers.length === 0) {
-        setImportMsg("CSV looks empty.");
+        setImportMsg("File looks empty.");
         return;
       }
 
@@ -372,6 +460,24 @@ export default function RostersClient() {
         return;
       }
 
+      if (roster.length > 0) {
+        const existingKeys = new Set(
+          roster.map(w => buildRosterKey(w.first, w.last, w.birthdate.slice(0, 10))),
+        );
+        const estimatedNewCount = wrestlers.filter(w =>
+          !existingKeys.has(buildRosterKey(w.first, w.last, w.birthdate)),
+        ).length;
+        if (estimatedNewCount > 10) {
+          const ok = window.confirm(
+            `This import will add about ${estimatedNewCount} new wrestlers. Is that expected?`,
+          );
+          if (!ok) {
+            setImportMsg("Import canceled.");
+            return;
+          }
+        }
+      }
+
       setImportMsg("Importing...");
       const payload: Record<string, unknown> = { teamId, wrestlers };
       const res = await fetch("/api/teams/import", {
@@ -390,18 +496,23 @@ export default function RostersClient() {
       }
 
       const json = await res.json();
+      const created = Number(json.created ?? 0);
+      const updated = Number(json.updated ?? 0);
+      const summary = `Imported ${created} new${created === 1 ? " wrestler" : " wrestlers"}, updated ${updated}${updated === 1 ? " wrestler" : " wrestlers"}.`;
+      setImportSummary(summary);
+
       if (skippedRows.length) {
         const preview = skippedRows
           .slice(0, 8)
           .map(r => `${r.row}: ${r.first || "?"} ${r.last || "?"} (missing ${r.missingExp ? "experienceYears" : ""}${r.missingExp && r.missingSkill ? " + " : ""}${r.missingSkill ? "skill" : ""})`)
           .join("\n");
         const suffix = skippedRows.length > 8 ? `\n(and ${skippedRows.length - 8} more)` : "";
-        setImportMsg(`Imported ${json.created} wrestlers.`);
+        setImportMsg(summary);
         setImportError(`Skipped ${skippedRows.length} rows:\n${preview}${suffix}`);
         setShowImportModal(false);
         setShowImportErrorModal(true);
       } else {
-        setImportMsg(`Imported ${json.created} wrestlers.`);
+        setImportMsg(summary);
       }
       setFile(null);
       setPreview(null);
@@ -1888,6 +1999,7 @@ export default function RostersClient() {
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
                 Wrestlers: {rosterTotals.total}
                 {rosterTotals.inactive > 0 ? ` (inactive: ${rosterTotals.inactive})` : ""}
+                {importSummary ? ` — ${importSummary}` : ""}
               </div>
               <div className="roster-wrapper">
                 {canEditRoster ? (
@@ -2010,11 +2122,11 @@ export default function RostersClient() {
               </h3>
             </div>
             <div className="import-modal-body">
-              <label className="muted">CSV file</label>
+              <label className="muted">CSV or XLSX file</label>
               <input
                 className="input"
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
               />
               <div className="muted" style={{ marginTop: 6 }}>
