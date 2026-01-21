@@ -49,7 +49,6 @@ export default function LeagueSection() {
   const [importConfirm, setImportConfirm] = useState("");
   const [importError, setImportError] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
-  const detailTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
 
@@ -211,15 +210,14 @@ function normalizeHeadCoachId(value: string | null | undefined) {
     await load();
   }
 
-  function scheduleTeamDetailsSave(teamId: string, name: string, symbol: string, headCoachId: string | null) {
+  function commitTeamDetails(teamId: string, name: string, symbol: string, headCoachId: string | null) {
     const cleanName = name.trim();
     const cleanSymbol = symbol.trim();
-    if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) return;
-    const existingDetailTimer = detailTimers.current[teamId];
-    if (existingDetailTimer) clearTimeout(existingDetailTimer);
-    detailTimers.current[teamId] = setTimeout(() => {
-      void updateTeamDetails(teamId, cleanName, cleanSymbol, headCoachId);
-    }, 500);
+    if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) {
+      setMsg("Team name must be at least 2 characters and symbol must be 2-4 characters.");
+      return;
+    }
+    void updateTeamDetails(teamId, cleanName, cleanSymbol, headCoachId);
   }
 
   function scheduleColorSave(teamId: string, color: string) {
@@ -512,10 +510,14 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                       onChange={(e) => {
                         const nextSymbol = e.target.value;
                         setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
-                        scheduleTeamDetailsSave(
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        commitTeamDetails(
                           t.id,
                           getTeamName(t),
-                          nextSymbol,
+                          getTeamSymbol(t),
                           normalizeHeadCoachId(getTeamHeadCoachId(t)),
                         );
                       }}
@@ -528,9 +530,13 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                       onChange={(e) => {
                         const nextName = e.target.value;
                         setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
-                        scheduleTeamDetailsSave(
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        commitTeamDetails(
                           t.id,
-                          nextName,
+                          getTeamName(t),
                           getTeamSymbol(t),
                           normalizeHeadCoachId(getTeamHeadCoachId(t)),
                         );
@@ -560,7 +566,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                   onChange={(e) => {
                     const nextHeadCoachId = e.target.value;
                     setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
-                    scheduleTeamDetailsSave(
+                    commitTeamDetails(
                       t.id,
                       getTeamName(t),
                       getTeamSymbol(t),
