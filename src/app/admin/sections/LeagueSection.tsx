@@ -80,7 +80,9 @@ export default function LeagueSection() {
       body: JSON.stringify({ name, symbol }),
     });
     if (!res.ok) {
-      setMsg("Unable to add team.");
+      const json = await res.json().catch(() => ({}));
+      const error = (json as { error?: string }).error;
+      setMsg(error ?? "Unable to add team. Check the name and symbol, then try again.");
       return;
     }
     setName("");
@@ -393,7 +395,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                   id="league-logo-file"
                   className="file-input"
                   type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
                   onChange={(e) => {
                     void uploadLeagueLogo(e.target.files?.[0] ?? null);
                     e.currentTarget.value = "";
@@ -485,7 +487,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                         id={`team-logo-file-${t.id}`}
                         className="file-input"
                         type="file"
-                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
                         onChange={(e) => {
                           void uploadLogo(t.id, e.target.files?.[0] ?? null);
                           e.currentTarget.value = "";

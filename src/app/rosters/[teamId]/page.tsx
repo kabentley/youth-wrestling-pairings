@@ -324,7 +324,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
             )}
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
               onChange={(e) => uploadTeamLogo(e.target.files?.[0] ?? null)}
             />
             <button onClick={clearTeamLogo} disabled={!team?.hasLogo}>Clear Logo</button>

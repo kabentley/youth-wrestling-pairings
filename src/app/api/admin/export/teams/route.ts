@@ -16,6 +16,7 @@ function extensionFromMime(mime: string | null | undefined) {
   if (mime.includes("jpeg") || mime.includes("jpg")) return "jpg";
   if (mime.includes("webp")) return "webp";
   if (mime.includes("svg")) return "svg";
+  if (mime.includes("avif")) return "avif";
   return "bin";
 }
 

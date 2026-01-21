@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -91,17 +92,43 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  await requireAdmin();
-  const body = await req.json();
-  const parsed = TeamSchema.parse(body);
-  const team = await db.team.create({
-    data: {
-      name: parsed.name.trim(),
-      symbol: parsed.symbol.trim().toUpperCase(),
-      color: parsed.color?.trim() ?? "#000000",
-      address: normalizeNullableString(parsed.address),
-      website: normalizeNullableString(parsed.website),
-    },
-  });
-  return NextResponse.json(team);
+  try {
+    await requireAdmin();
+    const body = await req.json();
+    const parsed = TeamSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Provide a team name and a symbol (2-4 characters)." },
+        { status: 400 },
+      );
+    }
+    const team = await db.team.create({
+      data: {
+        name: parsed.data.name.trim(),
+        symbol: parsed.data.symbol.trim().toUpperCase(),
+        color: parsed.data.color?.trim() ?? "#000000",
+        address: normalizeNullableString(parsed.data.address),
+        website: normalizeNullableString(parsed.data.website),
+      },
+    });
+    return NextResponse.json(team);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "FORBIDDEN") {
+      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    }
+    if (message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json(
+        { error: "Team name or symbol already exists. Choose a unique value." },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { error: "Unable to add team. Check name and symbol, then try again." },
+      { status: 500 },
+    );
+  }
 }

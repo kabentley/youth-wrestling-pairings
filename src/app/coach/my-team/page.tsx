@@ -690,7 +690,7 @@ export default function CoachMyTeamPage() {
                     id="team-logo-file"
                     type="file"
                     className="file-input"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
                     onChange={(e) => {
                       void uploadLogo(e.target.files?.[0] ?? null);
                       e.currentTarget.value = "";
