@@ -507,7 +507,7 @@ export default function RostersClient() {
     if (!first) errors.add("first");
     if (!last) errors.add("last");
     const weight = Number(row.weight);
-    if (!Number.isFinite(weight) || weight < 35 || weight > 300) errors.add("weight");
+    if (!Number.isFinite(weight) || weight < 30 || weight > 300) errors.add("weight");
     if (!row.birthdate) {
       errors.add("birthdate");
     } else if (!/^\d{4}-\d{2}-\d{2}$/.test(row.birthdate)) {
