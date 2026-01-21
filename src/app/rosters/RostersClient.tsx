@@ -375,8 +375,8 @@ export default function RostersClient() {
     const skillStr = get("skill", "Skill", "SKILL", "Skill Level");
 
     const weight = Number(weightStr);
-    const experienceYears = expStr ? Number(expStr) : Number.NaN;
-    const skill = skillStr ? Number(skillStr) : Number.NaN;
+    const experienceYears = expStr ? Number(expStr) : 0;
+    const skill = skillStr ? Number(skillStr) : 0;
 
     if (birthdate) {
       const match = birthdate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -489,7 +489,8 @@ export default function RostersClient() {
 
       if (!res.ok) {
         const txt = await res.text();
-        setImportError(`Import failed: ${txt || "Unknown error"}`);
+        const detail = txt || res.statusText || "Unknown error";
+        setImportError(`Import failed (${res.status}): ${detail}`);
         setShowImportModal(false);
         setShowImportErrorModal(true);
         return;

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -24,8 +25,23 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const { user } = await requireRole("COACH");
-  const body = BodySchema.parse(await req.json());
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "FORBIDDEN") {
+      return NextResponse.json({ error: "Coaches or admins only." }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+
+  const bodyResult = BodySchema.safeParse(await req.json());
+  if (!bodyResult.success) {
+    const detail = bodyResult.error.issues.map((issue) => issue.message).join("; ");
+    return NextResponse.json({ error: detail || "Invalid roster data." }, { status: 400 });
+  }
+  const body = bodyResult.data;
 
   let teamId = body.teamId;
   if (!teamId) {
@@ -68,15 +84,26 @@ export async function POST(req: Request) {
     );
   }
 
+  let createdCount = 0;
   if (plan.toCreate.length) {
-    await db.wrestler.createMany({
-      data: plan.toCreate.map(w => ({ ...w, active: true })),
-    });
+    for (const w of plan.toCreate) {
+      try {
+        await db.wrestler.create({
+          data: { ...w, active: true },
+        });
+        createdCount += 1;
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   return NextResponse.json({
     teamId,
-    created: plan.toCreate.length,
+    created: createdCount,
     updated: plan.toUpdate.length,
   });
 }

@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
@@ -203,10 +204,19 @@ export async function POST(req: Request) {
       updatedWrestlers += plan.toUpdate.length;
     }
     if (plan.toCreate.length) {
-      await db.wrestler.createMany({
-        data: plan.toCreate.map(w => ({ ...w, active: true })),
-      });
-      createdWrestlers += plan.toCreate.length;
+      for (const w of plan.toCreate) {
+        try {
+          await db.wrestler.create({
+            data: { ...w, active: true },
+          });
+          createdWrestlers += 1;
+        } catch (err) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+            continue;
+          }
+          throw err;
+        }
+      }
     }
   }
 

@@ -58,13 +58,13 @@ export function parseBirthdate(dateStr: string): Date | null {
   return new Date(toISODateOnly(d));
 }
 
-function key(teamId: string, first: string, last: string, birthdateISO: string) {
-  return `${teamId}|${first.toLowerCase()}|${last.toLowerCase()}|${birthdateISO}`;
+function key(teamId: string, first: string, last: string) {
+  return `${teamId}|${first.toLowerCase()}|${last.toLowerCase()}`;
 }
 
 /**
  * Build a deterministic plan:
- * - Match existing ONLY by (teamId + first + last + birthdate) [weight ignored]
+ * - Match existing ONLY by (teamId + first + last) [birthdate ignored]
  * - If match: UPDATE (overwrite weight/experienceYears/skill)
  * - If no match: CREATE
  * - Dedupe duplicates inside incoming rows using the same key
@@ -82,7 +82,6 @@ export function planRosterUpsert(args: {
       teamId,
       normalizeName(w.first),
       normalizeName(w.last),
-      toISODateOnly(w.birthdate),
     );
     existingMap.set(k, w);
   }
@@ -98,7 +97,7 @@ export function planRosterUpsert(args: {
     if (!first || !last || !bd) continue;
 
     const bdISO = toISODateOnly(bd);
-    const k = key(teamId, first, last, bdISO);
+    const k = key(teamId, first, last);
     if (seenIncoming.has(k)) continue;
     seenIncoming.add(k);
 
