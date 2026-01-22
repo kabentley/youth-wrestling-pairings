@@ -128,7 +128,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [lastUpdatedBy, setLastUpdatedBy] = useState<string | null>(null);
   const [changes, setChanges] = useState<MeetChange[]>([]);
   const [comments, setComments] = useState<MeetComment[]>([]);
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(true);
   const [commentBody, setCommentBody] = useState("");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
@@ -989,7 +989,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingsTableWidth(Math.floor(wrapper.getBoundingClientRect().width));
     return () => observer.disconnect();
   }, []);
+  const allowPairingsOverflow = orderedPairingsTeams.length >= 3;
   const pairingsEffectiveColWidths = useMemo(() => {
+    if (allowPairingsOverflow) return pairingsColWidths;
     if (pairingsTableWidth === null) return pairingsColWidths;
     const widths = [...pairingsColWidths];
     const minWidths = [70, 70, 50, 50, 45, 45, 50];
@@ -1007,7 +1009,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       overflow -= delta;
     }
     return widths;
-  }, [pairingsColWidths, pairingsTableWidth]);
+  }, [allowPairingsOverflow, pairingsColWidths, pairingsTableWidth]);
   const matchCounts = bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
     acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
@@ -1878,6 +1880,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           margin-top: 12px;
           max-height: calc(23 * 25px + 48px);
           overflow-y: auto;
+          overflow-x: auto;
         }
         .pairings-side-card {
           min-height: calc(23 * 25px + 145px);
@@ -2013,10 +2016,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .attendance-modal-body {
           display: grid;
-          gap: 12px;
+          gap: 6px;
           min-height: 0;
           flex: 1;
           overflow: auto;
+        }
+        .attendance-modal-body .pairings-tab-bar {
+          margin-top: 0;
         }
         .attendance-modal-table {
           border: 1px solid var(--line);
@@ -2024,6 +2030,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           overflow: auto;
           max-height: 52vh;
           background: #fff;
+        }
+        .attendance-modal-table .attendance-table {
+          font-size: 11px;
+        }
+        .attendance-modal-table .attendance-table th,
+        .attendance-modal-table .attendance-table td {
+          padding: 1px 4px;
         }
         .modal-row {
           display: grid;
@@ -2386,9 +2399,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               onClick={() => {
                 setAutoPairingsError(null);
                 setAutoPairingsModalMode("manual");
+                setAutoPairingsTeamId(attendanceTeamId);
                 setShowAutoPairingsModal(true);
               }}
-              disabled={!canEdit}
+              disabled={!meetLoaded}
             >
               Attendance
             </button>
@@ -2884,7 +2898,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: 0 }}>Restart Meet Setup</h3>
               <p style={{ margin: "0 0 8px", color: "#2b2b2b", fontSize: 14 }}>
-                Restarting the setup removes every pairing from this meet. Once confirmed all bouts are cleared and you'll be redirected to create a new meet.
+                Restarting will delete this meet and begin the process of creating a new meet.
               </p>
               {restartError && (
                 <div style={{ color: "#b00020", fontSize: 13, marginBottom: 6 }}>
@@ -3023,7 +3037,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           alignItems: "center",
                           justifyContent: "center",
                           gap: 4,
-                          padding: "2px 8px",
+                          padding: "1px 6px",
                           borderRadius: 6,
                           border: `1px solid ${isComing ? "#bcd8c1" : "#cfcfcf"}`,
                           background: isComing ? "#e6f6ea" : "#f0f0f0",
@@ -3031,7 +3045,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           cursor: canEdit ? "pointer" : "default",
                           transition: "background 0.2s, border-color 0.2s",
                           fontWeight: 600,
-                          fontSize: 12,
+                          fontSize: 11,
                           minWidth: 0,
                         };
                         const activeStyle = (active: boolean, base: React.CSSProperties) =>
@@ -3080,7 +3094,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     updateModalAttendanceStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
-                                  style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc" })}
+                                  style={activeStyle(isLate, { background: "#dff1ff", borderColor: "#b6defc", padding: "1px 6px", fontSize: 11 })}
                                 >
                                   Arrive late
                                 </button>
@@ -3090,7 +3104,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     updateModalAttendanceStatus(w.id, nextStatus);
                                   }}
                                   disabled={!canEdit || !isComing}
-                                  style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad" })}
+                                  style={activeStyle(isEarly, { background: "#f3eadf", borderColor: "#e2c8ad", padding: "1px 6px", fontSize: 11 })}
                                 >
                                   Leave early
                                 </button>
@@ -3114,6 +3128,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 </div>
               )}
               <div className="modal-actions">
+                <button
+                  className="nav-btn"
+                  onClick={() => setShowAutoPairingsModal(false)}
+                  type="button"
+                  disabled={autoPairingsLoading}
+                >
+                  Cancel
+                </button>
                 <button
                   className="nav-btn"
                   onClick={() => {

@@ -864,6 +864,26 @@ export default function RostersClient() {
         return row.last.toLowerCase();
     }
   };
+  const getViewerSortValue = (row: Wrestler, key: ViewerColumnKey) => {
+    switch (key) {
+      case "last":
+        return row.last.toLowerCase();
+      case "first":
+        return row.first.toLowerCase();
+      case "age":
+        return row.birthdate ? ageYears(row.birthdate) ?? 0 : 0;
+      case "weight":
+        return Number(row.weight);
+      case "experienceYears":
+        return Number(row.experienceYears);
+      case "skill":
+        return Number(row.skill);
+      case "active":
+        return row.active ? "Active" : "Inactive";
+      default:
+        return row.last.toLowerCase();
+    }
+  };
 
   const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
   const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
@@ -1204,13 +1224,23 @@ export default function RostersClient() {
   };
 
   const displayRoster = useMemo(() => {
-    return [...roster]
-      .filter(w => includeInactiveRows || w.active)
-      .sort((a, b) => {
-        if (a.last === b.last) return a.first.localeCompare(b.first);
-        return a.last.localeCompare(b.last);
-      });
-  }, [roster, includeInactiveRows]);
+    const viewerSortKey = spectatorColumns.some(col => col.key === sortConfig.key)
+      ? (sortConfig.key as ViewerColumnKey)
+      : "last";
+    const rows = roster.filter(w => includeInactiveRows || w.active);
+    rows.sort((a, b) => {
+      const aVal = getViewerSortValue(a, viewerSortKey);
+      const bVal = getViewerSortValue(b, viewerSortKey);
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return sortConfig.dir === "asc" ? aVal - bVal : bVal - aVal;
+      }
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortConfig.dir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return 0;
+    });
+    return rows;
+  }, [roster, includeInactiveRows, sortConfig, spectatorColumns]);
 
   const rosterTotals = useMemo(() => {
     const total = roster.length;
@@ -1273,8 +1303,11 @@ export default function RostersClient() {
           font-family: "Source Sans 3", Arial, sans-serif;
           color: var(--ink);
           background: var(--bg);
-          min-height: 100vh;
+          height: 100dvh;
           padding: 18px 12px 30px;
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
         }
         .nav {
           display: flex;
@@ -1312,6 +1345,8 @@ export default function RostersClient() {
           display: grid;
           grid-template-columns: minmax(0, 1fr);
           gap: 18px;
+          flex: 1;
+          min-height: 0;
         }
         .card {
           background: var(--card);
@@ -1319,6 +1354,10 @@ export default function RostersClient() {
           border-radius: 8px;
           padding: 14px;
           box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          max-height: 100%;
         }
         .card-title {
           font-family: "Oswald", Arial, sans-serif;
@@ -1575,14 +1614,17 @@ export default function RostersClient() {
           border-radius: 8px;
           background: #fff;
           display: block;
-          width: fit-content;
+          width: 100%;
+          flex: 1;
+          min-height: 0;
         }
         .roster-table table {
           table-layout: auto;
           border-collapse: collapse;
           display: block;
           min-width: 480px;
-          max-height: calc(10 * 36px);
+          max-height: none;
+          height: 100%;
           overflow-y: auto;
         }
         .roster-table tbody tr:hover {
@@ -1590,11 +1632,11 @@ export default function RostersClient() {
         }
         .roster-table th,
         .roster-table td {
-          padding: 1px 3px;
+          padding: 0 2px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          line-height: 1.2;
-          font-size: 15px;
+          line-height: 1.1;
+          font-size: 14px;
         }
         .roster-table th {
           background: #f0f4ff;
@@ -1611,7 +1653,7 @@ export default function RostersClient() {
         }
         .roster-th {
           position: relative;
-          padding-right: 18px;
+          padding-right: 14px;
           cursor: pointer;
           user-select: none;
         }
@@ -1672,13 +1714,19 @@ export default function RostersClient() {
           border-radius: 8px;
           overflow: hidden;
           background: #fff;
-          width: fit-content;
-          max-width: calc(100vw - 32px);
+          width: 100%;
+          max-width: 100%;
           margin: 0;
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
         }
         .roster-grid {
           display: flex;
           flex-direction: column;
+          flex: 1;
+          min-height: 0;
         }
         .static-roster {
           border-bottom: 1px solid var(--line);
@@ -1688,7 +1736,9 @@ export default function RostersClient() {
           border-collapse: collapse;
         }
         .roster-scroll {
-          max-height: calc(20 * 36px);
+          max-height: none;
+          flex: 1;
+          min-height: 0;
           overflow-y: auto;
           background: #fff;
         }
@@ -1700,11 +1750,11 @@ export default function RostersClient() {
         }
         .spreadsheet-table th,
         .spreadsheet-table td {
-          padding: 1px 3px;
+          padding: 2px 4px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          line-height: 1.05;
-          font-size: 15px;
+          line-height: 1.15;
+          font-size: 14px;
         }
         .spreadsheet-table th {
           background: #f7f9fb;
@@ -1972,16 +2022,16 @@ export default function RostersClient() {
                       >
                         Import Roster
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-small header-download"
-                        onClick={downloadRosterCsv}
-                        disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
-                      >
-                        Download Roster
-                      </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small header-download"
+                    onClick={downloadRosterCsv}
+                    disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
+                  >
+                    Download Roster
+                  </button>
                 </div>
               </div>
             </div>
@@ -2074,7 +2124,14 @@ export default function RostersClient() {
                         <tr>
                           {spectatorColumns.map(col => (
                             <th key={col.key} className="roster-th">
-                              {col.label}
+                              <button
+                                type="button"
+                                className={`sortable-header${sortConfig.key === col.key ? " active" : ""}`}
+                                onClick={() => handleSortColumn(col.key)}
+                              >
+                                {col.label}
+                                {renderSortArrow(col.key)}
+                              </button>
                               <span
                                 className="col-resizer"
                                 onMouseDown={e => handleSpectatorColMouseDown(col.key, e)}
