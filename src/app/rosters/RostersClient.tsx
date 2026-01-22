@@ -1262,7 +1262,7 @@ export default function RostersClient() {
       return text;
     };
 
-    const rows = displayRoster.map(row => {
+    const rows = downloadableRoster.map(row => {
       const birthdateValue = row.birthdate ? row.birthdate.split("T")[0] : "";
       return [
         escape(row.last),
