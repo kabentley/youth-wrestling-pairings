@@ -285,7 +285,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
   const [pairingContext, setPairingContext] = useState<{ x: number; y: number; wrestler: Wrestler } | null>(null);
   const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
-  const attendanceStatusStyles: Record<Exclude<AttendanceStatus, "COMING">, { background: string; borderColor: string }> = {
+  const attendanceStatusStyles: Record<AttendanceStatus, { background: string; borderColor: string }> = {
+    COMING: { background: "#eaf6e6", borderColor: "#c6e2ba" },
     NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
     LATE: { background: "#dff1ff", borderColor: "#b6defc" },
     EARLY: { background: "#f3eadf", borderColor: "#e2c8ad" },
@@ -1336,6 +1337,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function handlePairingContextStatus(status: AttendanceStatus | null) {
+    if (!canEdit) {
+      setPairingContext(null);
+      return;
+    }
     if (!pairingContext) return;
     await updateWrestlerStatus(pairingContext.wrestler.id, status);
     setPairingContext(null);
@@ -1847,11 +1852,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           line-height: 1.2;
           font-size: 14px;
         }
-        .pairings-name-cell {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
+          .pairings-name-cell {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .pairings-name-cell.status-late {
+            background: #dff1ff;
+            background-clip: padding-box;
+          }
+          .pairings-name-cell.status-early {
+            background: #f3eadf;
+            background-clip: padding-box;
+          }
           .match-row-hover:hover {
             box-shadow: 0 0 0 2px #1e88e5 inset;
             background: #f2f8ff;
@@ -2084,6 +2097,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: grid;
           gap: 6px;
         }
+        .pairings-context-menu.readonly {
+          opacity: 0.92;
+        }
         .pairings-context-title {
           font-size: 13px;
           font-weight: 600;
@@ -2101,12 +2117,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           align-items: center;
           gap: 6px;
         }
+        .pairings-context-check {
+          display: inline-flex;
+          align-items: center;
+        }
+        .pairings-context-check input {
+          pointer-events: none;
+        }
         .pairings-context-item:focus-visible {
           outline: 2px solid var(--accent);
           outline-offset: -2px;
         }
         .pairings-context-item:hover {
           transform: translateY(-1px);
+        }
+        .pairings-context-item:disabled {
+          cursor: not-allowed;
+          box-shadow: none;
+          transform: none;
+          opacity: 0.9;
         }
         .setup-control-row {
           max-width: 100%;
@@ -2488,7 +2517,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </tr>
             </thead>
             <tbody>
-            {pairingsSorted.map(w => (
+            {pairingsSorted.map(w => {
+              const statusClass = w.status === "LATE"
+                ? " status-late"
+                : w.status === "EARLY"
+                  ? " status-early"
+                  : "";
+              return (
                 <tr
                   key={w.id}
                   className={selectedPairingId === w.id ? "selected" : undefined}
@@ -2504,12 +2539,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   }}
                   style={{
                     borderTop: "1px solid #eee",
-                    backgroundColor: selectedPairingId === w.id ? "#e8f4ff" : undefined,
+                    backgroundColor: selectedPairingId === w.id ? "#f0f0f0" : undefined,
                     cursor: "pointer",
                   }}
                 >
-                    <td className="pairings-name-cell" style={{ color: teamTextColor(w.teamId) }}>{w.last}</td>
-                    <td className="pairings-name-cell" style={{ color: teamTextColor(w.teamId) }}>{w.first}</td>
+                    <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.last}</td>
+                    <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.first}</td>
                     <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
                     <td>{w.experienceYears}</td>
@@ -2518,7 +2553,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       {getMatchCount(w.id)}
                     </td>
                   </tr>
-                ))}
+                );
+            })}
               {attendingByTeam.length === 0 && (
                 <tr>
                   <td colSpan={7} style={{ color: "#666" }}>No attending wrestlers.</td>
@@ -3205,11 +3241,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         const left = viewportWidth ? Math.min(pairingContext.x, viewportWidth - menuWidth) : pairingContext.x;
         const top = viewportHeight ? Math.min(pairingContext.y, viewportHeight - menuHeight) : pairingContext.y;
         const fullName = `${pairingContext.wrestler.first} ${pairingContext.wrestler.last}`;
+        const currentStatus = pairingContext.wrestler.status ?? "COMING";
         return (
           <>
             <div className="pairings-context-backdrop" onMouseDown={() => setPairingContext(null)} />
             <div
-              className="pairings-context-menu"
+              className={`pairings-context-menu${canEdit ? "" : " readonly"}`}
               ref={pairingMenuRef}
               style={{ left, top }}
               onContextMenu={(event) => event.preventDefault()}
@@ -3218,11 +3255,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <button
                 className="pairings-context-item"
                 style={{
+                  background: attendanceStatusStyles.COMING.background,
+                  border: `1px solid ${attendanceStatusStyles.COMING.borderColor}`,
+                }}
+                onClick={() => handlePairingContextStatus("COMING")}
+                disabled={!canEdit}
+              >
+                <span className="pairings-context-check" aria-hidden="true">
+                  <input type="checkbox" checked={currentStatus === "COMING"} readOnly />
+                </span>
+                Coming
+              </button>
+              <button
+                className="pairings-context-item"
+                style={{
                   background: attendanceStatusStyles.NOT_COMING.background,
                   border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
                 }}
                 onClick={() => handlePairingContextStatus("NOT_COMING")}
+                disabled={!canEdit}
               >
+                <span className="pairings-context-check" aria-hidden="true">
+                  <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
+                </span>
                 Not Coming
               </button>
               <button
@@ -3232,7 +3287,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   border: `1px solid ${attendanceStatusStyles.LATE.borderColor}`,
                 }}
                 onClick={() => handlePairingContextStatus("LATE")}
+                disabled={!canEdit}
               >
+                <span className="pairings-context-check" aria-hidden="true">
+                  <input type="checkbox" checked={currentStatus === "LATE"} readOnly />
+                </span>
                 Arrive Late
               </button>
               <button
@@ -3242,7 +3301,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   border: `1px solid ${attendanceStatusStyles.EARLY.borderColor}`,
                 }}
                 onClick={() => handlePairingContextStatus("EARLY")}
+                disabled={!canEdit}
               >
+                <span className="pairings-context-check" aria-hidden="true">
+                  <input type="checkbox" checked={currentStatus === "EARLY"} readOnly />
+                </span>
                 Leave Early
               </button>
             </div>
