@@ -8,7 +8,7 @@ import NumberInput from "@/components/NumberInput";
 import type { MatRule } from "@/lib/matRules";
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
-const CONFIGURED_MATS = 5;
+const CONFIGURED_MATS = 6;
 const MIN_MATS = 1;
 const DEFAULT_NUM_MATS = 3;
 const MAX_MATS = CONFIGURED_MATS;

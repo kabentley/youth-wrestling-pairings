@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireTeamCoach } from "@/lib/rbac";
 
 const MIN_MATS = 1;
-const MAX_MATS = 10;
+const MAX_MATS = 6;
 
 const RuleSchema = z.object({
   matIndex: z.number().int().min(1).max(MAX_MATS),

@@ -16,6 +16,7 @@ const SettingsSchema = z.object({
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
+  preserveMats: z.boolean().optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -32,13 +33,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const settings = SettingsSchema.parse(body);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { maxMatchesPerWrestler: true },
+    select: { maxMatchesPerWrestler: true, deletedAt: true },
   });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   const result = await generatePairingsForMeet(meetId, {
     ...settings,
     maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet?.maxMatchesPerWrestler ?? undefined,
   });
   await logMeetChange(meetId, user.id, "Generated pairings.");
+  if (settings.preserveMats) {
+    return NextResponse.json({ ...result, assigned: 0, reordered: 0 });
+  }
   const assignResult = await assignMatsForMeet(meetId);
   await logMeetChange(meetId, user.id, "Assigned mats.");
   const reorderResult = await reorderBoutsForMeet(meetId);

@@ -6,8 +6,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const { meetId } = await params;
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { homeTeamId: true },
+    select: { homeTeamId: true, deletedAt: true },
   });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   if (!meet?.homeTeamId) {
     return NextResponse.json({ rules: [] });
   }

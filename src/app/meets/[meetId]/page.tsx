@@ -109,6 +109,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const searchParams = useSearchParams();
   const editRequested = searchParams.get("edit") === "1";
   const autoPairingsRequested = searchParams.get("autopair") === "1";
+  const autoPairingsRunRequested = searchParams.get("autogen") === "1";
   const [autoPairingsPending, setAutoPairingsPending] = useState(false);
   const [wantsEdit, setWantsEdit] = useState(editRequested);
   const daysPerYear = DAYS_PER_YEAR;
@@ -216,6 +217,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
   const [showAutoPairingsConfirm, setShowAutoPairingsConfirm] = useState(false);
+  const [clearAutoPairingsBeforeRun, setClearAutoPairingsBeforeRun] = useState(true);
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
@@ -225,14 +227,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [autoPairingsModalMode, setAutoPairingsModalMode] = useState<"manual" | "auto">("manual");
   const [modalAttendanceOverrides, setModalAttendanceOverrides] = useState<Map<string, AttendanceStatus | null>>(new Map());
 
-  async function rerunAutoPairings() {
+  async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
+    const clearExisting = options.clearExisting ?? true;
     setAutoPairingsError(null);
     setAutoPairingsLoading(true);
     try {
-      const clearRes = await fetch(`/api/meets/${meetId}/pairings`, { method: "DELETE" });
-      if (!clearRes.ok) {
-        const errorText = await clearRes.text();
-        throw new Error(errorText || "Unable to clear existing bouts.");
+      if (clearExisting) {
+        const clearRes = await fetch(`/api/meets/${meetId}/pairings`, { method: "DELETE" });
+        if (!clearRes.ok) {
+          const errorText = await clearRes.text();
+          throw new Error(errorText || "Unable to clear existing bouts.");
+        }
       }
       const payload = {
         maxAgeGapDays: settings.maxAgeGapDays,
@@ -241,6 +246,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         allowSameTeamMatches: settings.allowSameTeamMatches,
         matchesPerWrestler: matchesPerWrestler ?? undefined,
         maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
+        preserveMats: !clearExisting,
       };
       const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
         method: "POST",
@@ -950,7 +956,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setAutoPairingsPrompted(true);
     setAutoPairingsPending(false);
     setAutoPairingsError(null);
-    setAutoPairingsModalMode("auto");
+    setAutoPairingsModalMode(autoPairingsRunRequested ? "auto" : "manual");
     setShowAutoPairingsModal(true);
     setModalAttendanceOverrides(new Map());
     if (autoPairingsRequested) {
@@ -964,6 +970,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     meetStatus,
     autoPairingsPending,
     autoPairingsRequested,
+    autoPairingsRunRequested,
     editRequested,
     meetId,
     router,
@@ -2417,7 +2424,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <button
                 type="button"
                 className="nav-btn"
-                onClick={() => setShowAutoPairingsConfirm(true)}
+                onClick={() => {
+                  setClearAutoPairingsBeforeRun(true);
+                  setShowAutoPairingsConfirm(true);
+                }}
                 disabled={!canEdit || autoPairingsLoading}
               >
                 {autoPairingsLoading ? "Running..." : "Run Auto Pairings"}
@@ -3204,8 +3214,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: 0 }}>Run Auto Pairings</h3>
               <div style={{ fontSize: 13, color: "#5b6472" }}>
-                This will clear all current bouts and generate new pairings.
+                Generate new pairings for this meet.
               </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={clearAutoPairingsBeforeRun}
+                  onChange={(e) => setClearAutoPairingsBeforeRun(e.target.checked)}
+                />
+                Clear all existing bouts before generating
+              </label>
               <div className="modal-actions">
                 <button
                   className="nav-btn"
@@ -3221,7 +3239,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   onClick={() => {
                     void (async () => {
                       setShowAutoPairingsConfirm(false);
-                      await rerunAutoPairings();
+                      await rerunAutoPairings({ clearExisting: clearAutoPairingsBeforeRun });
                     })();
                   }}
                   disabled={!canEdit || autoPairingsLoading}

@@ -6,6 +6,13 @@ import { requireRole } from "@/lib/rbac";
 export async function GET(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   await requireRole("COACH");
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   const url = new URL(req.url);
   const wrestlerId = url.searchParams.get("wrestlerId");
   if (!wrestlerId) return NextResponse.json({ error: "wrestlerId required" }, { status: 400 });

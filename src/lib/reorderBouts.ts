@@ -318,8 +318,11 @@ export async function reorderBoutsForMeet(
 ) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { numMats: true, restGap: true },
+    select: { numMats: true, restGap: true, deletedAt: true },
   });
+  if (!meet || meet.deletedAt) {
+    return { reordered: 0, numMats: options.numMats ?? DEFAULT_MAT_COUNT };
+  }
   const bouts = await db.bout.findMany({
     where: { meetId },
     select: { id: true, redId: true, greenId: true, mat: true, order: true },

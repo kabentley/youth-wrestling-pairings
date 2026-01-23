@@ -16,7 +16,7 @@ type Wrestler = {
   skill: number;
   active: boolean;
 };
-const CONFIGURED_MATS = 5;
+const CONFIGURED_MATS = 6;
 const MIN_MATS = 1;
 const MAX_MATS = CONFIGURED_MATS;
 

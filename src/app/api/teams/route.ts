@@ -109,6 +109,7 @@ export async function POST(req: Request) {
         color: parsed.data.color?.trim() ?? "#000000",
         address: normalizeNullableString(parsed.data.address),
         website: normalizeNullableString(parsed.data.website),
+        homeTeamPreferSameMat: true,
       },
     });
     return NextResponse.json(team);

@@ -96,11 +96,12 @@ async function assignMatToBout(meetId: string, boutId: string) {
       date: true,
       homeTeamId: true,
       numMats: true,
+      deletedAt: true,
       meetTeams: { select: { teamId: true } },
     },
   });
 
-  if (!meet) return;
+  if (!meet || meet.deletedAt) return;
   const teamIds = meet.meetTeams.map(mt => mt.teamId);
   const wrestlers = await db.wrestler.findMany({
     where: { teamId: { in: teamIds } },

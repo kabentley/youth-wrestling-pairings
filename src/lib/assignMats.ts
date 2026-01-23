@@ -132,8 +132,11 @@ function pickLeastLoadedMat(mats: { boutIds: string[]; rule: MatRule }[]) {
 export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { date: true, meetTeams: { select: { teamId: true } }, homeTeamId: true, numMats: true },
+    select: { date: true, meetTeams: { select: { teamId: true } }, homeTeamId: true, numMats: true, deletedAt: true },
   });
+  if (!meet || meet.deletedAt) {
+    return { assigned: 0, numMats: s.numMats ?? DEFAULT_MAT_COUNT };
+  }
   const homeTeamId = meet?.homeTeamId ?? null;
 
   const bouts = await db.bout.findMany({

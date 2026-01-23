@@ -94,6 +94,9 @@ model Meet {
   maxMatchesPerWrestler Int @default(5)
   restGap   Int        @default(6)
   status    String    @default("DRAFT")
+  deletedAt DateTime?
+  deletedById String?
+  deletedBy User? @relation("MeetDeletedBy", fields: [deletedById], references: [id])
   updatedAt DateTime  @updatedAt
   updatedById String?
   updatedBy User?     @relation("MeetUpdatedBy", fields: [updatedById], references: [id])
@@ -252,6 +255,7 @@ model User {
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
   updatedMeets  Meet[]   @relation("MeetUpdatedBy")
+  deletedMeets  Meet[]   @relation("MeetDeletedBy")
   meetChanges   MeetChange[] @relation("MeetChangeActor")
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")

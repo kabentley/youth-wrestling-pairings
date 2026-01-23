@@ -14,6 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       id: true,
       name: true,
       date: true,
+      deletedAt: true,
       meetTeams: {
         include: {
           team: {
@@ -28,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       },
     },
   });
-  if (!meet) {
+  if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
 

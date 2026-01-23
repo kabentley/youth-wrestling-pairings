@@ -8,6 +8,11 @@ import { requireRole } from "@/lib/rbac";
 
 export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true },
+  });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const bouts = await db.bout.findMany({
     where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function ResetPasswordPage() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [hasLogo, setHasLogo] = useState(false);
   const [username, setUsername] = useState("");
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [method, setMethod] = useState<"email" | "sms">("email");
@@ -30,6 +32,13 @@ export default function ResetPasswordPage() {
       .catch(() => {});
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const preset = searchParams.get("username") ?? "";
+    if (preset && !username) {
+      setUsername(preset);
+    }
+  }, [searchParams, username]);
 
   async function submit() {
     setErr("");

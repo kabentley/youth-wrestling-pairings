@@ -24,9 +24,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       date: true,
       location: true,
       status: true,
+      deletedAt: true,
     },
   });
-  if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   if (user.role === "COACH" || user.role === "TABLE_WORKER") {
     if (!user.teamId) {
       return NextResponse.json({ error: "No team assigned." }, { status: 403 });

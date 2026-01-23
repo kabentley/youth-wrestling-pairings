@@ -24,6 +24,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     }
     throw error;
   }
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   const comments = await db.meetComment.findMany({
     where: { meetId },
     orderBy: { createdAt: "desc" },
@@ -48,6 +55,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       }
     }
     throw error;
+  }
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
   const body = BodySchema.parse(await req.json());
 

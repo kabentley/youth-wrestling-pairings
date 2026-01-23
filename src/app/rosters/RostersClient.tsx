@@ -1311,7 +1311,7 @@ export default function RostersClient() {
         }
         .nav {
           display: flex;
-          gap: 12px;
+          gap: 24px;
           flex-wrap: wrap;
           align-items: center;
         }
@@ -1406,6 +1406,41 @@ export default function RostersClient() {
           justify-content: center;
           min-width: 88px;
         }
+        .btn-large {
+          padding: 10px 18px;
+          font-size: 14px;
+          text-transform: none;
+          letter-spacing: 0.4px;
+          min-width: 120px;
+        }
+        .roster-summary-bar {
+          display: grid;
+          grid-template-columns: auto auto 1fr;
+          align-items: center;
+          gap: 24px;
+          margin-bottom: 8px;
+          min-height: 44px;
+        }
+        .roster-summary {
+          font-size: 15px;
+          font-weight: 600;
+          justify-self: start;
+        }
+        .roster-action-bar {
+          display: inline-flex;
+          justify-content: center;
+          gap: 14px;
+          justify-self: start;
+          visibility: hidden;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.15s ease;
+        }
+        .roster-action-bar.visible {
+          visibility: visible;
+          opacity: 1;
+          pointer-events: auto;
+        }
         .btn:disabled {
           opacity: 0.45;
           cursor: not-allowed;
@@ -1418,7 +1453,7 @@ export default function RostersClient() {
         .team-grid {
           display: grid;
           grid-template-columns: 1fr;
-          gap: 12px;
+          gap: 24px;
         }
         .team-card {
           border: 1px solid var(--line);
@@ -1498,7 +1533,7 @@ export default function RostersClient() {
         .header-title-group {
           display: flex;
           align-items: center;
-          gap: 12px;
+          gap: 24px;
         }
         .header-left-controls {
           display: flex;
@@ -1507,7 +1542,7 @@ export default function RostersClient() {
           flex-wrap: wrap;
         }
         .header-team {
-          gap: 12px;
+          gap: 24px;
         }
         .header-team-button {
           margin-left: 0;
@@ -1595,7 +1630,7 @@ export default function RostersClient() {
         .two-col {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 12px;
+          gap: 24px;
           align-items: end;
         }
         .preview-table {
@@ -1887,7 +1922,7 @@ export default function RostersClient() {
           display: flex;
           justify-content: flex-end;
           margin-top: 14px;
-          gap: 12px;
+          gap: 24px;
           flex-wrap: wrap;
         }
         .import-preview table {
@@ -1993,23 +2028,8 @@ export default function RostersClient() {
                     <>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-small header-cancel"
-                        onClick={cancelChanges}
-                        disabled={!hasDirtyChanges || savingAll}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-small header-save"
-                        onClick={saveAllChanges}
-                        disabled={!hasDirtyChanges || savingAll || hasFieldValidationErrors}
-                      >
-                        {savingAll ? "Saving..." : "Save Changes"}
-                      </button>
-                      <button
-                        type="button"
                         className="btn btn-ghost btn-small header-import"
+                        title="Upload a CSV or XLSX file to import or update the roster."
                         onClick={() => {
                           setFile(null);
                           setPreview(null);
@@ -2027,6 +2047,7 @@ export default function RostersClient() {
                   <button
                     type="button"
                     className="btn btn-ghost btn-small header-download"
+                    title="Download the current roster as CSV"
                     onClick={downloadRosterCsv}
                     disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
                   >
@@ -2047,10 +2068,32 @@ export default function RostersClient() {
                   <span aria-hidden="true">&nbsp;</span>
                 )}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-                Wrestlers: {rosterTotals.total}
-                {rosterTotals.inactive > 0 ? ` (inactive: ${rosterTotals.inactive})` : ""}
-                {importSummary ? ` — ${importSummary}` : ""}
+              <div className="roster-summary-bar">
+                <div className="roster-summary">
+                  Wrestlers: {rosterTotals.total}
+                  {rosterTotals.inactive > 0 ? ` (inactive: ${rosterTotals.inactive})` : ""}
+                  {importSummary ? ` - ${importSummary}` : ""}
+                </div>
+                <div className={`roster-action-bar${canEditRoster && hasDirtyChanges ? " visible" : ""}`}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-large"
+                    title="Discard all unsaved roster edits"
+                    onClick={cancelChanges}
+                    disabled={!canEditRoster || !hasDirtyChanges || savingAll}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-large"
+                    title="Save all roster edits"
+                    onClick={saveAllChanges}
+                    disabled={!canEditRoster || !hasDirtyChanges || savingAll || hasFieldValidationErrors}
+                  >
+                    {savingAll ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
               </div>
               <div className="roster-wrapper">
                 {canEditRoster ? (

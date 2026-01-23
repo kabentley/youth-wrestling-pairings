@@ -1,4 +1,5 @@
 import PrintActionsClient from "../PrintActionsClient";
+import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 
@@ -15,12 +16,8 @@ export default async function PrintRosters({ params }: { params: Promise<{ meetI
     where: { id: meetId },
     include: { meetTeams: { include: { team: true } } },
   });
-  if (!meet) {
-    return (
-      <html>
-        <body>Meet not found.</body>
-      </html>
-    );
+  if (!meet || meet.deletedAt) {
+    notFound();
   }
 
   const teamIds = meet.meetTeams.map(mt => mt.teamId);

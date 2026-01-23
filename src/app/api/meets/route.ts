@@ -16,7 +16,7 @@ const MeetSchema = z.object({
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
   homeTeamId: z.string().optional(),
-  numMats: z.number().int().min(1).max(10).default(4),
+  numMats: z.number().int().min(1).max(6).default(4),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
@@ -26,6 +26,7 @@ const MeetSchema = z.object({
 
 export async function GET() {
   const meets = await db.meet.findMany({
+    where: { deletedAt: null },
     orderBy: { date: "desc" },
     include: {
       meetTeams: { include: { team: true } },

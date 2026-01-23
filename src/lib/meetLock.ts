@@ -30,10 +30,11 @@ export async function requireMeetLock(meetId: string, userId: string) {
       lockedById: true,
       lockExpiresAt: true,
       lockedBy: { select: { username: true } },
+      deletedAt: true,
     },
   });
 
-  if (!meet) {
+  if (!meet || meet.deletedAt) {
     const err = new Error("MEET_NOT_FOUND");
     throw err;
   }

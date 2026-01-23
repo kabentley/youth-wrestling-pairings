@@ -39,8 +39,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   const q = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { matchesPerWrestler: true, maxMatchesPerWrestler: true },
+    select: { matchesPerWrestler: true, maxMatchesPerWrestler: true, deletedAt: true },
   });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const maxMatches = Math.min(
     MAX_MATCHES_PER_WRESTLER,
     Math.max(1, Math.floor(meet?.maxMatchesPerWrestler ?? MAX_MATCHES_PER_WRESTLER)),

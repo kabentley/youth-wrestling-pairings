@@ -27,6 +27,7 @@ type Bout = {
   originalMat?: number | null;
 };
 const keyMat = (m: number) => String(m);
+const MAX_MATS = 6;
 
 interface MatBoardTabProps {
   meetId: string;
@@ -71,7 +72,7 @@ export default function MatBoardTab({
 
   useEffect(() => {
     if (!meetSettings) return;
-    setNumMats(typeof meetSettings.numMats === "number" ? meetSettings.numMats : 4);
+    setNumMats(Math.max(1, Math.min(MAX_MATS, typeof meetSettings.numMats === "number" ? meetSettings.numMats : 4)));
     setConflictGap(typeof meetSettings.restGap === "number" ? meetSettings.restGap : 4);
   }, [meetSettings]);
 
@@ -89,7 +90,7 @@ export default function MatBoardTab({
       const meet = await meetRes.json().catch(() => null);
       if (!cancelled) {
         setMeetSettings({
-          numMats: typeof meet?.numMats === "number" ? meet.numMats : 4,
+          numMats: Math.max(1, Math.min(MAX_MATS, typeof meet?.numMats === "number" ? meet.numMats : 4)),
           restGap: typeof meet?.restGap === "number" ? meet.restGap : 4,
           homeTeamId: meet?.homeTeamId ?? null,
         });

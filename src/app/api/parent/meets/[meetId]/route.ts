@@ -30,16 +30,17 @@ export async function GET(
   }
 
   const meet = await db.meet.findUnique({
-      where: { id: meetId },
+    where: { id: meetId },
     select: {
       id: true,
       name: true,
       date: true,
       location: true,
       homeTeam: { select: { name: true, symbol: true, address: true } },
+      deletedAt: true,
     },
   });
-  if (!meet) return NextResponse.json({ error: "Meet not found." }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found." }, { status: 404 });
 
   const location = meet.location ?? (meet.homeTeam ? meet.homeTeam.address : null);
   const homeTeamLabel = meet.homeTeam ? `${meet.homeTeam.name} (${meet.homeTeam.symbol})`.trim() : null;

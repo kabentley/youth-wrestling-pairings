@@ -48,7 +48,7 @@ function getNextSaturday(): string {
 const DEFAULT_DATE = getNextSaturday();
 
 const MIN_MATS = 1;
-const MAX_MATS = 10;
+const MAX_MATS = 6;
 const DEFAULT_NUM_MATS = 3;
 
 type Meet = {
@@ -70,9 +70,15 @@ type Meet = {
   lastChangeBy?: string | null;
 };
 
+type DeletedMeet = Meet & {
+  deletedAt?: string | null;
+  deletedBy?: { username?: string | null } | null;
+};
+
 export default function MeetsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
+  const [deletedMeets, setDeletedMeets] = useState<DeletedMeet[]>([]);
   const [name, setName] = useState("");
   const [date, setDate] = useState(DEFAULT_DATE);
   const [location, setLocation] = useState("");
@@ -83,6 +89,7 @@ export default function MeetsPage() {
   const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
   const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
+  const [autoPairings, setAutoPairings] = useState(true);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
@@ -94,6 +101,7 @@ export default function MeetsPage() {
     name: string;
     date: string;
   } | null>(null);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasCreateQuery = searchParams.get("create") === "1";
@@ -127,6 +135,7 @@ export default function MeetsPage() {
     setHomeTeamId("");
     setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
+    setAutoPairings(true);
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
@@ -172,8 +181,26 @@ export default function MeetsPage() {
     }
     if (me.ok) {
       const meJson = await me.json().catch(() => ({}));
+      const nextRole = meJson?.role ?? null;
       setCurrentTeamId(meJson?.teamId ?? null);
-      setRole(meJson?.role ?? null);
+      setRole(nextRole);
+
+      const canManage = nextRole === "COACH" || nextRole === "ADMIN";
+      if (canManage) {
+        const deletedRes = await fetch("/api/meets/deleted");
+        if (deletedRes.ok) {
+          const deletedJson = await deletedRes.json().catch(() => []);
+          const nextDeleted = Array.isArray(deletedJson) ? deletedJson : [];
+        setDeletedMeets(nextDeleted);
+        if (nextDeleted.length === 0) setRestoreDialogOpen(false);
+        } else {
+          setDeletedMeets([]);
+        }
+      } else {
+        setDeletedMeets([]);
+      }
+    } else {
+      setDeletedMeets([]);
     }
   }
 
@@ -249,7 +276,8 @@ export default function MeetsPage() {
       } else {
         const created = await addMeet();
         if (created?.id) {
-          router.push(`/meets/${created.id}?edit=1&autopair=1`);
+          const autoParam = autoPairings ? "&autogen=1" : "";
+          router.push(`/meets/${created.id}?edit=1&autopair=1${autoParam}`);
         }
       }
       closeCreateModal({ skipCreateQueryCleanup: true });
@@ -278,6 +306,36 @@ export default function MeetsPage() {
       window.alert(err instanceof Error ? err.message : "Delete failed.");
     } finally {
       setDeletingMeetId(null);
+    }
+  };
+
+  const restoreMeet = async (id: string) => {
+    if (!canManageMeets) return;
+    try {
+      const res = await fetch(`/api/meets/${id}/restore`, { method: "POST" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to restore meet.");
+      }
+      await load();
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Restore failed.");
+    }
+  };
+
+  const purgeMeet = async (id: string) => {
+    if (!canManageMeets) return;
+    try {
+      const res = await fetch(`/api/meets/${id}/purge`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to purge meet.");
+      }
+      await load();
+    } catch (err) {
+      console.error(err);
+      window.alert(err instanceof Error ? err.message : "Purge failed.");
     }
   };
 
@@ -527,6 +585,19 @@ export default function MeetsPage() {
           flex-wrap: wrap;
           margin-bottom: 10px;
         }
+        .card-header-actions {
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .ghost-btn {
+          background: #f5f5f5;
+          border: 1px solid #e0e0e0;
+          color: #333;
+        }
+        .ghost-btn:hover {
+          background: #eeeeee;
+        }
         .card-title {
           font-family: "Oswald", Arial, sans-serif;
           margin: 0;
@@ -734,6 +805,38 @@ export default function MeetsPage() {
           min-height: 0;
           padding: 22px;
         }
+        .restore-modal {
+          width: min(760px, 100%);
+          min-height: 0;
+          padding: 22px;
+        }
+        .restore-list {
+          display: grid;
+          gap: 12px;
+        }
+        .restore-item {
+          display: flex;
+          justify-content: space-between;
+          gap: 16px;
+          align-items: center;
+          border: 1px solid #eee;
+          border-radius: 8px;
+          padding: 12px;
+          background: #fff;
+        }
+        .restore-title {
+          font-weight: 700;
+        }
+        .restore-actions {        .restore-btn {
+          background: #1e88e5;
+          border-color: #1e88e5;
+          color: #fff;
+        }
+
+          display: inline-flex;
+          gap: 8px;
+          align-items: center;
+        }
         .modal-home-team {
           flex: 1;
           min-width: 220px;
@@ -787,11 +890,18 @@ export default function MeetsPage() {
         <section className="card">
           <div className="card-header-row">
             <h2 className="card-title">Existing Meets</h2>
-            {canManageMeets && (
-              <button className="btn" type="button" onClick={() => setIsCreateModalOpen(true)}>
-                Create New Meet
-              </button>
-            )}
+            <div className="card-header-actions">
+              {canManageMeets && deletedMeets.length > 0 && (
+                <button className="btn ghost-btn" type="button" onClick={() => setRestoreDialogOpen(true)}>
+                  Restore Deleted
+                </button>
+              )}
+              {canManageMeets && (
+                <button className="btn" type="button" onClick={() => setIsCreateModalOpen(true)}>
+                  Create New Meet
+                </button>
+              )}
+            </div>
           </div>
           <div className="meet-list">
             {visibleMeets.map(m => (
@@ -911,15 +1021,26 @@ export default function MeetsPage() {
                     />
                   </label>
                 </div>
-              <label className="row" style={{ marginTop: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={allowSameTeamMatches}
-                  onChange={e => setAllowSameTeamMatches(e.target.checked)}
-                  disabled={!canManageMeets}
-                />
-                <span className="muted">Attempt same-team matches</span>
-              </label>
+              <div className="row" style={{ marginTop: 6, gap: 18 }}>
+                <label className="row" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={allowSameTeamMatches}
+                    onChange={e => setAllowSameTeamMatches(e.target.checked)}
+                    disabled={!canManageMeets}
+                  />
+                  <span className="muted">Find matches from same team</span>
+                </label>
+                <label className="row" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={autoPairings}
+                    onChange={e => setAutoPairings(e.target.checked)}
+                    disabled={!canManageMeets}
+                  />
+                  <span className="muted">Generate Automatic Pairings</span>
+                </label>
+              </div>
 
           <div style={{ marginTop: 8 }}>
             <div style={{ marginBottom: 6 }}><b>Select other teams</b></div>
@@ -992,21 +1113,72 @@ export default function MeetsPage() {
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteDialog(null)}>
           <div className="modal delete-modal" role="document" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-                <h3>
-                Delete meet: {deleteDialog.name} (
+              <h3>
+                Recycle meet: {deleteDialog.name} (
                 {formatMeetDisplayDate(deleteDialog.date)}
                 )
               </h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete this meet? This action is irreversible.</p>
+              <p>Are you sure you want to move this meet to the recycle bin? You can restore it later if needed.</p>
             </div>
             <div className="modal-actions">
               <button className="nav-btn" onClick={() => setDeleteDialog(null)} disabled={Boolean(deletingMeetId)}>
                 Cancel
               </button>
               <button className="nav-btn delete-confirm" onClick={confirmDeleteMeet} disabled={Boolean(deletingMeetId)}>
-                Delete meet
+                Move to recycle bin
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {restoreDialogOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setRestoreDialogOpen(false)}>
+          <div className="modal restore-modal" role="document" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Restore deleted meets</h3>
+            </div>
+            <div className="modal-body">
+              {deletedMeets.length === 0 && <div className="muted">No deleted meets.</div>}
+              {deletedMeets.length > 0 && (
+                <div className="restore-list">
+                  {deletedMeets.map(m => (
+                    <div key={m.id} className="restore-item">
+                      <div>
+                        <div className="restore-title">
+                          {m.name} ({formatMeetDisplayDate(m.date)})
+                        </div>
+                        <div className="muted">
+                          Deleted {m.deletedAt ? new Date(m.deletedAt).toLocaleString() : "recently"}
+                          {m.deletedBy?.username ? ` by ${m.deletedBy.username}` : ""}
+                        </div>
+                        <div className="muted">
+                          Teams: {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
+                        </div>
+                      </div>
+                      <div className="restore-actions">
+                        <button
+                          className="nav-btn delete-btn"
+                          onClick={() => {
+                            const ok = window.confirm(`Permanently delete ${m.name}? This cannot be undone.`);
+                            if (ok) void purgeMeet(m.id);
+                          }}
+                        >
+                          Purge
+                        </button>
+                        <button className="nav-btn restore-btn" onClick={() => restoreMeet(m.id)}>
+                          Restore
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="nav-btn" onClick={() => setRestoreDialogOpen(false)}>
+                Close
               </button>
             </div>
           </div>

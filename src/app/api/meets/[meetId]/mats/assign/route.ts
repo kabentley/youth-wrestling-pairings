@@ -7,7 +7,7 @@ import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
-  numMats: z.number().int().min(1).max(10),
+  numMats: z.number().int().min(1).max(6),
   minRestBouts: z.number().int().min(0).max(20),
   restPenalty: z.number().min(0).max(1000),
 });

@@ -1,4 +1,5 @@
 import PrintActionsClient from "./PrintActionsClient";
+import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 
@@ -8,6 +9,9 @@ export default async function PrintMeet({ params }: { params: Promise<{ meetId: 
     where: { id: meetId },
     include: { meetTeams: { include: { team: true } } },
   });
+  if (!meet || meet.deletedAt) {
+    notFound();
+  }
 
   const bouts = await db.bout.findMany({
     where: { meetId },

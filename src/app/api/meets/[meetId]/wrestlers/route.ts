@@ -4,6 +4,13 @@ import { db } from "@/lib/db";
 
 export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },

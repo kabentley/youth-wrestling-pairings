@@ -12,7 +12,7 @@ const PatchSchema = z.object({
   date: z.string().optional(),
   location: z.string().optional().nullable(),
   homeTeamId: z.string().nullable().optional(),
-  numMats: z.number().int().min(1).max(10).optional(),
+  numMats: z.number().int().min(1).max(6).optional(),
   allowSameTeamMatches: z.boolean().optional(),
   matchesPerWrestler: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
@@ -52,10 +52,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       restGap: true,
       status: true,
       updatedAt: true,
+      deletedAt: true,
       updatedBy: { select: { username: true } },
     },
   });
-  if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const lastChange = await db.meetChange.findFirst({
     where: { meetId },
     orderBy: { createdAt: "desc" },
@@ -168,9 +169,15 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
   const now = new Date();
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { id: true, lockedById: true, lockExpiresAt: true, lockedBy: { select: { username: true } } },
+    select: {
+      id: true,
+      lockedById: true,
+      lockExpiresAt: true,
+      lockedBy: { select: { username: true } },
+      deletedAt: true,
+    },
   });
-  if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   if (meet.lockExpiresAt && meet.lockExpiresAt < now) {
     await db.meet.update({
       where: { id: meetId },
@@ -192,13 +199,20 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
     );
   }
 
-  try {
-    await db.meet.delete({ where: { id: meetId } });
-  } catch {
-    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
-  }
+  await db.meet.update({
+    where: { id: meetId },
+    data: {
+      deletedAt: now,
+      deletedById: user.id,
+      lockedById: null,
+      lockedAt: null,
+      lockExpiresAt: null,
+      updatedById: user.id,
+    },
+  });
 
   revalidatePath("/meets");
+  revalidatePath(`/meets/${meetId}`);
 
   return NextResponse.json({ ok: true });
 }

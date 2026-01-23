@@ -23,10 +23,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       lockedBy: { select: { username: true } },
       lockedAt: true,
       lockExpiresAt: true,
+      deletedAt: true,
     },
   });
 
-  if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
 
   if (meet.lockExpiresAt && meet.lockExpiresAt < now) {
     await db.meet.update({
@@ -62,6 +63,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   const updated = await db.meet.updateMany({
     where: {
       id: meetId,
+      deletedAt: null,
       OR: [
         { lockExpiresAt: null },
         { lockExpiresAt: { lt: now } },
@@ -78,10 +80,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
         lockedById: true,
         lockedBy: { select: { username: true } },
         lockExpiresAt: true,
+        deletedAt: true,
       },
     });
 
-    if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
 
     return NextResponse.json(
       {
@@ -122,8 +125,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
   }
   const where =
     user.role === "ADMIN"
-      ? { id: meetId }
-      : { id: meetId, lockedById: user.id };
+      ? { id: meetId, deletedAt: null }
+      : { id: meetId, lockedById: user.id, deletedAt: null };
 
   const updated = await db.meet.updateMany({
     where,
@@ -136,9 +139,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
         lockedById: true,
         lockedBy: { select: { username: true } },
         lockExpiresAt: true,
+        deletedAt: true,
       },
     });
-    if (!meet) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
     if (meet.lockedById) {
       return NextResponse.json(
         {
