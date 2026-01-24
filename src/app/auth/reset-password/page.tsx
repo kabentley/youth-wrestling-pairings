@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [hasLogo, setHasLogo] = useState(false);
   const [username, setUsername] = useState("");
@@ -199,6 +199,14 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
 

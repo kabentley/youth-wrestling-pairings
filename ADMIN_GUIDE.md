@@ -72,9 +72,9 @@ The user can then sign in without MFA and re-enroll.
 - Matching is done by:
   - First name
   - Last name
-  - Birthdate
   - Team
-- Weight changes overwrite existing records
+- Import updates weight/experience/skill only
+- Import does **not** delete wrestlers or change active status
 
 ### Recommended workflow
 1. Import initial roster
