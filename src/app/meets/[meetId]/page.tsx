@@ -989,7 +989,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
-  const canChangeStatus = editAllowed && wantsEdit && (isPublished || lockState.status === "acquired");
+  const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
   const restartDisabled = !canEdit || isPublished;
   const handleRestartClick = () => {
     if (restartDisabled) return;
@@ -1690,11 +1690,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
     if (!canChangeStatus) return;
-    await fetch(`/api/meets/${meetId}`, {
+    const ensureLock = async () => {
+      if (lockState.status === "acquired") return true;
+      const ok = await acquireLock();
+      if (!ok) {
+        triggerNoticeFlash();
+        return false;
+      }
+      return true;
+    };
+    if (!(await ensureLock())) return;
+    const res = await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus }),
     });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      const message = payload?.error ?? `Unable to update status (${res.status}).`;
+      window.alert(message);
+      return;
+    }
     await load();
     await loadActivity();
   }
@@ -2056,6 +2072,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           flex-direction: column;
           gap: 2px;
+        }
+        .meet-status-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: transparent;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 4px 8px;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--ink);
+          cursor: pointer;
+        }
+        .meet-status-btn:hover:not(:disabled) {
+          background: #f7f9fb;
+        }
+        .meet-status-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
+          color: var(--muted);
+          border-color: var(--line);
+          background: transparent;
         }
         .meet-last-updated {
           font-size: 11px;
@@ -2770,44 +2809,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       <div className="meet-heading-row">
         <div className="meet-heading-title">
-          {metadataParts.length > 0 && (
-            <div className="meet-metadata-inline">
-              {isEditingDate ? (
-                <input
-                  type="date"
-                  value={editDateValue}
-                  onChange={(e) => setEditDateValue(e.target.value)}
-                  onBlur={() => {
-                    setIsEditingDate(false);
-                    void saveMeetDate(editDateValue);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      setIsEditingDate(false);
-                      void saveMeetDate(editDateValue);
-                    }
-                  }}
-                  disabled={!canEdit}
-                  style={{ minWidth: 140 }}
-                />
-              ) : (
-              <button
-                type="button"
-                className="meet-date-btn"
-                onClick={() => {
-                  if (!canEdit) return;
-                  setEditDateValue(meetDate ? meetDate.slice(0, 10) : "");
-                  setIsEditingDate(true);
-                }}
-                disabled={!canEdit}
-              >
-                  {formattedDate ?? "Set date"}
-                </button>
-              )}
-              {teamList ? ` - ${teamList}` : ""}
-            </div>
-          )}
           <div className="meet-heading-name-row">
             {!isEditingName && (
               <button
@@ -2878,9 +2879,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
         <div className="meet-heading-actions">
           <div className="meet-status">
-            <span>
+            <button
+              type="button"
+              className="meet-status-btn"
+              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+              disabled={!canChangeStatus}
+              title={meetStatus === "PUBLISHED"
+                ? "Reopen this meet as Draft so coaches can edit pairings and attendance."
+                : "Publish this meet to lock pairings and show schedules to families."}
+            >
               Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
-            </span>
+            </button>
             {lastUpdatedAt && (
               <span className="meet-last-updated">
                 Last edited {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
@@ -2931,25 +2940,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Release Lock
               </button>
             )}
-            {activeTab === "pairings" && (
-              <>
-                <button
-                  type="button"
-                  className="nav-btn delete-btn"
-                  onClick={handleRestartClick}
-                  disabled={restartDisabled}
-                >
-                  Restart Meet Setup
-                </button>
-              </>
-            )}
-            <button
-              className="nav-btn"
-              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-              disabled={!canChangeStatus}
-            >
-              {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
-            </button>
             <button
               type="button"
               className="nav-btn"
