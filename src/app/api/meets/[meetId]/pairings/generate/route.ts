@@ -40,7 +40,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const result = await generatePairingsForMeet(meetId, {
     ...settings,
-    maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet?.maxMatchesPerWrestler ?? undefined,
+    maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet.maxMatchesPerWrestler,
   });
   await logMeetChange(meetId, user.id, "Generated pairings.");
   if (settings.preserveMats) {

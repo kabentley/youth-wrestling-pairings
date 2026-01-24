@@ -25,13 +25,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
 
   const url = new URL(req.url);
   const nameParam = url.searchParams.get("name")?.trim();
-  const name = nameParam || `Checkpoint ${new Date().toLocaleString()}`;
+  const name = nameParam ?? `Checkpoint ${new Date().toLocaleString()}`;
   const payload = await buildMeetCheckpointPayload(meetId, name);
   if (!payload) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
 
-  const safeMeet = sanitizeFilePart(payload.meetName || "meet");
+  const safeMeet = sanitizeFilePart(payload.meetName);
   const safeName = sanitizeFilePart(name);
   const dateStamp = payload.meetDate.slice(0, 10);
   const filename = `${safeMeet}_${safeName}_${dateStamp}.json`;

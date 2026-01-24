@@ -92,6 +92,15 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: "Checkpoints",
+        paragraphs: [
+          "Checkpoints save the current state of meet attendance and scheduled bouts so you can roll back later [Meet > Checkpoints]. Each checkpoint stores attendance and all bouts with their mat assignments.",
+          "Use Save to capture a snapshot before a major change. Use Show Changes to review what has changed since a checkpoint, and Apply to revert the meet to that saved state [Meet > Checkpoints].",
+          "Applying a checkpoint restores attendance for active wrestlers, clears current bouts, and recreates the saved bouts. Wrestlers who were deleted or set inactive after the checkpoint are not re-matched, and newly added wrestlers will have zero matches after applying [Meet > Checkpoints].",
+          "Checkpoints only apply when the same teams are in the meet. If the team list changes, the checkpoint will not apply.",
+        ],
+      },
+      {
         title: "Attendance panel",
         paragraphs: [
           "Use Attendance to mark availability before fine-tuning pairings. In Pairings, click Attendance; you must hold the lock to edit [Meet > Start Editing, Meet > Pairings].",

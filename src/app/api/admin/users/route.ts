@@ -1,5 +1,3 @@
-import crypto from "crypto";
-
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -110,15 +108,6 @@ export async function POST(req: Request) {
     }
   }
   return NextResponse.json(user);
-}
-
-function generateTempPassword() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  let out = "";
-  for (let i = 0; i < 6; i += 1) {
-    out += chars[crypto.randomInt(0, chars.length)];
-  }
-  return out;
 }
 
 async function sendWelcomeEmail(

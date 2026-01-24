@@ -10,11 +10,12 @@ export default withAuth(function middleware(req) {
       pathname.startsWith("/api/auth/force-reset") ||
       pathname.startsWith("/api/auth");
     if (!allowed) {
+      const tokenInfo = token as { username?: unknown; user?: { username?: unknown } } | null | undefined;
       const username =
-        typeof token?.username === "string"
-          ? token.username
-          : typeof token?.user?.username === "string"
-            ? token.user.username
+        tokenInfo && typeof tokenInfo.username === "string"
+          ? tokenInfo.username
+          : tokenInfo && typeof tokenInfo.user?.username === "string"
+            ? tokenInfo.user.username
             : "";
       const url = req.nextUrl.clone();
       url.pathname = "/auth/force-reset";

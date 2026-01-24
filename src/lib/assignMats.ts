@@ -137,14 +137,14 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   if (!meet || meet.deletedAt) {
     return { assigned: 0, numMats: s.numMats ?? DEFAULT_MAT_COUNT };
   }
-  const homeTeamId = meet?.homeTeamId ?? null;
+  const homeTeamId = meet.homeTeamId ?? null;
 
   const bouts = await db.bout.findMany({
     where: { meetId },
     orderBy: [{ pairingScore: "asc" }],
   });
 
-  const teamIds = meet?.meetTeams.map(mt => mt.teamId) ?? [];
+  const teamIds = meet.meetTeams.map(mt => mt.teamId);
   const wrestlers = await db.wrestler.findMany({
     where: { teamId: { in: teamIds } },
     select: { id: true, teamId: true, birthdate: true, experienceYears: true, first: true, last: true },
@@ -153,7 +153,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
 
   await db.bout.updateMany({ where: { meetId }, data: { mat: null, order: null } });
 
-  const numMats = Math.max(MIN_MATS, s.numMats ?? meet?.numMats ?? DEFAULT_MAT_COUNT);
+  const numMats = Math.max(MIN_MATS, s.numMats ?? meet.numMats);
 
   const teamRules = homeTeamId
     ? await db.teamMatRule.findMany({
@@ -185,7 +185,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
 
   const mats: { boutIds: string[]; rule: MatRule }[] = rules.map(rule => ({ boutIds: [], rule }));
   const homeWrestlerMat = new Map<string, number>();
-  const meetDate = meet?.date ?? new Date();
+  const meetDate = meet.date;
 
   function getWrestler(id: string) {
     return wMap.get(id) ?? null;

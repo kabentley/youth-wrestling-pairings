@@ -1,10 +1,10 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { signOut, useSession } from "next-auth/react";
+import { Suspense, useEffect, useState } from "react";
 
-export default function ForceResetPage() {
+function ForceResetInner() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [hasLogo, setHasLogo] = useState(false);
   const [username, setUsername] = useState("");
@@ -152,6 +152,14 @@ export default function ForceResetPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function ForceResetPage() {
+  return (
+    <Suspense fallback={null}>
+      <ForceResetInner />
+    </Suspense>
   );
 }
 

@@ -327,8 +327,8 @@ export async function reorderBoutsForMeet(
     where: { meetId },
     select: { id: true, redId: true, greenId: true, mat: true, order: true },
   });
-  const numMats = Math.max(MIN_MATS, options.numMats ?? meet?.numMats ?? DEFAULT_MAT_COUNT);
-  const conflictGap = options.conflictGap ?? meet?.restGap ?? 4;
+  const numMats = Math.max(MIN_MATS, options.numMats ?? meet.numMats);
+  const conflictGap = options.conflictGap ?? meet.restGap;
   const updates = reorderBoutsSequential(
     bouts,
     numMats,

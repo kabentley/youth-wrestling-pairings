@@ -11,7 +11,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
-  if (!meet?.homeTeamId) {
+  if (!meet.homeTeamId) {
     return NextResponse.json({ rules: [] });
   }
   const rules = await db.teamMatRule.findMany({

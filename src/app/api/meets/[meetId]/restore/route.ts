@@ -12,7 +12,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     where: { id: meetId },
     select: { id: true, deletedAt: true },
   });
-  if (!meet || !meet.deletedAt) {
+  if (!meet?.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
 
@@ -20,10 +20,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     where: { id: meetId },
     select: { name: true },
   });
-  const baseName = current?.name ?? "Restored Meet";
+  if (!current) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+  const baseName = current.name;
   let nextName = baseName;
   let suffix = 1;
-  while (true) {
+  for (;;) {
     const existing = await db.meet.findFirst({
       where: {
         name: nextName,
@@ -37,7 +40,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     nextName = `${baseName} (restored ${suffix})`;
   }
   if (user.role !== "ADMIN") {
-    if (!user.teamId) {
+    if (user.teamId === null) {
       return NextResponse.json({ error: "No team assigned." }, { status: 403 });
     }
     const inMeet = await db.meetTeam.findFirst({

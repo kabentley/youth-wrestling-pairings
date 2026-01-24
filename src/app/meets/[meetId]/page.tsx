@@ -43,11 +43,6 @@ type Wrestler = {
   birthdate?: string;
   status?: AttendanceStatus | null;
 };
-type TeamInfo = {
-  id: string;
-  name: string;
-  symbol?: string;
-};
 type Bout = {
   id: string;
   redId: string;
@@ -254,8 +249,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const lastSavedNameRef = useRef("");
   const nameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
-  const [isEditingDate, setIsEditingDate] = useState(false);
-  const [editDateValue, setEditDateValue] = useState("");
   const [pairingsTeamId, setPairingsTeamId] = useState<string | null>(null);
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
   const [attendanceSort, setAttendanceSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
@@ -990,12 +983,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isPublished = meetStatus === "PUBLISHED";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
   const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
-  const restartDisabled = !canEdit || isPublished;
-  const handleRestartClick = () => {
-    if (restartDisabled) return;
-    setRestartError(null);
-    setShowRestartModal(true);
-  };
 
   useEffect(() => { void load(); void loadActivity(); void loadCheckpoints(); }, [load, loadActivity, loadCheckpoints]);
   useEffect(() => {
@@ -1229,7 +1216,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   const teamLabelById = useMemo(() => {
-    return new Map(teams.map(team => [team.id, team.symbol ?? team.name ?? team.id]));
+    return new Map(teams.map(team => [team.id, team.symbol ?? team.name]));
   }, [teams]);
   const rosterSorted = useMemo(() => {
     return [...wrestlers].sort((a, b) => {
@@ -1481,27 +1468,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     () => countAttendance(modalAttendanceRosterWithOverrides),
     [modalAttendanceRosterWithOverrides, countAttendance],
   );
-  const orderedTeams = homeTeamId
-    ? [
-        ...teams.filter(t => t.id === homeTeamId),
-        ...teams.filter(t => t.id !== homeTeamId),
-      ]
-    : teams;
   useEffect(() => {
     if (autoPairingsRequested && !autoPairingsPending) {
       setAutoPairingsPending(true);
     }
   }, [autoPairingsRequested, autoPairingsPending]);
-  const teamList = orderedTeams.map(t => t.symbol ?? t.name).filter(Boolean).join(", ");
-  const formattedDate = meetDate
-    ? new Date(meetDate).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        timeZone: "UTC",
-      })
-    : null;
-  const metadataParts = [formattedDate, teamList].filter(Boolean);
   const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
   const trimmedMeetLocation = meetLocation?.trim();
   const trimmedHomeAddress = homeTeam?.address?.trim();
@@ -1726,20 +1697,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       body: JSON.stringify({ name: trimmed }),
     });
     lastSavedNameRef.current = trimmed;
-    await load();
-    await loadActivity();
-  }
-
-  async function saveMeetDate(nextDate: string) {
-    if (!canEdit) return;
-    const trimmed = nextDate.trim();
-    if (!trimmed) return;
-    if (meetDate?.slice(0, 10) === trimmed) return;
-    await fetch(`/api/meets/${meetId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: trimmed }),
-    });
     await load();
     await loadActivity();
   }

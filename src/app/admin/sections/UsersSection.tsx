@@ -29,7 +29,6 @@ export default function UsersSection() {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(true);
   const [role, setRole] = useState<UserRow["role"]>("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
@@ -90,7 +89,6 @@ export default function UsersSection() {
     setPhone("");
     setName("");
     setPassword("");
-    setShowPassword(false);
     setRole("COACH");
     setTeamId("");
     setMsg(formatError(data?.error) ?? "User created. Password reset required at first sign-in.");
@@ -161,7 +159,6 @@ export default function UsersSection() {
     username.trim() &&
     email.trim() &&
     password.trim() &&
-    role &&
     (role === "ADMIN" || teamId.trim())
   );
 
@@ -191,7 +188,7 @@ export default function UsersSection() {
             <option value="">All teams</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.name} ({t.symbol}))
+                {t.name} ({t.symbol})
               </option>
             ))}
           </select>

@@ -120,7 +120,7 @@ export default function MeetsPage() {
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [teamIds, setTeamIds] = useState<string[]>([]);
-  const [homeTeamId, setHomeTeamId] = useState<string>("");
+  const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
   const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
@@ -167,7 +167,7 @@ export default function MeetsPage() {
     setDate(DEFAULT_DATE);
     setLocation("");
     setTeamIds([]);
-    setHomeTeamId("");
+    setHomeTeamId(null);
     setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
     setAutoPairings(true);
@@ -252,7 +252,7 @@ export default function MeetsPage() {
 
   const isEditing = Boolean(editingMeet);
   const autoMeetName = useMemo(
-    () => buildMeetName(teamIds, teams, homeTeamId || null, date),
+    () => buildMeetName(teamIds, teams, homeTeamId ?? null, date),
     [teamIds, teams, homeTeamId, date],
   );
   const displayMeetName = isEditing ? name : autoMeetName;
@@ -269,7 +269,7 @@ export default function MeetsPage() {
         date,
         location,
         teamIds: normalizedTeamIds,
-        homeTeamId: homeTeamId || currentTeamId || null,
+        homeTeamId: homeTeamId ?? currentTeamId ?? null,
         numMats,
         allowSameTeamMatches,
         matchesPerWrestler,
@@ -295,7 +295,7 @@ export default function MeetsPage() {
         name,
         date,
         location,
-        homeTeamId: homeTeamId || null,
+        homeTeamId: homeTeamId ?? null,
         numMats,
         allowSameTeamMatches,
         matchesPerWrestler,
@@ -429,7 +429,7 @@ export default function MeetsPage() {
     setHomeTeamId((prev) => {
       if (currentTeamId) return currentTeamId;
       if (prev && teamIds.includes(prev)) return prev;
-      return teamIds[0] ?? "";
+      return teamIds[0] ?? null;
     });
   }, [teamIds, currentTeamId]);
   useEffect(() => {
@@ -1123,11 +1123,11 @@ export default function MeetsPage() {
                 <span className="muted">Home team</span>
                 <select
                   className="select"
-                  value={homeTeamId}
+                  value={homeTeamId ?? ""}
                   onChange={e => {
-                    const next = e.target.value;
+                    const next = e.target.value.trim() || null;
                     setHomeTeamId(next);
-                    const t = teams.find(team => team.id === next);
+                    const t = next ? teams.find(team => team.id === next) : null;
                     if (t?.address) setLocation(t.address);
                   }}
                   disabled={!canManageMeets || !isAdmin}

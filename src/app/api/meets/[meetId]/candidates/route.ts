@@ -44,7 +44,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const maxMatches = Math.min(
     MAX_MATCHES_PER_WRESTLER,
-    Math.max(1, Math.floor(meet?.maxMatchesPerWrestler ?? MAX_MATCHES_PER_WRESTLER)),
+    Math.max(1, Math.floor(meet.maxMatchesPerWrestler)),
   );
 
   const meetTeams = await db.meetTeam.findMany({
