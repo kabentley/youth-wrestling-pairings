@@ -11,7 +11,7 @@ import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const MeetSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().optional().default(""),
   date: z.string(),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(4),
@@ -23,6 +23,55 @@ const MeetSchema = z.object({
   restGap: z.number().int().min(0).max(20).default(4),
   autoPairings: z.boolean().optional().default(true),
 });
+
+function formatMeetDate(dateStr: string) {
+  const iso = dateStr.slice(0, 10);
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return dateStr;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function buildMeetName(
+  teamIds: string[],
+  teams: { id: string; symbol: string; name: string }[],
+  homeTeamId?: string | null,
+  date?: string,
+) {
+  const byId = new Map(teams.map(team => [team.id, team]));
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const pushTeam = (id: string) => {
+    if (seen.has(id)) return;
+    const team = byId.get(id);
+    if (!team) return;
+    const label = (team.symbol || team.name || "Team").trim();
+    if (!label) return;
+    ordered.push(label);
+    seen.add(id);
+  };
+  if (homeTeamId) pushTeam(homeTeamId);
+  const rest = teamIds.filter(id => id !== homeTeamId);
+  const restOrdered = rest
+    .map(id => byId.get(id))
+    .filter((team): team is { id: string; symbol: string; name: string } => Boolean(team))
+    .sort((a, b) => {
+      const aLabel = (a.symbol || a.name || "").toLowerCase();
+      const bLabel = (b.symbol || b.name || "").toLowerCase();
+      if (aLabel < bLabel) return -1;
+      if (aLabel > bLabel) return 1;
+      return 0;
+    });
+  restOrdered.forEach(team => pushTeam(team.id));
+  const base = ordered.length > 0 ? ordered.join(" v ") : "Meet";
+  if (!date) return base;
+  return `${base} - ${formatMeetDate(date)}`;
+}
 
 export async function GET() {
   const meets = await db.meet.findMany({
@@ -85,6 +134,11 @@ export async function POST(req: Request) {
     : creatorTeamId;
 
   const now = new Date();
+  const meetTeams = await db.team.findMany({
+    where: { id: { in: parsed.teamIds } },
+    select: { id: true, symbol: true, name: true },
+  });
+  const meetName = buildMeetName(parsed.teamIds, meetTeams, homeTeamId, parsed.date);
   const normalizeLocation = (value?: string | null) => {
     const trimmed = value?.trim();
     if (!trimmed) return undefined;
@@ -93,7 +147,7 @@ export async function POST(req: Request) {
 
   const meet = await db.meet.create({
     data: {
-      name: parsed.name,
+      name: meetName,
       date: new Date(parsed.date),
       location: normalizeLocation(parsed.location),
       homeTeamId,

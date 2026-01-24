@@ -15,7 +15,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const bouts = await db.bout.findMany({
     where: { meetId },
-    orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
+    orderBy: [{ mat: "asc" }, { order: "asc" }, { pairingScore: "asc" }],
   });
   const statuses = await db.meetWrestlerStatus.findMany({
     where: { meetId, status: { in: ["NOT_COMING"] } },

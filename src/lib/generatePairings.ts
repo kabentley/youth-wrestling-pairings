@@ -76,7 +76,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   }
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);
-  const newBouts: { redId: string; greenId: string; score: number; notes: string }[] = [];
+  const newBouts: { redId: string; greenId: string; pairingScore: number }[] = [];
   const maxMatches = Math.min(
     MAX_MATCHES_PER_WRESTLER,
     Math.max(1, Math.floor(settings.maxMatchesPerWrestler ?? MAX_MATCHES_PER_WRESTLER)),
@@ -138,7 +138,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     for (const a of teamRoster) {
       let currentA = matchCounts.get(a.id) ?? 0;
       while (currentA < maxMatches && matchesNeeded(a.id) > 0) {
-        const candidates: { b: typeof a; score: number; notes: string; count: number }[] = [];
+        const candidates: { b: typeof a; score: number; count: number }[] = [];
         for (const b of pool) {
           if (a.id === b.id) continue;
           const currentB = matchCounts.get(b.id) ?? 0;
@@ -150,7 +150,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
             b,
             score: d.score,
             count: currentB,
-            notes: `wDiff=${d.wDiff.toFixed(1)} ageGapDays=${d.ageGap} expGap=${d.expGap} skillGap=${d.skillGap} wPct=${d.wPct.toFixed(1)}%`,
           });
         }
         candidates.sort((x, y) => (x.score - y.score) || (x.count - y.count));
@@ -159,7 +158,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
         matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
         matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
         paired.add(pairKey(a.id, pick.b.id));
-        newBouts.push({ redId: a.id, greenId: pick.b.id, score: pick.score, notes: pick.notes });
+        newBouts.push({ redId: a.id, greenId: pick.b.id, pairingScore: pick.score });
         currentA += 1;
       }
     }
@@ -174,7 +173,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
       for (const a of zeroes) {
         const currentA = matchCounts.get(a.id) ?? 0;
         if (currentA >= maxMatches) continue;
-        const candidates: { b: typeof a; score: number; notes: string; count: number }[] = [];
+        const candidates: { b: typeof a; score: number; count: number }[] = [];
         for (const b of pool) {
           if (a.id === b.id) continue;
           const currentB = matchCounts.get(b.id) ?? 0;
@@ -186,7 +185,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
             b,
             score: d.score,
             count: currentB,
-            notes: `wDiff=${d.wDiff.toFixed(1)} ageGapDays=${d.ageGap} expGap=${d.expGap} skillGap=${d.skillGap} wPct=${d.wPct.toFixed(1)}%`,
           });
         }
         if (candidates.length === 0) continue;
@@ -198,7 +196,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
         matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
         matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
         paired.add(pairKey(a.id, pick.b.id));
-        newBouts.push({ redId: a.id, greenId: pick.b.id, score: pick.score, notes: pick.notes });
+        newBouts.push({ redId: a.id, greenId: pick.b.id, pairingScore: pick.score });
         made = true;
       }
     }
@@ -227,9 +225,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
       meetId,
       redId: b.redId,
       greenId: b.greenId,
-      type: "counting",
-      score: b.score,
-      notes: b.notes,
+      pairingScore: b.pairingScore,
     })),
   });
 

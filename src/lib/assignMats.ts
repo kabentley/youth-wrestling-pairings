@@ -141,7 +141,7 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
 
   const bouts = await db.bout.findMany({
     where: { meetId },
-    orderBy: [{ score: "asc" }],
+    orderBy: [{ pairingScore: "asc" }],
   });
 
   const teamIds = meet?.meetTeams.map(mt => mt.teamId) ?? [];

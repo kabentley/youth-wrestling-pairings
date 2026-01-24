@@ -45,9 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       meetId,
       redId: body.redId,
       greenId: body.greenId,
-      type: "counting",
-      score: 0,
-      notes: "manual",
+      pairingScore: 0,
     },
   });
   await assignMatToBout(meetId, bout.id);

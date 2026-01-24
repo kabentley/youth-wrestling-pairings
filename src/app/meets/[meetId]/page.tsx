@@ -51,9 +51,7 @@ type Bout = {
   id: string;
   redId: string;
   greenId: string;
-  type: string;
-  score: number;
-  notes?: string | null;
+  pairingScore: number;
   mat?: number | null;
   order?: number | null;
 };
@@ -87,6 +85,12 @@ type MeetComment = {
   section?: string | null;
   createdAt: string;
   author?: { username?: string | null } | null;
+};
+type MeetCheckpoint = {
+  id: string;
+  name: string;
+  createdAt: string;
+  createdBy?: { username?: string | null } | null;
 };
 
 const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
@@ -130,6 +134,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [changes, setChanges] = useState<MeetChange[]>([]);
   const [comments, setComments] = useState<MeetComment[]>([]);
   const [showComments, setShowComments] = useState(true);
+  const [checkpoints, setCheckpoints] = useState<MeetCheckpoint[]>([]);
+  const [checkpointsLoaded, setCheckpointsLoaded] = useState(false);
+  const [showCheckpointModal, setShowCheckpointModal] = useState(false);
+  const [checkpointName, setCheckpointName] = useState("");
+  const [checkpointError, setCheckpointError] = useState<string | null>(null);
+  const [checkpointSaving, setCheckpointSaving] = useState(false);
+  const [checkpointDownloading, setCheckpointDownloading] = useState(false);
+  const [checkpointDownloadingId, setCheckpointDownloadingId] = useState<string | null>(null);
+  const [checkpointApplyingId, setCheckpointApplyingId] = useState<string | null>(null);
+  const [checkpointDeletingId, setCheckpointDeletingId] = useState<string | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
@@ -221,11 +235,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+  const [autoPairingsSlow, setAutoPairingsSlow] = useState(false);
+  const autoPairingsSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [exportingMeet, setExportingMeet] = useState(false);
   const [autoPairingsTeamId, setAutoPairingsTeamId] = useState<string | null>(null);
   const [autoPairingsPrompted, setAutoPairingsPrompted] = useState(false);
   const [autoPairingsModalMode, setAutoPairingsModalMode] = useState<"manual" | "auto">("manual");
   const [modalAttendanceOverrides, setModalAttendanceOverrides] = useState<Map<string, AttendanceStatus | null>>(new Map());
+  const pairingsInitRef = useRef(false);
 
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
     const clearExisting = options.clearExisting ?? true;
@@ -383,6 +400,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
     };
   }, []);
+  useEffect(() => {
+    if (!autoPairingsLoading) {
+      setAutoPairingsSlow(false);
+      if (autoPairingsSlowTimerRef.current) {
+        clearTimeout(autoPairingsSlowTimerRef.current);
+        autoPairingsSlowTimerRef.current = null;
+      }
+      return;
+    }
+    setAutoPairingsSlow(false);
+    if (autoPairingsSlowTimerRef.current) {
+      clearTimeout(autoPairingsSlowTimerRef.current);
+    }
+    autoPairingsSlowTimerRef.current = setTimeout(() => {
+      setAutoPairingsSlow(true);
+    }, 1000);
+    return () => {
+      if (autoPairingsSlowTimerRef.current) {
+        clearTimeout(autoPairingsSlowTimerRef.current);
+        autoPairingsSlowTimerRef.current = null;
+      }
+    };
+  }, [autoPairingsLoading]);
 
   useEffect(() => {
     return () => {
@@ -500,6 +540,143 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setExportingMeet(false);
     }
   }
+
+  function defaultCheckpointName() {
+    const now = new Date();
+    const date = now.toLocaleDateString();
+    const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `Checkpoint ${date} ${time}`;
+  }
+
+  function formatCheckpointDate(value: string) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
+  }
+
+  async function downloadBlob(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
+  async function saveCheckpoint() {
+    const rawName = checkpointName.trim() || defaultCheckpointName();
+    const name = rawName.slice(0, 80);
+    setCheckpointError(null);
+    setCheckpointSaving(true);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to save checkpoint (${res.status}).`);
+      }
+      const payload = await res.json().catch(() => null);
+      if (payload) {
+        setCheckpoints(prev => [payload as MeetCheckpoint, ...prev]);
+      } else {
+        await loadCheckpoints();
+      }
+      await loadActivity();
+      setCheckpointName("");
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to save checkpoint.");
+    } finally {
+      setCheckpointSaving(false);
+    }
+  }
+
+  async function downloadCheckpointSnapshot() {
+    const name = checkpointName.trim() || defaultCheckpointName();
+    setCheckpointError(null);
+    setCheckpointDownloading(true);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints/download?name=${encodeURIComponent(name)}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to download checkpoint (${res.status}).`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename=\"([^\"]+)\"/.exec(disposition);
+      const filename = match?.[1] ?? "meet-checkpoint.json";
+      await downloadBlob(blob, filename);
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to download checkpoint.");
+    } finally {
+      setCheckpointDownloading(false);
+    }
+  }
+
+  async function downloadSavedCheckpoint(id: string) {
+    setCheckpointError(null);
+    setCheckpointDownloadingId(id);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints/${id}?download=1`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to download checkpoint (${res.status}).`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename=\"([^\"]+)\"/.exec(disposition);
+      const filename = match?.[1] ?? "meet-checkpoint.json";
+      await downloadBlob(blob, filename);
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to download checkpoint.");
+    } finally {
+      setCheckpointDownloadingId(null);
+    }
+  }
+
+  async function applyCheckpoint(id: string, name: string) {
+    if (!canEdit) return;
+    const confirmed = window.confirm(`Apply checkpoint \"${name}\"? This will replace attendance and bouts.`);
+    if (!confirmed) return;
+    setCheckpointError(null);
+    setCheckpointApplyingId(id);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints/${id}/apply`, { method: "POST" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to apply checkpoint (${res.status}).`);
+      }
+      await load();
+      await loadActivity();
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to apply checkpoint.");
+    } finally {
+      setCheckpointApplyingId(null);
+    }
+  }
+
+  async function deleteCheckpoint(id: string) {
+    if (!window.confirm("Delete this checkpoint? This cannot be undone.")) return;
+    setCheckpointError(null);
+    setCheckpointDeletingId(id);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to delete checkpoint (${res.status}).`);
+      }
+      setCheckpoints(prev => prev.filter(cp => cp.id !== id));
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to delete checkpoint.");
+    } finally {
+      setCheckpointDeletingId(null);
+    }
+  }
+
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
   }
@@ -690,6 +867,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [meetId]);
 
+  const loadCheckpoints = useCallback(async () => {
+    const res = await fetch(`/api/meets/${meetId}/checkpoints`);
+    if (!res.ok) return;
+    const payload = await res.json().catch(() => []);
+    setCheckpoints(Array.isArray(payload) ? payload : []);
+    setCheckpointsLoaded(true);
+  }, [meetId]);
+
 
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
@@ -702,7 +887,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setShowRestartModal(true);
   };
 
-  useEffect(() => { void load(); void loadActivity(); }, [load, loadActivity]);
+  useEffect(() => { void load(); void loadActivity(); void loadCheckpoints(); }, [load, loadActivity, loadCheckpoints]);
   useEffect(() => {
     if (!homeTeamId) return undefined;
     let cancelled = false;
@@ -745,9 +930,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return;
     }
     if (!pairingsTeamId || !orderedPairingsTeams.some(t => t.id === pairingsTeamId)) {
-      setPairingsTeamId(orderedPairingsTeams[0]?.id ?? null);
+      const nextId = homeTeamId && orderedPairingsTeams.some(t => t.id === homeTeamId)
+        ? homeTeamId
+        : (orderedPairingsTeams[0]?.id ?? null);
+      setPairingsTeamId(nextId);
     }
-  }, [orderedPairingsTeams, pairingsTeamId]);
+  }, [orderedPairingsTeams, pairingsTeamId, homeTeamId]);
+
+  useEffect(() => {
+    if (!meetLoaded) return;
+    if (pairingsInitRef.current) return;
+    if (!homeTeamId) return;
+    if (!orderedPairingsTeams.some(t => t.id === homeTeamId)) return;
+    setPairingsTeamId(homeTeamId);
+    pairingsInitRef.current = true;
+  }, [meetLoaded, homeTeamId, orderedPairingsTeams]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -1435,13 +1632,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const saveModalAttendanceChanges = useCallback(async () => {
     if (!canEdit) return false;
     const changes: { wrestlerId: string; status: AttendanceStatus | null }[] = [];
-    for (const wrestler of modalAttendanceRoster) {
+    for (const [wrestlerId, nextRaw] of modalAttendanceOverrides.entries()) {
+      const wrestler = wMap[wrestlerId] ?? wrestlers.find(w => w.id === wrestlerId);
+      if (!wrestler) continue;
       const baseStatus = wrestler.status ?? null;
-      const nextStatus = modalAttendanceOverrides.has(wrestler.id)
-        ? (modalAttendanceOverrides.get(wrestler.id) ?? null)
-        : baseStatus;
+      const nextStatus = nextRaw ?? null;
       if (nextStatus !== baseStatus) {
-        changes.push({ wrestlerId: wrestler.id, status: nextStatus });
+        changes.push({ wrestlerId, status: nextStatus });
       }
     }
     if (changes.length === 0) return true;
@@ -1458,8 +1655,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await load();
     await loadActivity();
     setSelectedPairingId(null);
+    setModalAttendanceOverrides(new Map());
     return true;
-  }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, modalAttendanceRoster]);
+  }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, wMap, wrestlers]);
 
   async function submitAddWrestler() {
     if (!attendanceTeamId) return;
@@ -2027,6 +2225,82 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: grid;
           gap: 10px;
         }
+        .modal-card.checkpoint-modal {
+          width: min(760px, 94vw);
+        }
+        .checkpoint-form {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .checkpoint-input {
+          padding: 8px 10px;
+          border-radius: 8px;
+          border: 1px solid var(--line);
+          font-size: 14px;
+        }
+        .checkpoint-form-actions {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .checkpoint-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          max-height: 320px;
+          overflow-y: auto;
+          padding-right: 2px;
+        }
+        .checkpoint-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 10px 12px;
+          background: #f8fafc;
+        }
+        .checkpoint-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .checkpoint-name {
+          font-weight: 700;
+        }
+        .checkpoint-meta {
+          font-size: 12px;
+          color: var(--muted);
+        }
+        .checkpoint-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .checkpoint-empty {
+          font-size: 13px;
+          color: var(--muted);
+        }
+        .modal-card.progress-modal {
+          width: min(420px, 90vw);
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        .progress-spinner {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          border: 4px solid #d7dde6;
+          border-top-color: var(--accent);
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
         .modal-card.attendance-modal {
           width: min(640px, 92vw);
           max-height: 86vh;
@@ -2418,9 +2692,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 1.2fr)", gap: 16, marginTop: 0 }}>
         <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <h3 style={{ margin: 0 }}>Pairings</h3>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0 }}>Pairings</h3>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button
                 type="button"
                 className="nav-btn"
@@ -2452,6 +2726,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               disabled={!meetLoaded || exportingMeet}
             >
               {exportingMeet ? "Exporting..." : "Export Meet"}
+            </button>
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => {
+                setCheckpointError(null);
+                setShowCheckpointModal(true);
+                if (!checkpointsLoaded) {
+                  void loadCheckpoints();
+                }
+              }}
+              disabled={!meetLoaded}
+            >
+              Checkpoints
             </button>
             </div>
           </div>
@@ -2900,6 +3188,95 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         )}
       </div>
 
+      {showCheckpointModal && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>
+            <div className="modal-card checkpoint-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Meet checkpoints</h3>
+              <p style={{ marginTop: 4, marginBottom: 10, fontSize: 13, color: "#5b6472" }}>
+                Save attendance and scheduled bouts for quick restore. Applying replaces attendance and all bouts.
+              </p>
+              <div className="checkpoint-form">
+                <input
+                  className="checkpoint-input"
+                  placeholder="Checkpoint name"
+                  value={checkpointName}
+                  onChange={(e) => setCheckpointName(e.target.value)}
+                  maxLength={80}
+                />
+                <div className="checkpoint-form-actions">
+                  <button
+                    className="nav-btn"
+                    type="button"
+                    onClick={saveCheckpoint}
+                    disabled={!canEdit || checkpointSaving}
+                  >
+                    {checkpointSaving ? "Saving..." : "Save to server"}
+                  </button>
+                  <button
+                    className="nav-btn"
+                    type="button"
+                    onClick={downloadCheckpointSnapshot}
+                    disabled={!meetLoaded || checkpointDownloading}
+                  >
+                    {checkpointDownloading ? "Downloading..." : "Download"}
+                  </button>
+                </div>
+              </div>
+              {checkpointError && (
+                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
+                  {checkpointError}
+                </div>
+              )}
+              <div className="checkpoint-list">
+                {checkpoints.length === 0 && (
+                  <div className="checkpoint-empty">No checkpoints saved yet.</div>
+                )}
+                {checkpoints.map(cp => (
+                  <div key={cp.id} className="checkpoint-row">
+                    <div className="checkpoint-info">
+                      <div className="checkpoint-name">{cp.name}</div>
+                      <div className="checkpoint-meta">
+                        {formatCheckpointDate(cp.createdAt)}
+                        {cp.createdBy?.username ? ` · ${cp.createdBy.username}` : ""}
+                      </div>
+                    </div>
+                    <div className="checkpoint-actions">
+                      <button
+                        className="nav-btn"
+                        type="button"
+                        onClick={() => applyCheckpoint(cp.id, cp.name)}
+                        disabled={!canEdit || checkpointApplyingId === cp.id}
+                      >
+                        {checkpointApplyingId === cp.id ? "Applying..." : "Apply"}
+                      </button>
+                      <button
+                        className="nav-btn"
+                        type="button"
+                        onClick={() => downloadSavedCheckpoint(cp.id)}
+                        disabled={checkpointDownloadingId === cp.id}
+                      >
+                        {checkpointDownloadingId === cp.id ? "Downloading..." : "Download"}
+                      </button>
+                      <button
+                        className="nav-btn delete-btn"
+                        type="button"
+                        onClick={() => deleteCheckpoint(cp.id)}
+                        disabled={checkpointDeletingId === cp.id}
+                      >
+                        {checkpointDeletingId === cp.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="modal-actions">
+                <button className="nav-btn" onClick={() => setShowCheckpointModal(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
       {showAddWrestler && (
         <div className="modal-backdrop" onClick={() => setShowAddWrestler(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -3203,6 +3580,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 >
                   Done
                 </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {autoPairingsLoading && autoPairingsSlow && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-card progress-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="progress-spinner" aria-hidden="true" />
+              <div>
+                <div style={{ fontWeight: 700 }}>Generating pairings...</div>
+                <div style={{ fontSize: 13, color: "#5b6472", marginTop: 4 }}>
+                  This can take a bit for larger meets.
+                </div>
               </div>
             </div>
           </div>

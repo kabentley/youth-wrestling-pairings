@@ -112,6 +112,23 @@ model Meet {
   meetChanges MeetChange[]
   meetComments MeetComment[]
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
+  checkpoints MeetCheckpoint[]
+}
+
+model MeetCheckpoint {
+  id            String   @id @default(cuid())
+  meetId        String
+  name          String
+  payload       Json
+  teamSignature String
+  createdAt     DateTime @default(now())
+  createdById   String
+
+  meet       Meet @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  createdBy  User @relation("MeetCheckpointCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([meetId])
+  @@index([createdById])
 }
 
 model MeetWrestlerStatus {
@@ -209,9 +226,7 @@ model Bout {
 
   redId     String
   greenId   String
-  type      String
-  score     Float
-  notes     String?
+  pairingScore Float
 
   mat       Int?
   order     Int?
@@ -259,6 +274,7 @@ model User {
   meetChanges   MeetChange[] @relation("MeetChangeActor")
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
+  meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   children      UserChild[]
   headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]

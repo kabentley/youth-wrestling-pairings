@@ -20,8 +20,7 @@ type Bout = {
   id: string;
   redId: string;
   greenId: string;
-  type: string;
-  score: number;
+  pairingScore: number;
   mat?: number | null;
   order?: number | null;
   originalMat?: number | null;

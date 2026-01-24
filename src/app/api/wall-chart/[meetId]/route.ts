@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const [bouts, statuses] = await Promise.all([
     db.bout.findMany({
       where: { meetId },
-      orderBy: [{ mat: "asc" }, { order: "asc" }, { score: "asc" }],
+      orderBy: [{ mat: "asc" }, { order: "asc" }, { pairingScore: "asc" }],
       select: {
         id: true,
         redId: true,

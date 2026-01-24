@@ -45,6 +45,41 @@ function getNextSaturday(): string {
   return formatLocalDate(nextSaturday);
 }
 
+function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | null, date?: string) {
+  if (teamIds.length === 0) return "";
+  const byId = new Map(teams.map(team => [team.id, team]));
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const pushTeam = (id: string) => {
+    if (seen.has(id)) return;
+    const team = byId.get(id);
+    if (!team) return;
+    const label = (team.symbol || team.name || "Team").trim();
+    if (!label) return;
+    ordered.push(label);
+    seen.add(id);
+  };
+  if (homeTeamId) {
+    pushTeam(homeTeamId);
+  }
+  const rest = teamIds.filter(id => id !== homeTeamId);
+  const restOrdered = rest
+    .map(id => byId.get(id))
+    .filter((team): team is Team => Boolean(team))
+    .sort((a, b) => {
+      const aLabel = (a.symbol || a.name || "").toLowerCase();
+      const bLabel = (b.symbol || b.name || "").toLowerCase();
+      if (aLabel < bLabel) return -1;
+      if (aLabel > bLabel) return 1;
+      return 0;
+    });
+  restOrdered.forEach(team => pushTeam(team.id));
+  if (ordered.length === 0) return "";
+  const base = ordered.join(" v ");
+  if (!date) return base;
+  return `${base} - ${formatMeetDisplayDate(date)}`;
+}
+
 const DEFAULT_DATE = getNextSaturday();
 
 const MIN_MATS = 1;
@@ -216,13 +251,18 @@ export default function MeetsPage() {
   }
 
   const isEditing = Boolean(editingMeet);
+  const autoMeetName = useMemo(
+    () => buildMeetName(teamIds, teams, homeTeamId || null, date),
+    [teamIds, teams, homeTeamId, date],
+  );
+  const displayMeetName = isEditing ? name : autoMeetName;
 
   async function addMeet() {
     const res = await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name,
+        name: displayMeetName,
         date,
         location,
         teamIds,
@@ -389,6 +429,11 @@ export default function MeetsPage() {
       return teamIds[0] ?? "";
     });
   }, [teamIds, currentTeamId]);
+  useEffect(() => {
+    if (isEditing) return;
+    if (!autoMeetName) return;
+    setName(autoMeetName);
+  }, [autoMeetName, isEditing]);
   useEffect(() => {
     if (!currentTeamId) return;
     setTeamIds(prev => (prev.includes(currentTeamId) ? prev : [currentTeamId, ...prev]));
@@ -980,9 +1025,9 @@ export default function MeetsPage() {
                 <input
                   className="input"
                   placeholder="Meet name"
-                  value={name}
+                  value={displayMeetName}
                   onChange={e => setName(e.target.value)}
-                  disabled={!canManageMeets}
+                  disabled={!canManageMeets || !isEditing}
                 />
               </div>
               <div className="row">
@@ -1093,7 +1138,7 @@ export default function MeetsPage() {
                   className="btn"
                   type="button"
                   onClick={handleModalSubmit}
-                  disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || name.trim().length < 2}
+                  disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || displayMeetName.trim().length < 2}
                 >
                   {submitLabel}
                 </button>
