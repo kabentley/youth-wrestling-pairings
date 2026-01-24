@@ -174,7 +174,9 @@ export const authOptions: NextAuthOptions = {
       const isCredentials = account?.provider === "credentials";
       if (isCredentials && needsReset) {
         const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-        return `${baseUrl}/auth/force-reset`;
+        const username = (user as { username?: string }).username ?? "";
+        const suffix = username ? `?username=${encodeURIComponent(username)}` : "";
+        return `${baseUrl}/auth/force-reset${suffix}`;
       }
       const userId = user.id;
       await db.user.updateMany({

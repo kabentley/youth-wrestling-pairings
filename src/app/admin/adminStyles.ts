@@ -100,6 +100,16 @@ export const adminStyles = `
     gap: 8px;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
+  .admin-create-user input,
+  .admin-create-user select {
+    height: 40px;
+    padding: 6px 10px;
+  }
+  .admin-create-user .admin-password-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .admin input,
   .admin select {
     width: 100%;

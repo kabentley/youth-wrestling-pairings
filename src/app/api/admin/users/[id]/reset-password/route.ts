@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 
-const BodySchema = z.object({ password: z.string().min(6) });
+const BodySchema = z.object({ password: z.string().min(5) });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

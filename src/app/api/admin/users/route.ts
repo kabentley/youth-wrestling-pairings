@@ -14,6 +14,7 @@ const CreateSchema = z.object({
   name: z.string().optional(),
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).default("COACH"),
   teamId: z.string().nullable().optional(),
+  password: z.string().min(1),
 });
 
 export async function GET(req: Request) {
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
   if ((body.role === "PARENT" || body.role === "TABLE_WORKER") && !body.teamId) {
     return NextResponse.json({ error: "Parents and table workers must be assigned a team" }, { status: 400 });
   }
-  const tempPassword = generateTempPassword();
+  const tempPassword = body.password.trim();
   const passwordHash = await bcrypt.hash(tempPassword, 10);
   const user = await db.user.create({
     data: {

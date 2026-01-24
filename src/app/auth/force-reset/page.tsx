@@ -1,6 +1,7 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function ForceResetPage() {
@@ -14,6 +15,14 @@ export default function ForceResetPage() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const { status } = useSession();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const preset = searchParams.get("username") ?? "";
+    if (preset && !username) {
+      setUsername(preset);
+    }
+  }, [searchParams, username]);
 
   useEffect(() => {
     let active = true;

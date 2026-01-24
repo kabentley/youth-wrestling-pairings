@@ -28,6 +28,8 @@ export default function UsersSection() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(true);
   const [role, setRole] = useState<UserRow["role"]>("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
@@ -58,12 +60,25 @@ export default function UsersSection() {
     void load();
   }, [page, pageSize, teamFilter]);
 
+  function generatePassword() {
+    const digits = "0123456789";
+    let out = "";
+    for (let i = 0; i < 6; i += 1) {
+      out += digits[Math.floor(Math.random() * digits.length)];
+    }
+    setPassword(out);
+  }
+
   async function createUser() {
     setMsg("");
+    if (!password.trim()) {
+      setMsg("Enter a password.");
+      return;
+    }
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, name, role, teamId: teamId || null }),
+      body: JSON.stringify({ username, email, phone, name, role, teamId: teamId || null, password: password || null }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -74,9 +89,11 @@ export default function UsersSection() {
     setEmail("");
     setPhone("");
     setName("");
+    setPassword("");
+    setShowPassword(false);
     setRole("COACH");
     setTeamId("");
-    setMsg(formatError(data?.error) ?? "User created. Temporary password sent by email.");
+    setMsg(formatError(data?.error) ?? "User created. Password reset required at first sign-in.");
     await load();
   }
 
@@ -140,6 +157,14 @@ export default function UsersSection() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const canCreateUser = Boolean(
+    username.trim() &&
+    email.trim() &&
+    password.trim() &&
+    role &&
+    (role === "ADMIN" || teamId.trim())
+  );
+
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(total, page * pageSize);
 
@@ -166,7 +191,7 @@ export default function UsersSection() {
             <option value="">All teams</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.symbol})
+                {t.name} ({t.name} ({t.symbol}))
               </option>
             ))}
           </select>
@@ -205,13 +230,24 @@ export default function UsersSection() {
         </div>
       </div>
 
-      <div className="admin-card">
+      <div className="admin-card admin-create-user">
         <h3>Create New User</h3>
         <div className="admin-grid">
           <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
           <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="admin-password-row">
+            <input
+              placeholder="Password"
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button className="admin-btn admin-btn-ghost" type="button" onClick={generatePassword}>
+              Generate
+            </button>
+          </div>
           <select value={role} onChange={(e) => setRole(e.target.value as UserRow["role"])}>
             <option value="ADMIN">ADMIN</option>
             <option value="COACH">COACH</option>
@@ -219,15 +255,22 @@ export default function UsersSection() {
             <option value="TABLE_WORKER">TABLE_WORKER</option>
           </select>
           <select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-            <option value="">Select team (coach/parent/table worker)</option>
+            <option value="">Select team</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.symbol}
+                {t.name} ({t.symbol})
               </option>
             ))}
           </select>
         </div>
-        <button className="admin-btn" style={{ marginTop: 10 }} onClick={createUser}>Create</button>
+        <button
+          className="admin-btn"
+          style={{ marginTop: 10, opacity: canCreateUser ? 1 : 0.5 }}
+          onClick={createUser}
+          disabled={!canCreateUser}
+        >
+          Create
+        </button>
         {msg && <div className="admin-info">{msg}</div>}
       </div>
 
@@ -273,7 +316,7 @@ export default function UsersSection() {
                     <option value="">None</option>
                     {teams.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.symbol}
+                        {t.name} ({t.symbol})
                       </option>
                     ))}
                   </select>
