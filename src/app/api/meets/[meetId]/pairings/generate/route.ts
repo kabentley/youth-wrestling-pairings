@@ -44,7 +44,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   await logMeetChange(meetId, user.id, "Generated pairings.");
   if (settings.preserveMats) {
-    return NextResponse.json({ ...result, assigned: 0, reordered: 0 });
+    const assignResult = await assignMatsForMeet(meetId, { preserveExisting: true });
+    if (assignResult.assigned > 0) {
+      await logMeetChange(meetId, user.id, "Assigned mats for new bouts.");
+    }
+    return NextResponse.json({ ...result, ...assignResult, reordered: 0 });
   }
   const assignResult = await assignMatsForMeet(meetId);
   await logMeetChange(meetId, user.id, "Assigned mats.");

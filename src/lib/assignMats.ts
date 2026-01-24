@@ -18,6 +18,7 @@ export type MatRule = {
 /** Optional overrides used when assigning mats for a meet. */
 export type MatSettings = {
   numMats?: number;
+  preserveExisting?: boolean;
 };
 
 /** Default number of mats used if neither the meet nor caller provides a value. */
@@ -151,9 +152,11 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
   });
   const wMap = new Map(wrestlers.map(w => [w.id, w]));
 
-  await db.bout.updateMany({ where: { meetId }, data: { mat: null, order: null } });
-
   const numMats = Math.max(MIN_MATS, s.numMats ?? meet.numMats);
+  const preserveExisting = Boolean(s.preserveExisting);
+  if (!preserveExisting) {
+    await db.bout.updateMany({ where: { meetId }, data: { mat: null, order: null } });
+  }
 
   const teamRules = homeTeamId
     ? await db.teamMatRule.findMany({
@@ -217,7 +220,39 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     return p;
   }
 
-  for (const b of bouts) {
+  const assignedBouts = preserveExisting
+    ? bouts.filter(b => b.mat && b.order && b.mat >= 1 && b.mat <= numMats)
+    : [];
+  const unassignedBouts = preserveExisting
+    ? bouts.filter(b => !(b.mat && b.order && b.mat >= 1 && b.mat <= numMats))
+    : bouts;
+
+  if (preserveExisting) {
+    const sortedAssigned = [...assignedBouts].sort((a, b) => {
+      const matA = a.mat ?? 0;
+      const matB = b.mat ?? 0;
+      if (matA !== matB) return matA - matB;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
+    for (const b of sortedAssigned) {
+      if (!b.mat) continue;
+      const matIdx = b.mat - 1;
+      if (!mats[matIdx]) continue;
+      mats[matIdx].boutIds.push(b.id);
+      if (homeTeamId) {
+        const red = getWrestler(b.redId);
+        const green = getWrestler(b.greenId);
+        if (red?.teamId === homeTeamId) {
+          homeWrestlerMat.set(b.redId, matIdx);
+        }
+        if (green?.teamId === homeTeamId) {
+          homeWrestlerMat.set(b.greenId, matIdx);
+        }
+      }
+    }
+  }
+
+  for (const b of unassignedBouts) {
     const { indexes: eligibleMats } = getEligibleMatIndexes(
       b,
       mats,
@@ -263,5 +298,6 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     }
   }
 
-  return { assigned: bouts.length, numMats };
+  const assignedCount = preserveExisting ? unassignedBouts.length : bouts.length;
+  return { assigned: assignedCount, numMats };
 }
