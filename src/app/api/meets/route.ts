@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { assignMatsForMeet } from "@/lib/assignMats";
-import { DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
-import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const MeetSchema = z.object({
   name: z.string().optional().default(""),
@@ -166,22 +162,7 @@ export async function POST(req: Request) {
   });
 
   await logMeetChange(meet.id, user.id, "Meet created.");
-  if (parsed.autoPairings) {
-    const pairingSettings = {
-      maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
-      maxWeightDiffPct: 12,
-      firstYearOnlyWithFirstYear: true,
-      allowSameTeamMatches: parsed.allowSameTeamMatches,
-      matchesPerWrestler: parsed.matchesPerWrestler,
-      maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
-    };
-    await generatePairingsForMeet(meet.id, pairingSettings);
-    await logMeetChange(meet.id, user.id, "Auto-generated pairings.");
-    await assignMatsForMeet(meet.id, { numMats: parsed.numMats });
-    await logMeetChange(meet.id, user.id, "Auto-assigned mats.");
-    await reorderBoutsForMeet(meet.id, { numMats: parsed.numMats, conflictGap: parsed.restGap });
-    await logMeetChange(meet.id, user.id, "Auto-reordered mats.");
-  }
+  // Auto pairings and initial checkpoint are handled client-side after attendance.
 
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });

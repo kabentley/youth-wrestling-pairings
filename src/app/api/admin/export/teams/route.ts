@@ -121,7 +121,11 @@ export async function GET() {
   zip.file("league.json", JSON.stringify(leagueRow, null, 2));
   zip.file("manifest.json", JSON.stringify(manifest, null, 2));
 
-  const zipData = await zip.generateAsync({ type: "nodebuffer" });
+  const zipData = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
   return new NextResponse(new Uint8Array(zipData), {
     headers: {
       "Content-Type": "application/zip",

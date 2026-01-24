@@ -73,6 +73,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "teams.json not found in zip." }, { status: 400 });
   }
 
+  await db.meetCheckpoint.deleteMany();
   await db.wrestler.deleteMany();
   if (leagueEntry) {
     const leagueRow = JSON.parse(await leagueEntry.async("string")) as LeagueRow;

@@ -11,18 +11,14 @@ import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
-  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
-    const div = document.createElement("div");
-    document.body.appendChild(div);
-    setContainer(div);
-    return () => {
-      document.body.removeChild(div);
-    };
+    setMounted(true);
+    return () => setMounted(false);
   }, []);
-  if (!container) return null;
-  return createPortal(children, container);
+  if (!mounted) return null;
+  return createPortal(children, document.body);
 }
 
 
@@ -116,6 +112,51 @@ type CheckpointDiff = {
   matChangedCount: number;
 };
 
+type CheckpointSaveRowProps = {
+  onSave: (name: string) => Promise<boolean>;
+};
+
+function CheckpointSaveRow({ onSave }: CheckpointSaveRowProps) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    const ok = await onSave(trimmed);
+    setSaving(false);
+    if (ok) setName("");
+  };
+
+  return (
+    <div className="checkpoint-form">
+      <input
+        className="checkpoint-input"
+        placeholder="New checkpoint name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        maxLength={80}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void handleSave();
+          }
+        }}
+      />
+      <button
+        className="nav-btn checkpoint-save-btn"
+        type="button"
+        onClick={handleSave}
+        disabled={saving || !name.trim()}
+        title="Save a checkpoint of the current state of the meet"
+      >
+        {saving ? "Saving..." : "Save"}
+      </button>
+    </div>
+  );
+}
+
 const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
 
 const CURRENT_SHARED_COLUMN_MAP: Record<number, number | undefined> = {
@@ -160,9 +201,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [checkpoints, setCheckpoints] = useState<MeetCheckpoint[]>([]);
   const [checkpointsLoaded, setCheckpointsLoaded] = useState(false);
   const [showCheckpointModal, setShowCheckpointModal] = useState(false);
-  const [checkpointName, setCheckpointName] = useState("");
   const [checkpointError, setCheckpointError] = useState<string | null>(null);
-  const [checkpointSaving, setCheckpointSaving] = useState(false);
   const [checkpointApplyingId, setCheckpointApplyingId] = useState<string | null>(null);
   const [checkpointDeletingId, setCheckpointDeletingId] = useState<string | null>(null);
   const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(null);
@@ -265,6 +304,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [autoPairingsPrompted, setAutoPairingsPrompted] = useState(false);
   const [autoPairingsModalMode, setAutoPairingsModalMode] = useState<"manual" | "auto">("manual");
   const [modalAttendanceOverrides, setModalAttendanceOverrides] = useState<Map<string, AttendanceStatus | null>>(new Map());
+  const initialCheckpointFlowRef = useRef(false);
+  const initialCheckpointSavedRef = useRef(false);
   const pairingsInitRef = useRef(false);
 
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -300,8 +341,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       await load();
       await loadActivity();
       setShowAutoPairingsModal(false);
+      return true;
     } catch (err) {
       setAutoPairingsError(err instanceof Error ? err.message : "Unable to rerun auto pairings.");
+      return false;
     } finally {
       setAutoPairingsLoading(false);
     }
@@ -574,102 +617,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
-  function defaultCheckpointName() {
-    const now = new Date();
-    const date = now.toLocaleDateString();
-    const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return `Checkpoint ${date} ${time}`;
-  }
-
   function formatCheckpointDate(value: string) {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return parsed.toLocaleString();
-  }
-
-  async function downloadBlob(blob: Blob, filename: string) {
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  }
-
-  async function saveCheckpoint() {
-    const rawName = checkpointName.trim();
-    if (!rawName) return;
-    const name = rawName.slice(0, 80);
-    setCheckpointError(null);
-    setCheckpointSaving(true);
-    try {
-      const res = await fetch(`/api/meets/${meetId}/checkpoints`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        throw new Error(payload?.error ?? `Unable to save checkpoint (${res.status}).`);
-      }
-      const payload = await res.json().catch(() => null);
-      if (payload) {
-        setCheckpoints(prev => [payload as MeetCheckpoint, ...prev]);
-      } else {
-        await loadCheckpoints();
-      }
-      await loadActivity();
-      setCheckpointName("");
-    } catch (err) {
-      setCheckpointError(err instanceof Error ? err.message : "Unable to save checkpoint.");
-    } finally {
-      setCheckpointSaving(false);
-    }
-  }
-
-  async function downloadCheckpointSnapshot() {
-    const name = checkpointName.trim() || defaultCheckpointName();
-    setCheckpointError(null);
-    setCheckpointDownloading(true);
-    try {
-      const res = await fetch(`/api/meets/${meetId}/checkpoints/download?name=${encodeURIComponent(name)}`);
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        throw new Error(payload?.error ?? `Unable to download checkpoint (${res.status}).`);
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = /filename=\"([^\"]+)\"/.exec(disposition);
-      const filename = match?.[1] ?? "meet-checkpoint.json";
-      await downloadBlob(blob, filename);
-    } catch (err) {
-      setCheckpointError(err instanceof Error ? err.message : "Unable to download checkpoint.");
-    } finally {
-      setCheckpointDownloading(false);
-    }
-  }
-
-  async function downloadSavedCheckpoint(id: string) {
-    setCheckpointError(null);
-    setCheckpointDownloadingId(id);
-    try {
-      const res = await fetch(`/api/meets/${meetId}/checkpoints/${id}?download=1`);
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        throw new Error(payload?.error ?? `Unable to download checkpoint (${res.status}).`);
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = /filename=\"([^\"]+)\"/.exec(disposition);
-      const filename = match?.[1] ?? "meet-checkpoint.json";
-      await downloadBlob(blob, filename);
-    } catch (err) {
-      setCheckpointError(err instanceof Error ? err.message : "Unable to download checkpoint.");
-    } finally {
-      setCheckpointDownloadingId(null);
-    }
   }
 
   async function applyCheckpoint(id: string, name: string) {
@@ -998,6 +949,42 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setCheckpointsLoaded(true);
   }, [meetId]);
 
+  const saveCheckpointByName = useCallback(async (rawName: string) => {
+    const name = rawName.trim().slice(0, 80);
+    if (!name) return false;
+    setCheckpointError(null);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to save checkpoint (${res.status}).`);
+      }
+      const payload = await res.json().catch(() => null);
+      if (payload) {
+        setCheckpoints(prev => [payload as MeetCheckpoint, ...prev]);
+      } else {
+        await loadCheckpoints();
+      }
+      await loadActivity();
+      return true;
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to save checkpoint.");
+      return false;
+    }
+  }, [loadActivity, loadCheckpoints, meetId]);
+
+  const maybeSaveInitialCheckpoint = useCallback(async () => {
+    if (!initialCheckpointFlowRef.current || initialCheckpointSavedRef.current) return;
+    const ok = await saveCheckpointByName("Meet created");
+    if (ok) {
+      initialCheckpointSavedRef.current = true;
+      initialCheckpointFlowRef.current = false;
+    }
+  }, [saveCheckpointByName]);
 
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
@@ -1241,14 +1228,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
-  const rosterSorted = [...wrestlers].sort((a, b) => {
-    const teamA = teamName(a.teamId);
-    const teamB = teamName(b.teamId);
-    if (teamA !== teamB) return teamA.localeCompare(teamB);
-    const last = a.last.localeCompare(b.last);
-    if (last !== 0) return last;
-    return a.first.localeCompare(b.first);
-  });
+  const teamLabelById = useMemo(() => {
+    return new Map(teams.map(team => [team.id, team.symbol ?? team.name ?? team.id]));
+  }, [teams]);
+  const rosterSorted = useMemo(() => {
+    return [...wrestlers].sort((a, b) => {
+      const teamA = teamLabelById.get(a.teamId) ?? a.teamId;
+      const teamB = teamLabelById.get(b.teamId) ?? b.teamId;
+      if (teamA !== teamB) return teamA.localeCompare(teamB);
+      const last = a.last.localeCompare(b.last);
+      if (last !== 0) return last;
+      return a.first.localeCompare(b.first);
+    });
+  }, [teamLabelById, wrestlers]);
   const attendanceTeamId: string | null = pairingsTeamId ?? activeTeamId;
   const modalAttendanceTeamId = autoPairingsTeamId ?? attendanceTeamId;
   const modalAttendanceRoster = modalAttendanceTeamId
@@ -1261,10 +1253,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }),
     [modalAttendanceRoster, modalAttendanceOverrides],
   );
-  const modalAttendanceSorted = useMemo(
-    () => sortAttendanceRoster(modalAttendanceRosterWithOverrides),
-    [modalAttendanceRosterWithOverrides, sortAttendanceRoster],
-  );
+  const modalAttendanceBaseSorted = useMemo(() => {
+    if (attendanceSort.key === "status") {
+      return sortAttendanceRoster(modalAttendanceRosterWithOverrides);
+    }
+    return sortAttendanceRoster(modalAttendanceRoster);
+  }, [attendanceSort.key, modalAttendanceRoster, modalAttendanceRosterWithOverrides, sortAttendanceRoster]);
+  const modalAttendanceSorted = useMemo(() => {
+    if (attendanceSort.key === "status") {
+      return modalAttendanceBaseSorted;
+    }
+    if (modalAttendanceOverrides.size === 0) return modalAttendanceBaseSorted;
+    return modalAttendanceBaseSorted.map(w => {
+      if (!modalAttendanceOverrides.has(w.id)) return w;
+      return { ...w, status: modalAttendanceOverrides.get(w.id) ?? null };
+    });
+  }, [attendanceSort.key, modalAttendanceBaseSorted, modalAttendanceOverrides]);
   const attendingByTeam = pairingsTeamId
     ? rosterSorted.filter(w => w.teamId === pairingsTeamId && !isNotAttending(w.status))
     : rosterSorted.filter(w => !isNotAttending(w.status));
@@ -1273,6 +1277,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!meetLoaded || bouts.length > 0) return;
     if (meetStatus !== "DRAFT") return;
     if (!autoPairingsPending) return;
+    if (!initialCheckpointFlowRef.current) {
+      initialCheckpointFlowRef.current = true;
+    }
     setAutoPairingsPrompted(true);
     setAutoPairingsPending(false);
     setAutoPairingsError(null);
@@ -1892,6 +1899,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           border-color: var(--line);
           background: transparent;
         }
+        .checkpoint-actions .checkpoint-changes-btn:disabled {
+          background: #1f7a3a !important;
+          border-color: #1f7a3a !important;
+          color: #ffffff !important;
+          opacity: 0.6;
+        }
         .subnav {
           display: flex;
           gap: 14px;
@@ -2337,7 +2350,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 999;
+          z-index: 2000;
         }
         .modal-card {
           background: #ffffff;
@@ -2379,14 +2392,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           color: #ffffff;
         }
         .checkpoint-apply-btn {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: #ffffff;
+          background: var(--accent) !important;
+          border-color: var(--accent) !important;
+          color: #ffffff !important;
         }
         .checkpoint-apply-btn:hover:not(:disabled) {
-          background: #1870c7;
-          border-color: #1870c7;
-          color: #ffffff;
+          background: #1870c7 !important;
+          border-color: #1870c7 !important;
+          color: #ffffff !important;
+        }
+        .checkpoint-actions .checkpoint-apply-btn:disabled {
+          background: var(--accent) !important;
+          border-color: var(--accent) !important;
+          color: #ffffff !important;
+          opacity: 0.6;
         }
         .checkpoint-list {
           display: flex;
@@ -2395,6 +2414,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           max-height: 320px;
           overflow-y: auto;
           padding-right: 2px;
+        }
+        .checkpoint-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .checkpoint-footer-actions {
+          display: flex;
+          gap: 8px;
         }
         .checkpoint-row {
           display: flex;
@@ -2435,14 +2465,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           color: #ffffff;
         }
         .checkpoint-changes-btn {
+          background: #1f7a3a !important;
+          border-color: #1f7a3a !important;
+          color: #ffffff !important;
+        }
+        .checkpoint-changes-btn:hover:not(:disabled) {
+          background: #18612e !important;
+          border-color: #18612e !important;
+          color: #ffffff !important;
+        }
+        .checkpoint-changes-btn:disabled {
           background: #1f7a3a;
           border-color: #1f7a3a;
           color: #ffffff;
-        }
-        .checkpoint-changes-btn:hover:not(:disabled) {
-          background: #18612e;
-          border-color: #18612e;
-          color: #ffffff;
+          opacity: 0.6;
         }
         .checkpoint-empty {
           font-size: 13px;
@@ -2914,6 +2950,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             >
               {meetStatus === "PUBLISHED" ? "Reopen Draft" : "Publish"}
             </button>
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => {
+                setCheckpointError(null);
+                setShowCheckpointModal(true);
+                if (!checkpointsLoaded) {
+                  void loadCheckpoints();
+                }
+              }}
+            >
+              Checkpoints
+            </button>
           </div>
         </div>
       </div>
@@ -2997,20 +3046,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               disabled={!meetLoaded}
             >
               Attendance
-            </button>
-            <button
-              type="button"
-              className="nav-btn"
-              onClick={() => {
-                setCheckpointError(null);
-                setShowCheckpointModal(true);
-                if (!checkpointsLoaded) {
-                  void loadCheckpoints();
-                }
-              }}
-              disabled={!meetLoaded}
-            >
-              Checkpoints
             </button>
             </div>
           </div>
@@ -3459,219 +3494,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         )}
       </div>
 
-      {showCheckpointModal && (
-        <ModalPortal>
-          <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>
-            <div className="modal-card checkpoint-modal" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: 0 }}>Manage Checkpoints of the current state of the meet</h3>
-              <div className="checkpoint-form">
-                <input
-                  className="checkpoint-input"
-                  placeholder="New checkpoint name"
-                  value={checkpointName}
-                  onChange={(e) => setCheckpointName(e.target.value)}
-                  maxLength={80}
-                />
-                <button
-                  className="nav-btn checkpoint-save-btn"
-                  type="button"
-                  onClick={saveCheckpoint}
-                  disabled={checkpointSaving || !checkpointName.trim()}
-                  title="Save a checkpoint on the server"
-                >
-                  {checkpointSaving ? "Saving..." : "Save"}
-                </button>
-                <button
-                  className="nav-btn"
-                  type="button"
-                  onClick={exportMeet}
-                  disabled={!meetLoaded || exportingMeet}
-                  title="Export a zip file for use with desktop Pairings program"
-                >
-                  {exportingMeet ? "Exporting..." : "Export to .wrs"}
-                </button>
-              </div>
-              {checkpointError && (
-                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
-                  {checkpointError}
-                </div>
-              )}
-              <div className="checkpoint-list">
-                {checkpoints.length === 0 && (
-                  <div className="checkpoint-empty">No checkpoints saved yet.</div>
-                )}
-                {checkpoints.map(cp => (
-                  <div key={cp.id} className="checkpoint-row">
-                    <div className="checkpoint-info">
-                      <div className="checkpoint-name">{cp.name}</div>
-                      <div className="checkpoint-meta">
-                        {formatCheckpointDate(cp.createdAt)}
-                        {cp.createdBy?.username ? ` · ${cp.createdBy.username}` : ""}
-                      </div>
-                    </div>
-                    <div className="checkpoint-actions">
-                      <button
-                        className="nav-btn delete-btn"
-                        type="button"
-                        onClick={() => deleteCheckpoint(cp.id)}
-                        disabled={checkpointDeletingId === cp.id}
-                        title={`Delete [${cp.name}]`}
-                      >
-                        {checkpointDeletingId === cp.id ? "Deleting..." : "Delete"}
-                      </button>
-                      <button
-                        className="nav-btn checkpoint-apply-btn"
-                        type="button"
-                        onClick={() => applyCheckpoint(cp.id, cp.name)}
-                        disabled={!canEdit || checkpointApplyingId === cp.id}
-                        title={`Revert the meet to [${cp.name}] (loses all changes made after this checkpoint was saved).`}
-                      >
-                        {checkpointApplyingId === cp.id ? "Applying..." : "Apply"}
-                      </button>
-                      <button
-                        className="nav-btn checkpoint-changes-btn"
-                        type="button"
-                        onClick={() => showCheckpointChanges(cp.id, cp.name)}
-                        disabled={checkpointDiffLoadingId === cp.id}
-                        title={`Show changes since [${cp.name}]`}
-                      >
-                        {checkpointDiffLoadingId === cp.id ? "Loading..." : "Show Changes"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="modal-actions">
-                <button className="nav-btn" onClick={() => setShowCheckpointModal(false)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </ModalPortal>
-      )}
-      {checkpointDiff && (
-        <ModalPortal>
-          <div className="modal-backdrop" onClick={() => setCheckpointDiff(null)}>
-            <div className="modal-card checkpoint-diff-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="diff-header">
-                <span className="diff-header-title">Changes since</span>
-                <span className="diff-header-name">{checkpointDiff.name}</span>
-              </div>
-              {checkpointDiff.matChangedCount > 0 && (
-                <div className="diff-section">
-                  <div className="diff-title">
-                    Mat assignments changed ({checkpointDiff.matChangedCount})
-                  </div>
-                </div>
-              )}
-              {checkpointDiff.attendance.length > 0 && (
-                <div className="diff-section">
-                  <div className="diff-title">Attendance changes ({checkpointDiff.attendance.length})</div>
-                  <div className="diff-table-wrap">
-                    <table className="diff-table diff-table-attendance">
-                      <tbody>
-                        {checkpointDiff.attendance.map(entry => (
-                          <tr key={entry.wrestlerId}>
-                            <td
-                              style={{ color: teamColorById(wMap[entry.wrestlerId]?.teamId) ?? undefined }}
-                            >
-                              {entry.first} {entry.last}
-                              {teamSymbolById(wMap[entry.wrestlerId]?.teamId)
-                                ? ` (${teamSymbolById(wMap[entry.wrestlerId]?.teamId)})`
-                                : ""}
-                              <span className="diff-status-inline">
-                                <span
-                                  className="diff-status-chip"
-                                  style={{
-                                    background: attendanceStatusStyles[entry.from].background,
-                                    borderColor: attendanceStatusStyles[entry.from].borderColor,
-                                  }}
-                                >
-                                  {formatStatusLabel(entry.from)}
-                                </span>
-                                <span className="diff-status-arrow">→</span>
-                                <span
-                                  className="diff-status-chip"
-                                  style={{
-                                    background: attendanceStatusStyles[entry.to].background,
-                                    borderColor: attendanceStatusStyles[entry.to].borderColor,
-                                  }}
-                                >
-                                  {formatStatusLabel(entry.to)}
-                                </span>
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              {checkpointDiff.boutsAdded.length > 0 && (
-                <div className="diff-section">
-                  <div className="diff-title">Bouts added ({checkpointDiff.boutsAdded.length})</div>
-                  <div className="diff-table-wrap">
-                    <table className="diff-table diff-table-bouts">
-                      <tbody>
-                        {checkpointDiff.boutsAdded.map((b, idx) => (
-                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
-                            <td>
-                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
-                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
-                                {b.redTeam ? ` (${b.redTeam})` : ""}
-                              </span>
-                              <span className="diff-vs-inline"> v </span>
-                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
-                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
-                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              {checkpointDiff.boutsRemoved.length > 0 && (
-                <div className="diff-section">
-                  <div className="diff-title">Bouts removed ({checkpointDiff.boutsRemoved.length})</div>
-                  <div className="diff-table-wrap">
-                    <table className="diff-table diff-table-bouts">
-                      <tbody>
-                        {checkpointDiff.boutsRemoved.map((b, idx) => (
-                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
-                            <td>
-                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
-                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
-                                {b.redTeam ? ` (${b.redTeam})` : ""}
-                              </span>
-                              <span className="diff-vs-inline"> v </span>
-                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
-                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
-                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-              {checkpointDiff.attendance.length === 0 &&
-                checkpointDiff.matChangedCount === 0 &&
-                checkpointDiff.boutsAdded.length === 0 &&
-                checkpointDiff.boutsRemoved.length === 0 && (
-                  <div className="diff-empty">No changes since this checkpoint.</div>
-                )}
-              <div className="modal-actions">
-                <button className="nav-btn" onClick={() => setCheckpointDiff(null)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </ModalPortal>
-      )}
       {showAddWrestler && (
         <div className="modal-backdrop" onClick={() => setShowAddWrestler(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -3964,8 +3786,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       }
                       const saved = await saveModalAttendanceChanges();
                       if (!saved) return;
+                      let ran = true;
                       if (autoPairingsModalMode === "auto") {
-                        await rerunAutoPairings();
+                        ran = await rerunAutoPairings();
+                      }
+                      if (ran) {
+                        await maybeSaveInitialCheckpoint();
                       }
                       setShowAutoPairingsModal(false);
                     })();
@@ -4142,6 +3968,205 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </section>
         )}
       </div>
+      {showCheckpointModal && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>
+            <div className="modal-card checkpoint-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Manage Checkpoints of the current state of the meet</h3>
+              <CheckpointSaveRow onSave={saveCheckpointByName} />
+              {checkpointError && (
+                <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
+                  {checkpointError}
+                </div>
+              )}
+              <div className="checkpoint-list">
+                {checkpoints.length === 0 && (
+                  <div className="checkpoint-empty">No checkpoints saved yet.</div>
+                )}
+                {checkpoints.map(cp => (
+                  <div key={cp.id} className="checkpoint-row">
+                    <div className="checkpoint-info">
+                      <div className="checkpoint-name">{cp.name}</div>
+                      <div className="checkpoint-meta">
+                        {formatCheckpointDate(cp.createdAt)}
+                        {cp.createdBy?.username ? ` · ${cp.createdBy.username}` : ""}
+                      </div>
+                    </div>
+                    <div className="checkpoint-actions">
+                      <button
+                        className="nav-btn delete-btn"
+                        type="button"
+                        onClick={() => deleteCheckpoint(cp.id)}
+                        disabled={checkpointDeletingId === cp.id}
+                        title={`Delete [${cp.name}]`}
+                      >
+                        {checkpointDeletingId === cp.id ? "Deleting..." : "Delete"}
+                      </button>
+                      <button
+                        className="nav-btn checkpoint-apply-btn"
+                        type="button"
+                        onClick={() => applyCheckpoint(cp.id, cp.name)}
+                        disabled={!canEdit || checkpointApplyingId === cp.id}
+                        title={`Revert the meet to [${cp.name}] (loses all changes made after this checkpoint was saved).`}
+                      >
+                        {checkpointApplyingId === cp.id ? "Applying..." : "Apply"}
+                      </button>
+                      <button
+                        className="nav-btn checkpoint-changes-btn"
+                        type="button"
+                        onClick={() => showCheckpointChanges(cp.id, cp.name)}
+                        disabled={checkpointDiffLoadingId === cp.id}
+                        title={`Show changes since [${cp.name}]`}
+                      >
+                        {checkpointDiffLoadingId === cp.id ? "Loading..." : "Show Changes"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="checkpoint-footer">
+                <button
+                  className="nav-btn"
+                  type="button"
+                  onClick={exportMeet}
+                  disabled={!meetLoaded || exportingMeet}
+                  title="Export a zip file for use with desktop Pairings program"
+                >
+                  {exportingMeet ? "Exporting..." : "Export to .wrs"}
+                </button>
+                <div className="checkpoint-footer-actions">
+                  <button className="nav-btn" onClick={() => setShowCheckpointModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {checkpointDiff && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setCheckpointDiff(null)}>
+            <div className="modal-card checkpoint-diff-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="diff-header">
+                <span className="diff-header-title">Changes since</span>
+                <span className="diff-header-name">{checkpointDiff.name}</span>
+              </div>
+              {checkpointDiff.matChangedCount > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">
+                    Mat assignments changed ({checkpointDiff.matChangedCount})
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.attendance.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Attendance changes ({checkpointDiff.attendance.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-attendance">
+                      <tbody>
+                        {checkpointDiff.attendance.map(entry => (
+                          <tr key={entry.wrestlerId}>
+                            <td
+                              style={{ color: teamColorById(wMap[entry.wrestlerId]?.teamId) ?? undefined }}
+                            >
+                              {entry.first} {entry.last}
+                              {teamSymbolById(wMap[entry.wrestlerId]?.teamId)
+                                ? ` (${teamSymbolById(wMap[entry.wrestlerId]?.teamId)})`
+                                : ""}
+                              <span className="diff-status-inline">
+                                <span
+                                  className="diff-status-chip"
+                                  style={{
+                                    background: attendanceStatusStyles[entry.from].background,
+                                    borderColor: attendanceStatusStyles[entry.from].borderColor,
+                                  }}
+                                >
+                                  {formatStatusLabel(entry.from)}
+                                </span>
+                                <span className="diff-status-arrow">→</span>
+                                <span
+                                  className="diff-status-chip"
+                                  style={{
+                                    background: attendanceStatusStyles[entry.to].background,
+                                    borderColor: attendanceStatusStyles[entry.to].borderColor,
+                                  }}
+                                >
+                                  {formatStatusLabel(entry.to)}
+                                </span>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.boutsAdded.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Bouts added ({checkpointDiff.boutsAdded.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-bouts">
+                      <tbody>
+                        {checkpointDiff.boutsAdded.map((b, idx) => (
+                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                            <td>
+                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
+                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
+                                {b.redTeam ? ` (${b.redTeam})` : ""}
+                              </span>
+                              <span className="diff-vs-inline"> v </span>
+                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
+                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
+                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.boutsRemoved.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Bouts removed ({checkpointDiff.boutsRemoved.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-bouts">
+                      <tbody>
+                        {checkpointDiff.boutsRemoved.map((b, idx) => (
+                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                            <td>
+                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
+                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
+                                {b.redTeam ? ` (${b.redTeam})` : ""}
+                              </span>
+                              <span className="diff-vs-inline"> v </span>
+                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
+                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
+                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.attendance.length === 0 &&
+                checkpointDiff.matChangedCount === 0 &&
+                checkpointDiff.boutsAdded.length === 0 &&
+                checkpointDiff.boutsRemoved.length === 0 && (
+                  <div className="diff-empty">No changes since this checkpoint.</div>
+                )}
+              <div className="modal-actions">
+                <button className="nav-btn" onClick={() => setCheckpointDiff(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+
     </main>
   );
 }

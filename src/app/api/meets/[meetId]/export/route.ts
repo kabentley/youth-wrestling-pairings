@@ -527,7 +527,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   zip.file("pairings.xsl", xslContent);
 
   const exportStamp = meet.date.toISOString().slice(0, 10);
-  const zipData = await zip.generateAsync({ type: "nodebuffer" });
+  const zipData = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
   return new NextResponse(new Uint8Array(zipData), {
     headers: {
       "Content-Type": "application/zip",

@@ -258,6 +258,9 @@ export default function MeetsPage() {
   const displayMeetName = isEditing ? name : autoMeetName;
 
   async function addMeet() {
+    const normalizedTeamIds = currentTeamId && !teamIds.includes(currentTeamId)
+      ? [currentTeamId, ...teamIds]
+      : teamIds;
     const res = await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -265,14 +268,14 @@ export default function MeetsPage() {
         name: displayMeetName,
         date,
         location,
-        teamIds,
-        homeTeamId: homeTeamId || null,
+        teamIds: normalizedTeamIds,
+        homeTeamId: homeTeamId || currentTeamId || null,
         numMats,
         allowSameTeamMatches,
         matchesPerWrestler,
         maxMatchesPerWrestler,
         restGap,
-        autoPairings: false,
+        autoPairings,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -692,6 +695,15 @@ export default function MeetsPage() {
           background: #fff;
           width: 100%;
         }
+        .meet-name-readonly {
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          padding: 8px 10px;
+          font-size: 14px;
+          background: #f7f9fb;
+          color: #2b2b2b;
+          width: 100%;
+        }
         .input-sm {
           width: 80px;
         }
@@ -1022,13 +1034,9 @@ export default function MeetsPage() {
             </div>
             <div className="modal-body">
               <div className="row" style={{ marginBottom: 6 }}>
-                <input
-                  className="input"
-                  placeholder="Meet name"
-                  value={displayMeetName}
-                  onChange={e => setName(e.target.value)}
-                  disabled={!canManageMeets || !isEditing}
-                />
+                <div className="meet-name-readonly">
+                  {displayMeetName || "Meet name will appear here"}
+                </div>
               </div>
               <div className="row">
                 <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
