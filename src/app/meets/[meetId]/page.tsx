@@ -47,6 +47,11 @@ type Wrestler = {
   birthdate?: string;
   status?: AttendanceStatus | null;
 };
+type TeamInfo = {
+  id: string;
+  name: string;
+  symbol?: string;
+};
 type Bout = {
   id: string;
   redId: string;
@@ -91,6 +96,24 @@ type MeetCheckpoint = {
   name: string;
   createdAt: string;
   createdBy?: { username?: string | null } | null;
+};
+type CheckpointPayload = {
+  version: 1;
+  name: string;
+  createdAt: string;
+  meetId: string;
+  meetName: string;
+  meetDate: string;
+  teamIds: string[];
+  attendance: { wrestlerId: string; status: AttendanceStatus }[];
+  bouts: { redId: string; greenId: string; pairingScore: number; mat?: number | null; order?: number | null; originalMat?: number | null }[];
+};
+type CheckpointDiff = {
+  name: string;
+  attendance: { wrestlerId: string; first: string; last: string; from: AttendanceStatus; to: AttendanceStatus }[];
+  boutsAdded: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }[];
+  boutsRemoved: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }[];
+  matChangedCount: number;
 };
 
 const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
@@ -140,10 +163,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [checkpointName, setCheckpointName] = useState("");
   const [checkpointError, setCheckpointError] = useState<string | null>(null);
   const [checkpointSaving, setCheckpointSaving] = useState(false);
-  const [checkpointDownloading, setCheckpointDownloading] = useState(false);
-  const [checkpointDownloadingId, setCheckpointDownloadingId] = useState<string | null>(null);
   const [checkpointApplyingId, setCheckpointApplyingId] = useState<string | null>(null);
   const [checkpointDeletingId, setCheckpointDeletingId] = useState<string | null>(null);
+  const [checkpointDiff, setCheckpointDiff] = useState<CheckpointDiff | null>(null);
+  const [checkpointDiffLoadingId, setCheckpointDiffLoadingId] = useState<string | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
@@ -506,6 +529,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
   }
+  function teamSymbolById(teamId?: string | null) {
+    if (!teamId) return "";
+    const team = teams.find(t => t.id === teamId);
+    return team?.symbol ?? team?.name ?? "";
+  }
+  function teamColorById(teamId?: string | null) {
+    if (!teamId) return undefined;
+    const team = teams.find(t => t.id === teamId);
+    return team?.color ?? undefined;
+  }
   function teamSymbol(id: string) {
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
@@ -566,7 +599,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function saveCheckpoint() {
-    const rawName = checkpointName.trim() || defaultCheckpointName();
+    const rawName = checkpointName.trim();
+    if (!rawName) return;
     const name = rawName.slice(0, 80);
     setCheckpointError(null);
     setCheckpointSaving(true);
@@ -640,7 +674,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   async function applyCheckpoint(id: string, name: string) {
     if (!canEdit) return;
-    const confirmed = window.confirm(`Apply checkpoint \"${name}\"? This will replace attendance and bouts.`);
+    const confirmed = window.confirm(
+      `Apply checkpoint "${name}"? This will replace attendance and bouts. Consider saving a new checkpoint first.`
+    );
     if (!confirmed) return;
     setCheckpointError(null);
     setCheckpointApplyingId(id);
@@ -674,6 +710,93 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCheckpointError(err instanceof Error ? err.message : "Unable to delete checkpoint.");
     } finally {
       setCheckpointDeletingId(null);
+    }
+  }
+
+  function normalizeAttendance(status?: AttendanceStatus | null) {
+    return status ?? "COMING";
+  }
+  function formatStatusLabel(status: AttendanceStatus) {
+    return status.replace(/_/g, " ").toLowerCase().replace(/^\w/, c => c.toUpperCase());
+  }
+
+  function boutKey(redId: string, greenId: string) {
+    return redId < greenId ? `${redId}|${greenId}` : `${greenId}|${redId}`;
+  }
+
+  async function showCheckpointChanges(id: string, name: string) {
+    setCheckpointError(null);
+    setCheckpointDiffLoadingId(id);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/checkpoints/${id}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to load checkpoint (${res.status}).`);
+      }
+      const payload = await res.json().catch(() => null) as CheckpointPayload | null;
+      if (!payload) {
+        throw new Error("Unable to read checkpoint.");
+      }
+      const checkpointAttendance = new Map(payload.attendance.map(a => [a.wrestlerId, a.status]));
+      const attendanceChanges = wrestlers
+        .filter(w => wMap[w.id])
+        .map(w => {
+          const from = checkpointAttendance.get(w.id) ?? "COMING";
+          const to = normalizeAttendance(w.status);
+          return { wrestlerId: w.id, first: w.first, last: w.last, from, to };
+        })
+        .filter(entry => entry.from !== entry.to)
+        .sort((a, b) => (a.last === b.last ? a.first.localeCompare(b.first) : a.last.localeCompare(b.last)));
+
+      const currentBoutKeys = new Map<string, { redId: string; greenId: string; redTeam?: string; greenTeam?: string }>();
+      for (const b of bouts) {
+        currentBoutKeys.set(boutKey(b.redId, b.greenId), {
+          redId: b.redId,
+          greenId: b.greenId,
+          redTeam: teamSymbolById(wMap[b.redId]?.teamId),
+          greenTeam: teamSymbolById(wMap[b.greenId]?.teamId),
+        });
+      }
+      const checkpointBoutKeys = new Map<string, { redId: string; greenId: string; redTeam?: string; greenTeam?: string }>();
+      for (const b of payload.bouts) {
+        checkpointBoutKeys.set(boutKey(b.redId, b.greenId), {
+          redId: b.redId,
+          greenId: b.greenId,
+          redTeam: teamSymbolById(wMap[b.redId]?.teamId),
+          greenTeam: teamSymbolById(wMap[b.greenId]?.teamId),
+        });
+      }
+      const boutsAdded = [...currentBoutKeys.entries()]
+        .filter(([key]) => !checkpointBoutKeys.has(key))
+        .map(([, value]) => value);
+      const boutsRemoved = [...checkpointBoutKeys.entries()]
+        .filter(([key]) => !currentBoutKeys.has(key))
+        .map(([, value]) => value);
+
+      const currentBoutsByKey = new Map<string, { mat?: number | null; order?: number | null }>();
+      for (const b of bouts) {
+        currentBoutsByKey.set(boutKey(b.redId, b.greenId), { mat: b.mat ?? null, order: b.order ?? null });
+      }
+      const checkpointBoutsByKey = new Map<string, { mat?: number | null; order?: number | null }>();
+      for (const b of payload.bouts) {
+        checkpointBoutsByKey.set(boutKey(b.redId, b.greenId), { mat: b.mat ?? null, order: b.order ?? null });
+      }
+      let matChangedCount = 0;
+      for (const [key, currentValue] of currentBoutsByKey.entries()) {
+        const checkpointValue = checkpointBoutsByKey.get(key);
+        if (!checkpointValue) continue;
+        const matChanged = (currentValue.mat ?? null) !== (checkpointValue.mat ?? null);
+        const orderChanged = (currentValue.order ?? null) !== (checkpointValue.order ?? null);
+        if (matChanged || orderChanged) {
+          matChangedCount += 1;
+        }
+      }
+
+      setCheckpointDiff({ name, attendance: attendanceChanges, boutsAdded, boutsRemoved, matChangedCount });
+    } catch (err) {
+      setCheckpointError(err instanceof Error ? err.message : "Unable to load checkpoint changes.");
+    } finally {
+      setCheckpointDiffLoadingId(null);
     }
   }
 
@@ -2230,19 +2353,40 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .checkpoint-form {
           display: flex;
-          flex-direction: column;
-          gap: 10px;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
         }
         .checkpoint-input {
           padding: 8px 10px;
           border-radius: 8px;
           border: 1px solid var(--line);
           font-size: 14px;
+          flex: 1;
+          min-width: 180px;
         }
-        .checkpoint-form-actions {
-          display: flex;
-          gap: 8px;
-          flex-wrap: wrap;
+        .checkpoint-save-btn {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #ffffff;
+          padding: 10px 16px;
+          font-size: 15px;
+          min-width: 120px;
+        }
+        .checkpoint-save-btn:hover:not(:disabled) {
+          background: #1870c7;
+          border-color: #1870c7;
+          color: #ffffff;
+        }
+        .checkpoint-apply-btn {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #ffffff;
+        }
+        .checkpoint-apply-btn:hover:not(:disabled) {
+          background: #1870c7;
+          border-color: #1870c7;
+          color: #ffffff;
         }
         .checkpoint-list {
           display: flex;
@@ -2278,9 +2422,144 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: flex;
           gap: 6px;
           flex-wrap: wrap;
+          margin-left: auto;
+        }
+        .checkpoint-actions .delete-btn {
+          background: #b00020;
+          border-color: #b00020;
+          color: #ffffff;
+        }
+        .checkpoint-actions .delete-btn:hover:not(:disabled) {
+          background: #920018;
+          border-color: #920018;
+          color: #ffffff;
+        }
+        .checkpoint-changes-btn {
+          background: #1f7a3a;
+          border-color: #1f7a3a;
+          color: #ffffff;
+        }
+        .checkpoint-changes-btn:hover:not(:disabled) {
+          background: #18612e;
+          border-color: #18612e;
+          color: #ffffff;
         }
         .checkpoint-empty {
           font-size: 13px;
+          color: var(--muted);
+        }
+        .modal-card.checkpoint-diff-modal {
+          width: min(760px, 94vw);
+          max-height: 86vh;
+          display: flex;
+          flex-direction: column;
+        }
+        .diff-section {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .diff-header {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .diff-header-title {
+          font-size: 15px;
+          color: var(--muted);
+          font-weight: 600;
+          letter-spacing: 0.2px;
+        }
+        .diff-header-name {
+          font-size: 19px;
+          font-weight: 800;
+        }
+        .diff-title {
+          font-weight: 700;
+          font-size: 16px;
+        }
+        .diff-table-wrap {
+          border: none;
+          border-radius: 10px;
+          max-height: 220px;
+          overflow: auto;
+        }
+        .diff-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 15px;
+        }
+        .diff-table th,
+        .diff-table td {
+          padding: 5px 7px;
+          text-align: left;
+          border-bottom: none;
+          white-space: nowrap;
+        }
+        .diff-table.diff-table-bouts td {
+          padding: 3px 5px;
+        }
+        .diff-table.diff-table-attendance td {
+          padding: 3px 5px;
+        }
+        .diff-table thead th {
+          position: sticky;
+          top: 0;
+          background: #ffffff;
+          z-index: 1;
+          font-weight: 700;
+        }
+        .diff-table tr:last-child td {
+          border-bottom: none;
+        }
+        .diff-name {
+          font-weight: 600;
+        }
+        .diff-team {
+          font-size: 13px;
+          color: var(--muted);
+        }
+        .diff-arrow {
+          color: var(--muted);
+        }
+        .diff-vs {
+          color: var(--muted);
+          font-size: 12px;
+        }
+        .diff-vs-cell {
+          color: var(--muted);
+          font-weight: 700;
+          width: 20px;
+          text-align: center;
+        }
+        .diff-vs-inline {
+          color: var(--muted);
+          font-weight: 700;
+        }
+        .diff-status-inline {
+          margin-left: 8px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .diff-status-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 7px;
+          border-radius: 6px;
+          border: 1px solid;
+          font-size: 13px;
+          font-weight: 700;
+          color: #1d232b;
+        }
+        .diff-status-arrow {
+          color: var(--muted);
+          font-weight: 700;
+          font-size: 13px;
+        }
+        .diff-empty {
+          font-size: 14px;
           color: var(--muted);
         }
         .modal-card.progress-modal {
@@ -2718,14 +2997,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               disabled={!meetLoaded}
             >
               Attendance
-            </button>
-            <button
-              type="button"
-              className="nav-btn"
-              onClick={exportMeet}
-              disabled={!meetLoaded || exportingMeet}
-            >
-              {exportingMeet ? "Exporting..." : "Export Meet"}
             </button>
             <button
               type="button"
@@ -3192,36 +3463,33 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>
             <div className="modal-card checkpoint-modal" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: 0 }}>Meet checkpoints</h3>
-              <p style={{ marginTop: 4, marginBottom: 10, fontSize: 13, color: "#5b6472" }}>
-                Save attendance and scheduled bouts for quick restore. Applying replaces attendance and all bouts.
-              </p>
+              <h3 style={{ margin: 0 }}>Manage Checkpoints of the current state of the meet</h3>
               <div className="checkpoint-form">
                 <input
                   className="checkpoint-input"
-                  placeholder="Checkpoint name"
+                  placeholder="New checkpoint name"
                   value={checkpointName}
                   onChange={(e) => setCheckpointName(e.target.value)}
                   maxLength={80}
                 />
-                <div className="checkpoint-form-actions">
-                  <button
-                    className="nav-btn"
-                    type="button"
-                    onClick={saveCheckpoint}
-                    disabled={!canEdit || checkpointSaving}
-                  >
-                    {checkpointSaving ? "Saving..." : "Save to server"}
-                  </button>
-                  <button
-                    className="nav-btn"
-                    type="button"
-                    onClick={downloadCheckpointSnapshot}
-                    disabled={!meetLoaded || checkpointDownloading}
-                  >
-                    {checkpointDownloading ? "Downloading..." : "Download"}
-                  </button>
-                </div>
+                <button
+                  className="nav-btn checkpoint-save-btn"
+                  type="button"
+                  onClick={saveCheckpoint}
+                  disabled={checkpointSaving || !checkpointName.trim()}
+                  title="Save a checkpoint on the server"
+                >
+                  {checkpointSaving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  className="nav-btn"
+                  type="button"
+                  onClick={exportMeet}
+                  disabled={!meetLoaded || exportingMeet}
+                  title="Export a zip file for use with desktop Pairings program"
+                >
+                  {exportingMeet ? "Exporting..." : "Export to .wrs"}
+                </button>
               </div>
               {checkpointError && (
                 <div style={{ color: "#b00020", fontSize: 13, marginBottom: 8 }}>
@@ -3243,28 +3511,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </div>
                     <div className="checkpoint-actions">
                       <button
-                        className="nav-btn"
-                        type="button"
-                        onClick={() => applyCheckpoint(cp.id, cp.name)}
-                        disabled={!canEdit || checkpointApplyingId === cp.id}
-                      >
-                        {checkpointApplyingId === cp.id ? "Applying..." : "Apply"}
-                      </button>
-                      <button
-                        className="nav-btn"
-                        type="button"
-                        onClick={() => downloadSavedCheckpoint(cp.id)}
-                        disabled={checkpointDownloadingId === cp.id}
-                      >
-                        {checkpointDownloadingId === cp.id ? "Downloading..." : "Download"}
-                      </button>
-                      <button
                         className="nav-btn delete-btn"
                         type="button"
                         onClick={() => deleteCheckpoint(cp.id)}
                         disabled={checkpointDeletingId === cp.id}
+                        title={`Delete [${cp.name}]`}
                       >
                         {checkpointDeletingId === cp.id ? "Deleting..." : "Delete"}
+                      </button>
+                      <button
+                        className="nav-btn checkpoint-apply-btn"
+                        type="button"
+                        onClick={() => applyCheckpoint(cp.id, cp.name)}
+                        disabled={!canEdit || checkpointApplyingId === cp.id}
+                        title={`Revert the meet to [${cp.name}] (loses all changes made after this checkpoint was saved).`}
+                      >
+                        {checkpointApplyingId === cp.id ? "Applying..." : "Apply"}
+                      </button>
+                      <button
+                        className="nav-btn checkpoint-changes-btn"
+                        type="button"
+                        onClick={() => showCheckpointChanges(cp.id, cp.name)}
+                        disabled={checkpointDiffLoadingId === cp.id}
+                        title={`Show changes since [${cp.name}]`}
+                      >
+                        {checkpointDiffLoadingId === cp.id ? "Loading..." : "Show Changes"}
                       </button>
                     </div>
                   </div>
@@ -3272,6 +3543,130 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </div>
               <div className="modal-actions">
                 <button className="nav-btn" onClick={() => setShowCheckpointModal(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {checkpointDiff && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setCheckpointDiff(null)}>
+            <div className="modal-card checkpoint-diff-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="diff-header">
+                <span className="diff-header-title">Changes since</span>
+                <span className="diff-header-name">{checkpointDiff.name}</span>
+              </div>
+              {checkpointDiff.matChangedCount > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">
+                    Mat assignments changed ({checkpointDiff.matChangedCount})
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.attendance.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Attendance changes ({checkpointDiff.attendance.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-attendance">
+                      <tbody>
+                        {checkpointDiff.attendance.map(entry => (
+                          <tr key={entry.wrestlerId}>
+                            <td
+                              style={{ color: teamColorById(wMap[entry.wrestlerId]?.teamId) ?? undefined }}
+                            >
+                              {entry.first} {entry.last}
+                              {teamSymbolById(wMap[entry.wrestlerId]?.teamId)
+                                ? ` (${teamSymbolById(wMap[entry.wrestlerId]?.teamId)})`
+                                : ""}
+                              <span className="diff-status-inline">
+                                <span
+                                  className="diff-status-chip"
+                                  style={{
+                                    background: attendanceStatusStyles[entry.from].background,
+                                    borderColor: attendanceStatusStyles[entry.from].borderColor,
+                                  }}
+                                >
+                                  {formatStatusLabel(entry.from)}
+                                </span>
+                                <span className="diff-status-arrow">→</span>
+                                <span
+                                  className="diff-status-chip"
+                                  style={{
+                                    background: attendanceStatusStyles[entry.to].background,
+                                    borderColor: attendanceStatusStyles[entry.to].borderColor,
+                                  }}
+                                >
+                                  {formatStatusLabel(entry.to)}
+                                </span>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.boutsAdded.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Bouts added ({checkpointDiff.boutsAdded.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-bouts">
+                      <tbody>
+                        {checkpointDiff.boutsAdded.map((b, idx) => (
+                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                            <td>
+                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
+                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
+                                {b.redTeam ? ` (${b.redTeam})` : ""}
+                              </span>
+                              <span className="diff-vs-inline"> v </span>
+                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
+                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
+                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.boutsRemoved.length > 0 && (
+                <div className="diff-section">
+                  <div className="diff-title">Bouts removed ({checkpointDiff.boutsRemoved.length})</div>
+                  <div className="diff-table-wrap">
+                    <table className="diff-table diff-table-bouts">
+                      <tbody>
+                        {checkpointDiff.boutsRemoved.map((b, idx) => (
+                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                            <td>
+                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
+                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
+                                {b.redTeam ? ` (${b.redTeam})` : ""}
+                              </span>
+                              <span className="diff-vs-inline"> v </span>
+                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
+                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
+                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {checkpointDiff.attendance.length === 0 &&
+                checkpointDiff.matChangedCount === 0 &&
+                checkpointDiff.boutsAdded.length === 0 &&
+                checkpointDiff.boutsRemoved.length === 0 && (
+                  <div className="diff-empty">No changes since this checkpoint.</div>
+                )}
+              <div className="modal-actions">
+                <button className="nav-btn" onClick={() => setCheckpointDiff(null)}>Close</button>
               </div>
             </div>
           </div>

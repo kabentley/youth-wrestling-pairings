@@ -4,7 +4,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { buildMeetCheckpointPayload, buildTeamSignature } from "@/lib/meetCheckpoints";
-import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
@@ -52,13 +51,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
-  }
 
   const body = BodySchema.parse(await req.json());
   const trimmedName = body.name.trim();
