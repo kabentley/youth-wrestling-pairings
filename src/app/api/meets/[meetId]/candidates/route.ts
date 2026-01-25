@@ -127,7 +127,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
     });
   }
 
-  rows.sort((a, b) => a.score - b.score);
+  rows.sort((a, b) => Math.abs(a.score) - Math.abs(b.score));
 
   return NextResponse.json({
     target,

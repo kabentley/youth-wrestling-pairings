@@ -1505,17 +1505,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const targetMatchCount = target ? getMatchCount(target.id) : 0;
   const currentMatchRows = currentMatches.map((b) => {
     const opponentId = b.redId === target?.id ? b.greenId : b.redId;
+    const signedScore = target
+      ? (b.redId === target.id ? b.pairingScore : -b.pairingScore)
+      : b.pairingScore;
     return {
       bout: b,
       opponentId,
       opponent: opponentId ? wMap[opponentId] : undefined,
       boutOrder: (b.mat ?? 0) * 100 + (b.order ?? 0),
+      signedScore,
     };
   });
   const currentSorted = [...currentMatchRows].sort((a, b) => {
     const getValue = (row: typeof currentMatchRows[number]) => {
       const o = row.opponent;
-      if (currentSort.key === "score") return row.bout.pairingScore;
+      if (currentSort.key === "score") return Math.abs(row.signedScore);
       if (currentSort.key === "last") return o?.last ?? "";
       if (currentSort.key === "first") return o?.first ?? "";
       if (currentSort.key === "team") return teamSymbol(o?.teamId ?? "");
@@ -1555,7 +1559,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const availableSorted = [...availableFiltered].sort((a, b) => {
     const getValue = (row: { opponent: Wrestler; score: number }) => {
       const w = row.opponent;
-      if (availableSort.key === "score") return row.score;
+      if (availableSort.key === "score") return Math.abs(row.score);
       if (availableSort.key === "last") return w.last;
       if (availableSort.key === "first") return w.first;
       if (availableSort.key === "team") return teamSymbol(w.teamId);
@@ -1568,6 +1572,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
+  const availableDisplay = availableSorted.slice(0, 20);
   async function restartMeetSetup() {
     if (!canEdit) return;
     setRestartLoading(true);
@@ -3243,6 +3248,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             key={col.label}
                             align={col.key === "score" ? "center" : "left"}
                             className="pairings-th"
+                            title={col.key === "score" ? "Weight percentage difference, adjusted for age, exp, and skill." : undefined}
                           >
                               {col.label}
                             <span
@@ -3268,7 +3274,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td colSpan={10} style={{ color: "#666" }}>None</td>
                           </tr>
                         )}
-                        {currentSorted.map(({ bout, opponentId, opponent }) => {
+                        {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
                           const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
                           return (
                             <tr
@@ -3294,7 +3300,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
-                            <td align="left">{typeof bout.pairingScore === "number" ? bout.pairingScore.toFixed(2) : ""}</td>
+                            <td align="left">{Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}</td>
                             <td align="left">{getMatchCount(opponentId)}</td>
                             <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                             </tr>
@@ -3331,6 +3337,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             align={col.key === "score" ? "center" : "left"}
                             className="pairings-th sortable-th"
                             onClick={() => toggleSort(setAvailableSort, col.key)}
+                            title={col.key === "score" ? "Weight percentage difference, adjusted for age, exp, and skill." : undefined}
                           >
                             {col.label}
                             {sortIndicator(availableSort, col.key)}
@@ -3352,7 +3359,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       </tr>
                     </thead>
                     <tbody>
-                      {availableSorted.map(({ opponent: o, score }) => {
+                      {availableDisplay.map(({ opponent: o, score }) => {
                         const matchColor = teamTextColor(o.teamId);
                         return (
                           <tr
@@ -3381,7 +3388,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           </tr>
                         );
                       })}
-                      {availableSorted.length === 0 && (
+                      {availableDisplay.length === 0 && (
                         <tr>
                           <td colSpan={9}>
                             {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler

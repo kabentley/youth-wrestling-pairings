@@ -34,13 +34,16 @@ function daysBetween(a: Date, b: Date) {
 /**
  * Generates "counting" bouts for a meet using a greedy, weight-sorted search.
  *
- * The algorithm:
+ * Overview:
  * - Builds a pool of active wrestlers, excluding `NOT_COMING`.
  * - Avoids duplicates against existing bouts in the meet.
- * - Prefers nearby weights and small age/experience/skill gaps.
- * - Optionally balances team-vs-team pair counts with a configurable penalty.
+ * - Filters candidates by age and weight caps.
+ * - Ranks candidates by absolute pairing score (see `pairingScore`).
  *
- * Returns a summary; created bouts are inserted into the database.
+ * Notes:
+ * - `pairingScore` is signed, but auto-pairings compare by absolute value to
+ *   find the closest match regardless of advantage direction.
+ * - This function writes created bouts to the database and returns a summary.
  */
 export async function generatePairingsForMeet(meetId: string, settings: PairingSettings) {
   const meetTeams = await db.meetTeam.findMany({
@@ -134,7 +137,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
           score: d.score,
         });
       }
-      candidates.sort((x, y) => x.score - y.score);
+      candidates.sort((x, y) => Math.abs(x.score) - Math.abs(y.score));
       for (const candidate of candidates) {
         if (currentA >= targetMatches) break;
         const currentB = matchCounts.get(candidate.b.id) ?? 0;
