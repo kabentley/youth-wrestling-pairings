@@ -1515,7 +1515,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const currentSorted = [...currentMatchRows].sort((a, b) => {
     const getValue = (row: typeof currentMatchRows[number]) => {
       const o = row.opponent;
-      if (currentSort.key === "score") return row.bout.pairingScore ?? null;
+      if (currentSort.key === "score") return row.bout.pairingScore;
       if (currentSort.key === "last") return o?.last ?? "";
       if (currentSort.key === "first") return o?.first ?? "";
       if (currentSort.key === "team") return teamSymbol(o?.teamId ?? "");
@@ -3235,11 +3235,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Weight", key: "weight" },
                             { label: "Exp", key: "exp" },
                             { label: "Skill", key: "skill" },
-                            { label: "Score", key: "score" },
+                            { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
                             { label: "Bout #", key: "bout" },
                           ].map((col, index) => (
-                          <th key={col.label} align="left" className="pairings-th">
+                          <th
+                            key={col.label}
+                            align={col.key === "score" ? "center" : "left"}
+                            className="pairings-th"
+                          >
                               {col.label}
                             <span
                               className="col-resizer"
@@ -3319,12 +3323,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           { label: "Weight", key: "weight" },
                           { label: "Exp", key: "exp" },
                           { label: "Skill", key: "skill" },
-                          { label: "Score", key: "score" },
+                          { label: "Δ", key: "score" },
                           { label: "Matches", key: "matches" },
                         ].map((col, index) => (
                           <th
                             key={col.label}
-                            align="left"
+                            align={col.key === "score" ? "center" : "left"}
                             className="pairings-th sortable-th"
                             onClick={() => toggleSort(setAvailableSort, col.key)}
                           >

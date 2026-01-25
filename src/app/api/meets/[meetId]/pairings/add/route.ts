@@ -6,6 +6,7 @@ import type { MatWrestler } from "@/lib/assignMats";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { pairingScore } from "@/lib/pairingScore";
 import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({ redId: z.string().min(1), greenId: z.string().min(1) });
@@ -40,25 +41,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   if (existing) return NextResponse.json(existing);
 
+  const wrestlers = await db.wrestler.findMany({
+    where: { id: { in: [body.redId, body.greenId] } },
+    select: {
+      id: true,
+      first: true,
+      last: true,
+      weight: true,
+      birthdate: true,
+      experienceYears: true,
+      skill: true,
+    },
+  });
+  const red = wrestlers.find(w => w.id === body.redId);
+  const green = wrestlers.find(w => w.id === body.greenId);
+  const computedScore = red && green ? pairingScore(red, green).score : 0;
+
   const bout = await db.bout.create({
     data: {
       meetId,
       redId: body.redId,
       greenId: body.greenId,
-      pairingScore: 0,
+      pairingScore: computedScore,
     },
   });
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
 
-  const red = await db.wrestler.findUnique({
-    where: { id: body.redId },
-    select: { first: true, last: true },
-  });
-  const green = await db.wrestler.findUnique({
-    where: { id: body.greenId },
-    select: { first: true, last: true },
-  });
   const redName = red ? `${red.first} ${red.last}` : "wrestler 1";
   const greenName = green ? `${green.first} ${green.last}` : "wrestler 2";
   await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
