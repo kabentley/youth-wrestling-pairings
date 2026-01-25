@@ -186,6 +186,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
+  const [savedMatchesPerWrestler, setSavedMatchesPerWrestler] = useState<number | null>(null);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState<number | null>(null);
   const [restGap, setRestGap] = useState<number | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
@@ -206,7 +207,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70]);
-  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70]);
+  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(90);
@@ -220,7 +221,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     weight: sharedPairingsColWidths[3],
     exp: sharedPairingsColWidths[4],
     skill: sharedPairingsColWidths[5],
-    matches: sharedPairingsColWidths[6],
+    score: sharedPairingsColWidths[6],
+    matches: sharedPairingsColWidths[7],
   };
 
   const currentColumnWidths = [
@@ -231,6 +233,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.weight,
     sharedColumnWidths.exp,
     sharedColumnWidths.skill,
+    sharedColumnWidths.score,
     sharedColumnWidths.matches,
     currentBoutColWidth,
   ];
@@ -243,6 +246,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.weight,
     sharedColumnWidths.exp,
     sharedColumnWidths.skill,
+    sharedColumnWidths.score,
     sharedColumnWidths.matches,
   ];
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
@@ -253,7 +257,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
   const [attendanceSort, setAttendanceSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [pairingsSort, setPairingsSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
-  const currentSort = useMemo(() => ({ key: "last", dir: "asc" as const }), []);
+  const currentSort = useMemo(() => ({ key: "score", dir: "asc" as const }), []);
   const [availableSort, setAvailableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "score", dir: "asc" });
   const [authMsg, setAuthMsg] = useState("");
   const [lockActionError, setLockActionError] = useState<string | null>(null);
@@ -315,10 +319,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
       const payload = {
         maxAgeGapDays: settings.maxAgeGapDays,
-        maxWeightDiffPct: settings.enforceWeightCheck ? settings.maxWeightDiffPct : 999,
+        maxWeightDiffPct: settings.maxWeightDiffPct,
         firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
         allowSameTeamMatches: settings.allowSameTeamMatches,
         matchesPerWrestler: matchesPerWrestler ?? undefined,
+        pruneTargetMatches: savedMatchesPerWrestler ?? undefined,
         maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
         preserveMats: !clearExisting,
       };
@@ -353,6 +358,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
   const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wall">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
+  const [matRefreshIndex, setMatRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
@@ -632,6 +638,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
       await load();
       await loadActivity();
+      setShowCheckpointModal(false);
+      setCheckpointDiff(null);
+      setMatRefreshIndex(idx => idx + 1);
     } catch (err) {
       setCheckpointError(err instanceof Error ? err.message : "Unable to apply checkpoint.");
     } finally {
@@ -903,6 +912,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setHomeTeamId(meetJson.homeTeamId ?? null);
         setMeetLocation(meetJson.location ?? null);
         setMatchesPerWrestler(
+          typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
+        );
+        setSavedMatchesPerWrestler(
           typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
         );
         setMaxMatchesPerWrestler(
@@ -1503,6 +1515,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const currentSorted = [...currentMatchRows].sort((a, b) => {
     const getValue = (row: typeof currentMatchRows[number]) => {
       const o = row.opponent;
+      if (currentSort.key === "score") return row.bout.pairingScore ?? null;
       if (currentSort.key === "last") return o?.last ?? "";
       if (currentSort.key === "first") return o?.first ?? "";
       if (currentSort.key === "team") return teamSymbol(o?.teamId ?? "");
@@ -2652,6 +2665,30 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 10px;
           justify-content: flex-end;
         }
+        .auto-pairings-controls {
+          display: grid;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .auto-pairings-controls .control-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          align-items: center;
+        }
+        .auto-pairings-controls label {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+        }
+        .auto-pairings-controls input[type="number"] {
+          width: 64px;
+          padding: 4px 6px;
+          border-radius: 6px;
+          border: 1px solid var(--line);
+          font-size: 13px;
+        }
         .modal-card.attendance-modal .modal-actions {
           margin-top: 8px;
           padding-top: 8px;
@@ -3187,7 +3224,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       {currentColumnWidths.map((w, idx) => (
                         <col key={`current-col-${idx}`} style={{ width: w }} />
                       ))}
-                      <col />
                     </colgroup>
                       <thead>
                         <tr>
@@ -3199,6 +3235,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Weight", key: "weight" },
                             { label: "Exp", key: "exp" },
                             { label: "Skill", key: "skill" },
+                            { label: "Score", key: "score" },
                             { label: "Matches", key: "matches" },
                             { label: "Bout #", key: "bout" },
                           ].map((col, index) => (
@@ -3224,7 +3261,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       <tbody>
                         {currentMatches.length === 0 && (
                           <tr>
-                            <td colSpan={9} style={{ color: "#666" }}>None</td>
+                            <td colSpan={10} style={{ color: "#666" }}>None</td>
                           </tr>
                         )}
                         {currentSorted.map(({ bout, opponentId, opponent }) => {
@@ -3253,6 +3290,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
+                            <td align="left">{typeof bout.pairingScore === "number" ? bout.pairingScore.toFixed(2) : ""}</td>
                             <td align="left">{getMatchCount(opponentId)}</td>
                             <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                             </tr>
@@ -3281,6 +3319,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           { label: "Weight", key: "weight" },
                           { label: "Exp", key: "exp" },
                           { label: "Skill", key: "skill" },
+                          { label: "Score", key: "score" },
                           { label: "Matches", key: "matches" },
                         ].map((col, index) => (
                           <th
@@ -3309,7 +3348,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       </tr>
                     </thead>
                     <tbody>
-                      {availableSorted.map(({ opponent: o }) => {
+                      {availableSorted.map(({ opponent: o, score }) => {
                         const matchColor = teamTextColor(o.teamId);
                         return (
                           <tr
@@ -3333,13 +3372,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{o.weight}</td>
                             <td align="left">{o.experienceYears}</td>
                             <td align="left">{o.skill}</td>
+                            <td align="left">{Number.isFinite(score) ? score.toFixed(2) : ""}</td>
                             <td align="left">{getMatchCount(o.id)}</td>
                           </tr>
                         );
                       })}
                       {availableSorted.length === 0 && (
                         <tr>
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
                               ? "Wrestler already has maximum number of bouts"
                               : "No candidates meet the current limits."}
@@ -3776,6 +3816,72 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <div style={{ fontSize: 13, color: "#5b6472" }}>
                 Generate new pairings for this meet.
               </div>
+              <div className="auto-pairings-controls">
+                <div className="control-row">
+                  <label>
+                    Target matches per
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={matchesPerWrestler ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === "") {
+                          setMatchesPerWrestler(null);
+                          return;
+                        }
+                        const parsed = Number.parseInt(value, 10);
+                        if (Number.isNaN(parsed)) return;
+                        setMatchesPerWrestler(Math.min(5, Math.max(1, parsed)));
+                      }}
+                    />
+                  </label>
+                  <label>
+                    Max matches per
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={maxMatchesPerWrestler ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === "") {
+                          setMaxMatchesPerWrestler(null);
+                          return;
+                        }
+                        const parsed = Number.parseInt(value, 10);
+                        if (Number.isNaN(parsed)) return;
+                        setMaxMatchesPerWrestler(Math.min(5, Math.max(1, parsed)));
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="control-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settings.firstYearOnlyWithFirstYear}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSettings((s) => ({ ...s, firstYearOnlyWithFirstYear: checked }));
+                      }}
+                    />
+                    First-year only rule
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={settings.allowSameTeamMatches}
+                      onChange={(e) => {
+                        const allowSameTeamMatches = e.target.checked;
+                        setSettings((s) => ({ ...s, allowSameTeamMatches }));
+                      }}
+                    />
+                    Include same team
+                  </label>
+                </div>
+              </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
                 <input
                   type="checkbox"
@@ -3905,6 +4011,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               onMatAssignmentsChange={refreshAfterMatAssignments}
               meetStatus={meetStatus}
               lockState={lockState}
+              refreshIndex={matRefreshIndex}
             />
           </section>
         )}

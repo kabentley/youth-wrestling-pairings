@@ -1265,10 +1265,10 @@ export default function RostersClient() {
     const rows = downloadableRoster.map(row => {
       const birthdateValue = row.birthdate ? row.birthdate.split("T")[0] : "";
       return [
-        escape(row.last),
         escape(row.first),
-        escape(birthdateValue),
+        escape(row.last),
         escape(row.weight),
+        escape(birthdateValue),
         escape(row.experienceYears),
         escape(row.skill),
       ];

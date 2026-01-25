@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { DEFAULT_MAX_AGE_GAP_DAYS, MAX_MATCHES_PER_WRESTLER } from "@/lib/constants";
 import { db } from "@/lib/db";
+import { pairingScore, weightPctDiff } from "@/lib/pairingScore";
 
 const boolFromQuery = z.preprocess((value) => {
   if (typeof value === "string") {
@@ -26,11 +27,6 @@ const QuerySchema = z.object({
 
 function daysBetween(a: Date, b: Date) {
   return Math.abs(Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24)));
-}
-function weightPctDiff(a: number, b: number) {
-  const diff = Math.abs(a - b);
-  const base = Math.min(a, b);
-  return base <= 0 ? 999 : (100 * diff) / base;
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -96,20 +92,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   for (const b of currentBouts) {
     matchCounts.set(b.redId, (matchCounts.get(b.redId) ?? 0) + 1);
     matchCounts.set(b.greenId, (matchCounts.get(b.greenId) ?? 0) + 1);
-    const opponentId = b.redId === target.id ? b.greenId : b.redId;
-    currentOpponentIds.add(opponentId);
+    if (b.redId === target.id) {
+      currentOpponentIds.add(b.greenId);
+    } else if (b.greenId === target.id) {
+      currentOpponentIds.add(b.redId);
+    }
   }
 
   const rows: any[] = [];
   for (const opp of wrestlers) {
     if (opp.id === target.id) continue;
-    if ((matchCounts.get(opp.id) ?? 0) >= maxMatches) continue;
+    const oppMatchCount = matchCounts.get(opp.id) ?? 0;
+    if (oppMatchCount >= maxMatches) continue;
     if (currentOpponentIds.has(opp.id)) continue;
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
     if (q.enforceAgeGap && ageGapDays > q.maxAgeGapDays) continue;
-
     const wPct = weightPctDiff(target.weight, opp.weight);
     if (wPct > q.maxWeightDiffPct) continue;
 
@@ -119,20 +118,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
       if (tFirst !== oFirst) continue;
     }
 
-    const wDiff = Math.abs(target.weight - opp.weight);
-    const expGap = Math.abs(target.experienceYears - opp.experienceYears);
-    const skillGap = Math.abs(target.skill - opp.skill);
-
-    const score =
-      4 * (wDiff / 10) +
-      2 * (ageGapDays / 365) +
-      2 * (expGap / 3) +
-      2 * (skillGap / 3);
+    const scored = pairingScore(target, opp);
 
     rows.push({
       opponent: opp,
-      score,
-      details: { wDiff, wPct, ageGapDays, expGap, skillGap },
+      score: scored.score,
+      details: scored.details,
     });
   }
 

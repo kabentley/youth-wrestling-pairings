@@ -33,6 +33,7 @@ interface MatBoardTabProps {
   onMatAssignmentsChange?: () => void;
   meetStatus: "DRAFT" | "PUBLISHED";
   lockState: LockState;
+  refreshIndex?: number;
 }
 
 export default function MatBoardTab({
@@ -40,6 +41,7 @@ export default function MatBoardTab({
   onMatAssignmentsChange,
   meetStatus,
   lockState,
+  refreshIndex,
 }: MatBoardTabProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
@@ -67,7 +69,7 @@ export default function MatBoardTab({
   const canEdit = lockState.status === "acquired" && meetStatus === "DRAFT";
   useEffect(() => {
     void load();
-  }, [meetId]);
+  }, [meetId, refreshIndex]);
 
   useEffect(() => {
     if (!meetSettings) return;

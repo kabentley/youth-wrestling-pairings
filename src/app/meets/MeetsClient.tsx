@@ -209,7 +209,14 @@ export default function MeetsPage() {
     if (m.ok) {
       const mJson = await m.json().catch(() => []);
       const list = Array.isArray(mJson) ? mJson : [];
-      list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      list.sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        if (dateA !== dateB) return dateB - dateA;
+        const editA = a.lastChangeAt ? new Date(a.lastChangeAt).getTime() : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+        const editB = b.lastChangeAt ? new Date(b.lastChangeAt).getTime() : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
+        return editB - editA;
+      });
       setMeets(list);
     } else {
       setMeets([]);

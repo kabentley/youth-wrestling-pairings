@@ -1,5 +1,6 @@
 import { MAX_MATCHES_PER_WRESTLER } from "./constants";
 import { db } from "./db";
+import { pairingScore, weightPctDiff } from "./pairingScore";
 
 /**
  * Settings used by the automatic pairing generator.
@@ -20,17 +21,14 @@ export type PairingSettings = {
 
   /** Target matches per wrestler for this generation pass. */
   matchesPerWrestler?: number;
+  /** Target used when pruning extra newly-created bouts. */
+  pruneTargetMatches?: number;
   /** Upper bound for matches per wrestler (hard cap per generation pass). */
   maxMatchesPerWrestler?: number;
 };
 
 function daysBetween(a: Date, b: Date) {
   return Math.abs(Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24)));
-}
-function weightPctDiff(a: number, b: number) {
-  const diff = Math.abs(a - b);
-  const base = Math.min(a, b);
-  return base <= 0 ? 999 : (100 * diff) / base;
 }
 
 /**
@@ -85,22 +83,10 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     maxMatches,
     Math.max(1, Math.floor(settings.matchesPerWrestler ?? 2)),
   );
-
-  function baseScore(a: any, b: any) {
-    const ageGap = daysBetween(a.birthdate, b.birthdate);
-    const wPct = weightPctDiff(a.weight, b.weight);
-    const wDiff = Math.abs(a.weight - b.weight);
-    const expGap = Math.abs(a.experienceYears - b.experienceYears);
-    const skillGap = Math.abs(a.skill - b.skill);
-
-    const score =
-      4 * (wDiff / 10) +
-      2 * (ageGap / 365) +
-      2 * (expGap / 3) +
-      2 * (skillGap / 3);
-
-    return { score, ageGap, wPct, wDiff, expGap, skillGap };
-  }
+  const pruneTargetMatches = Math.min(
+    maxMatches,
+    Math.max(1, Math.floor(settings.pruneTargetMatches ?? targetMatches)),
+  );
 
   function eligible(a: any, b: any, allowSameTeam: boolean) {
     if (!allowSameTeam && a.teamId === b.teamId) return false;
@@ -119,9 +105,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     return true;
   }
 
-  function matchesNeeded(id: string) {
-    return Math.max(0, targetMatches - (matchCounts.get(id) ?? 0));
-  }
   function pairKey(a: string, b: string) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
@@ -129,7 +112,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   for (const mt of meetTeams) {
     const teamWrestlers = mt.team.wrestlers
       .filter(w => w.active && !absentIds.has(w.id))
-      .sort((a, b) => a.weight - b.weight || a.last.localeCompare(b.last) || a.first.localeCompare(b.first));
+      .sort((a, b) => a.weight - b.weight);
     wrestlersByTeam.set(mt.teamId, teamWrestlers);
   }
 
@@ -137,85 +120,30 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     const teamRoster = wrestlersByTeam.get(mt.teamId) ?? [];
     for (const a of teamRoster) {
       let currentA = matchCounts.get(a.id) ?? 0;
-      while (currentA < maxMatches && matchesNeeded(a.id) > 0) {
-        const candidates: { b: typeof a; score: number; count: number }[] = [];
-        for (const b of pool) {
-          if (a.id === b.id) continue;
-          const currentB = matchCounts.get(b.id) ?? 0;
-          if (currentB >= maxMatches) continue;
-          if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
-          if (paired.has(pairKey(a.id, b.id))) continue;
-          const d = baseScore(a, b);
-          candidates.push({
-            b,
-            score: d.score,
-            count: currentB,
-          });
-        }
-        candidates.sort((x, y) => (x.score - y.score) || (x.count - y.count));
-        if (candidates.length === 0) break;
-        const pick = candidates[0];
+      if (currentA >= targetMatches) continue;
+      const candidates: { b: typeof a; score: number }[] = [];
+      for (const b of pool) {
+        if (a.id === b.id) continue;
+        const currentB = matchCounts.get(b.id) ?? 0;
+        if (currentB >= maxMatches) continue;
+        if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
+        if (paired.has(pairKey(a.id, b.id))) continue;
+        const d = pairingScore(a, b);
+        candidates.push({
+          b,
+          score: d.score,
+        });
+      }
+      candidates.sort((x, y) => x.score - y.score);
+      for (const candidate of candidates) {
+        if (currentA >= targetMatches) break;
+        const currentB = matchCounts.get(candidate.b.id) ?? 0;
+        if (currentB >= maxMatches) continue;
         matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
-        matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
-        paired.add(pairKey(a.id, pick.b.id));
-        newBouts.push({ redId: a.id, greenId: pick.b.id, pairingScore: pick.score });
+        matchCounts.set(candidate.b.id, (matchCounts.get(candidate.b.id) ?? 0) + 1);
+        paired.add(pairKey(a.id, candidate.b.id));
+        newBouts.push({ redId: a.id, greenId: candidate.b.id, pairingScore: candidate.score });
         currentA += 1;
-      }
-    }
-  }
-
-  function fillZeroMatches() {
-    let made = true;
-    while (made) {
-      made = false;
-      const zeroes = pool.filter(w => (matchCounts.get(w.id) ?? 0) === 0);
-      if (zeroes.length === 0) return;
-      for (const a of zeroes) {
-        const currentA = matchCounts.get(a.id) ?? 0;
-        if (currentA >= maxMatches) continue;
-        const candidates: { b: typeof a; score: number; count: number }[] = [];
-        for (const b of pool) {
-          if (a.id === b.id) continue;
-          const currentB = matchCounts.get(b.id) ?? 0;
-          if (currentB >= maxMatches) continue;
-          if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
-          if (paired.has(pairKey(a.id, b.id))) continue;
-          const d = baseScore(a, b);
-          candidates.push({
-            b,
-            score: d.score,
-            count: currentB,
-          });
-        }
-        if (candidates.length === 0) continue;
-        const zeroCandidates = candidates.filter(c => c.count === 0);
-        const usable = zeroCandidates.length > 0 ? zeroCandidates : candidates;
-        usable.sort((x, y) => (x.score - y.score) || (x.count - y.count));
-        if (usable.length === 0) continue;
-        const pick = usable[0];
-        matchCounts.set(a.id, (matchCounts.get(a.id) ?? 0) + 1);
-        matchCounts.set(pick.b.id, (matchCounts.get(pick.b.id) ?? 0) + 1);
-        paired.add(pairKey(a.id, pick.b.id));
-        newBouts.push({ redId: a.id, greenId: pick.b.id, pairingScore: pick.score });
-        made = true;
-      }
-    }
-  }
-
-  fillZeroMatches();
-
-  let removedExtra = true;
-  while (removedExtra) {
-    removedExtra = false;
-    for (let i = newBouts.length - 1; i >= 0; i--) {
-      const bout = newBouts[i];
-      const redCount = matchCounts.get(bout.redId) ?? 0;
-      const greenCount = matchCounts.get(bout.greenId) ?? 0;
-      if (redCount > targetMatches && greenCount > targetMatches) {
-        newBouts.splice(i, 1);
-        matchCounts.set(bout.redId, redCount - 1);
-        matchCounts.set(bout.greenId, greenCount - 1);
-        removedExtra = true;
       }
     }
   }
@@ -229,5 +157,29 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     })),
   });
 
-  return { created: newBouts.length, totalWrestlers: wrestlers.length };
+  const allBouts = await db.bout.findMany({
+    where: { meetId },
+    select: { id: true, redId: true, greenId: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const totalMatchCounts = new Map<string, number>();
+  for (const bout of allBouts) {
+    totalMatchCounts.set(bout.redId, (totalMatchCounts.get(bout.redId) ?? 0) + 1);
+    totalMatchCounts.set(bout.greenId, (totalMatchCounts.get(bout.greenId) ?? 0) + 1);
+  }
+  const toDelete: string[] = [];
+  for (const bout of allBouts) {
+    const redCount = totalMatchCounts.get(bout.redId) ?? 0;
+    const greenCount = totalMatchCounts.get(bout.greenId) ?? 0;
+    if (redCount > pruneTargetMatches && greenCount > pruneTargetMatches) {
+      toDelete.push(bout.id);
+      totalMatchCounts.set(bout.redId, redCount - 1);
+      totalMatchCounts.set(bout.greenId, greenCount - 1);
+    }
+  }
+  if (toDelete.length > 0) {
+    await db.bout.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  return { created: newBouts.length, totalWrestlers: wrestlers.length, removedOverTarget: toDelete.length };
 }

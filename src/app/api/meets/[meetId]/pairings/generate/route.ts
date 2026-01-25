@@ -15,6 +15,7 @@ const SettingsSchema = z.object({
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
+  pruneTargetMatches: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   preserveMats: z.boolean().optional(),
 });
