@@ -7,7 +7,14 @@ import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
 
-type Team = { id: string; name: string; symbol: string; color: string; hasLogo?: boolean };
+type Team = {
+  id: string;
+  name: string;
+  symbol: string;
+  color: string;
+  hasLogo?: boolean;
+  headCoach?: { id: string; username: string } | null;
+};
 type Wrestler = {
   id: string;
   first: string;
@@ -101,6 +108,7 @@ export default function RostersClient() {
   const sessionTeamId = (session?.user as any)?.teamId as string | undefined;
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const teamPickerRef = useRef<HTMLSelectElement | null>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [rosterMsg, setRosterMsg] = useState("");
   const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
@@ -128,31 +136,11 @@ export default function RostersClient() {
   const [importSummary, setImportSummary] = useState<string>("");
   const [showImportErrorModal, setShowImportErrorModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showTeamSelector, setShowTeamSelector] = useState(false);
-  const headerTeamButtonRef = useRef<HTMLButtonElement | null>(null);
-  const teamSelectRef = useRef<HTMLDivElement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EditableWrestler | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingWrestler, setIsDeletingWrestler] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const daysPerYear = 365;
-  useEffect(() => {
-    if (!showTeamSelector) return undefined;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (
-        target &&
-        !teamSelectRef.current?.contains(target) &&
-        !headerTeamButtonRef.current?.contains(target)
-      ) {
-        setShowTeamSelector(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showTeamSelector]);
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -162,6 +150,19 @@ export default function RostersClient() {
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
+  useEffect(() => {
+    const applyEditableWidths = () => {
+      if (typeof window === "undefined") return;
+      if (window.innerWidth <= 900) {
+        setSpreadsheetColWidths([70, 70, 100, 60, 60, 60, 70, 70, 70]);
+      } else {
+        setSpreadsheetColWidths([130, 110, 120, 70, 80, 80, 90, 90, 90]);
+      }
+    };
+    applyEditableWidths();
+    window.addEventListener("resize", applyEditableWidths);
+    return () => window.removeEventListener("resize", applyEditableWidths);
+  }, []);
   const importTeamLabel = useMemo(() => {
     const team = teams.find(t => t.id === importTeamId);
     if (!team) return "no team selected";
@@ -170,11 +171,11 @@ export default function RostersClient() {
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-      { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
-      { href: "/parent", label: "My Wrestlers" },
-      { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
-      { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
-    ];
+    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
+    { href: "/parent", label: "My Wrestlers" },
+    { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
+    { href: "/admin", label: "Admin", roles: ["ADMIN"] as const },
+  ];
 
   const redirectToLogin = () => {
     const callbackUrl = pathname || "/rosters";
@@ -200,7 +201,6 @@ export default function RostersClient() {
     setSelectedTeamId(teamId);
     setImportTeamId(teamId);
     setImportSummary("");
-    setShowTeamSelector(false);
   };
 
   async function load() {
@@ -226,7 +226,7 @@ export default function RostersClient() {
     void load();
   }, [status]);
   useEffect(() => {
-    if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER") && sessionTeamId && !selectedTeamId) {
+    if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER" || role === "ADMIN") && sessionTeamId && !selectedTeamId) {
       setSelectedTeamId(sessionTeamId);
       setImportTeamId(sessionTeamId);
     }
@@ -243,7 +243,6 @@ export default function RostersClient() {
     if (!teams.some(t => t.id === teamQueryParam)) return;
     setSelectedTeamId(teamQueryParam);
     setImportTeamId(teamQueryParam);
-    setShowTeamSelector(false);
   }, [teamQueryParam, teams, selectedTeamId, hasDirtyChanges]);
 
   useEffect(() => {
@@ -819,6 +818,37 @@ export default function RostersClient() {
     skill: 110,
     active: 110,
   }));
+  useEffect(() => {
+    const applyWidths = () => {
+      if (typeof window === "undefined") return;
+      if (window.innerWidth <= 900) {
+        setSpectatorColWidths(widths => ({
+          ...widths,
+          last: 70,
+          first: 70,
+          age: 60,
+          weight: 60,
+          experienceYears: 60,
+          skill: 70,
+          active: 70,
+        }));
+      } else {
+        setSpectatorColWidths(widths => ({
+          ...widths,
+          last: 120,
+          first: 120,
+          age: 120,
+          weight: 90,
+          experienceYears: 90,
+          skill: 110,
+          active: 110,
+        }));
+      }
+    };
+    applyWidths();
+    window.addEventListener("resize", applyWidths);
+    return () => window.removeEventListener("resize", applyWidths);
+  }, []);
 
   const renderColGroup = () => (
     <colgroup>
@@ -1022,6 +1052,12 @@ export default function RostersClient() {
     }
   };
   const currentTeam = teams.find(t => t.id === selectedTeamId);
+  const orderedTeams = useMemo(() => {
+    if (!sessionTeamId) return teams;
+    const mine = teams.find(t => t.id === sessionTeamId);
+    if (!mine) return teams;
+    return [mine, ...teams.filter(t => t.id !== sessionTeamId)];
+  }, [sessionTeamId, teams]);
 
   useEffect(() => {
     if (!allowInactiveView && showInactive) {
@@ -1359,6 +1395,11 @@ export default function RostersClient() {
           min-height: 0;
           max-height: 100%;
         }
+        .roster-card {
+          width: fit-content;
+          max-width: 100%;
+          align-self: start;
+        }
         .card-title {
           font-family: "Oswald", Arial, sans-serif;
           margin: 0 0 10px;
@@ -1413,14 +1454,17 @@ export default function RostersClient() {
           letter-spacing: 0.4px;
           min-width: 120px;
         }
-        .roster-summary-bar {
-          display: grid;
-          grid-template-columns: auto auto 1fr;
-          align-items: center;
-          gap: 24px;
-          margin-bottom: 8px;
-          min-height: 44px;
-        }
+          .roster-summary-bar {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            align-items: center;
+            gap: 24px;
+            margin-bottom: 8px;
+            min-height: 44px;
+          }
+          .roster-summary-bar .header-checkbox {
+            justify-self: end;
+          }
         .roster-summary {
           font-size: 15px;
           font-weight: 600;
@@ -1435,6 +1479,7 @@ export default function RostersClient() {
           opacity: 0;
           pointer-events: none;
           transition: opacity 0.15s ease;
+          align-items: center;
         }
         .roster-action-bar.visible {
           visibility: visible;
@@ -1476,6 +1521,34 @@ export default function RostersClient() {
         }
         .team-selector-wrapper {
           position: relative;
+        }
+        .team-picker {
+          min-width: 220px;
+          padding: 8px 10px;
+          border-radius: 10px;
+          border: 1px solid var(--line);
+          background: #fff;
+          font-weight: 600;
+          text-align: left;
+          cursor: pointer;
+        }
+        .team-current-meta {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-top: 8px;
+        }
+        .team-current-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .team-current-name {
+          font-weight: 700;
+        }
+        .team-current-coach {
+          font-size: 12px;
+          color: #5b6472;
         }
         .team-select-menu {
           position: absolute;
@@ -1540,6 +1613,24 @@ export default function RostersClient() {
           align-items: center;
           gap: 8px;
           flex-wrap: wrap;
+        }
+        .roster-toolbar {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin: 0 0 4px;
+        }
+        .roster-toolbar .error-msg-placeholder {
+          min-height: unset;
+        }
+        .roster-summary-bar .error-msg-placeholder {
+          min-height: unset;
+          margin-left: 12px;
+        }
+        .roster-summary-bar .error-msg {
+          color: #b00020;
+          font-weight: 600;
         }
         .header-team {
           gap: 24px;
@@ -1652,12 +1743,14 @@ export default function RostersClient() {
           width: 100%;
           flex: 1;
           min-height: 0;
+          overflow-x: auto;
         }
         .roster-table table {
           table-layout: auto;
           border-collapse: collapse;
           display: block;
           min-width: 480px;
+          width: max-content;
           max-height: none;
           height: 100%;
           overflow-y: auto;
@@ -1670,7 +1763,7 @@ export default function RostersClient() {
           padding: 0 2px;
           border-bottom: 1px solid var(--line);
           text-align: left;
-          line-height: 1.1;
+          line-height: 1.4;
           font-size: 14px;
         }
         .roster-table th {
@@ -1718,13 +1811,84 @@ export default function RostersClient() {
           .card {
             padding: 10px;
           }
+          .roster-card {
+            width: 100%;
+          }
+          .roster-wrapper {
+            width: 100%;
+            overflow-x: auto;
+          }
           .card-title {
             font-size: 16px;
+          }
+          .header-main {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .header-title-group {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+          }
+          .team-picker {
+            width: 100%;
+          }
+          .team-current-meta {
+            margin-top: 4px;
+          }
+          .header-left-controls {
+            width: 100%;
+          }
+          .roster-toolbar {
+            width: 100%;
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .roster-toolbar .btn {
+            width: 100%;
+          }
+          .roster-summary-bar {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          .roster-action-bar {
+            flex-wrap: wrap;
+            justify-content: flex-start;
+          }
+          .roster-action-bar .btn {
+            width: 100%;
           }
           .roster-table th,
           .roster-table td {
             padding: 2px 4px;
             font-size: 15px;
+          }
+          .roster-table table,
+          .spreadsheet-table {
+            min-width: 480px;
+          }
+          .spreadsheet-table th,
+          .spreadsheet-table td,
+          .roster-table th,
+          .roster-table td {
+            max-width: 120px;
+          }
+          .roster-table th:nth-child(3),
+          .roster-table td:nth-child(3),
+          .roster-table th:nth-child(4),
+          .roster-table td:nth-child(4),
+          .roster-table th:nth-child(5),
+          .roster-table td:nth-child(5) {
+            max-width: 70px;
+          }
+          .roster-table table {
+            table-layout: fixed;
+          }
+          .roster-table th,
+          .roster-table td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
           .row {
             gap: 2px;
@@ -1749,7 +1913,7 @@ export default function RostersClient() {
           border-radius: 8px;
           overflow: hidden;
           background: #fff;
-          width: 100%;
+          width: fit-content;
           max-width: 100%;
           margin: 0;
           flex: 1;
@@ -1782,6 +1946,7 @@ export default function RostersClient() {
           border: 1px solid rgba(29, 56, 162, 0.4);
           box-shadow: 0 2px 12px rgba(29, 56, 162, 0.15);
           background: #fff;
+          width: max-content;
         }
         .spreadsheet-table th,
         .spreadsheet-table td {
@@ -1978,125 +2143,94 @@ export default function RostersClient() {
 
       <div className="grid">
 
-        <section className="card">
+        <section className="card roster-card">
           <div className="card-header">
             <div className="header-left">
               <div className="header-main">
                 <div className="header-title-group">
                   <h2 className="card-title">Roster for:</h2>
                   <div className="team-selector-wrapper">
-                    <button
-                      type="button"
-                      className="team-head header-team"
-                      ref={headerTeamButtonRef}
-                      onClick={e => {
-                        e.stopPropagation();
-                        setShowTeamSelector(prev => !prev);
-                      }}
-                      aria-expanded={showTeamSelector}
+                    <select
+                      ref={teamPickerRef}
+                      className="team-picker"
+                      value={selectedTeamId}
+                      onChange={(event) => selectTeam(event.target.value)}
                       disabled={teams.length === 0 || hasDirtyChanges}
                     >
-                      {currentTeam ? (
-                        <>
-                          {currentTeam.hasLogo ? (
-                            <img
-                              src={`/api/teams/${currentTeam.id}/logo/file`}
-                              alt={`${currentTeam.name} logo`}
-                              className="team-logo"
-                            />
-                          ) : (
-                            <div className="color-dot" style={{ backgroundColor: currentTeam.color }} />
-                          )}
-                          <div className="team-meta">
-                            <span className="team-symbol" style={{ color: currentTeam.color }}>{currentTeam.symbol}</span>
-                            <div className="team-name">{currentTeam.name}</div>
-                          </div>
-                        </>
-                      ) : (
-                        <span className="team-placeholder">Select a team</span>
-                      )}
-                    </button>
-                    {showTeamSelector && teams.length > 0 && (
-                      <div className="team-select-menu" ref={teamSelectRef}>
-                        {teams.map(t => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            className={`team-select-item ${selectedTeamId === t.id ? "active" : ""}`}
-                            onClick={() => selectTeam(t.id)}
-                          >
-                            {t.hasLogo && (
-                              <img
-                                src={`/api/teams/${t.id}/logo/file`}
-                                alt={`${t.name} logo`}
-                                className="team-select-logo"
-                              />
-                            )}
-                            <span className="team-symbol" style={{ color: t.color }}>
-                              {t.symbol}
-                            </span>
-                            <span className="team-name">{t.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      <option value="" disabled>Select a team</option>
+                      {orderedTeams.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.symbol ? `${t.name} (${t.symbol})` : t.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-                <div className="header-left-controls">
-                  {allowInactiveView && (
-                    <label className="header-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={showInactive}
-                        onChange={e => setShowInactive(e.target.checked)}
-                      />
-                      <span>{showInactive ? "Showing Inactive" : "Show Inactive"}</span>
-                    </label>
+                  {currentTeam && (
+                    <div className="team-current-meta">
+                      {currentTeam.hasLogo ? (
+                        <img
+                          src={`/api/teams/${currentTeam.id}/logo/file`}
+                          alt={`${currentTeam.name} logo`}
+                          className="team-logo"
+                        />
+                      ) : (
+                        <div className="color-dot" style={{ backgroundColor: currentTeam.color }} />
+                      )}
+                      <div className="team-current-text">
+                        <div className="team-current-name">{currentTeam.name}</div>
+                        {currentTeam.headCoach?.username && (
+                          <div className="team-current-coach">Head coach: {currentTeam.headCoach.username}</div>
+                        )}
+                      </div>
+                    </div>
                   )}
-                  {canEditRoster && (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-small header-import"
-                        title="Upload a CSV or XLSX file to import or update the roster."
-                        onClick={() => {
-                          setFile(null);
-                          setPreview(null);
-                          setImportMsg("");
-                          setImportError("");
-                          setShowImportErrorModal(false);
-                          setShowImportModal(true);
-                        }}
-                        disabled={hasDirtyChanges || !selectedTeamId}
-                      >
-                        Import or Update Roster
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-small header-download"
-                    title="Download the current roster as CSV"
-                    onClick={downloadRosterCsv}
-                    disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
-                  >
-                    Download Roster
-                  </button>
                 </div>
+                <div className="header-left-controls" />
               </div>
             </div>
           </div>
           {selectedTeamId ? (
             <>
-              <div className="error-msg-placeholder">
-                {hasFieldValidationErrors ? (
-                  <div className="error-msg">Please fix highlighted fields.</div>
-                ) : rosterMsg ? (
-                  <div className="error-msg">{rosterMsg}</div>
-                ) : (
-                  <span aria-hidden="true">&nbsp;</span>
+              <div className="roster-toolbar">
+                {canEditRoster && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-small header-import"
+                    title="Upload a CSV or XLSX file to import or update the roster."
+                    onClick={() => {
+                      setFile(null);
+                      setPreview(null);
+                      setImportMsg("");
+                      setImportError("");
+                      setShowImportErrorModal(false);
+                      setShowImportModal(true);
+                    }}
+                    disabled={hasDirtyChanges || !selectedTeamId}
+                  >
+                    Import or Update Roster
+                  </button>
                 )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-small header-download"
+                  title="Download the current roster as CSV"
+                  onClick={downloadRosterCsv}
+                  disabled={!selectedTeamId || displayRoster.length === 0 || hasDirtyChanges}
+                >
+                  Download Roster
+                </button>
               </div>
+              {!canEditRoster && (
+                <div className="error-msg-placeholder">
+                  {hasFieldValidationErrors ? (
+                    <div className="error-msg">Please fix highlighted fields.</div>
+                  ) : rosterMsg ? (
+                    <div className="error-msg">{rosterMsg}</div>
+                  ) : (
+                    <span aria-hidden="true">&nbsp;</span>
+                  )}
+                </div>
+              )}
               <div className="roster-summary-bar">
                 <div className="roster-summary">
                   Wrestlers: {rosterTotals.total}
@@ -2122,7 +2256,26 @@ export default function RostersClient() {
                   >
                     {savingAll ? "Saving..." : "Save Changes"}
                   </button>
+                  <div className="error-msg-placeholder">
+                    {hasFieldValidationErrors ? (
+                      <div className="error-msg">Please fix highlighted fields.</div>
+                    ) : rosterMsg ? (
+                      <div className="error-msg">{rosterMsg}</div>
+                    ) : (
+                      <span aria-hidden="true">&nbsp;</span>
+                    )}
+                  </div>
                 </div>
+                {allowInactiveView && (
+                  <label className="header-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={showInactive}
+                      onChange={e => setShowInactive(e.target.checked)}
+                    />
+                    <span>{showInactive ? "Showing Inactive" : "Show Inactive"}</span>
+                  </label>
+                )}
               </div>
               <div className="roster-wrapper">
                 {canEditRoster ? (
