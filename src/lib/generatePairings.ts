@@ -46,6 +46,14 @@ function daysBetween(a: Date, b: Date) {
  * - This function writes created bouts to the database and returns a summary.
  */
 export async function generatePairingsForMeet(meetId: string, settings: PairingSettings) {
+  const league = await db.league.findFirst({
+    select: {
+      ageAllowancePctPerYear: true,
+      experienceAllowancePctPerYear: true,
+      skillAllowancePctPerPoint: true,
+    },
+  });
+  const scoreOptions = league ?? undefined;
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },
@@ -111,15 +119,24 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   function pairKey(a: string, b: string) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
+  function shuffle<T>(items: T[]) {
+    const next = [...items];
+    for (let i = next.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+    return next;
+  }
+
   const wrestlersByTeam = new Map<string, typeof pool>();
   for (const mt of meetTeams) {
     const teamWrestlers = mt.team.wrestlers
-      .filter(w => w.active && !absentIds.has(w.id))
-      .sort((a, b) => a.weight - b.weight);
-    wrestlersByTeam.set(mt.teamId, teamWrestlers);
+      .filter(w => w.active && !absentIds.has(w.id));
+    wrestlersByTeam.set(mt.teamId, shuffle(teamWrestlers));
   }
 
-  for (const mt of meetTeams) {
+  const shuffledTeams = shuffle(meetTeams);
+  for (const mt of shuffledTeams) {
     const teamRoster = wrestlersByTeam.get(mt.teamId) ?? [];
     for (const a of teamRoster) {
       let currentA = matchCounts.get(a.id) ?? 0;
@@ -131,7 +148,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
         if (currentB >= maxMatches) continue;
         if (!eligible(a, b, settings.allowSameTeamMatches)) continue;
         if (paired.has(pairKey(a.id, b.id))) continue;
-        const d = pairingScore(a, b);
+        const d = pairingScore(a, b, scoreOptions ?? undefined);
         candidates.push({
           b,
           score: d.score,

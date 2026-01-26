@@ -3,9 +3,9 @@ import { DAYS_PER_YEAR } from "./constants";
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 // Allowance units are percentage points applied to the base weight-diff percentage.
-const AGE_ALLOWANCE_PCT_PER_YEAR = 1.0;
-const EXPERIENCE_ALLOWANCE_PCT_PER_YEAR = 0.5;
-const SKILL_ALLOWANCE_PCT_PER_POINT = 0.25;
+const AGE_ALLOWANCE_PCT_PER_YEAR = 0.5;
+const EXPERIENCE_ALLOWANCE_PCT_PER_YEAR = 0.25;
+const SKILL_ALLOWANCE_PCT_PER_POINT = 0.4;
 
 export type PairingInput = {
   weight: number;
@@ -22,6 +22,12 @@ export type PairingScoreDetails = {
   skillGap: number;
   allowancePct: number;
   effectiveWeightPct: number;
+};
+
+export type PairingScoreOptions = {
+  ageAllowancePctPerYear?: number;
+  experienceAllowancePctPerYear?: number;
+  skillAllowancePctPerPoint?: number;
 };
 
 /**
@@ -47,7 +53,7 @@ export function weightPctDiff(a: number, b: number) {
  * Magnitude: base weight % difference (lighter as denominator) adjusted by
  * signed allowances for age, experience, and skill.
  */
-export function pairingScore(a: PairingInput, b: PairingInput) {
+export function pairingScore(a: PairingInput, b: PairingInput, options?: PairingScoreOptions) {
   const wDiff = b.weight - a.weight;
   const wPct = weightPctDiff(a.weight, b.weight);
   const ageGapDays = signedAgeGapDays(a.birthdate, b.birthdate);
@@ -58,9 +64,12 @@ export function pairingScore(a: PairingInput, b: PairingInput) {
   const signedWeightPct = base <= 0 ? 999 : (100 * (a.weight - b.weight)) / base;
 
   let allowancePct = 0;
-  allowancePct += (ageGapDays / DAYS_PER_YEAR) * AGE_ALLOWANCE_PCT_PER_YEAR;
-  allowancePct += (a.experienceYears - b.experienceYears) * EXPERIENCE_ALLOWANCE_PCT_PER_YEAR;
-  allowancePct += (a.skill - b.skill) * SKILL_ALLOWANCE_PCT_PER_POINT;
+  const ageAllowance = options?.ageAllowancePctPerYear ?? AGE_ALLOWANCE_PCT_PER_YEAR;
+  const expAllowance = options?.experienceAllowancePctPerYear ?? EXPERIENCE_ALLOWANCE_PCT_PER_YEAR;
+  const skillAllowance = options?.skillAllowancePctPerPoint ?? SKILL_ALLOWANCE_PCT_PER_POINT;
+  allowancePct += (ageGapDays / DAYS_PER_YEAR) * ageAllowance;
+  allowancePct += (a.experienceYears - b.experienceYears) * expAllowance;
+  allowancePct += (a.skill - b.skill) * skillAllowance;
 
   const effectiveWeightPct = signedWeightPct + allowancePct;
   return {

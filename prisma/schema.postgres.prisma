@@ -52,6 +52,11 @@ model League {
   website  String?
   logoData Bytes?
   logoType String?
+  ageAllowancePctPerYear Float @default(0.5)
+  experienceAllowancePctPerYear Float @default(0.25)
+  skillAllowancePctPerPoint Float @default(0.4)
+  maxAgeGapYears Float @default(1)
+  maxWeightDiffPct Float @default(10)
 }
 
 model Wrestler {

@@ -32,7 +32,19 @@ export async function GET() {
   }
 
   const [league, teams] = await Promise.all([
-    db.league.findFirst({ select: { name: true, website: true, logoData: true, logoType: true } }),
+    db.league.findFirst({
+      select: {
+        name: true,
+        website: true,
+        logoData: true,
+        logoType: true,
+        ageAllowancePctPerYear: true,
+        experienceAllowancePctPerYear: true,
+        skillAllowancePctPerPoint: true,
+        maxAgeGapYears: true,
+        maxWeightDiffPct: true,
+      },
+    }),
     db.team.findMany({
       include: {
         wrestlers: true,
@@ -109,6 +121,11 @@ export async function GET() {
   const leagueRow = {
     name: league?.name ?? null,
     website: league?.website ?? null,
+    ageAllowancePctPerYear: league?.ageAllowancePctPerYear ?? null,
+    experienceAllowancePctPerYear: league?.experienceAllowancePctPerYear ?? null,
+    skillAllowancePctPerPoint: league?.skillAllowancePctPerPoint ?? null,
+    maxAgeGapYears: league?.maxAgeGapYears ?? null,
+    maxWeightDiffPct: league?.maxWeightDiffPct ?? null,
     logoType: league?.logoType ?? null,
     logoFile: leagueLogoFile,
   };

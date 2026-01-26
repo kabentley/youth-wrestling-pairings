@@ -35,6 +35,11 @@ type WrestlerRow = {
 type LeagueRow = {
   name?: string | null;
   website?: string | null;
+  ageAllowancePctPerYear?: number | null;
+  experienceAllowancePctPerYear?: number | null;
+  skillAllowancePctPerPoint?: number | null;
+  maxAgeGapYears?: number | null;
+  maxWeightDiffPct?: number | null;
   logoType?: string | null;
   logoFile?: string | null;
 };
@@ -81,10 +86,23 @@ export async function POST(req: Request) {
     const data = {
       name: leagueRow.name ?? undefined,
       website: leagueRow.website ?? undefined,
+      ageAllowancePctPerYear: leagueRow.ageAllowancePctPerYear ?? undefined,
+      experienceAllowancePctPerYear: leagueRow.experienceAllowancePctPerYear ?? undefined,
+      skillAllowancePctPerPoint: leagueRow.skillAllowancePctPerPoint ?? undefined,
+      maxAgeGapYears: leagueRow.maxAgeGapYears ?? undefined,
+      maxWeightDiffPct: leagueRow.maxWeightDiffPct ?? undefined,
     };
     if (existingLeague) {
       await db.league.update({ where: { id: existingLeague.id }, data });
-    } else if (leagueRow.name || leagueRow.website) {
+    } else if (
+      leagueRow.name ||
+      leagueRow.website ||
+      leagueRow.ageAllowancePctPerYear != null ||
+      leagueRow.experienceAllowancePctPerYear != null ||
+      leagueRow.skillAllowancePctPerPoint != null ||
+      leagueRow.maxAgeGapYears != null ||
+      leagueRow.maxWeightDiffPct != null
+    ) {
       await db.league.create({ data });
     }
 
@@ -198,7 +216,7 @@ export async function POST(req: Request) {
         plan.toUpdate.map(u =>
           db.wrestler.update({
             where: { id: u.id },
-            data: { weight: u.weight, experienceYears: u.experienceYears, skill: u.skill },
+            data: { weight: u.weight, birthdate: u.birthdate, experienceYears: u.experienceYears, skill: u.skill },
           }),
         ),
       );

@@ -8,7 +8,7 @@ import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
-import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS } from "@/lib/constants";
+import { DAYS_PER_YEAR } from "@/lib/constants";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
@@ -278,8 +278,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const candidatesReqIdRef = useRef(0);
 
   const [settings, setSettings] = useState({
-    maxAgeGapDays: DEFAULT_MAX_AGE_GAP_DAYS,
-    maxWeightDiffPct: 12,
     enforceAgeGapCheck: true,
     enforceWeightCheck: true,
     firstYearOnlyWithFirstYear: true,
@@ -318,8 +316,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
       }
       const payload = {
-        maxAgeGapDays: settings.maxAgeGapDays,
-        maxWeightDiffPct: settings.maxWeightDiffPct,
         firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
         allowSameTeamMatches: settings.allowSameTeamMatches,
         matchesPerWrestler: matchesPerWrestler ?? undefined,
@@ -998,23 +994,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   useEffect(() => { void load(); void loadActivity(); void loadCheckpoints(); }, [load, loadActivity, loadCheckpoints]);
   useEffect(() => {
-    if (!homeTeamId) return undefined;
-    let cancelled = false;
-    const loadDefaults = async () => {
-      const res = await fetch(`/api/teams/${homeTeamId}/mat-rules`);
-      if (!res.ok) return;
-      const payload = await res.json().catch(() => null);
-      if (cancelled) return;
-      if (typeof payload?.defaultMaxAgeGapDays === "number") {
-        setSettings(s => ({ ...s, maxAgeGapDays: payload.defaultMaxAgeGapDays }));
-      }
-    };
-    void loadDefaults();
-    return () => {
-      cancelled = true;
-    };
-  }, [homeTeamId]);
-  useEffect(() => {
     if (!editRequested) {
       suppressEditRequestedRef.current = false;
       return;
@@ -1375,9 +1354,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const qs = new URLSearchParams({
       wrestlerId,
       limit: "20",
-      maxAgeGapDays: String(effectiveSettings.maxAgeGapDays),
       enforceAgeGap: String(effectiveSettings.enforceAgeGapCheck),
-      maxWeightDiffPct: String(effectiveSettings.enforceWeightCheck ? effectiveSettings.maxWeightDiffPct : 999),
+      enforceWeightCheck: String(effectiveSettings.enforceWeightCheck),
       firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
       allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
     });
@@ -1436,16 +1414,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [pairingContext]);
 
   const candidateFetchConfig = useMemo(() => ({
-    maxAgeGapDays: settings.maxAgeGapDays,
-    maxWeightDiffPct: settings.maxWeightDiffPct,
     enforceAgeGapCheck: settings.enforceAgeGapCheck,
     enforceWeightCheck: settings.enforceWeightCheck,
     firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
     allowSameTeamMatches: settings.allowSameTeamMatches,
     version: candidateRefreshVersion,
   }), [
-    settings.maxAgeGapDays,
-    settings.maxWeightDiffPct,
     settings.enforceAgeGapCheck,
     settings.enforceWeightCheck,
     settings.firstYearOnlyWithFirstYear,

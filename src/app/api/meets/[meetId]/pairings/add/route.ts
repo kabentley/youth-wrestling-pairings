@@ -41,6 +41,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   if (existing) return NextResponse.json(existing);
 
+  const league = await db.league.findFirst({
+    select: {
+      ageAllowancePctPerYear: true,
+      experienceAllowancePctPerYear: true,
+      skillAllowancePctPerPoint: true,
+    },
+  });
+  const scoreOptions = league ?? undefined;
+
   const wrestlers = await db.wrestler.findMany({
     where: { id: { in: [body.redId, body.greenId] } },
     select: {
@@ -55,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   const red = wrestlers.find(w => w.id === body.redId);
   const green = wrestlers.find(w => w.id === body.greenId);
-  const computedScore = red && green ? pairingScore(red, green).score : 0;
+  const computedScore = red && green ? pairingScore(red, green, scoreOptions ?? undefined).score : 0;
 
   const bout = await db.bout.create({
     data: {

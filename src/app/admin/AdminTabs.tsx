@@ -16,7 +16,7 @@ const headerLinks = [
   { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
 ];
 
-export type AdminTabKey = "users" | "league";
+export type AdminTabKey = "users" | "teams" | "league" | "pairings";
 
 export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) {
   const searchParams = useSearchParams();
@@ -51,15 +51,36 @@ export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) 
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === "teams"}
+          className={`admin-tab-button${activeTab === "teams" ? " active" : ""}`}
+          onClick={() => handleTabClick("teams")}
+        >
+          Teams
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === "league"}
           className={`admin-tab-button${activeTab === "league" ? " active" : ""}`}
           onClick={() => handleTabClick("league")}
         >
-          League &amp; Teams
+          League
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "pairings"}
+          className={`admin-tab-button${activeTab === "pairings" ? " active" : ""}`}
+          onClick={() => handleTabClick("pairings")}
+        >
+          Pairings Settings
         </button>
       </div>
       <div role="tabpanel">
-        {activeTab === "league" ? <LeagueSection /> : <UsersSection />}
+        {activeTab === "users" && <UsersSection />}
+        {activeTab === "teams" && <LeagueSection view="teams" />}
+        {activeTab === "league" && <LeagueSection view="league" />}
+        {activeTab === "pairings" && <LeagueSection view="pairings" />}
       </div>
     </>
   );

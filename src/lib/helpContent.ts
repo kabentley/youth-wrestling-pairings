@@ -124,8 +124,9 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Pairings and fairness",
         paragraphs: [
           "Start with automatic pairings, then review and adjust [Meet > Pairings]. The goal is fair, safe, and realistic matchups, not a perfect mathematical result.",
-          "Weight, age, and experience are the primary matching factors. With accurate roster data, the top suggestions are usually strong starting points, but coaches should still apply judgment [Rosters, Meet > Pairings].",
-          "The Δ column shows the weight percentage difference adjusted for age, experience, and skill. Values closer to zero are tighter matches; the sign indicates which wrestler has the advantage [Meet > Pairings].",
+          "Weight, age, experience, and skill are the primary matching factors. With accurate roster data, the top suggestions are usually strong starting points, but coaches should still apply judgment [Rosters, Meet > Pairings].",
+          "The Δ column shows the weight percentage difference between wrestlers, biased by age, experience, and skill. Values closer to zero are tighter matches; a positive value favors the first wrestler and a negative value favors the second [Meet > Pairings].",
+          "Pairings fairness settings live in the admin Pairings Settings tab and apply immediately to new pairing suggestions; existing bouts keep their saved scores until you regenerate pairings [Admin > Pairings Settings, Meet > Pairings].",
           "Run Auto Pairings can clear current bouts or keep them, depending on the Clear existing bouts option in the dialog [Meet > Pairings].",
           "Use the additional matches list to add or remove bouts [Meet > Pairings > Additional Matches]. Enforce weight checks when required and document exceptions in comments [Meet > Comments].",
           "Use rest gap settings to avoid scheduling the same wrestler too close together. This improves pacing, especially in multi-mat meets [Team Settings > Meet Setup, Meet > Pairings].",

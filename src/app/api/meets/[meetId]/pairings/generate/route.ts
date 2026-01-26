@@ -10,8 +10,6 @@ import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const SettingsSchema = z.object({
-  maxAgeGapDays: z.number().min(0),
-  maxWeightDiffPct: z.number().min(0),
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
@@ -32,15 +30,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const body = await req.json();
   const settings = SettingsSchema.parse(body);
-  const meet = await db.meet.findUnique({
-    where: { id: meetId },
-    select: { maxMatchesPerWrestler: true, deletedAt: true },
-  });
+  const [meet, league] = await Promise.all([
+    db.meet.findUnique({
+      where: { id: meetId },
+      select: { maxMatchesPerWrestler: true, deletedAt: true },
+    }),
+    db.league.findFirst({ select: { maxAgeGapYears: true, maxWeightDiffPct: true } }),
+  ]);
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
+  const maxAgeGapDays = Math.round((league?.maxAgeGapYears ?? 1) * 365);
+  const maxWeightDiffPct = league?.maxWeightDiffPct ?? 10;
   const result = await generatePairingsForMeet(meetId, {
     ...settings,
+    maxAgeGapDays,
+    maxWeightDiffPct,
     maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet.maxMatchesPerWrestler,
   });
   await logMeetChange(meetId, user.id, "Generated pairings.");

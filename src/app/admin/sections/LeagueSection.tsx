@@ -19,7 +19,7 @@ type TeamRow = {
   coaches: { id: string; username: string }[];
 };
 
-export default function LeagueSection() {
+export default function LeagueSection({ view = "league" }: { view?: "league" | "teams" | "pairings" }) {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -27,6 +27,11 @@ export default function LeagueSection() {
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
+  const [ageAllowancePctPerYear, setAgeAllowancePctPerYear] = useState(0.5);
+  const [experienceAllowancePctPerYear, setExperienceAllowancePctPerYear] = useState(0.25);
+  const [skillAllowancePctPerPoint, setSkillAllowancePctPerPoint] = useState(0.4);
+  const [maxAgeGapYears, setMaxAgeGapYears] = useState(1);
+  const [maxWeightDiffPct, setMaxWeightDiffPct] = useState(10);
   const [leagueStats, setLeagueStats] = useState<{
     teamCount: number;
     activeWrestlers: number;
@@ -64,6 +69,21 @@ export default function LeagueSection() {
       setLeagueName(league.name ?? "");
       setLeagueHasLogo(Boolean(league.hasLogo));
       setLeagueWebsite(league.website ?? "");
+      if (typeof league.ageAllowancePctPerYear === "number") {
+        setAgeAllowancePctPerYear(league.ageAllowancePctPerYear);
+      }
+      if (typeof league.experienceAllowancePctPerYear === "number") {
+        setExperienceAllowancePctPerYear(league.experienceAllowancePctPerYear);
+      }
+      if (typeof league.skillAllowancePctPerPoint === "number") {
+        setSkillAllowancePctPerPoint(league.skillAllowancePctPerPoint);
+      }
+      if (typeof league.maxAgeGapYears === "number") {
+        setMaxAgeGapYears(league.maxAgeGapYears);
+      }
+      if (typeof league.maxWeightDiffPct === "number") {
+        setMaxWeightDiffPct(league.maxWeightDiffPct);
+      }
     }
     if (sRes.ok) {
       setLeagueStats(await sRes.json());
@@ -174,16 +194,44 @@ export default function LeagueSection() {
     return teamHeadCoachEdits[team.id] ?? team.headCoachId ?? "";
   }
 
-function normalizeHeadCoachId(value: string | null | undefined) {
+  function normalizeHeadCoachId(value: string | null | undefined) {
     if (!value) return "";
     return value.trim();
   }
 
-  async function saveLeague(nextName = leagueName, nextWebsite = leagueWebsite) {
+  function parseAllowance(value: string, fallback: number) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(2, Math.max(0, parsed));
+  }
+
+  function parseGap(value: string, fallback: number, min: number, max: number) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+  }
+
+  async function saveLeague(
+    nextName = leagueName,
+    nextWebsite = leagueWebsite,
+    nextAgeAllowance = ageAllowancePctPerYear,
+    nextExperienceAllowance = experienceAllowancePctPerYear,
+    nextSkillAllowance = skillAllowancePctPerPoint,
+    nextMaxAgeGapYears = maxAgeGapYears,
+    nextMaxWeightDiffPct = maxWeightDiffPct,
+  ) {
     const res = await fetch("/api/league", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nextName, website: nextWebsite }),
+      body: JSON.stringify({
+        name: nextName,
+        website: nextWebsite,
+        ageAllowancePctPerYear: nextAgeAllowance,
+        experienceAllowancePctPerYear: nextExperienceAllowance,
+        skillAllowancePctPerPoint: nextSkillAllowance,
+        maxAgeGapYears: nextMaxAgeGapYears,
+        maxWeightDiffPct: nextMaxWeightDiffPct,
+      }),
     });
     if (!res.ok) {
       setMsg("Unable to save league.");
@@ -229,11 +277,27 @@ function normalizeHeadCoachId(value: string | null | undefined) {
     }, 300);
   }
 
-  function scheduleLeagueSave(nextName: string, nextWebsite: string) {
+  function scheduleLeagueSave(
+    nextName: string,
+    nextWebsite: string,
+    nextAgeAllowance: number,
+    nextExperienceAllowance: number,
+    nextSkillAllowance: number,
+    nextMaxAgeGapYears: number,
+    nextMaxWeightDiffPct: number,
+  ) {
     const existingLeagueTimer = leagueTimers.current.league;
     if (existingLeagueTimer) clearTimeout(existingLeagueTimer);
     leagueTimers.current.league = setTimeout(() => {
-      void saveLeague(nextName, nextWebsite);
+      void saveLeague(
+        nextName,
+        nextWebsite,
+        nextAgeAllowance,
+        nextExperienceAllowance,
+        nextSkillAllowance,
+        nextMaxAgeGapYears,
+        nextMaxWeightDiffPct,
+      );
     }, 500);
   }
 
@@ -352,6 +416,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
 
   return (
     <>
+      {view === "league" && (
       <div className="admin-card">
         <h3>League</h3>
         <div className="admin-form-grid">
@@ -365,7 +430,15 @@ function normalizeHeadCoachId(value: string | null | undefined) {
               onChange={(e) => {
                 const next = e.target.value;
                 setLeagueName(next);
-                scheduleLeagueSave(next, leagueWebsite);
+                scheduleLeagueSave(
+                  next,
+                  leagueWebsite,
+                  ageAllowancePctPerYear,
+                  experienceAllowancePctPerYear,
+                  skillAllowancePctPerPoint,
+                  maxAgeGapYears,
+                  maxWeightDiffPct,
+                );
               }}
               placeholder="League name"
             />
@@ -380,7 +453,15 @@ function normalizeHeadCoachId(value: string | null | undefined) {
               onChange={(e) => {
                 const next = e.target.value;
                 setLeagueWebsite(next);
-                scheduleLeagueSave(leagueName, next);
+                scheduleLeagueSave(
+                  leagueName,
+                  next,
+                  ageAllowancePctPerYear,
+                  experienceAllowancePctPerYear,
+                  skillAllowancePctPerPoint,
+                  maxAgeGapYears,
+                  maxWeightDiffPct,
+                );
               }}
               placeholder="https://league.example.com"
             />
@@ -407,54 +488,216 @@ function normalizeHeadCoachId(value: string | null | undefined) {
                   )}
                 </label>
               </div>
-              <div style={{ display: "flex", gap: 12 }}>
-              <button
-                type="button"
-                className="admin-btn"
-                onClick={exportTeamsAndRosters}
-                disabled={isExporting}
-              >
-                {isExporting ? "Exporting..." : "Export Teams + Rosters"}
-              </button>
-              <button
-                type="button"
-                className="admin-btn admin-btn-danger"
-                onClick={() => {
-                  setShowImportModal(true);
-                  setImportConfirm("");
-                  setImportError("");
-                  setImportFile(null);
-                }}
-              >
-                Import Teams + Rosters
-              </button>
-              <button
-                type="button"
-                className="admin-btn admin-btn-danger"
-                onClick={() => {
-                  setShowResetModal(true);
-                  setResetConfirm("");
-                  setResetError("");
-                }}
-              >
-                Reset For New Year
-              </button>
-              </div>
             </div>
           </div>
         </div>
       </div>
+      )}
 
+      {view === "pairings" && (
       <div className="admin-card">
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+        <h3>Automatic pairings</h3>
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-max-age-gap-years">
+              Maximum difference between wrestler ages (years)
+            </label>
+            <input
+              id="league-max-age-gap-years"
+              type="number"
+              min={0.5}
+              max={2.5}
+              step={0.1}
+              value={maxAgeGapYears}
+              style={{ width: 120 }}
+              onChange={(e) => {
+                const next = parseGap(e.target.value, maxAgeGapYears, 0.5, 2.5);
+                setMaxAgeGapYears(next);
+                scheduleLeagueSave(
+                  leagueName,
+                  leagueWebsite,
+                  ageAllowancePctPerYear,
+                  experienceAllowancePctPerYear,
+                  skillAllowancePctPerPoint,
+                  next,
+                  maxWeightDiffPct,
+                );
+              }}
+            />
+          </div>
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-max-weight-diff-pct">
+              Maximum difference between wrestler weights (%)
+            </label>
+            <input
+              id="league-max-weight-diff-pct"
+              type="number"
+              min={7.5}
+              max={15}
+              step={0.1}
+              value={maxWeightDiffPct}
+              style={{ width: 120 }}
+              onChange={(e) => {
+                const next = parseGap(e.target.value, maxWeightDiffPct, 7.5, 15);
+                setMaxWeightDiffPct(next);
+                scheduleLeagueSave(
+                  leagueName,
+                  leagueWebsite,
+                  ageAllowancePctPerYear,
+                  experienceAllowancePctPerYear,
+                  skillAllowancePctPerPoint,
+                  maxAgeGapYears,
+                  next,
+                );
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      )}
+
+      {view === "pairings" && (
+      <div className="admin-card">
+        <h3>Pairings fairness</h3>
+        <div className="admin-muted" style={{ marginTop: 4, fontSize: 15 }}>
+          For potential pairings, fairness is measured by computing the weight difference % between the two wrestlers, and then biasing that value by:
+        </div>
+        <div className="admin-muted" style={{ fontSize: 16, marginLeft: 12, marginTop: 4, marginBottom: 8 }}>
+          Δ = Weight difference % + (age difference × <strong>Age Bias</strong>) + (skill difference × <strong>Skill Bias</strong>) + (experience difference × <strong>Experience Bias</strong>)
+        </div>
+        <div className="admin-muted" style={{ fontSize: 15, marginBottom: 14 }}>
+          If Δ is positive the first wrestler has the advantage; negative means the second wrestler has the advantage.
+        </div>
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-age-allowance">
+              Age Bias (% per year)
+            </label>
+            <input
+              id="league-age-allowance"
+              type="number"
+              min={0}
+              max={2}
+              step={0.05}
+              value={ageAllowancePctPerYear}
+              style={{ width: 120 }}
+              onChange={(e) => {
+                const next = parseAllowance(e.target.value, ageAllowancePctPerYear);
+                setAgeAllowancePctPerYear(next);
+                scheduleLeagueSave(
+                  leagueName,
+                  leagueWebsite,
+                  next,
+                  experienceAllowancePctPerYear,
+                  skillAllowancePctPerPoint,
+                  maxAgeGapYears,
+                  maxWeightDiffPct,
+                );
+              }}
+            />
+          </div>
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-skill-allowance">
+              Skill Bias (% per point)
+            </label>
+            <input
+              id="league-skill-allowance"
+              type="number"
+              min={0}
+              max={2}
+              step={0.05}
+              value={skillAllowancePctPerPoint}
+              style={{ width: 120 }}
+              onChange={(e) => {
+                const next = parseAllowance(e.target.value, skillAllowancePctPerPoint);
+                setSkillAllowancePctPerPoint(next);
+                scheduleLeagueSave(
+                  leagueName,
+                  leagueWebsite,
+                  ageAllowancePctPerYear,
+                  experienceAllowancePctPerYear,
+                  next,
+                  maxAgeGapYears,
+                  maxWeightDiffPct,
+                );
+              }}
+            />
+          </div>
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="league-exp-allowance">
+              Experience Bias (% per year)
+            </label>
+            <input
+              id="league-exp-allowance"
+              type="number"
+              min={0}
+              max={2}
+              step={0.05}
+              value={experienceAllowancePctPerYear}
+              style={{ width: 120 }}
+              onChange={(e) => {
+                const next = parseAllowance(e.target.value, experienceAllowancePctPerYear);
+                setExperienceAllowancePctPerYear(next);
+                scheduleLeagueSave(
+                  leagueName,
+                  leagueWebsite,
+                  ageAllowancePctPerYear,
+                  next,
+                  skillAllowancePctPerPoint,
+                  maxAgeGapYears,
+                  maxWeightDiffPct,
+                );
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      )}
+
+      {view === "teams" && (
+      <div className="admin-card">
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>Teams</h3>
           {leagueStats && (
             <div className="admin-muted" style={{ fontSize: 16, fontWeight: 600 }}>
               {leagueStats.teamCount} teams | {leagueStats.totalWrestlers} wrestlers ({leagueStats.activeWrestlers} active, {leagueStats.inactiveWrestlers} inactive)
             </div>
           )}
+          <div style={{ display: "flex", gap: 12, marginLeft: "auto", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="admin-btn"
+              onClick={exportTeamsAndRosters}
+              disabled={isExporting}
+            >
+              {isExporting ? "Exporting..." : "Export Teams + Rosters"}
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn-danger"
+              onClick={() => {
+                setShowImportModal(true);
+                setImportConfirm("");
+                setImportError("");
+                setImportFile(null);
+              }}
+            >
+              Import Teams + Rosters
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn-danger"
+              onClick={() => {
+                setShowResetModal(true);
+                setResetConfirm("");
+                setResetError("");
+              }}
+            >
+              Reset For New Year
+            </button>
+          </div>
         </div>
-        <div className="admin-row">
+        <div className="admin-row" style={{ marginTop: 12 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
           <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" className="admin-input-sm" />
           <button className="admin-btn" onClick={addTeam}>
@@ -606,6 +849,7 @@ function normalizeHeadCoachId(value: string | null | undefined) {
           </table>
         </div>
       </div>
+      )}
       {showResetModal && (
         <div
           className="reset-overlay"

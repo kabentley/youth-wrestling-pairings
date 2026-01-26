@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { DEFAULT_MAX_AGE_GAP_DAYS, MAX_MATCHES_PER_WRESTLER } from "@/lib/constants";
+import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS, MAX_MATCHES_PER_WRESTLER } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { pairingScore, weightPctDiff } from "@/lib/pairingScore";
 
@@ -18,9 +18,8 @@ const QuerySchema = z.object({
   wrestlerId: z.string().min(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 
-  maxAgeGapDays: z.coerce.number().min(0).default(DEFAULT_MAX_AGE_GAP_DAYS),
-  maxWeightDiffPct: z.coerce.number().min(0).default(12),
   enforceAgeGap: boolFromQuery.default(true),
+  enforceWeightCheck: boolFromQuery.default(true),
   firstYearOnlyWithFirstYear: boolFromQuery.default(true),
   allowSameTeamMatches: boolFromQuery.default(false),
 });
@@ -33,6 +32,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
   const { meetId } = await params;
   const url = new URL(req.url);
   const q = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
+  const leagueSettings = await db.league.findFirst({
+    select: {
+      ageAllowancePctPerYear: true,
+      experienceAllowancePctPerYear: true,
+      skillAllowancePctPerPoint: true,
+      maxAgeGapYears: true,
+      maxWeightDiffPct: true,
+    },
+  });
+  const scoreOptions = leagueSettings ?? undefined;
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: { matchesPerWrestler: true, maxMatchesPerWrestler: true, deletedAt: true },
@@ -108,9 +117,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
-    if (q.enforceAgeGap && ageGapDays > q.maxAgeGapDays) continue;
+    const maxAgeGapDays = Math.round((leagueSettings?.maxAgeGapYears ?? DEFAULT_MAX_AGE_GAP_DAYS / DAYS_PER_YEAR) * DAYS_PER_YEAR);
+    if (q.enforceAgeGap && ageGapDays > maxAgeGapDays) continue;
     const wPct = weightPctDiff(target.weight, opp.weight);
-    if (wPct > q.maxWeightDiffPct) continue;
+    const maxWeightDiffPct = leagueSettings?.maxWeightDiffPct ?? 10;
+    if (q.enforceWeightCheck && wPct > maxWeightDiffPct) continue;
 
     if (q.firstYearOnlyWithFirstYear) {
       const tFirst = target.experienceYears <= 0;
@@ -118,7 +129,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
       if (tFirst !== oFirst) continue;
     }
 
-    const scored = pairingScore(target, opp);
+    const scored = pairingScore(target, opp, scoreOptions ?? undefined);
 
     rows.push({
       opponent: opp,
