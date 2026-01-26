@@ -467,7 +467,7 @@ export default function RostersClient() {
         const estimatedNewCount = wrestlers.filter(w =>
           !existingKeys.has(buildRosterKey(w.first, w.last, w.birthdate)),
         ).length;
-        if (estimatedNewCount > 10) {
+        if (estimatedNewCount > 5) {
           const ok = window.confirm(
             `This import will add about ${estimatedNewCount} new wrestlers. Is that expected?`,
           );
@@ -1913,6 +1913,35 @@ export default function RostersClient() {
         }
         .import-modal-header {
           margin-bottom: 12px;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+        }
+        .import-team-logo {
+          width: 48px;
+          height: 48px;
+          object-fit: contain;
+          border-radius: 8px;
+          border: 1px solid var(--line);
+          background: #fff;
+        }
+        .import-team-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .import-team-label {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--ink);
+          line-height: 1.2;
+        }
+        .import-team-dot {
+          width: 40px;
+          height: 40px;
+          border-radius: 999px;
+          border: 1px solid var(--line);
         }
         .import-modal-body {
           max-height: 60vh;
@@ -2040,7 +2069,7 @@ export default function RostersClient() {
                         }}
                         disabled={hasDirtyChanges || !selectedTeamId}
                       >
-                        Import Roster
+                        Import or Update Roster
                       </button>
                     </>
                   )}
@@ -2218,12 +2247,31 @@ export default function RostersClient() {
         >
           <div className="import-modal" onClick={event => event.stopPropagation()}>
             <div className="import-modal-header">
-              <h3 id="import-title">
-                Import roster for <strong>{importTeamLabel}</strong>
-              </h3>
+              <h3 id="import-title">Import or update roster from XLSX or CSV file:</h3>
+              <div className="import-team-row">
+                {currentTeam?.hasLogo ? (
+                  <img
+                    src={`/api/teams/${currentTeam.id}/logo/file`}
+                    alt={`${currentTeam.name} logo`}
+                    className="import-team-logo"
+                  />
+                ) : currentTeam ? (
+                  <span
+                    className="import-team-dot"
+                    style={{ backgroundColor: currentTeam.color }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <div className="import-team-label" style={{ color: currentTeam?.color ?? undefined }}>
+                  {importTeamLabel}
+                </div>
+              </div>
+              <div className="muted" style={{ marginTop: 4, fontSize: 14 }}>
+                Note: new wrestlers are added, existing wrestlers are updated when first and last names match, and no existing wrestlers are ever removed.
+              </div>
             </div>
             <div className="import-modal-body">
-              <label className="muted">CSV or XLSX file</label>
+              <label className="muted">XLSX or CSV file</label>
               <input
                 className="input"
                 type="file"
@@ -2297,7 +2345,7 @@ John,Smith,55,2014-11-02,0,2
                 onClick={importCsv}
                 disabled={!file || !importTeamId}
               >
-                Import / Update CSV
+                Import / Update Roster
               </button>
             </div>
           </div>

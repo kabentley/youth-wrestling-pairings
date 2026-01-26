@@ -59,7 +59,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Click any cell to edit, then tab or click through the row.",
           "Edited rows are highlighted, and inactive wrestlers are shown with a strike-through. Use Show Inactive to view and edit inactive records, and use the active flag for temporary absences instead of deleting [Rosters > Manage].",
           "Delete only when a record should be removed permanently. Use inactive to preserve history [Rosters > Manage].",
-          "Import supports CSV or XLSX. Use columns for first name, last name, weight, birthdate, experience, and skill. Export downloads the current roster; import updates the roster and reports how many wrestlers were added or updated. Import only updates weight/experience/skill and does not delete wrestlers or change active status [Rosters > Import]. If the import would add more than 10 new wrestlers, the system asks for confirmation to prevent loading the wrong team.",
+          "Import supports XLSX or CSV. Use columns for first name, last name, weight, birthdate, experience, and skill. Export downloads the current roster; import adds new wrestlers and updates existing records (matched by first + last name), and it never removes wrestlers [Rosters > Import]. Imports update weight, birthdate, experience, and skill, but do not change active status. If the import would add more than 5 new wrestlers, the system asks for confirmation to prevent loading the wrong team.",
           "**Always click Save or Cancel** after editing so the highlights clear; unsaved edits remain highlighted as a reminder [Rosters > Manage].",
         ],
       },

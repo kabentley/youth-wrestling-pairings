@@ -23,6 +23,7 @@ export type ExistingWrestler = {
 export type UpdateOp = {
   id: string;
   weight: number;
+  birthdate: Date;
   experienceYears: number;
   skill: number;
 };
@@ -107,14 +108,17 @@ export function planRosterUpsert(args: {
     const existing = existingMap.get(k);
     if (existing) {
       const weight = row.weight;
+      const birthdate = new Date(bdISO);
       if (
         existing.weight !== weight ||
+        toISODateOnly(existing.birthdate) !== bdISO ||
         existing.experienceYears !== experienceYears ||
         existing.skill !== skill
       ) {
         toUpdate.push({
           id: existing.id,
           weight,
+          birthdate,
           experienceYears,
           skill,
         });

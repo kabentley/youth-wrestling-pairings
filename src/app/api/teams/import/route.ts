@@ -78,7 +78,7 @@ export async function POST(req: Request) {
       plan.toUpdate.map(u =>
         db.wrestler.update({
           where: { id: u.id },
-          data: { weight: u.weight, experienceYears: u.experienceYears, skill: u.skill },
+          data: { weight: u.weight, birthdate: u.birthdate, experienceYears: u.experienceYears, skill: u.skill },
         }),
       ),
     );
