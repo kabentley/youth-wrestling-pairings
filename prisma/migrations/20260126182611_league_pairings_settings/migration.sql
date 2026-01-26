@@ -1,0 +1,12 @@
+-- DropIndex
+DROP INDEX "Meet_deletedAt_idx";
+
+-- AlterTable
+ALTER TABLE "League" ADD COLUMN     "ageAllowancePctPerYear" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+ADD COLUMN     "experienceAllowancePctPerYear" DOUBLE PRECISION NOT NULL DEFAULT 0.25,
+ADD COLUMN     "maxAgeGapYears" DOUBLE PRECISION NOT NULL DEFAULT 1,
+ADD COLUMN     "maxWeightDiffPct" DOUBLE PRECISION NOT NULL DEFAULT 10,
+ADD COLUMN     "skillAllowancePctPerPoint" DOUBLE PRECISION NOT NULL DEFAULT 0.4;
+
+-- AlterTable
+ALTER TABLE "MeetCheckpoint" ALTER COLUMN "payload" SET DATA TYPE JSONB;
