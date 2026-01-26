@@ -315,24 +315,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           throw new Error(errorText || "Unable to clear existing bouts.");
         }
       }
-      const payload = {
-        firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
-        allowSameTeamMatches: settings.allowSameTeamMatches,
-        matchesPerWrestler: matchesPerWrestler ?? undefined,
-        pruneTargetMatches: savedMatchesPerWrestler ?? undefined,
-        maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
-        preserveMats: !clearExisting,
-      };
-      const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!generateRes.ok) {
-        const json = await generateRes.json().catch(() => null);
-        throw new Error(json?.error ?? "Unable to generate new pairings.");
-      }
-      await load();
+        const payload = {
+          firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
+          allowSameTeamMatches: settings.allowSameTeamMatches,
+          matchesPerWrestler: matchesPerWrestler ?? undefined,
+          pruneTargetMatches: savedMatchesPerWrestler ?? undefined,
+          maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
+          preserveMats: !clearExisting,
+        };
+        const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!generateRes.ok) {
+          const json = await generateRes.json().catch(() => null);
+          throw new Error(json?.error ?? "Unable to generate new pairings.");
+        }
+        await load();
       await loadActivity();
       setShowAutoPairingsModal(false);
       return true;
@@ -1343,6 +1343,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
     return sortValueCompare(getValue(a), getValue(b), pairingsSort.dir);
   });
+
+  const scrollPairingsRowIntoView = useCallback((wrestlerId: string) => {
+    const wrapper = pairingsTableWrapperRef.current;
+    if (!wrapper) return;
+    const row = wrapper.querySelector<HTMLTableRowElement>(`tr[data-pairing-id="${wrestlerId}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const handlePairingsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (pairingsSorted.length === 0) return;
+    event.preventDefault();
+
+    const currentIndex = selectedPairingId
+      ? pairingsSorted.findIndex(w => w.id === selectedPairingId)
+      : -1;
+    const nextIndex = event.key === "ArrowDown"
+      ? Math.min(pairingsSorted.length - 1, currentIndex >= 0 ? currentIndex + 1 : 0)
+      : Math.max(0, currentIndex > 0 ? currentIndex - 1 : 0);
+    if (nextIndex === currentIndex) return;
+
+    const nextId = pairingsSorted[nextIndex]?.id;
+    if (!nextId) return;
+    setSelectedPairingId(nextId);
+    requestAnimationFrame(() => {
+      scrollPairingsRowIntoView(nextId);
+    });
+  }, [pairingsSorted, scrollPairingsRowIntoView, selectedPairingId]);
   const selectedMatchCount = selectedPairingId ? getMatchCount(selectedPairingId) : 0;
 
   async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
@@ -1384,6 +1412,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setSelectedPairingId(nextId);
     }
   }, [attendingByTeam, selectedPairingId]);
+
 
   useEffect(() => {
     if (!selectedPairingId) {
@@ -2218,12 +2247,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           color: var(--accent);
           background: #f7f9fb;
         }
-        .pairings-table-wrapper {
-          margin-top: 12px;
-          max-height: calc(23 * 25px + 48px);
-          overflow-y: auto;
-          overflow-x: auto;
-        }
+          .pairings-table-wrapper {
+            margin-top: 12px;
+            max-height: calc(23 * 25px + 48px);
+            overflow-y: auto;
+            overflow-x: auto;
+          }
+          .pairings-table-wrapper:focus {
+            outline: none;
+          }
         .pairings-side-card {
           min-height: calc(23 * 25px + 145px);
         }
@@ -3038,7 +3070,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             );
             })}
           </div>
-        <div className="pairings-table-wrapper" ref={pairingsTableWrapperRef}>
+        <div
+          className="pairings-table-wrapper"
+          ref={pairingsTableWrapperRef}
+          tabIndex={0}
+          onKeyDown={handlePairingsKeyDown}
+        >
         <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
             <colgroup>
               <col style={{ width: pairingsEffectiveColWidths[0] }} />
@@ -3091,13 +3128,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   ? " status-early"
                   : "";
               return (
-                <tr
-                  key={w.id}
-                  className={selectedPairingId === w.id ? "selected" : undefined}
-                  onClick={() => {
-                    setSelectedPairingId(w.id);
-                    setTarget(w);
-                  }}
+                  <tr
+                    key={w.id}
+                    data-pairing-id={w.id}
+                    className={selectedPairingId === w.id ? "selected" : undefined}
+                    onClick={() => {
+                      setSelectedPairingId(w.id);
+                      setTarget(w);
+                      pairingsTableWrapperRef.current?.focus();
+                    }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setSelectedPairingId(w.id);
@@ -3216,8 +3255,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Skill", key: "skill" },
                             { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
-                            { label: "Bout #", key: "bout" },
-                          ].map((col, index) => (
+                              { label: "Bout #", key: "bout" },
+                            ].map((col, index) => (
                           <th
                             key={col.label}
                             align={col.key === "score" ? "center" : "left"}
@@ -3243,23 +3282,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         </tr>
                       </thead>
                       <tbody>
-                        {currentMatches.length === 0 && (
-                          <tr>
-                            <td colSpan={10} style={{ color: "#666" }}>None</td>
-                          </tr>
-                        )}
+                            {currentMatches.length === 0 && (
+                              <tr>
+                                <td colSpan={10} style={{ color: "#666" }}>None</td>
+                              </tr>
+                            )}
                         {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
                           const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
                           return (
-                            <tr
-                              key={bout.id}
-                              className="match-row-hover"
-                              onClick={() => {
-                                if (!canEdit) return;
-                                void removeBout(bout.id);
-                              }}
-                              style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
-                            >
+                              <tr
+                                key={bout.id}
+                                className="match-row-hover"
+                                onClick={() => {
+                                  if (!canEdit) return;
+                                  void removeBout(bout.id);
+                                }}
+                                style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                              >
                                 <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.last ?? ""}</td>
                                 <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.first ?? ""}</td>
                               <td>
@@ -3274,18 +3313,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
-                            <td align="left">{Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}</td>
-                            <td align="left">{getMatchCount(opponentId)}</td>
-                            <td align="left">{boutNumber(bout.mat, bout.order)}</td>
-                            </tr>
+                              <td align="left">{Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}</td>
+                              <td align="left">{getMatchCount(opponentId)}</td>
+                              <td align="left">{boutNumber(bout.mat, bout.order)}</td>
+                              </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <h3 className="pairings-heading" style={{ margin: "10px 0 6px" }}>
-                    Possible additional matches:
-                  </h3>
+                    <h3 className="pairings-heading" style={{ margin: "10px 0 6px" }}>
+                      Possible additional matches:
+                    </h3>
                   <div className="pairings-table-wrapper additional-matches-wrapper">
                   <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
@@ -3374,9 +3413,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </tbody>
                   </table>
                   </div>
-                  <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-                    Note: Click on wrestler name to add or remove.
-                  </div>
+                    <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+                      Note: Click on wrestler name to add or remove.
+                    </div>
                     <div
                       className="setup-control-row"
                       style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}

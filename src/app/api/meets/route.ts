@@ -69,6 +69,15 @@ function buildMeetName(
   return `${base} - ${formatMeetDate(date)}`;
 }
 
+function buildUniqueMeetName(baseName: string, existingNames: Set<string>) {
+  if (!existingNames.has(baseName)) return baseName;
+  let suffix = 1;
+  while (existingNames.has(`${baseName} (${suffix})`)) {
+    suffix += 1;
+  }
+  return `${baseName} (${suffix})`;
+}
+
 export async function GET() {
   const meets = await db.meet.findMany({
     where: { deletedAt: null },
@@ -135,6 +144,12 @@ export async function POST(req: Request) {
     select: { id: true, symbol: true, name: true },
   });
   const meetName = buildMeetName(parsed.teamIds, meetTeams, homeTeamId, parsed.date);
+  const existingMeetNames = await db.meet.findMany({
+    where: { deletedAt: null, name: { startsWith: meetName } },
+    select: { name: true },
+  });
+  const existingNameSet = new Set(existingMeetNames.map(entry => entry.name));
+  const uniqueMeetName = buildUniqueMeetName(meetName, existingNameSet);
   const normalizeLocation = (value?: string | null) => {
     const trimmed = value?.trim();
     if (!trimmed) return undefined;
@@ -143,7 +158,7 @@ export async function POST(req: Request) {
 
   const meet = await db.meet.create({
     data: {
-      name: meetName,
+      name: uniqueMeetName,
       date: new Date(parsed.date),
       location: normalizeLocation(parsed.location),
       homeTeamId,
