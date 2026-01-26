@@ -14,6 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       id: true,
       name: true,
       date: true,
+      homeTeamId: true,
       deletedAt: true,
       meetTeams: {
         include: {

@@ -8,6 +8,7 @@ type MeetData = {
   id: string;
   name: string;
   date: string;
+  homeTeamId?: string | null;
   meetTeams: { team: { id: string; name: string; symbol?: string | null; color?: string | null } }[];
 };
 
@@ -463,13 +464,18 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   function cellText(bout: Bout) {
     const red = wMap.get(bout.redId);
     const green = wMap.get(bout.greenId);
-    const redTeam = red ? (tMap.get(red.teamId) ?? "") : "";
-    const greenTeam = green ? (tMap.get(green.teamId) ?? "") : "";
+    const homeTeamId = meet.homeTeamId ?? null;
+    const redIsHome = Boolean(homeTeamId && red?.teamId === homeTeamId);
+    const greenIsHome = Boolean(homeTeamId && green?.teamId === homeTeamId);
+    const left = redIsHome && !greenIsHome ? red : greenIsHome && !redIsHome ? green : red;
+    const right = left === red ? green : red;
+    const leftTeam = left ? (tMap.get(left.teamId) ?? "") : "";
+    const rightTeam = right ? (tMap.get(right.teamId) ?? "") : "";
     return {
-      red: red ? `${red.first} ${red.last}${redTeam ? ` (${redTeam})` : ""}` : bout.redId,
-      green: green ? `${green.first} ${green.last}${greenTeam ? ` (${greenTeam})` : ""}` : bout.greenId,
-      redColor: red ? teamTextColor(red.teamId) : "#000",
-      greenColor: green ? teamTextColor(green.teamId) : "#000",
+      red: left ? `${left.first} ${left.last}${leftTeam ? ` (${leftTeam})` : ""}` : bout.redId,
+      green: right ? `${right.first} ${right.last}${rightTeam ? ` (${rightTeam})` : ""}` : bout.greenId,
+      redColor: left ? teamTextColor(left.teamId) : "#000",
+      greenColor: right ? teamTextColor(right.teamId) : "#000",
     };
   }
 
