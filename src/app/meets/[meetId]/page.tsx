@@ -1576,6 +1576,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
   const availableDisplay = availableSorted.slice(0, 20);
+  const deltaColor = (value: number) => {
+    if (value < 0) return "#b00020";
+    if (value > 0) return "#1b5e20";
+    return undefined;
+  };
   async function restartMeetSetup() {
     if (!canEdit) return;
     setRestartLoading(true);
@@ -3313,7 +3318,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
-                              <td align="left">{Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}</td>
+                              <td
+                                align="left"
+                                style={Number.isFinite(signedScore) ? { color: deltaColor(signedScore) } : undefined}
+                              >
+                                {Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}
+                              </td>
                               <td align="left">{getMatchCount(opponentId)}</td>
                               <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                               </tr>
@@ -3396,7 +3406,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td align="left">{o.weight}</td>
                             <td align="left">{o.experienceYears}</td>
                             <td align="left">{o.skill}</td>
-                            <td align="left">{Number.isFinite(score) ? score.toFixed(2) : ""}</td>
+                              <td
+                                align="left"
+                                style={Number.isFinite(score) ? { color: deltaColor(score) } : undefined}
+                              >
+                                {Number.isFinite(score) ? score.toFixed(2) : ""}
+                              </td>
                             <td align="left">{getMatchCount(o.id)}</td>
                           </tr>
                         );
