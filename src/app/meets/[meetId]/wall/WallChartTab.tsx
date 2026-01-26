@@ -394,7 +394,8 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   for (const mat of mats) {
     const matBouts = perMat.get(mat) ?? [];
     matBouts.forEach((bout, idx) => {
-      const boutNumber = String(mat * 100 + idx + 1).padStart(3, "0");
+      const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
+      const boutNumber = String(mat * 100 + displayOrder).padStart(3, "0");
       const red = wMap.get(bout.redId);
       const green = wMap.get(bout.greenId);
       const greenInfo = green
@@ -497,7 +498,8 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
                     </thead>
                     <tbody>
                       {perMat.get(mat)?.map((bout, idx) => {
-                        const boutNumber = String(mat * 100 + idx + 1).padStart(3, "0");
+                        const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
+                        const boutNumber = String(mat * 100 + displayOrder).padStart(3, "0");
                         const t = cellText(bout);
                         return (
                           <tr key={bout.id}>
