@@ -195,7 +195,6 @@ export default function RostersClient() {
   const selectTeam = (teamId: string) => {
     if (hasDirtyChanges) {
       setRosterMsg("Save or discard your edits before switching teams.");
-      setShowTeamSelector(false);
       return;
     }
     setSelectedTeamId(teamId);
