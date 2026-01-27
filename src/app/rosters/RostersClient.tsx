@@ -141,6 +141,7 @@ export default function RostersClient() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingWrestler, setIsDeletingWrestler] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const rosterSelectionStorageKey = "rosters:selectedTeamId";
   const daysPerYear = 365;
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -201,6 +202,9 @@ export default function RostersClient() {
     setSelectedTeamId(teamId);
     setImportTeamId(teamId);
     setImportSummary("");
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(rosterSelectionStorageKey, teamId);
+    }
   };
 
   async function load() {
@@ -225,6 +229,15 @@ export default function RostersClient() {
     }
     void load();
   }, [status]);
+  useEffect(() => {
+    if (selectedTeamId || hasDirtyChanges) return;
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(rosterSelectionStorageKey);
+    if (!stored) return;
+    if (!teams.some(t => t.id === stored)) return;
+    setSelectedTeamId(stored);
+    setImportTeamId(stored);
+  }, [selectedTeamId, hasDirtyChanges, teams]);
   useEffect(() => {
     if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER") && sessionTeamId && !selectedTeamId) {
       setSelectedTeamId(sessionTeamId);
@@ -261,7 +274,7 @@ export default function RostersClient() {
     if (role !== "ADMIN") return;
     if (!adminTeamId) return;
     if (hasDirtyChanges) return;
-    if (selectedTeamId === adminTeamId) return;
+    if (selectedTeamId) return;
     setSelectedTeamId(adminTeamId);
     setImportTeamId(adminTeamId);
   }, [role, adminTeamId, selectedTeamId, hasDirtyChanges]);
@@ -277,6 +290,9 @@ export default function RostersClient() {
     if (!teams.some(t => t.id === teamQueryParam)) return;
     setSelectedTeamId(teamQueryParam);
     setImportTeamId(teamQueryParam);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(rosterSelectionStorageKey, teamQueryParam);
+    }
   }, [teamQueryParam, teams, selectedTeamId, hasDirtyChanges]);
 
   useEffect(() => {
@@ -1585,6 +1601,10 @@ export default function RostersClient() {
           font-size: 14px;
           color: #5b6472;
         }
+        .team-current-meta .team-logo {
+          width: 56px;
+          height: 56px;
+        }
         .team-select-menu {
           position: absolute;
           top: calc(100% + 8px);
@@ -1707,8 +1727,8 @@ export default function RostersClient() {
             overflow: hidden;
           }
         .team-logo {
-          width: 44px;
-          height: 44px;
+          width: 56px;
+          height: 56px;
           object-fit: contain;
         }
         .team-meta {
