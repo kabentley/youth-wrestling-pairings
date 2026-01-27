@@ -109,6 +109,7 @@ export default function RostersClient() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const teamPickerRef = useRef<HTMLSelectElement | null>(null);
+  const [adminTeamId, setAdminTeamId] = useState<string | null>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
   const [rosterMsg, setRosterMsg] = useState("");
   const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
@@ -225,11 +226,45 @@ export default function RostersClient() {
     void load();
   }, [status]);
   useEffect(() => {
-    if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER" || role === "ADMIN") && sessionTeamId && !selectedTeamId) {
+    if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER") && sessionTeamId && !selectedTeamId) {
       setSelectedTeamId(sessionTeamId);
       setImportTeamId(sessionTeamId);
     }
   }, [role, sessionTeamId, selectedTeamId]);
+  useEffect(() => {
+    if (role !== "ADMIN") return;
+    let active = true;
+    const loadAdminTeam = () => {
+      fetch("/api/me")
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!active) return;
+          const teamId = typeof data?.teamId === "string" ? data.teamId : null;
+          setAdminTeamId(teamId);
+        })
+        .catch(() => {
+          // ignore
+        });
+    };
+    loadAdminTeam();
+    const handleRefresh = () => loadAdminTeam();
+    const handleFocus = () => loadAdminTeam();
+    window.addEventListener("user:refresh", handleRefresh);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      active = false;
+      window.removeEventListener("user:refresh", handleRefresh);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [role]);
+  useEffect(() => {
+    if (role !== "ADMIN") return;
+    if (!adminTeamId) return;
+    if (hasDirtyChanges) return;
+    if (selectedTeamId === adminTeamId) return;
+    setSelectedTeamId(adminTeamId);
+    setImportTeamId(adminTeamId);
+  }, [role, adminTeamId, selectedTeamId, hasDirtyChanges]);
 
   useEffect(() => {
     setImportSummary("");
@@ -1052,11 +1087,12 @@ export default function RostersClient() {
   };
   const currentTeam = teams.find(t => t.id === selectedTeamId);
   const orderedTeams = useMemo(() => {
-    if (!sessionTeamId) return teams;
-    const mine = teams.find(t => t.id === sessionTeamId);
+    const preferredTeamId = role === "ADMIN" ? adminTeamId ?? sessionTeamId : sessionTeamId;
+    if (!preferredTeamId) return teams;
+    const mine = teams.find(t => t.id === preferredTeamId);
     if (!mine) return teams;
-    return [mine, ...teams.filter(t => t.id !== sessionTeamId)];
-  }, [sessionTeamId, teams]);
+    return [mine, ...teams.filter(t => t.id !== preferredTeamId)];
+  }, [adminTeamId, role, sessionTeamId, teams]);
 
   useEffect(() => {
     if (!allowInactiveView && showInactive) {
@@ -1546,7 +1582,7 @@ export default function RostersClient() {
           font-weight: 700;
         }
         .team-current-coach {
-          font-size: 12px;
+          font-size: 14px;
           color: #5b6472;
         }
         .team-select-menu {
@@ -2147,7 +2183,6 @@ export default function RostersClient() {
             <div className="header-left">
               <div className="header-main">
                 <div className="header-title-group">
-                  <h2 className="card-title">Roster for:</h2>
                   <div className="team-selector-wrapper">
                     <select
                       ref={teamPickerRef}
@@ -2159,7 +2194,7 @@ export default function RostersClient() {
                       <option value="" disabled>Select a team</option>
                       {orderedTeams.map(t => (
                         <option key={t.id} value={t.id}>
-                          {t.symbol ? `${t.name} (${t.symbol})` : t.name}
+                          {t.symbol ? `${t.symbol} - ${t.name}` : t.name}
                         </option>
                       ))}
                     </select>
@@ -2177,9 +2212,9 @@ export default function RostersClient() {
                       )}
                       <div className="team-current-text">
                         <div className="team-current-name">{currentTeam.name}</div>
-                        {currentTeam.headCoach?.username && (
-                          <div className="team-current-coach">Head coach: {currentTeam.headCoach.username}</div>
-                        )}
+                        <div className="team-current-coach">
+                          Head coach: {currentTeam.headCoach?.username ?? "unassigned"}
+                        </div>
                       </div>
                     </div>
                   )}
