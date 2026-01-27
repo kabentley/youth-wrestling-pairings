@@ -75,9 +75,9 @@ function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | n
     });
   restOrdered.forEach(team => pushTeam(team.id));
   if (ordered.length === 0) return "";
-  const base = ordered.join(" v ");
+  const base = ordered.join("-");
   if (!date) return base;
-  return `${base} - ${formatMeetDisplayDate(date)}`;
+  return `${base} ${formatMeetDisplayDate(date)}`;
 }
 
 const DEFAULT_DATE = getNextSaturday();

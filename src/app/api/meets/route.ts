@@ -64,9 +64,9 @@ function buildMeetName(
       return 0;
     });
   restOrdered.forEach(team => pushTeam(team.id));
-  const base = ordered.length > 0 ? ordered.join(" v ") : "Meet";
+  const base = ordered.length > 0 ? ordered.join("-") : "Meet";
   if (!date) return base;
-  return `${base} - ${formatMeetDate(date)}`;
+  return `${base} ${formatMeetDate(date)}`;
 }
 
 function buildUniqueMeetName(baseName: string, existingNames: Set<string>) {

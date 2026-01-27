@@ -456,10 +456,10 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   });
 
   const headerLabel =
-    meet.name && meet.date
-      ? `${meet.name} · ${new Date(meet.date).toISOString().slice(0, 10)} · ${meet.meetTeams.map(mt => mt.team.name).join(", ")}`
+    meet.name
+      ? `${meet.name} · ${meet.meetTeams.map(mt => mt.team.name).join(", ")}`
       : meet.name;
-  const cardLabel = meet.name && meet.date ? `${meet.name} · ${new Date(meet.date).toISOString().slice(0, 10)}` : meet.name;
+  const cardLabel = meet.name ?? "";
 
   function cellText(bout: Bout) {
     const red = wMap.get(bout.redId);
