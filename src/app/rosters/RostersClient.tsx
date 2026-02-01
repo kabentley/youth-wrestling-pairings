@@ -1422,8 +1422,7 @@ export default function RostersClient() {
       ];
     });
 
-    const header = ["first", "last", "weight", "birthdate", "experienceYears", "skill", "isGirl"];
-    const csvContent = [header.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+    const csvContent = rows.map(r => r.join(",")).join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
