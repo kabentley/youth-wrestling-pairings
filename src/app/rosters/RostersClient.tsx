@@ -23,6 +23,7 @@ type Wrestler = {
   birthdate: string;
   experienceYears: number;
   skill: number;
+  isGirl: boolean;
   active: boolean;
 };
 type EditableWrestler = {
@@ -33,10 +34,11 @@ type EditableWrestler = {
   birthdate: string;
   experienceYears: string;
   skill: string;
+  isGirl: boolean;
   active: boolean;
   isNew?: boolean;
 };
-type ViewerColumnKey = "last" | "first" | "age" | "weight" | "experienceYears" | "skill" | "active";
+type ViewerColumnKey = "last" | "first" | "age" | "sex" | "weight" | "experienceYears" | "skill" | "active";
 type ViewerColumn = { key: ViewerColumnKey; label: string; width: number };
 
 function parseCsv(text: string) {
@@ -114,7 +116,7 @@ export default function RostersClient() {
   const [rosterMsg, setRosterMsg] = useState("");
   const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
   const [savingAll, setSavingAll] = useState(false);
-  const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 80, 80, 90, 90, 90]);
+  const [spreadsheetColWidths, setSpreadsheetColWidths] = useState<number[]>([130, 110, 120, 70, 50, 80, 80, 90, 90, 90]);
   const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler> | undefined>>({});
@@ -156,9 +158,9 @@ export default function RostersClient() {
     const applyEditableWidths = () => {
       if (typeof window === "undefined") return;
       if (window.innerWidth <= 900) {
-        setSpreadsheetColWidths([70, 70, 100, 60, 60, 60, 70, 70, 70]);
+        setSpreadsheetColWidths([70, 70, 100, 60, 60, 60, 60, 70, 70, 70]);
       } else {
-        setSpreadsheetColWidths([130, 110, 120, 70, 80, 80, 90, 90, 90]);
+        setSpreadsheetColWidths([130, 110, 120, 70, 70, 80, 80, 90, 90, 90]);
       }
     };
     applyEditableWidths();
@@ -219,6 +221,12 @@ export default function RostersClient() {
     const now = new Date();
     const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
     return days / daysPerYear;
+  }
+
+  function sexColor(isGirl?: boolean) {
+    if (isGirl === true) return "#d81b60";
+    if (isGirl === false) return "#1565c0";
+    return undefined;
   }
 
   useEffect(() => {
@@ -382,6 +390,14 @@ export default function RostersClient() {
     return key.toLowerCase().replace(/[^a-z0-9]/g, "");
   }
 
+  function normalizeIsGirl(value: string) {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return undefined;
+    if (["girl", "g", "female", "f", "true", "yes", "y", "1"].includes(normalized)) return true;
+    if (["boy", "b", "male", "m", "false", "no", "n", "0"].includes(normalized)) return false;
+    return undefined;
+  }
+
   function normalizeRow(r: Record<string, string>) {
     const normalizedMap = Object.entries(r).reduce<Record<string, string>>((acc, [key, value]) => {
       acc[normalizeKey(key)] = value;
@@ -422,10 +438,12 @@ export default function RostersClient() {
       "Experience Years",
     );
     const skillStr = get("skill", "Skill", "SKILL", "Skill Level");
+    const sexStr = get("isGirl", "is_girl", "Sex", "sex", "gender", "Gender");
 
     const weight = Number(weightStr);
     const experienceYears = expStr ? Number(expStr) : 0;
     const skill = skillStr ? Number(skillStr) : 0;
+    const isGirl = normalizeIsGirl(sexStr);
 
     if (birthdate) {
       const match = birthdate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -437,7 +455,7 @@ export default function RostersClient() {
       }
     }
 
-    return { first, last, weight, birthdate, experienceYears, skill };
+    return { first, last, weight, birthdate, experienceYears, skill, isGirl };
   }
 
   function buildRosterKey(first: string, last: string, birthdate: string) {
@@ -496,6 +514,7 @@ export default function RostersClient() {
           birthdate: w.birthdate,
           experienceYears: Math.max(0, Math.floor(w.experienceYears)),
           skill: Math.min(5, Math.max(0, Math.floor(w.skill))),
+          ...(w.isGirl !== undefined ? { isGirl: w.isGirl } : {}),
         }));
 
       if (wrestlers.length === 0) {
@@ -505,7 +524,7 @@ export default function RostersClient() {
           .join("\n");
         const suffix = skippedRows.length > 8 ? `\n(and ${skippedRows.length - 8} more)` : "";
         const skippedDetail = skippedRows.length ? `\n\nProblem rows:\n${preview}${suffix}` : "";
-        setImportMsg(`No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill.${skippedDetail}`);
+        setImportMsg(`No valid wrestler rows found. Expected columns: first,last,weight,birthdate,experienceYears,skill. Optional: isGirl.${skippedDetail}`);
         return;
       }
 
@@ -625,7 +644,8 @@ export default function RostersClient() {
           row.weight.trim() ||
           row.birthdate.trim() ||
           row.experienceYears.trim() ||
-          row.skill.trim()
+          row.skill.trim() ||
+          row.isGirl
         );
       }
     const original = originalRowsRef.current[row.id];
@@ -637,6 +657,7 @@ export default function RostersClient() {
       row.weight !== original.weight ||
       row.experienceYears !== original.experienceYears ||
       row.skill !== original.skill ||
+      row.isGirl !== original.isGirl ||
       row.active !== original.active
     );
   };
@@ -683,6 +704,7 @@ export default function RostersClient() {
     if (!Number.isFinite(exp) || exp < 0) errors.add("experienceYears");
     const skill = Number(row.skill);
     if (!Number.isFinite(skill) || skill < 0 || skill > 5) errors.add("skill");
+    if (typeof row.isGirl !== "boolean") errors.add("isGirl");
 
     setRowFieldErrors(row.id, errors);
     return errors.size === 0;
@@ -716,6 +738,7 @@ export default function RostersClient() {
       birthdate: row.birthdate,
       experienceYears: Math.floor(Number(row.experienceYears)),
       skill: Math.floor(Number(row.skill)),
+      isGirl: row.isGirl,
       active: row.active,
     };
     if (isNewRecord) {
@@ -852,6 +875,7 @@ export default function RostersClient() {
     { key: "first", label: "First" },
     { key: "birthdate", label: "Birthday" },
     { key: "age", label: "Age" },
+    { key: "sex", label: "Girl" },
     { key: "weight", label: "Weight" },
     { key: "experienceYears", label: "Exp" },
     { key: "skill", label: "Skill" },
@@ -862,7 +886,8 @@ export default function RostersClient() {
   const [spectatorColWidths, setSpectatorColWidths] = useState<Record<ViewerColumnKey, number>>(() => ({
     last: 120,
     first: 120,
-    age: 120,
+    age: 70,
+    sex: 60,
     weight: 90,
     experienceYears: 90,
     skill: 110,
@@ -876,7 +901,8 @@ export default function RostersClient() {
           ...widths,
           last: 70,
           first: 70,
-          age: 60,
+          age: 40,
+          sex: 45,
           weight: 60,
           experienceYears: 60,
           skill: 70,
@@ -887,7 +913,8 @@ export default function RostersClient() {
           ...widths,
           last: 120,
           first: 120,
-          age: 120,
+          age: 70,
+          sex: 60,
           weight: 90,
           experienceYears: 90,
           skill: 110,
@@ -932,6 +959,8 @@ export default function RostersClient() {
         return row.birthdate || "";
       case "age":
         return row.birthdate ? ageYears(row.birthdate) ?? 0 : 0;
+      case "sex":
+        return row.isGirl ? 0 : 1;
       case "weight":
         return Number(row.weight);
       case "experienceYears":
@@ -952,6 +981,8 @@ export default function RostersClient() {
         return row.first.toLowerCase();
       case "age":
         return row.birthdate ? ageYears(row.birthdate) ?? 0 : 0;
+      case "sex":
+        return row.isGirl ? 0 : 1;
       case "weight":
         return Number(row.weight);
       case "experienceYears":
@@ -999,6 +1030,7 @@ export default function RostersClient() {
       birthdate: w.birthdate.slice(0, 10),
       experienceYears: String(w.experienceYears),
       skill: String(w.skill),
+      isGirl: w.isGirl,
       active: w.active,
     }));
     const originals: Record<string, EditableWrestler> = {};
@@ -1075,6 +1107,7 @@ export default function RostersClient() {
     { key: "last", label: "Last", width: 120 },
     { key: "first", label: "First", width: 120 },
     { key: "age", label: "Age", width: 120 },
+    { key: "sex", label: "Girl", width: 80 },
     { key: "weight", label: "Weight", width: 90 },
     { key: "experienceYears", label: "Exp", width: 90 },
     { key: "skill", label: "Skill", width: 110 },
@@ -1090,7 +1123,17 @@ export default function RostersClient() {
       case "first":
         return wrestler.first;
       case "age":
-        return ageYears(wrestler.birthdate)?.toFixed(1) ?? "";
+        return (
+          <span style={{ color: sexColor(wrestler.isGirl) }}>
+            {ageYears(wrestler.birthdate)?.toFixed(1) ?? ""}
+          </span>
+        );
+      case "sex":
+        return (
+          <div className="spreadsheet-checkbox">
+            <input type="checkbox" checked={wrestler.isGirl} readOnly disabled aria-label="Girl" />
+          </div>
+        );
       case "weight":
         return wrestler.weight;
       case "experienceYears":
@@ -1124,6 +1167,7 @@ export default function RostersClient() {
     birthdate: "",
     experienceYears: "0",
     skill: "0",
+    isGirl: false,
     active: true,
     isNew: true,
   });
@@ -1180,6 +1224,7 @@ export default function RostersClient() {
     const weightClass = `spreadsheet-input${hasFieldError(row.id, "weight") ? " field-error" : ""}`;
     const expClass = `spreadsheet-input${hasFieldError(row.id, "experienceYears") ? " field-error" : ""}`;
     const skillClass = `spreadsheet-input${hasFieldError(row.id, "skill") ? " field-error" : ""}`;
+    const sexClass = `spreadsheet-checkbox${hasFieldError(row.id, "isGirl") ? " field-error" : ""}`;
     const statusClass = `spreadsheet-select${hasFieldError(row.id, "active") ? " field-error" : ""}`;
     const rowDirty = dirtyRowIds.has(row.id);
     const hasErrors = (fieldErrors[row.id]?.size ?? 0) > 0;
@@ -1223,7 +1268,22 @@ export default function RostersClient() {
           />
         </td>
         <td>
-          <div className="spreadsheet-age">{ageDisplay || "?"}</div>
+          <div className="spreadsheet-age" style={{ color: sexColor(row.isGirl) }}>
+            {ageDisplay || "?"}
+          </div>
+        </td>
+        <td>
+          <div className={sexClass}>
+            <input
+              type="checkbox"
+              checked={row.isGirl}
+              onChange={e => handleFieldChange(row.id, "isGirl", e.target.checked)}
+              disabled={!canEditRoster}
+              ref={el => registerFieldRef(row.id, "isGirl", el)}
+              onKeyDown={e => handleInputKeyDown(e, row, "isGirl")}
+              aria-label="Girl"
+            />
+          </div>
         </td>
         <td>
           <input
@@ -1358,10 +1418,12 @@ export default function RostersClient() {
         escape(birthdateValue),
         escape(row.experienceYears),
         escape(row.skill),
+        escape(row.isGirl),
       ];
     });
 
-    const csvContent = rows.map(r => r.join(",")).join("\r\n");
+    const header = ["first", "last", "weight", "birthdate", "experienceYears", "skill", "isGirl"];
+    const csvContent = [header.join(","), ...rows.map(r => r.join(","))].join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1963,6 +2025,14 @@ export default function RostersClient() {
         .header-checkbox input {
           margin: 0;
         }
+        .spreadsheet-checkbox {
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+        }
+        .spreadsheet-checkbox input {
+          margin: 0;
+        }
         .roster-wrapper {
           border: 1px solid var(--line);
           border-radius: 8px;
@@ -2486,7 +2556,7 @@ export default function RostersClient() {
                 onChange={e => onChooseFile(e.target.files?.[0] ?? null)}
               />
               <div className="muted" style={{ marginTop: 6 }}>
-                Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>.
+                Required columns: <b>first,last,weight,birthdate (YYYY-MM-DD),experienceYears,skill</b>. Optional: <b>isGirl</b>.
               </div>
               {importMsg && (
                 <div
@@ -2532,10 +2602,10 @@ export default function RostersClient() {
               )}
               <details style={{ marginTop: 12 }}>
                 <summary>Example CSV</summary>
-                <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill
-Ben,Askren,52,2015-03-11,1,3
-John,Smith,55,2014-11-02,0,2
-`}</pre>
+                  <pre style={{ whiteSpace: "pre-wrap" }}>{`first,last,weight,birthdate,experienceYears,skill,isGirl
+  Ben,Askren,52,2015-03-11,1,3,false
+  John,Smith,55,2014-11-02,0,2,true
+  `}</pre>
               </details>
             </div>
             <div className="import-modal-footer">

@@ -3,25 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 
 
-enum Role {
-  ADMIN
-  COACH
-  PARENT
-  TABLE_WORKER
-}
-
-enum MeetWrestlerStatusType {
-  COMING
-  NOT_COMING
-  LATE
-  EARLY
-  ABSENT
-}
+// enums are not supported by the sqlite connector; use string fields instead.
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -71,6 +58,7 @@ model Wrestler {
   birthdate       DateTime
   experienceYears Int
   skill           Int
+  isGirl          Boolean  @default(false)
   active          Boolean  @default(true)
 
   createdAt       DateTime @default(now())
@@ -95,6 +83,7 @@ model Meet {
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
+  girlsWrestleGirls Boolean @default(true)
   matchesPerWrestler Int @default(2)
   maxMatchesPerWrestler Int @default(5)
   restGap   Int        @default(6)
@@ -140,7 +129,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     MeetWrestlerStatusType
+  status     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -255,7 +244,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          Role     @default(PARENT)
+  role          String   @default("PARENT")
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -266,6 +255,7 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
+  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -281,7 +271,6 @@ model User {
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   children      UserChild[]
-  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

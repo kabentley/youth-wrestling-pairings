@@ -13,6 +13,7 @@ const WrestlerRow = z.object({
   birthdate: z.string().min(4),
   experienceYears: z.number().int().min(0),
   skill: z.number().int().min(0).max(5),
+  isGirl: z.boolean().optional(),
 });
 
 const BodySchema = z.object({
@@ -64,7 +65,7 @@ export async function POST(req: Request) {
 
   const existingWrestlers = await db.wrestler.findMany({
     where: { teamId },
-    select: { id: true, first: true, last: true, birthdate: true, weight: true, experienceYears: true, skill: true },
+    select: { id: true, first: true, last: true, birthdate: true, weight: true, experienceYears: true, skill: true, isGirl: true },
   });
 
   const plan = planRosterUpsert({
@@ -78,7 +79,13 @@ export async function POST(req: Request) {
       plan.toUpdate.map(u =>
         db.wrestler.update({
           where: { id: u.id },
-          data: { weight: u.weight, birthdate: u.birthdate, experienceYears: u.experienceYears, skill: u.skill },
+          data: {
+            weight: u.weight,
+            birthdate: u.birthdate,
+            experienceYears: u.experienceYears,
+            skill: u.skill,
+            ...(u.isGirl !== undefined ? { isGirl: u.isGirl } : {}),
+          },
         }),
       ),
     );

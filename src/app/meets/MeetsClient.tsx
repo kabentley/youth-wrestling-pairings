@@ -95,6 +95,7 @@ type Meet = {
   homeTeamId?: string | null;
   numMats?: number;
   allowSameTeamMatches?: boolean;
+  girlsWrestleGirls?: boolean;
   matchesPerWrestler?: number;
   maxMatchesPerWrestler?: number;
   restGap?: number;
@@ -124,6 +125,7 @@ export default function MeetsPage() {
   const [numMats, setNumMats] = useState(DEFAULT_NUM_MATS);
   const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
+  const [girlsWrestleGirls, setGirlsWrestleGirls] = useState(true);
   const [autoPairings, setAutoPairings] = useState(true);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
@@ -170,6 +172,7 @@ export default function MeetsPage() {
     setHomeTeamId(null);
     setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
+    setGirlsWrestleGirls(false);
     setAutoPairings(true);
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
@@ -271,19 +274,20 @@ export default function MeetsPage() {
     const res = await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: displayMeetName,
-        date,
-        location,
-        teamIds: normalizedTeamIds,
-        homeTeamId: homeTeamId ?? currentTeamId ?? null,
-        numMats,
-        allowSameTeamMatches,
-        matchesPerWrestler,
-        maxMatchesPerWrestler,
-        restGap,
-        autoPairings,
-      }),
+        body: JSON.stringify({
+          name: displayMeetName,
+          date,
+          location,
+          teamIds: normalizedTeamIds,
+          homeTeamId: homeTeamId ?? currentTeamId ?? null,
+          numMats,
+          allowSameTeamMatches,
+          girlsWrestleGirls,
+          matchesPerWrestler,
+          maxMatchesPerWrestler,
+          restGap,
+          autoPairings,
+        }),
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) {
@@ -305,6 +309,7 @@ export default function MeetsPage() {
         homeTeamId: homeTeamId ?? null,
         numMats,
         allowSameTeamMatches,
+        girlsWrestleGirls,
         matchesPerWrestler,
         maxMatchesPerWrestler,
         restGap,
@@ -1081,19 +1086,28 @@ export default function MeetsPage() {
                     />
                   </label>
                 </div>
-              <div className="row" style={{ marginTop: 6, gap: 18 }}>
-                <label className="row" style={{ margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={allowSameTeamMatches}
-                    onChange={e => setAllowSameTeamMatches(e.target.checked)}
-                    disabled={!canManageMeets}
-                  />
-                  <span className="muted">Find matches from same team</span>
-                </label>
-                <label className="row" style={{ margin: 0 }}>
-                  <input
-                    type="checkbox"
+                <div className="row" style={{ marginTop: 6, gap: 18 }}>
+                  <label className="row" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={allowSameTeamMatches}
+                      onChange={e => setAllowSameTeamMatches(e.target.checked)}
+                      disabled={!canManageMeets}
+                    />
+                    <span className="muted">Find matches from same team</span>
+                  </label>
+                  <label className="row" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={girlsWrestleGirls}
+                      onChange={e => setGirlsWrestleGirls(e.target.checked)}
+                      disabled={!canManageMeets}
+                    />
+                    <span className="muted">Girls wrestle girls</span>
+                  </label>
+                  <label className="row" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
                     checked={autoPairings}
                     onChange={e => setAutoPairings(e.target.checked)}
                     disabled={!canManageMeets}

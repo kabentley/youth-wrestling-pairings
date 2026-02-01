@@ -19,6 +19,9 @@ export type PairingSettings = {
   /** If true, allow matchups within the same team. */
   allowSameTeamMatches: boolean;
 
+  /** If true, only allow matchups within the same sex (girls vs girls, boys vs boys). */
+  girlsWrestleGirls: boolean;
+
   /** Target matches per wrestler for this generation pass. */
   matchesPerWrestler?: number;
   /** Target used when pruning extra newly-created bouts. */
@@ -106,6 +109,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
    */
   function eligible(a: any, b: any, allowSameTeam: boolean) {
     if (!allowSameTeam && a.teamId === b.teamId) return false;
+    if (settings.girlsWrestleGirls && a.isGirl !== b.isGirl) return false;
 
     const ageGap = daysBetween(a.birthdate, b.birthdate);
     if (ageGap > settings.maxAgeGapDays) return false;

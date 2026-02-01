@@ -22,6 +22,7 @@ const QuerySchema = z.object({
   enforceWeightCheck: boolFromQuery.default(true),
   firstYearOnlyWithFirstYear: boolFromQuery.default(true),
   allowSameTeamMatches: boolFromQuery.default(false),
+  girlsWrestleGirls: boolFromQuery.default(true),
 });
 
 function daysBetween(a: Date, b: Date) {
@@ -79,6 +80,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
       birthdate: w.birthdate,
       experienceYears: w.experienceYears,
       skill: w.skill,
+      isGirl: w.isGirl,
       active: w.active,
       status: statusById.get(w.id) ?? null,
     }))
@@ -116,6 +118,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
     if (currentOpponentIds.has(opp.id)) continue;
 
     if (!q.allowSameTeamMatches && opp.teamId === target.teamId) continue;
+    if (q.girlsWrestleGirls && opp.isGirl !== target.isGirl) continue;
     const ageGapDays = daysBetween(target.birthdate, opp.birthdate);
     const maxAgeGapDays = Math.round((leagueSettings?.maxAgeGapYears ?? DEFAULT_MAX_AGE_GAP_DAYS / DAYS_PER_YEAR) * DAYS_PER_YEAR);
     if (q.enforceAgeGap && ageGapDays > maxAgeGapDays) continue;

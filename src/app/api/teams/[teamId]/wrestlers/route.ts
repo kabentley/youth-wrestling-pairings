@@ -13,6 +13,7 @@ const WrestlerSchema = z.object({
   birthdate: z.string(),
   experienceYears: z.number().int().min(0),
   skill: z.number().int().min(0).max(5),
+  isGirl: z.boolean().optional().default(false),
 });
 
 async function respondUnauthorized() {
@@ -77,6 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ teamId:
         birthdate: new Date(parsed.data.birthdate),
         experienceYears: parsed.data.experienceYears,
         skill: parsed.data.skill,
+        isGirl: parsed.data.isGirl,
         active: true,
       },
     });

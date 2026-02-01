@@ -94,6 +94,7 @@ export async function GET() {
         birthdate: w.birthdate.toISOString().slice(0, 10),
         experienceYears: w.experienceYears,
         skill: w.skill,
+        isGirl: w.isGirl,
         active: w.active,
       }))
       .sort((a, b) => (a.last === b.last ? a.first.localeCompare(b.first) : a.last.localeCompare(b.last)));

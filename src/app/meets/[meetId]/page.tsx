@@ -40,6 +40,7 @@ type Wrestler = {
   weight: number;
   experienceYears: number;
   skill: number;
+  isGirl: boolean;
   birthdate?: string;
   status?: AttendanceStatus | null;
 };
@@ -206,29 +207,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
-  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70]);
-  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 60, 60, 55, 55, 70, 70]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 45, 60, 60, 55, 55, 70]);
+  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 45, 60, 60, 55, 55, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
-  const [currentTeamColWidth, setCurrentTeamColWidth] = useState(90);
+  const [currentTeamColWidth, setCurrentTeamColWidth] = useState(70);
   const [currentBoutColWidth, setCurrentBoutColWidth] = useState(90);
-  const [availableTeamColWidth, setAvailableTeamColWidth] = useState(90);
+  const [availableTeamColWidth, setAvailableTeamColWidth] = useState(70);
 
   const sharedColumnWidths = {
     last: sharedPairingsColWidths[0],
     first: sharedPairingsColWidths[1],
-    age: sharedPairingsColWidths[2],
-    weight: sharedPairingsColWidths[3],
-    exp: sharedPairingsColWidths[4],
-    skill: sharedPairingsColWidths[5],
-    score: sharedPairingsColWidths[6],
-    matches: sharedPairingsColWidths[7],
+    girl: sharedPairingsColWidths[2],
+    age: sharedPairingsColWidths[3],
+    weight: sharedPairingsColWidths[4],
+    exp: sharedPairingsColWidths[5],
+    skill: sharedPairingsColWidths[6],
+    score: sharedPairingsColWidths[7],
+    matches: sharedPairingsColWidths[8],
   };
 
   const currentColumnWidths = [
     sharedColumnWidths.last,
     sharedColumnWidths.first,
     currentTeamColWidth,
+    sharedColumnWidths.girl,
     sharedColumnWidths.age,
     sharedColumnWidths.weight,
     sharedColumnWidths.exp,
@@ -242,6 +245,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.last,
     sharedColumnWidths.first,
     availableTeamColWidth,
+    sharedColumnWidths.girl,
     sharedColumnWidths.age,
     sharedColumnWidths.weight,
     sharedColumnWidths.exp,
@@ -282,6 +286,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     enforceWeightCheck: true,
     firstYearOnlyWithFirstYear: true,
     allowSameTeamMatches: false,
+    girlsWrestleGirls: true,
   });
   const [candidateRefreshVersion, setCandidateRefreshVersion] = useState(0);
   const [showRestartModal, setShowRestartModal] = useState(false);
@@ -318,6 +323,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         const payload = {
           firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
           allowSameTeamMatches: settings.allowSameTeamMatches,
+          girlsWrestleGirls: settings.girlsWrestleGirls,
           matchesPerWrestler: matchesPerWrestler ?? undefined,
           pruneTargetMatches: savedMatchesPerWrestler ?? undefined,
           maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
@@ -827,6 +833,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
     return days / daysPerYear;
   }
+  function sexColor(isGirl?: boolean) {
+    if (isGirl === true) return "#d81b60";
+    if (isGirl === false) return "#1565c0";
+    return undefined;
+  }
   function boutNumber(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "";
     const displayOrder = Math.max(0, order - 1);
@@ -901,6 +912,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setSettings(s => ({
           ...s,
           allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
+          girlsWrestleGirls: Boolean(meetJson.girlsWrestleGirls),
         }));
         setMeetStatus(meetJson.status ?? "DRAFT");
         setLastUpdatedAt(meetJson.lastChangeAt ?? null);
@@ -1307,11 +1319,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (allowPairingsOverflow) return pairingsColWidths;
     if (pairingsTableWidth === null) return pairingsColWidths;
     const widths = [...pairingsColWidths];
-    const minWidths = [70, 70, 50, 50, 45, 45, 50];
+    const minWidths = [70, 70, 40, 50, 50, 45, 45, 50];
     const totalWidth = widths.reduce((sum, w) => sum + w, 0);
     if (totalWidth <= pairingsTableWidth) return widths;
     let overflow = totalWidth - pairingsTableWidth;
-    const shrinkOrder = [6, 5, 4, 3, 2, 1, 0];
+    const shrinkOrder = [7, 6, 5, 4, 3, 2, 1, 0];
     for (const index of shrinkOrder) {
       if (overflow <= 0) break;
       const minWidth = minWidths[index] ?? 40;
@@ -1334,6 +1346,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const getValue = (w: Wrestler) => {
       if (pairingsSort.key === "last") return w.last;
       if (pairingsSort.key === "first") return w.first;
+      if (pairingsSort.key === "girl") return w.isGirl ? 0 : 1;
       if (pairingsSort.key === "age") return ageYears(w.birthdate) ?? null;
       if (pairingsSort.key === "weight") return w.weight;
       if (pairingsSort.key === "exp") return w.experienceYears;
@@ -1379,14 +1392,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return;
     }
     const effectiveSettings = { ...settings, ...overrides };
-    const qs = new URLSearchParams({
-      wrestlerId,
-      limit: "20",
-      enforceAgeGap: String(effectiveSettings.enforceAgeGapCheck),
-      enforceWeightCheck: String(effectiveSettings.enforceWeightCheck),
-      firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
-      allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
-    });
+      const qs = new URLSearchParams({
+        wrestlerId,
+        limit: "20",
+        enforceAgeGap: String(effectiveSettings.enforceAgeGapCheck),
+        enforceWeightCheck: String(effectiveSettings.enforceWeightCheck),
+        firstYearOnlyWithFirstYear: String(effectiveSettings.firstYearOnlyWithFirstYear),
+        allowSameTeamMatches: String(effectiveSettings.allowSameTeamMatches),
+        girlsWrestleGirls: String(effectiveSettings.girlsWrestleGirls),
+      });
     const reqId = candidatesReqIdRef.current + 1;
     candidatesReqIdRef.current = reqId;
     const res = await fetch(`/api/meets/${meetId}/candidates?${qs.toString()}`);
@@ -1447,12 +1461,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     enforceWeightCheck: settings.enforceWeightCheck,
     firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
     allowSameTeamMatches: settings.allowSameTeamMatches,
+    girlsWrestleGirls: settings.girlsWrestleGirls,
     version: candidateRefreshVersion,
   }), [
     settings.enforceAgeGapCheck,
     settings.enforceWeightCheck,
     settings.firstYearOnlyWithFirstYear,
     settings.allowSameTeamMatches,
+    settings.girlsWrestleGirls,
     candidateRefreshVersion,
   ]);
 
@@ -1543,6 +1559,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return targetMatchCount < maxMatchesPerWrestler;
     })
     .filter((c) => settings.allowSameTeamMatches || c.opponent.teamId !== target?.teamId)
+    .filter((c) => !settings.girlsWrestleGirls || c.opponent.isGirl === target?.isGirl)
     .filter((c) => {
       if (!settings.firstYearOnlyWithFirstYear) return true;
       const o = c.opponent;
@@ -1566,6 +1583,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (availableSort.key === "last") return w.last;
       if (availableSort.key === "first") return w.first;
       if (availableSort.key === "team") return teamSymbol(w.teamId);
+      if (availableSort.key === "girl") return w.isGirl ? 0 : 1;
       if (availableSort.key === "age") return ageYears(w.birthdate) ?? null;
       if (availableSort.key === "weight") return w.weight;
       if (availableSort.key === "exp") return w.experienceYears;
@@ -3090,12 +3108,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <col style={{ width: pairingsEffectiveColWidths[4] }} />
               <col style={{ width: pairingsEffectiveColWidths[5] }} />
               <col style={{ width: pairingsEffectiveColWidths[6] }} />
+              <col style={{ width: pairingsEffectiveColWidths[7] }} />
             </colgroup>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
                 {[
                   { label: "Last", key: "last" },
                   { label: "First", key: "first" },
+                  { label: "Girl", key: "girl" },
                   { label: "Age", key: "age" },
                   { label: "Weight", key: "weight" },
                   { label: "Exp", key: "exp" },
@@ -3156,7 +3176,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 >
                     <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.last}</td>
                     <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.first}</td>
-                    <td>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
+                    <td style={{ color: sexColor(w.isGirl) }}>{w.isGirl ? "Yes" : "No"}</td>
+                    <td style={{ color: sexColor(w.isGirl) }}>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
                     <td>{w.experienceYears}</td>
                     <td>{w.skill}</td>
@@ -3168,7 +3189,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             })}
               {attendingByTeam.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ color: "#666" }}>No attending wrestlers.</td>
+                  <td colSpan={8} style={{ color: "#666" }}>No attending wrestlers.</td>
                 </tr>
               )}
             </tbody>
@@ -3254,6 +3275,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Last", key: "last" },
                             { label: "First", key: "first" },
                             { label: "Team", key: "team" },
+                            { label: "Girl", key: "girl" },
                             { label: "Age", key: "age" },
                             { label: "Weight", key: "weight" },
                             { label: "Exp", key: "exp" },
@@ -3289,7 +3311,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       <tbody>
                             {currentMatches.length === 0 && (
                               <tr>
-                                <td colSpan={10} style={{ color: "#666" }}>None</td>
+                                <td colSpan={11} style={{ color: "#666" }}>None</td>
                               </tr>
                             )}
                         {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
@@ -3314,7 +3336,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   </span>
                                 )}
                               </td>
-                            <td align="left">{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td align="left" style={{ color: sexColor(opponent?.isGirl) }}>{opponent?.isGirl ? "Yes" : "No"}</td>
+                            <td align="left" style={{ color: sexColor(opponent?.isGirl) }}>{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
                             <td align="left">{opponent?.weight ?? ""}</td>
                             <td align="left">{opponent?.experienceYears ?? ""}</td>
                             <td align="left">{opponent?.skill ?? ""}</td>
@@ -3348,6 +3371,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           { label: "Last", key: "last" },
                           { label: "First", key: "first" },
                           { label: "Team", key: "team" },
+                          { label: "Girl", key: "girl" },
                           { label: "Age", key: "age" },
                           { label: "Weight", key: "weight" },
                           { label: "Exp", key: "exp" },
@@ -3402,7 +3426,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 {teamSymbol(o.teamId)}
                               </span>
                             </td>
-                            <td align="left">{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
+                            <td align="left" style={{ color: sexColor(o.isGirl) }}>{o.isGirl ? "Yes" : "No"}</td>
+                            <td align="left" style={{ color: sexColor(o.isGirl) }}>{ageYears(o.birthdate)?.toFixed(1) ?? ""}</td>
                             <td align="left">{o.weight}</td>
                             <td align="left">{o.experienceYears}</td>
                             <td align="left">{o.skill}</td>
@@ -3418,7 +3443,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       })}
                       {availableDisplay.length === 0 && (
                         <tr>
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
                               ? "Wrestler already has maximum number of bouts"
                               : "No candidates meet the current limits."}
@@ -3451,9 +3476,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         const allowSameTeamMatches = e.target.checked;
                         setSettings(s => ({ ...s, allowSameTeamMatches }));
                       }} /> Include same team</label>
-                  </div>
-                </>
-              )}
+                      <label><input type="checkbox" checked={settings.girlsWrestleGirls} onChange={async e => {
+                        const girlsWrestleGirls = e.target.checked;
+                        setSettings(s => ({ ...s, girlsWrestleGirls }));
+                      }} /> Girls wrestle girls</label>
+                    </div>
+                  </>
+                )}
         </div>
       </div>
 
@@ -3896,31 +3925,42 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     />
                   </label>
                 </div>
-                <div className="control-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={settings.firstYearOnlyWithFirstYear}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setSettings((s) => ({ ...s, firstYearOnlyWithFirstYear: checked }));
-                      }}
-                    />
-                    First-year only rule
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={settings.allowSameTeamMatches}
-                      onChange={(e) => {
-                        const allowSameTeamMatches = e.target.checked;
-                        setSettings((s) => ({ ...s, allowSameTeamMatches }));
-                      }}
-                    />
-                    Include same team
-                  </label>
+                  <div className="control-row">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.firstYearOnlyWithFirstYear}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSettings((s) => ({ ...s, firstYearOnlyWithFirstYear: checked }));
+                        }}
+                      />
+                      First-year only rule
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.allowSameTeamMatches}
+                        onChange={(e) => {
+                          const allowSameTeamMatches = e.target.checked;
+                          setSettings((s) => ({ ...s, allowSameTeamMatches }));
+                        }}
+                      />
+                      Include same team
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.girlsWrestleGirls}
+                        onChange={(e) => {
+                          const girlsWrestleGirls = e.target.checked;
+                          setSettings((s) => ({ ...s, girlsWrestleGirls }));
+                        }}
+                      />
+                      Girls wrestle girls
+                    </label>
+                  </div>
                 </div>
-              </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 13 }}>
                 <input
                   type="checkbox"

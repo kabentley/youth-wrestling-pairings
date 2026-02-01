@@ -13,6 +13,7 @@ const BodySchema = z.object({
   weight: z.number().positive().optional(),
   experienceYears: z.number().int().min(0).optional(),
   skill: z.number().int().min(0).max(5).optional(),
+  isGirl: z.boolean().optional(),
   active: z.boolean().optional(),
 });
 
@@ -51,6 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
   if (body.weight !== undefined) updates.weight = body.weight;
   if (body.experienceYears !== undefined) updates.experienceYears = body.experienceYears;
   if (body.skill !== undefined) updates.skill = body.skill;
+  if (body.isGirl !== undefined) updates.isGirl = body.isGirl;
   if (body.active !== undefined) updates.active = body.active;
 
   if (Object.keys(updates).length === 0) {

@@ -14,6 +14,7 @@ const PatchSchema = z.object({
   homeTeamId: z.string().nullable().optional(),
   numMats: z.number().int().min(1).max(6).optional(),
   allowSameTeamMatches: z.boolean().optional(),
+  girlsWrestleGirls: z.boolean().optional(),
   matchesPerWrestler: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   restGap: z.number().int().min(0).max(20).optional(),
@@ -47,6 +48,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       homeTeamId: true,
       numMats: true,
       allowSameTeamMatches: true,
+      girlsWrestleGirls: true,
       matchesPerWrestler: true,
       maxMatchesPerWrestler: true,
       restGap: true,
@@ -96,6 +98,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     homeTeamId?: string | null;
     numMats?: number;
     allowSameTeamMatches?: boolean;
+    girlsWrestleGirls?: boolean;
     matchesPerWrestler?: number;
     maxMatchesPerWrestler?: number;
     restGap?: number;
@@ -109,6 +112,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.homeTeamId !== undefined) data.homeTeamId = body.homeTeamId;
   if (body.numMats !== undefined) data.numMats = body.numMats;
   if (body.allowSameTeamMatches !== undefined) data.allowSameTeamMatches = body.allowSameTeamMatches;
+  if (body.girlsWrestleGirls !== undefined) data.girlsWrestleGirls = body.girlsWrestleGirls;
   if (body.matchesPerWrestler !== undefined) data.matchesPerWrestler = body.matchesPerWrestler;
   if (body.maxMatchesPerWrestler !== undefined) data.maxMatchesPerWrestler = body.maxMatchesPerWrestler;
   if (body.restGap !== undefined) data.restGap = body.restGap;
@@ -125,6 +129,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       homeTeamId: true,
       numMats: true,
       allowSameTeamMatches: true,
+      girlsWrestleGirls: true,
       matchesPerWrestler: true,
       maxMatchesPerWrestler: true,
       restGap: true,
@@ -146,6 +151,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.homeTeamId !== undefined) otherChanges.push("home team");
   if (body.numMats !== undefined) otherChanges.push("mats");
   if (body.allowSameTeamMatches !== undefined) otherChanges.push("same-team matches");
+  if (body.girlsWrestleGirls !== undefined) otherChanges.push("girls wrestle girls");
   if (body.matchesPerWrestler !== undefined) otherChanges.push("matches per wrestler");
   if (body.maxMatchesPerWrestler !== undefined) otherChanges.push("max matches per wrestler");
   if (body.restGap !== undefined) otherChanges.push("rest gap");

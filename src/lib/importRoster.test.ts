@@ -6,7 +6,7 @@ describe("planRosterUpsert", () => {
   it("matches duplicates by name + birthdate only (ignores weight) and overwrites other columns", () => {
     const teamId = "T1";
     const existing = [
-      { id: "W1", first: "Ben", last: "Bentley", birthdate: new Date("2015-03-11") },
+      { id: "W1", first: "Ben", last: "Bentley", birthdate: new Date("2015-03-11"), weight: 55, experienceYears: 1, skill: 3, isGirl: false },
     ];
 
     const incoming = [
@@ -17,7 +17,13 @@ describe("planRosterUpsert", () => {
     const plan = planRosterUpsert({ teamId, existing, incoming });
     expect(plan.toCreate).toHaveLength(0);
     expect(plan.toUpdate).toHaveLength(1);
-    expect(plan.toUpdate[0]).toEqual({ id: "W1", weight: 60, experienceYears: 2, skill: 5 });
+    expect(plan.toUpdate[0]).toEqual({
+      id: "W1",
+      weight: 60,
+      birthdate: new Date("2015-03-11"),
+      experienceYears: 2,
+      skill: 5,
+    });
   });
 
   it("creates when no match exists", () => {
@@ -66,5 +72,26 @@ describe("planRosterUpsert", () => {
     expect(plan.toCreate[0].skill).toBe(5);
     expect(plan.toCreate[1].experienceYears).toBe(0);
     expect(plan.toCreate[1].skill).toBe(0);
+  });
+
+  it("updates isGirl only when provided", () => {
+    const teamId = "T1";
+    const existing = [
+      { id: "W1", first: "Pat", last: "Lee", birthdate: new Date("2014-08-20"), weight: 60, experienceYears: 1, skill: 3, isGirl: false },
+    ];
+    const incoming = [
+      { first: "Pat", last: "Lee", weight: 60, birthdate: "2014-08-20", experienceYears: 1, skill: 3, isGirl: true },
+    ];
+
+    const plan = planRosterUpsert({ teamId, existing, incoming });
+    expect(plan.toUpdate).toHaveLength(1);
+    expect(plan.toUpdate[0]).toEqual({
+      id: "W1",
+      weight: 60,
+      birthdate: new Date("2014-08-20"),
+      experienceYears: 1,
+      skill: 3,
+      isGirl: true,
+    });
   });
 });

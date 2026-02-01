@@ -58,6 +58,7 @@ model Wrestler {
   birthdate       DateTime
   experienceYears Int
   skill           Int
+  isGirl          Boolean  @default(false)
   active          Boolean  @default(true)
 
   createdAt       DateTime @default(now())
@@ -82,6 +83,7 @@ model Meet {
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
+  girlsWrestleGirls Boolean @default(true)
   matchesPerWrestler Int @default(2)
   maxMatchesPerWrestler Int @default(5)
   restGap   Int        @default(6)

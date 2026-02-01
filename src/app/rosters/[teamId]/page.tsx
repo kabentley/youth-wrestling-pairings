@@ -14,6 +14,7 @@ type Wrestler = {
   birthdate: string;
   experienceYears: number;
   skill: number;
+  isGirl: boolean;
   active: boolean;
 };
 const CONFIGURED_MATS = 6;
@@ -44,6 +45,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     birthdate: "2015-01-01",
     experienceYears: 0,
     skill: 3,
+    isGirl: false,
   });
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -185,6 +187,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
       weight: Number(form.weight),
       experienceYears: Number(form.experienceYears),
       skill: Number(form.skill),
+      isGirl: form.isGirl,
     };
 
     const res = await fetch(`/api/teams/${teamId}/wrestlers`, {
@@ -386,11 +389,15 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
         onSubmit={handleNewWrestlerSubmit}
         style={{ display: "grid", gap: 8, marginBottom: 12 }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(8, minmax(0, 1fr))", gap: 8 }}>
           <input placeholder="First" value={form.first} onChange={e => updateFormFields({ first: e.target.value })} disabled={!canEdit} />
           <input placeholder="Last" value={form.last} onChange={e => updateFormFields({ last: e.target.value })} disabled={!canEdit} />
           <input type="number" placeholder="Weight" value={form.weight} onChange={e => updateFormFields({ weight: Number(e.target.value) })} disabled={!canEdit} />
           <input type="date" value={form.birthdate} onChange={e => updateFormFields({ birthdate: e.target.value })} disabled={!canEdit} />
+          <select value={form.isGirl ? "girl" : "boy"} onChange={e => updateFormFields({ isGirl: e.target.value === "girl" })} disabled={!canEdit}>
+            <option value="boy">Boy</option>
+            <option value="girl">Girl</option>
+          </select>
           <input type="number" placeholder="Exp" value={form.experienceYears} onChange={e => updateFormFields({ experienceYears: Number(e.target.value) })} disabled={!canEdit} />
           <input
             type="number"
@@ -542,7 +549,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
       <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr>
-            <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
+            <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Sex</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -551,6 +558,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
               <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
               <td>{w.weight}</td>
               <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
+              <td>{w.isGirl ? "Girl" : "Boy"}</td>
               <td>{w.experienceYears}</td>
               <td>{w.skill}</td>
               <td>
@@ -567,7 +575,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
           <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
             <tr>
-              <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
+              <th align="left">Name</th><th align="left">Weight</th><th align="left">Birthdate</th><th align="left">Sex</th><th align="left">Experience</th><th align="left">Skill</th><th align="left">Actions</th>
             </tr>
             </thead>
             <tbody>
@@ -576,6 +584,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
               <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
                   <td>{w.weight}</td>
                   <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
+                  <td>{w.isGirl ? "Girl" : "Boy"}</td>
                   <td>{w.experienceYears}</td>
               <td>{w.skill}</td>
               <td>
@@ -584,7 +593,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
             </tr>
           ))}
               {wrestlers.filter(w => !w.active).length === 0 && (
-                <tr><td colSpan={6}>None</td></tr>
+                <tr><td colSpan={7}>None</td></tr>
               )}
             </tbody>
           </table>

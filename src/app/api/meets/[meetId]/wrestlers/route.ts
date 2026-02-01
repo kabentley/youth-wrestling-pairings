@@ -47,6 +47,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
       birthdate: w.birthdate,
       experienceYears: w.experienceYears,
       skill: w.skill,
+      isGirl: w.isGirl,
       status: statusMap.get(w.id) ?? null,
       active: w.active,
     }))

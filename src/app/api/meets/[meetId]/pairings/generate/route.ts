@@ -12,6 +12,7 @@ import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 const SettingsSchema = z.object({
   firstYearOnlyWithFirstYear: z.boolean(),
   allowSameTeamMatches: z.boolean().default(false),
+  girlsWrestleGirls: z.boolean().default(true),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   pruneTargetMatches: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),

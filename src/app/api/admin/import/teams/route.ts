@@ -29,6 +29,7 @@ type WrestlerRow = {
   birthdate: string;
   experienceYears: number;
   skill: number;
+  isGirl?: boolean;
   active?: boolean;
 };
 
@@ -201,10 +202,11 @@ export async function POST(req: Request) {
       birthdate: w.birthdate,
       experienceYears: Number(w.experienceYears),
       skill: Number(w.skill),
+      isGirl: w.isGirl,
     }));
     const existingWrestlers = await db.wrestler.findMany({
       where: { teamId: team.id },
-      select: { id: true, first: true, last: true, birthdate: true, weight: true, experienceYears: true, skill: true },
+      select: { id: true, first: true, last: true, birthdate: true, weight: true, experienceYears: true, skill: true, isGirl: true },
     });
     const plan = planRosterUpsert({
       teamId: team.id,
@@ -216,7 +218,13 @@ export async function POST(req: Request) {
         plan.toUpdate.map(u =>
           db.wrestler.update({
             where: { id: u.id },
-            data: { weight: u.weight, birthdate: u.birthdate, experienceYears: u.experienceYears, skill: u.skill },
+            data: {
+              weight: u.weight,
+              birthdate: u.birthdate,
+              experienceYears: u.experienceYears,
+              skill: u.skill,
+              ...(u.isGirl !== undefined ? { isGirl: u.isGirl } : {}),
+            },
           }),
         ),
       );

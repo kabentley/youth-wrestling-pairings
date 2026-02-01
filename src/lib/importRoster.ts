@@ -6,6 +6,7 @@ export type WrestlerRow = {
   birthdate: string; // YYYY-MM-DD preferred
   experienceYears?: number;
   skill?: number;
+  isGirl?: boolean;
 };
 
 /** Subset of the existing roster used to match incoming rows deterministically. */
@@ -17,6 +18,7 @@ export type ExistingWrestler = {
   weight: number;
   experienceYears: number;
   skill: number;
+  isGirl: boolean;
 };
 
 /** Update operation produced by `planRosterUpsert`. */
@@ -26,6 +28,7 @@ export type UpdateOp = {
   birthdate: Date;
   experienceYears: number;
   skill: number;
+  isGirl?: boolean;
 };
 
 /** Create operation produced by `planRosterUpsert`. */
@@ -37,6 +40,7 @@ export type CreateOp = {
   birthdate: Date;
   experienceYears: number;
   skill: number;
+  isGirl?: boolean;
 };
 
 /** Normalizes user-entered names for deterministic matching. */
@@ -57,6 +61,14 @@ export function parseBirthdate(dateStr: string): Date | null {
   if (Number.isNaN(d.getTime())) return null;
   // normalize to date-only UTC
   return new Date(toISODateOnly(d));
+}
+
+function normalizeIsGirl(value?: string | null): boolean | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["girl", "g", "female", "f", "true", "yes", "y", "1"].includes(normalized)) return true;
+  if (["boy", "b", "male", "m", "false", "no", "n", "0"].includes(normalized)) return false;
+  return undefined;
 }
 
 function key(teamId: string, first: string, last: string) {
@@ -104,27 +116,32 @@ export function planRosterUpsert(args: {
 
     const experienceYears = Math.max(0, Math.floor(row.experienceYears ?? 0));
     const skill = Math.min(5, Math.max(0, Math.floor(row.skill ?? 3)));
+    const isGirl = row.isGirl ?? normalizeIsGirl((row as { sex?: string }).sex);
 
     const existing = existingMap.get(k);
     if (existing) {
       const weight = row.weight;
       const birthdate = new Date(bdISO);
+      const girlChanged = isGirl !== undefined && isGirl !== existing.isGirl;
       if (
         existing.weight !== weight ||
         toISODateOnly(existing.birthdate) !== bdISO ||
         existing.experienceYears !== experienceYears ||
-        existing.skill !== skill
+        existing.skill !== skill ||
+        girlChanged
       ) {
-        toUpdate.push({
+        const update: UpdateOp = {
           id: existing.id,
           weight,
           birthdate,
           experienceYears,
           skill,
-        });
+        };
+        if (girlChanged) update.isGirl = isGirl;
+        toUpdate.push(update);
       }
     } else {
-      toCreate.push({
+      const create: CreateOp = {
         teamId,
         first,
         last,
@@ -132,7 +149,9 @@ export function planRosterUpsert(args: {
         birthdate: new Date(bdISO),
         experienceYears,
         skill,
-      });
+      };
+      if (isGirl !== undefined) create.isGirl = isGirl;
+      toCreate.push(create);
     }
   }
 
