@@ -16,6 +16,7 @@ Create meets with 2-4 teams, generate pairings, assign mats, and print schedules
 - Choose teams and settings
 - Use **Generate Automatic Pairings** if you want the system to build bouts after attendance
 - The attendance dialog always appears before auto-pairings run
+ - **Girls wrestle girls** (default on) limits pairings to same-sex matchups
 
 ### Delete / restore meets
 - Delete moves a meet to the recycle bin (not permanent)

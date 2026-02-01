@@ -25,7 +25,7 @@ export default async function Home() {
   const leagueName = league?.name?.trim() ?? "Wrestling Scheduler";
   const leagueLogoSrc = league?.logoData ? "/api/league/logo/file" : null;
   const leagueWebsite = league?.website?.trim() ?? null;
-  const leagueNewsUrl = leagueWebsite ? `${leagueWebsite.replace(/\/$/, "")}/news` : null;
+  const leagueNewsUrl = leagueWebsite ? leagueWebsite.replace(/\/$/, "") : null;
   const teamLabel = teamInfo?.symbol ? `${teamInfo.symbol} ${teamInfo.name}` : teamInfo?.name ?? "";
   const teamWebsiteUrl = teamInfo?.website ? teamInfo.website.replace(/\/$/, "") : null;
   const headerLinks = [

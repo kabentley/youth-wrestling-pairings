@@ -3249,7 +3249,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                      minWidth: 0,
                    }}
                  >
-                   <span>Age: {targetAge ? `${targetAge}` : "—"}</span>
+                   <span>{target?.isGirl ? <span style={{ color: sexColor(true) }}>Girl</span> : ""}</span>
+                   <span>Age: <span style={{ color: sexColor(target?.isGirl) }}>{targetAge ? `${targetAge}` : "—"}</span></span>
                    <span>Weight: {target.weight}</span>
                    <span>Exp: {target.experienceYears}</span>
                    <span>Skill: {target.skill}</span>
@@ -3472,14 +3473,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         const checked = e.target.checked;
                         setSettings(s => ({ ...s, firstYearOnlyWithFirstYear: checked }));
                       }} /> First-year only rule</label>
-                      <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
-                        const allowSameTeamMatches = e.target.checked;
-                        setSettings(s => ({ ...s, allowSameTeamMatches }));
-                      }} /> Include same team</label>
                       <label><input type="checkbox" checked={settings.girlsWrestleGirls} onChange={async e => {
                         const girlsWrestleGirls = e.target.checked;
                         setSettings(s => ({ ...s, girlsWrestleGirls }));
                       }} /> Girls wrestle girls</label>
+                      <label><input type="checkbox" checked={settings.allowSameTeamMatches} onChange={async e => {
+                        const allowSameTeamMatches = e.target.checked;
+                        setSettings(s => ({ ...s, allowSameTeamMatches }));
+                      }} /> Include same team</label>
                     </div>
                   </>
                 )}
@@ -3940,17 +3941,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     <label>
                       <input
                         type="checkbox"
-                        checked={settings.allowSameTeamMatches}
-                        onChange={(e) => {
-                          const allowSameTeamMatches = e.target.checked;
-                          setSettings((s) => ({ ...s, allowSameTeamMatches }));
-                        }}
-                      />
-                      Include same team
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
                         checked={settings.girlsWrestleGirls}
                         onChange={(e) => {
                           const girlsWrestleGirls = e.target.checked;
@@ -3958,6 +3948,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         }}
                       />
                       Girls wrestle girls
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.allowSameTeamMatches}
+                        onChange={(e) => {
+                          const allowSameTeamMatches = e.target.checked;
+                          setSettings((s) => ({ ...s, allowSameTeamMatches }));
+                        }}
+                      />
+                      Include same team
                     </label>
                   </div>
                 </div>
