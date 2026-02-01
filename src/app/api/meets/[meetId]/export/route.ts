@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 
 import { DAYS_PER_YEAR } from "@/lib/constants";
 import { db } from "@/lib/db";
+import { logMeetChange } from "@/lib/meetActivity";
 import { requireAnyRole } from "@/lib/rbac";
 
 export const runtime = "nodejs";
@@ -158,8 +159,10 @@ function row(cells: string[]) {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+  let userId: string | null = null;
   try {
-    await requireAnyRole(["COACH", "ADMIN"]);
+    const { user } = await requireAnyRole(["COACH", "ADMIN"]);
+    userId = user.id;
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
     if (message === "FORBIDDEN") {
@@ -532,6 +535,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     compression: "DEFLATE",
     compressionOptions: { level: 6 },
   });
+  if (userId) {
+    try {
+      await logMeetChange(meet.id, userId, "Exported .wrs file.");
+    } catch (error) {
+      console.warn("Unable to log meet export.", error);
+    }
+  }
   return new NextResponse(new Uint8Array(zipData), {
     headers: {
       "Content-Type": "application/zip",

@@ -57,11 +57,12 @@ function formatWrestlerName(w?: Wrestler | null) {
 }
 
 function formatWrestlerFirstLast(w?: Wrestler | null) {
-  if (!w) return "";
+  if (!w) return null;
   const first = w.first.trim();
   const last = w.last.trim();
   if (first && last) return `${first} ${last}`;
-  return first || last || "";
+  const single = first || last;
+  return single || null;
 }
 
   useEffect(() => {
@@ -401,14 +402,14 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
       const green = wMap.get(bout.greenId);
       const greenInfo = green
         ? {
-            opponentName: formatWrestlerFirstLast(green) || `${green.first} ${green.last}`.trim(),
+            opponentName: formatWrestlerFirstLast(green) ?? `${green.first} ${green.last}`.trim(),
             opponentColor: teamTextColor(green.teamId),
             opponentTeamLabel: teamSymbolMap.get(green.teamId) ?? tMap.get(green.teamId) ?? "",
           }
         : { opponentName: bout.greenId, opponentColor: "#000", opponentTeamLabel: "" };
       const redInfo = red
         ? {
-            opponentName: formatWrestlerFirstLast(red) || `${red.first} ${red.last}`.trim(),
+            opponentName: formatWrestlerFirstLast(red) ?? `${red.first} ${red.last}`.trim(),
             opponentColor: teamTextColor(red.teamId),
             opponentTeamLabel: teamSymbolMap.get(red.teamId) ?? tMap.get(red.teamId) ?? "",
           }
@@ -459,7 +460,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
     meet.name
       ? `${meet.name} · ${meet.meetTeams.map(mt => mt.team.name).join(", ")}`
       : meet.name;
-  const cardLabel = meet.name ?? "";
+  const cardLabel = meet.name;
 
   function cellText(bout: Bout) {
     const red = wMap.get(bout.redId);
@@ -483,7 +484,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
     <div className="wall-chart-root" ref={wallChartRef}>
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
-      <ControlBar printTargetRef={wallChartRef} printStyles={styles} />
+      <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
       <div>
         <section className="chart-page per-mat">
           <div className="mat-grid">

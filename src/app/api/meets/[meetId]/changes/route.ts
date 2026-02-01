@@ -28,7 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const changes = await db.meetChange.findMany({
     where: { meetId },
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 200,
     include: { actor: { select: { username: true } } },
   });
   return NextResponse.json(changes);

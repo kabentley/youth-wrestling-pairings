@@ -5,11 +5,12 @@ import { useEffect, useState, type RefObject } from "react";
 import PrintButton from "./PrintButton";
 
 type ControlBarProps = {
+  meetId?: string;
   printTargetRef?: RefObject<HTMLElement>;
   printStyles?: string;
 };
 
-export default function ControlBar({ printTargetRef, printStyles }: ControlBarProps) {
+export default function ControlBar({ meetId, printTargetRef, printStyles }: ControlBarProps) {
   const [scheme, setScheme] = useState<"color" | "black-and-white">("color");
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function ControlBar({ printTargetRef, printStyles }: ControlBarPr
           <option value="black-and-white">Black and white</option>
         </select>
       </label>
-      <PrintButton targetRef={printTargetRef} styles={printStyles} />
+      <PrintButton meetId={meetId} targetRef={printTargetRef} styles={printStyles} />
     </div>
   );
 }

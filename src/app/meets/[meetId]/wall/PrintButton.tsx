@@ -3,12 +3,16 @@
 import type { RefObject } from "react";
 
 type PrintButtonProps = {
+  meetId?: string;
   targetRef?: RefObject<HTMLElement>;
   styles?: string;
 };
 
-export default function PrintButton({ targetRef, styles }: PrintButtonProps) {
+export default function PrintButton({ meetId, targetRef, styles }: PrintButtonProps) {
   const handlePrint = () => {
+    if (meetId) {
+      fetch(`/api/meets/${meetId}/print`, { method: "POST" }).catch(() => {});
+    }
     if (!targetRef?.current) {
       window.print();
       return;
