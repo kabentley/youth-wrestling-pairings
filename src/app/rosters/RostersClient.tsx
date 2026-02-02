@@ -2,7 +2,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from "react";
 import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
@@ -120,8 +120,8 @@ export default function RostersClient() {
   const [dirtyRowIds, setDirtyRowIds] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [fieldErrors, setFieldErrors] = useState<Record<string, Set<keyof EditableWrestler> | undefined>>({});
-  const rosterResizeRef = useRef<{ index: number; startX: number; startWidth: number } | null>(null);
-  const spectatorResizeRef = useRef<{ key: ViewerColumnKey; startX: number; startWidth: number } | null>(null);
+  const rosterResizeRef = useRef<{ index: number; nextIndex: number | null; startX: number; startWidth: number; startNextWidth: number } | null>(null);
+  const spectatorResizeRef = useRef<{ key: ViewerColumnKey; nextKey: ViewerColumnKey | null; startX: number; startWidth: number; startNextWidth: number } | null>(null);
   const originalRowsRef = useRef<Record<string, EditableWrestler | undefined>>({});
   const [showInactive, setShowInactive] = useState(false);
   const hasDirtyChanges = dirtyRowIds.size > 0;
@@ -143,6 +143,8 @@ export default function RostersClient() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingWrestler, setIsDeletingWrestler] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const rosterControlsRef = useRef<HTMLDivElement | null>(null);
+  const [rosterControlsHeight, setRosterControlsHeight] = useState(0);
   const rosterSelectionStorageKey = "rosters:selectedTeamId";
   const daysPerYear = 365;
   useEffect(() => {
@@ -1044,56 +1046,123 @@ export default function RostersClient() {
   }, [roster]);
 
   useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
+    const handleResizeMove = (clientX: number) => {
       if (!rosterResizeRef.current) return;
-      const { index, startX, startWidth } = rosterResizeRef.current;
-      const nextWidth = Math.max(60, startWidth + (e.clientX - startX));
-      setSpreadsheetColWidths(widths => widths.map((w, idx) => (idx === index ? nextWidth : w)));
+      const { index, nextIndex, startX, startWidth, startNextWidth } = rosterResizeRef.current;
+      if (nextIndex === null) return;
+      const delta = clientX - startX;
+      const minWidth = 60;
+      const maxShrink = Math.max(0, startNextWidth - minWidth);
+      const maxGrow = Math.max(0, startWidth - minWidth);
+      const clampedDelta = Math.max(-maxGrow, Math.min(maxShrink, delta));
+      const nextWidth = startNextWidth - clampedDelta;
+      const newWidth = startWidth + clampedDelta;
+      setSpreadsheetColWidths(widths =>
+        widths.map((w, idx) => {
+          if (idx === index) return newWidth;
+          if (idx === nextIndex) return nextWidth;
+          return w;
+        }),
+      );
+    };
+    function onMouseMove(e: MouseEvent) {
+      handleResizeMove(e.clientX);
     }
-    function onMouseUp() {
+    function onTouchMove(e: TouchEvent) {
+      if (!rosterResizeRef.current) return;
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      handleResizeMove(e.touches[0].clientX);
+    }
+    function onResizeEnd() {
       rosterResizeRef.current = null;
     }
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mouseup", onResizeEnd);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onResizeEnd);
+    window.addEventListener("touchcancel", onResizeEnd);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onResizeEnd);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onResizeEnd);
+      window.removeEventListener("touchcancel", onResizeEnd);
     };
   }, []);
 
   useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
+    const handleResizeMove = (clientX: number) => {
       if (!spectatorResizeRef.current) return;
-      const { key, startX, startWidth } = spectatorResizeRef.current;
-      const nextWidth = Math.max(60, startWidth + (e.clientX - startX));
-      setSpectatorColWidths(widths => ({ ...widths, [key]: nextWidth }));
+      const { key, nextKey, startX, startWidth, startNextWidth } = spectatorResizeRef.current;
+      if (!nextKey) return;
+      const delta = clientX - startX;
+      const minWidth = 60;
+      const maxShrink = Math.max(0, startNextWidth - minWidth);
+      const maxGrow = Math.max(0, startWidth - minWidth);
+      const clampedDelta = Math.max(-maxGrow, Math.min(maxShrink, delta));
+      const nextWidth = startNextWidth - clampedDelta;
+      const newWidth = startWidth + clampedDelta;
+      setSpectatorColWidths(widths => ({ ...widths, [key]: newWidth, [nextKey]: nextWidth }));
+    };
+    function onMouseMove(e: MouseEvent) {
+      handleResizeMove(e.clientX);
     }
-    function onMouseUp() {
+    function onTouchMove(e: TouchEvent) {
+      if (!spectatorResizeRef.current) return;
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      handleResizeMove(e.touches[0].clientX);
+    }
+    function onResizeEnd() {
       spectatorResizeRef.current = null;
     }
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mouseup", onResizeEnd);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onResizeEnd);
+    window.addEventListener("touchcancel", onResizeEnd);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onResizeEnd);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onResizeEnd);
+      window.removeEventListener("touchcancel", onResizeEnd);
     };
   }, []);
 
-  const handleColMouseDown = (index: number, e: ReactMouseEvent<HTMLSpanElement>) => {
+  const getResizeClientX = (e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
+    if ("touches" in e) {
+      const touch = e.touches[0] ?? e.changedTouches[0];
+      return touch?.clientX ?? 0;
+    }
+    return e.clientX;
+  };
+
+  const handleColMouseDown = (index: number, e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     e.preventDefault();
+    const nextIndex = index + 1 < spreadsheetColWidths.length ? index + 1 : null;
+    if (nextIndex === null) return;
     rosterResizeRef.current = {
       index,
-      startX: e.clientX,
+      nextIndex,
+      startX: getResizeClientX(e),
       startWidth: spreadsheetColWidths[index],
+      startNextWidth: spreadsheetColWidths[nextIndex],
     };
   };
 
-  const handleSpectatorColMouseDown = (key: ViewerColumnKey, e: ReactMouseEvent<HTMLSpanElement>) => {
+  const handleSpectatorColMouseDown = (key: ViewerColumnKey, e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     e.preventDefault();
+    const currentIndex = spectatorColumns.findIndex(col => col.key === key);
+    const nextKey = currentIndex >= 0 && currentIndex + 1 < spectatorColumns.length ? spectatorColumns[currentIndex + 1].key : null;
+    if (!nextKey) return;
     spectatorResizeRef.current = {
       key,
-      startX: e.clientX,
+      nextKey,
+      startX: getResizeClientX(e),
       startWidth: spectatorColWidths[key],
+      startNextWidth: spectatorColWidths[nextKey],
     };
   };
 
@@ -1434,6 +1503,18 @@ export default function RostersClient() {
     URL.revokeObjectURL(url);
   };
 
+  useEffect(() => {
+    const el = rosterControlsRef.current;
+    if (!el) return;
+    const updateHeight = () => {
+      setRosterControlsHeight(Math.ceil(el.getBoundingClientRect().height));
+    };
+    updateHeight();
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <main className="teams">
       <style>{`
@@ -1451,11 +1532,14 @@ export default function RostersClient() {
           font-family: "Source Sans 3", Arial, sans-serif;
           color: var(--ink);
           background: var(--bg);
-          height: 100dvh;
+          height: auto;
           padding: 18px 12px 30px;
           display: flex;
           flex-direction: column;
           box-sizing: border-box;
+        }
+        .teams > header {
+          flex: 0 0 auto;
         }
         .nav {
           display: flex;
@@ -1492,9 +1576,12 @@ export default function RostersClient() {
         .grid {
           display: grid;
           grid-template-columns: minmax(0, 1fr);
+          grid-template-rows: minmax(0, 1fr);
           gap: 18px;
           flex: 1;
           min-height: 0;
+          align-items: stretch;
+          height: auto;
         }
         .card {
           background: var(--card);
@@ -1505,12 +1592,17 @@ export default function RostersClient() {
           display: flex;
           flex-direction: column;
           min-height: 0;
-          max-height: 100%;
+          max-height: auto;
+          height: auto;
         }
         .roster-card {
           width: fit-content;
           max-width: 100%;
-          align-self: start;
+          align-self: stretch;
+          flex: 1;
+          height: calc(100dvh + var(--roster-controls-height, 0px) + var(--roster-extra-height, 40px));
+          min-height: calc(100dvh + var(--roster-controls-height, 0px) + var(--roster-extra-height, 40px));
+          max-height: none;
         }
         .card-title {
           font-family: "Oswald", Arial, sans-serif;
@@ -1860,6 +1952,8 @@ export default function RostersClient() {
           flex: 1;
           min-height: 0;
           overflow-x: auto;
+          overflow-y: auto;
+          height: 100%;
         }
         .roster-table table {
           table-layout: auto;
@@ -1868,7 +1962,7 @@ export default function RostersClient() {
           min-width: 480px;
           width: max-content;
           max-height: none;
-          height: 100%;
+          height: auto;
           overflow-y: auto;
         }
         .roster-table tbody tr:hover {
@@ -1913,6 +2007,9 @@ export default function RostersClient() {
           height: 100%;
           cursor: col-resize;
           user-select: none;
+          touch-action: none;
+          pointer-events: auto;
+          z-index: 2;
           background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
         }
         @media (max-width: 900px) {
@@ -2044,12 +2141,14 @@ export default function RostersClient() {
           min-height: 0;
           display: flex;
           flex-direction: column;
+          height: calc(100dvh + var(--roster-extra-height, 40px));
         }
         .roster-grid {
           display: flex;
           flex-direction: column;
           flex: 1;
           min-height: 0;
+          height: auto;
         }
         .static-roster {
           border-bottom: 1px solid var(--line);
@@ -2064,6 +2163,7 @@ export default function RostersClient() {
           min-height: 0;
           overflow-y: auto;
           background: #fff;
+          height: 100%;
         }
         .spreadsheet-table {
           border-collapse: collapse;
@@ -2079,6 +2179,10 @@ export default function RostersClient() {
           text-align: left;
           line-height: 1.15;
           font-size: 14px;
+        }
+        .spreadsheet-table th,
+        .roster-table th {
+          position: relative;
         }
         .spreadsheet-table th {
           background: #f7f9fb;
@@ -2123,16 +2227,40 @@ export default function RostersClient() {
           width: 10px;
           height: 100%;
           cursor: col-resize;
+          user-select: none;
+          touch-action: none;
+          pointer-events: auto;
+          z-index: 2;
           background: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 45%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.08) 55%, rgba(0,0,0,0) 100%);
         }
         .spreadsheet-input,
         .spreadsheet-select {
           width: 100%;
+          min-width: 0;
           padding: 0px 8px;
           border: 0;
           font-size: 14px;
           background: transparent;
           border-radius: 0;
+        }
+        .spreadsheet-input[type="date"] {
+          min-width: 0;
+          width: 100%;
+          text-align: left;
+        }
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit,
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-text,
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-month-field,
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-day-field,
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-year-field {
+          text-align: left;
+        }
+        .spreadsheet-input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+          justify-content: flex-start;
+        }
+        .spreadsheet-input[type="date"]::-webkit-date-and-time-value {
+          text-align: left;
         }
         .spreadsheet-select {
           appearance: none;
@@ -2183,7 +2311,7 @@ export default function RostersClient() {
           top: 0;
           left: 0;
           width: 100%;
-          height: 100%;
+          height: auto;
           background: rgba(0,0,0,0.4);
           display: flex;
           align-items: center;
@@ -2267,8 +2395,11 @@ export default function RostersClient() {
 
       <div className="grid">
 
-        <section className="card roster-card">
-          <div className="card-header">
+        <section
+          className="card roster-card"
+          style={{ ["--roster-controls-height" as any]: `${rosterControlsHeight}px` }}
+        >
+          <div className="card-header" ref={rosterControlsRef}>
             <div className="header-left">
               <div className="header-main">
                 <div className="header-title-group">
@@ -2425,6 +2556,7 @@ export default function RostersClient() {
                                 <span
                                   className="col-resizer"
                                   onMouseDown={e => handleColMouseDown(idx, e)}
+                                  onTouchStart={e => handleColMouseDown(idx, e)}
                                 />
                               </th>
                             ))}
@@ -2483,6 +2615,7 @@ export default function RostersClient() {
                               <span
                                 className="col-resizer"
                                 onMouseDown={e => handleSpectatorColMouseDown(col.key, e)}
+                                onTouchStart={e => handleSpectatorColMouseDown(col.key, e)}
                               />
                             </th>
                           ))}

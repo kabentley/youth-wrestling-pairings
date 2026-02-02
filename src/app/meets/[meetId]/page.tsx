@@ -163,6 +163,8 @@ const CURRENT_SHARED_COLUMN_MAP: Record<number, number | undefined> = {
   5: 4,
   6: 5,
   7: 6,
+  8: 7,
+  9: 8,
 };
 
 const AVAILABLE_SHARED_COLUMN_MAP = CURRENT_SHARED_COLUMN_MAP;
@@ -207,8 +209,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
-  const [pairingsColWidths, setPairingsColWidths] = useState([110, 110, 45, 60, 60, 55, 55, 70]);
-  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 110, 45, 60, 60, 55, 55, 70, 70]);
+  const [pairingsColWidths, setPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70]);
+  const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(70);
@@ -1066,10 +1068,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetName, canEdit]);
 
   useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
+    const handleResizeMove = (clientX: number) => {
       if (!resizeRef.current) return;
       const { kind, index, startX, startWidth } = resizeRef.current;
-      const delta = e.clientX - startX;
+      const delta = clientX - startX;
 
       if (kind === "attendance") {
         const nextWidth = Math.max(60, startWidth + delta);
@@ -1085,7 +1087,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         } else if (index === 2) {
           const nextWidth = Math.max(60, startWidth + delta);
           setCurrentTeamColWidth(nextWidth);
-        } else if (index === 8) {
+        } else if (index === 10) {
           const nextWidth = Math.max(60, startWidth + delta);
           setCurrentBoutColWidth(nextWidth);
         }
@@ -1099,17 +1101,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           setAvailableTeamColWidth(nextWidth);
         }
       }
+    };
+
+    function onMouseMove(e: MouseEvent) {
+      handleResizeMove(e.clientX);
     }
 
-    function onMouseUp() {
+    function onTouchMove(e: TouchEvent) {
+      if (!resizeRef.current) return;
+      if (e.touches.length === 0) return;
+      e.preventDefault();
+      handleResizeMove(e.touches[0].clientX);
+    }
+
+    function onResizeEnd() {
       resizeRef.current = null;
     }
 
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mouseup", onResizeEnd);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onResizeEnd);
+    window.addEventListener("touchcancel", onResizeEnd);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onResizeEnd);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onResizeEnd);
+      window.removeEventListener("touchcancel", onResizeEnd);
     };
   }, []);
   useEffect(() => {
@@ -1319,7 +1338,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (allowPairingsOverflow) return pairingsColWidths;
     if (pairingsTableWidth === null) return pairingsColWidths;
     const widths = [...pairingsColWidths];
-    const minWidths = [70, 70, 40, 50, 50, 45, 45, 50];
+    const minWidths = [70, 60, 40, 50, 50, 35, 35, 50];
     const totalWidth = widths.reduce((sum, w) => sum + w, 0);
     if (totalWidth <= pairingsTableWidth) return widths;
     let overflow = totalWidth - pairingsTableWidth;
@@ -3140,6 +3159,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           startWidth: pairingsColWidths[index],
                         };
                       }}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const touch = e.touches[0];
+                        if (!touch) return;
+                        resizeRef.current = {
+                          kind: "pairings",
+                          index,
+                          startX: touch.clientX,
+                          startWidth: pairingsColWidths[index],
+                        };
+                      }}
                     />
                   </th>
                 ))}
@@ -3304,6 +3335,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   startWidth: currentColumnWidths[index],
                                 };
                               }}
+                              onTouchStart={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const touch = e.touches[0];
+                                if (!touch) return;
+                                resizeRef.current = {
+                                  kind: "current",
+                                  index,
+                                  startX: touch.clientX,
+                                  startWidth: currentColumnWidths[index],
+                                };
+                              }}
                             />
                             </th>
                           ))}
@@ -3398,6 +3441,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   kind: "available",
                                   index,
                                   startX: e.clientX,
+                                  startWidth: availableColumnWidths[index],
+                                };
+                              }}
+                              onTouchStart={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const touch = e.touches[0];
+                                if (!touch) return;
+                                resizeRef.current = {
+                                  kind: "available",
+                                  index,
+                                  startX: touch.clientX,
                                   startWidth: availableColumnWidths[index],
                                 };
                               }}
@@ -3707,6 +3762,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     kind: "attendance",
                                     index,
                                     startX: e.clientX,
+                                    startWidth: attendanceColWidths[index],
+                                  };
+                                }}
+                                onTouchStart={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const touch = e.touches[0];
+                                  if (!touch) return;
+                                  resizeRef.current = {
+                                    kind: "attendance",
+                                    index,
+                                    startX: touch.clientX,
                                     startWidth: attendanceColWidths[index],
                                   };
                                 }}
