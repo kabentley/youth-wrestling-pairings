@@ -70,6 +70,13 @@ type LockState = {
   lockedByUsername?: string | null;
   lockExpiresAt?: string | null;
 };
+type PairingContextMode = "status" | "showMatches";
+type PairingContext = {
+  x: number;
+  y: number;
+  wrestler: Wrestler;
+  mode: PairingContextMode;
+};
 type MeetChange = {
   id: string;
   message: string;
@@ -82,6 +89,11 @@ type MeetComment = {
   section?: string | null;
   createdAt: string;
   author?: { username?: string | null } | null;
+};
+type MatchesTooltip = {
+  wrestlerId: string;
+  x: number;
+  y: number;
 };
 type MeetCheckpoint = {
   id: string;
@@ -376,7 +388,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
-  const [pairingContext, setPairingContext] = useState<{ x: number; y: number; wrestler: Wrestler } | null>(null);
+  const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
+  const [matchesTooltip, setMatchesTooltip] = useState<MatchesTooltip | null>(null);
   const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
   const attendanceStatusStyles: Record<AttendanceStatus, { background: string; borderColor: string }> = {
     COMING: { background: "#eaf6e6", borderColor: "#c6e2ba" },
@@ -1391,12 +1404,39 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     next[1] = Math.min(next[1], 70);
     return next;
   }, [isNarrowScreen, availableColumnWidths]);
+  const boutsByWrestlerId = useMemo(() => {
+    const map = new Map<string, { bout: Bout; opponentId: string }[]>();
+    for (const bout of bouts) {
+      if (bout.redId && bout.greenId) {
+        const redList = map.get(bout.redId) ?? [];
+        redList.push({ bout, opponentId: bout.greenId });
+        map.set(bout.redId, redList);
+
+        const greenList = map.get(bout.greenId) ?? [];
+        greenList.push({ bout, opponentId: bout.redId });
+        map.set(bout.greenId, greenList);
+      }
+    }
+    return map;
+  }, [bouts]);
   const matchCounts = bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
     acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
     return acc;
   }, new Map<string, number>());
   const getMatchCount = (id: string) => matchCounts.get(id) ?? 0;
+  const updateMatchesTooltip = useCallback((event: React.MouseEvent, wrestlerId: string) => {
+    setMatchesTooltip({ wrestlerId, x: event.clientX, y: event.clientY });
+  }, []);
+  const hideMatchesTooltip = useCallback(() => setMatchesTooltip(null), []);
+  const handleMatchesHover = useCallback((event: React.MouseEvent, wrestlerId: string) => {
+    const node = event.target as HTMLElement | null;
+    if (node?.closest('[data-tooltip-skip="true"]')) {
+      hideMatchesTooltip();
+      return;
+    }
+    updateMatchesTooltip(event, wrestlerId);
+  }, [hideMatchesTooltip, updateMatchesTooltip]);
 
   const pairingsSorted = [...attendingByTeam].sort((a, b) => {
     const getValue = (w: Wrestler) => {
@@ -1419,6 +1459,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const row = wrapper.querySelector<HTMLTableRowElement>(`tr[data-pairing-id="${wrestlerId}"]`);
     row?.scrollIntoView({ block: "nearest" });
   }, []);
+
+  const showMatchesForWrestler = useCallback((wrestler: Wrestler) => {
+    setActiveTab("pairings");
+    setPairingsTeamId(wrestler.teamId);
+    setSelectedPairingId(wrestler.id);
+    pairingsTableWrapperRef.current?.focus();
+    // Wait for the roster table to re-render after team switch/selection.
+    setTimeout(() => scrollPairingsRowIntoView(wrestler.id), 0);
+  }, [scrollPairingsRowIntoView]);
 
   const handlePairingsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -3324,29 +3373,43 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   ? " status-early"
                   : "";
               return (
-                  <tr
+                <tr
                     key={w.id}
                     data-pairing-id={w.id}
                     className={selectedPairingId === w.id ? "selected" : undefined}
+                    onMouseMove={(event) => handleMatchesHover(event, w.id)}
+                    onMouseLeave={hideMatchesTooltip}
                     onClick={() => {
                       setSelectedPairingId(w.id);
                       setTarget(w);
                       pairingsTableWrapperRef.current?.focus();
                     }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setSelectedPairingId(w.id);
-                    setTarget(w);
-                    setPairingContext({ x: event.clientX, y: event.clientY, wrestler: w });
-                  }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setSelectedPairingId(w.id);
+                      setTarget(w);
+                      setPairingContext({ x: event.clientX, y: event.clientY, wrestler: w, mode: "status" });
+                    }}
                   style={{
                     borderTop: "1px solid #eee",
                     backgroundColor: selectedPairingId === w.id ? "#f0f0f0" : undefined,
                     cursor: "pointer",
                   }}
                 >
-                    <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.last}</td>
-                    <td className={`pairings-name-cell${statusClass}`} style={{ color: teamTextColor(w.teamId) }}>{w.first}</td>
+                    <td
+                      className={`pairings-name-cell${statusClass}`}
+                      style={{ color: teamTextColor(w.teamId) }}
+                      data-tooltip-skip="true"
+                    >
+                      {w.last}
+                    </td>
+                    <td
+                      className={`pairings-name-cell${statusClass}`}
+                      style={{ color: teamTextColor(w.teamId) }}
+                      data-tooltip-skip="true"
+                    >
+                      {w.first}
+                    </td>
                     <td style={{ color: sexColor(w.isGirl) }}>{w.isGirl ? "Yes" : "No"}</td>
                     <td style={{ color: sexColor(w.isGirl) }}>{ageYears(w.birthdate)?.toFixed(1) ?? ""}</td>
                     <td>{w.weight}</td>
@@ -3500,18 +3563,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             )}
                         {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
                           const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
-                          return (
-                              <tr
-                                key={bout.id}
-                                className="match-row-hover"
-                                onClick={() => {
-                                  if (!canEdit) return;
-                                  void removeBout(bout.id);
-                                }}
-                                style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
-                              >
-                                <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.last ?? ""}</td>
-                                <td style={opponentColor ? { color: opponentColor } : undefined}>{opponent?.first ?? ""}</td>
+                         return (
+                                <tr
+                                  key={bout.id}
+                                  className="match-row-hover"
+                                  onMouseMove={(event) => handleMatchesHover(event, opponentId)}
+                                  onMouseLeave={hideMatchesTooltip}
+                                  onClick={() => {
+                                    if (!canEdit) return;
+                                    void removeBout(bout.id);
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    if (!opponent) return;
+                                    setPairingContext({ x: event.clientX, y: event.clientY, wrestler: opponent, mode: "showMatches" });
+                                  }}
+                                  style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
+                                >
+                                  <td style={opponentColor ? { color: opponentColor } : undefined} data-tooltip-skip="true">{opponent?.last ?? ""}</td>
+                                  <td style={opponentColor ? { color: opponentColor } : undefined} data-tooltip-skip="true">{opponent?.first ?? ""}</td>
                               <td>
                                 {opponent && (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -3531,9 +3602,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               >
                                 {Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}
                               </td>
-                              <td align="left">{getMatchCount(opponentId)}</td>
+                              <td align="left">
+                                {getMatchCount(opponentId)}
+                              </td>
                               <td align="left">{boutNumber(bout.mat, bout.order)}</td>
-                              </tr>
+                               </tr>
                           );
                         })}
                       </tbody>
@@ -3608,14 +3681,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           <tr
                             key={o.id}
                             className="match-row-hover"
+                            onMouseMove={(event) => handleMatchesHover(event, o.id)}
+                            onMouseLeave={hideMatchesTooltip}
                             onClick={() => {
                               if (!canEdit) return;
                               void addMatch(target.id, o.id);
                             }}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setPairingContext({ x: event.clientX, y: event.clientY, wrestler: o, mode: "showMatches" });
+                            }}
                             style={{ borderTop: "1px solid #eee", cursor: canEdit ? "pointer" : "default" }}
                           >
-                            <td style={{ color: matchColor }}>{o.last}</td>
-                            <td style={{ color: matchColor }}>{o.first}</td>
+                            <td style={{ color: matchColor }} data-tooltip-skip="true">{o.last}</td>
+                            <td style={{ color: matchColor }} data-tooltip-skip="true">{o.first}</td>
                             <td>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ width: 10, height: 10, background: teamColor(o.teamId), display: "inline-block" }} />
@@ -4207,81 +4287,161 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       {pairingContext && (() => {
         const menuWidth = 210;
-        const menuHeight = 150;
+        const menuHeight = pairingContext.mode === "status" ? 150 : 86;
         const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
         const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
         const left = viewportWidth ? Math.min(pairingContext.x, viewportWidth - menuWidth) : pairingContext.x;
         const top = viewportHeight ? Math.min(pairingContext.y, viewportHeight - menuHeight) : pairingContext.y;
         const fullName = `${pairingContext.wrestler.first} ${pairingContext.wrestler.last}`;
         const currentStatus = pairingContext.wrestler.status ?? "COMING";
+        const isShowMatches = pairingContext.mode === "showMatches";
         return (
           <>
             <div className="pairings-context-backdrop" onMouseDown={() => setPairingContext(null)} />
             <div
-              className={`pairings-context-menu${canEdit ? "" : " readonly"}`}
+              className={`pairings-context-menu${!isShowMatches && !canEdit ? " readonly" : ""}`}
               ref={pairingMenuRef}
               style={{ left, top }}
               onContextMenu={(event) => event.preventDefault()}
             >
               <div className="pairings-context-title">{fullName}</div>
-              <button
-                className="pairings-context-item"
-                style={{
-                  background: attendanceStatusStyles.COMING.background,
-                  border: `1px solid ${attendanceStatusStyles.COMING.borderColor}`,
-                }}
-                onClick={() => handlePairingContextStatus("COMING")}
-                disabled={!canEdit}
-              >
-                <span className="pairings-context-check" aria-hidden="true">
-                  <input type="checkbox" checked={currentStatus === "COMING"} readOnly />
-                </span>
-                Coming
-              </button>
-              <button
-                className="pairings-context-item"
-                style={{
-                  background: attendanceStatusStyles.NOT_COMING.background,
-                  border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
-                }}
-                onClick={() => handlePairingContextStatus("NOT_COMING")}
-                disabled={!canEdit}
-              >
-                <span className="pairings-context-check" aria-hidden="true">
-                  <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
-                </span>
-                Not Coming
-              </button>
-              <button
-                className="pairings-context-item"
-                style={{
-                  background: attendanceStatusStyles.LATE.background,
-                  border: `1px solid ${attendanceStatusStyles.LATE.borderColor}`,
-                }}
-                onClick={() => handlePairingContextStatus("LATE")}
-                disabled={!canEdit}
-              >
-                <span className="pairings-context-check" aria-hidden="true">
-                  <input type="checkbox" checked={currentStatus === "LATE"} readOnly />
-                </span>
-                Arrive Late
-              </button>
-              <button
-                className="pairings-context-item"
-                style={{
-                  background: attendanceStatusStyles.EARLY.background,
-                  border: `1px solid ${attendanceStatusStyles.EARLY.borderColor}`,
-                }}
-                onClick={() => handlePairingContextStatus("EARLY")}
-                disabled={!canEdit}
-              >
-                <span className="pairings-context-check" aria-hidden="true">
-                  <input type="checkbox" checked={currentStatus === "EARLY"} readOnly />
-                </span>
-                Leave Early
-              </button>
+              {isShowMatches && (
+                <button
+                  className="pairings-context-item"
+                  onClick={() => {
+                    showMatchesForWrestler(pairingContext.wrestler);
+                    setPairingContext(null);
+                  }}
+                >
+                  Switch to {fullName}
+                </button>
+              )}
+              {!isShowMatches && (
+                <>
+                  <button
+                    className="pairings-context-item"
+                    style={{
+                      background: attendanceStatusStyles.COMING.background,
+                      border: `1px solid ${attendanceStatusStyles.COMING.borderColor}`,
+                    }}
+                    onClick={() => handlePairingContextStatus("COMING")}
+                    disabled={!canEdit}
+                  >
+                    <span className="pairings-context-check" aria-hidden="true">
+                      <input type="checkbox" checked={currentStatus === "COMING"} readOnly />
+                    </span>
+                    Coming
+                  </button>
+                  <button
+                    className="pairings-context-item"
+                    style={{
+                      background: attendanceStatusStyles.NOT_COMING.background,
+                    border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
+                  }}
+                  onClick={() => handlePairingContextStatus("NOT_COMING")}
+                  disabled={!canEdit}
+                >
+                  <span className="pairings-context-check" aria-hidden="true">
+                    <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
+                  </span>
+                  Not Coming
+                </button>
+                <button
+                  className="pairings-context-item"
+                  style={{
+                    background: attendanceStatusStyles.LATE.background,
+                    border: `1px solid ${attendanceStatusStyles.LATE.borderColor}`,
+                  }}
+                  onClick={() => handlePairingContextStatus("LATE")}
+                  disabled={!canEdit}
+                >
+                  <span className="pairings-context-check" aria-hidden="true">
+                    <input type="checkbox" checked={currentStatus === "LATE"} readOnly />
+                  </span>
+                  Arrive Late
+                </button>
+                  <button
+                    className="pairings-context-item"
+                    style={{
+                      background: attendanceStatusStyles.EARLY.background,
+                    border: `1px solid ${attendanceStatusStyles.EARLY.borderColor}`,
+                  }}
+                  onClick={() => handlePairingContextStatus("EARLY")}
+                  disabled={!canEdit}
+                >
+                  <span className="pairings-context-check" aria-hidden="true">
+                    <input type="checkbox" checked={currentStatus === "EARLY"} readOnly />
+                  </span>
+                    Leave Early
+                  </button>
+                </>
+              )}
             </div>
           </>
+        );
+      })()}
+      {matchesTooltip && (() => {
+        const tooltipWrestler = wMap[matchesTooltip.wrestlerId] ?? null;
+        const fullName = tooltipWrestler ? `${tooltipWrestler.first} ${tooltipWrestler.last}`.trim() : matchesTooltip.wrestlerId;
+        const rows = (boutsByWrestlerId.get(matchesTooltip.wrestlerId) ?? [])
+          .slice()
+          .sort((a, b) => {
+            const matA = a.bout.mat ?? 9999;
+            const matB = b.bout.mat ?? 9999;
+            if (matA !== matB) return matA - matB;
+            const orderA = a.bout.order ?? 9999;
+            const orderB = b.bout.order ?? 9999;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.bout.id.localeCompare(b.bout.id);
+          });
+
+        const tooltipWidth = 320;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth ? Math.min(matchesTooltip.x + 14, viewportWidth - tooltipWidth - 8) : matchesTooltip.x;
+        const top = viewportHeight ? Math.min(matchesTooltip.y + 14, viewportHeight - 200) : matchesTooltip.y;
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left,
+              top,
+              width: tooltipWidth,
+              zIndex: 1000,
+              background: "#fff",
+              border: "1px solid rgba(0,0,0,0.15)",
+              borderRadius: 10,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+              padding: "10px 12px",
+              pointerEvents: "none",
+              fontSize: 13,
+            }}
+            aria-hidden="true"
+          >
+            <div style={{ fontWeight: 800, marginBottom: 6, color: "#222" }}>
+              Current matches for {fullName}
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ color: "#666" }}>No matches.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 4 }}>
+                {rows.map(({ bout, opponentId }) => {
+                  const opp = wMap[opponentId];
+                  const oppName = opp ? `${opp.first} ${opp.last}`.trim() : opponentId;
+                  const team = opp ? teamSymbol(opp.teamId) : "";
+                  const label = team ? `${oppName} (${team})` : oppName;
+                  const num = boutNumber(bout.mat, bout.order);
+                  return (
+                    <div key={`${matchesTooltip.wrestlerId}-${bout.id}-${opponentId}`} style={{ color: "#333" }}>
+                      <span style={{ fontWeight: 700, marginRight: 8 }}>{num}</span>
+                      <span>{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })()}
           </div>

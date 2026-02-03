@@ -5,6 +5,7 @@ import { MIN_MATS, getEligibleMatIndexes } from "@/lib/assignMats";
 import type { MatWrestler } from "@/lib/assignMats";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { formatWrestlerLabel } from "@/lib/meetChangeFormat";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { pairingScore } from "@/lib/pairingScore";
 import { requireRole } from "@/lib/rbac";
@@ -60,6 +61,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       birthdate: true,
       experienceYears: true,
       skill: true,
+      team: { select: { symbol: true } },
     },
   });
   const red = wrestlers.find(w => w.id === body.redId);
@@ -77,8 +79,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
 
-  const redName = red ? `${red.first} ${red.last}` : "wrestler 1";
-  const greenName = green ? `${green.first} ${green.last}` : "wrestler 2";
+  const redName = formatWrestlerLabel(red) ?? "wrestler 1";
+  const greenName = formatWrestlerLabel(green) ?? "wrestler 2";
   await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
   return NextResponse.json(updatedBout ?? bout);
 }
