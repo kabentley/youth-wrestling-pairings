@@ -839,11 +839,33 @@ export default function RostersClient() {
     setSavingAll(true);
     try {
       const rowsToSave = editableRows.filter(row => dirtyRowIds.has(row.id));
+      const hasNewRows = rowsToSave.some(row => row.isNew);
+      const updatedRowsById = new Map(rowsToSave.map(row => [row.id, row]));
       for (const row of rowsToSave) {
         const ok = await persistRow(row);
         if (!ok) return;
       }
-      await loadRoster(selectedTeamId);
+      if (hasNewRows) {
+        await loadRoster(selectedTeamId);
+      } else {
+        setRoster(prev =>
+          prev.map(w => {
+            const updated = updatedRowsById.get(w.id);
+            if (!updated) return w;
+            return {
+              ...w,
+              first: updated.first.trim(),
+              last: updated.last.trim(),
+              weight: Number(updated.weight),
+              birthdate: updated.birthdate,
+              experienceYears: Number(updated.experienceYears),
+              skill: Number(updated.skill),
+              isGirl: updated.isGirl,
+              active: updated.active,
+            };
+          }),
+        );
+      }
       setDirtyRowIds(new Set());
       setRosterMsg("Roster saved.");
     } finally {
@@ -1474,7 +1496,8 @@ export default function RostersClient() {
   const rosterTotals = useMemo(() => {
     const total = roster.length;
     const inactive = roster.filter(w => !w.active).length;
-    return { total, inactive };
+    const girls = roster.filter(w => w.isGirl).length;
+    return { total, inactive, girls };
   }, [roster]);
 
   const downloadableRoster = useMemo(() => displayRoster.filter(row => row.active), [displayRoster]);
@@ -2500,8 +2523,12 @@ export default function RostersClient() {
               )}
               <div className="roster-summary-bar">
                 <div className="roster-summary">
-                  Wrestlers: {rosterTotals.total}
-                  {rosterTotals.inactive > 0 ? ` (inactive: ${rosterTotals.inactive})` : ""}
+                  {(() => {
+                    const parts: string[] = [];
+                    if (rosterTotals.girls > 0) parts.push(`girls: ${rosterTotals.girls}`);
+                    if (rosterTotals.inactive > 0) parts.push(`inactive: ${rosterTotals.inactive}`);
+                    return `Wrestlers: ${rosterTotals.total}${parts.length ? ` (${parts.join(", ")})` : ""}`;
+                  })()}
                   {importSummary ? ` - ${importSummary}` : ""}
                 </div>
                 <div className={`roster-action-bar${canEditRoster && hasDirtyChanges ? " visible" : ""}`}>

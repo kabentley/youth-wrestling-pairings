@@ -5,10 +5,11 @@ import { requireAdmin } from "@/lib/rbac";
 
 export async function GET() {
   await requireAdmin();
-  const [teamCount, activeWrestlers, inactiveWrestlers] = await Promise.all([
+  const [teamCount, activeWrestlers, inactiveWrestlers, totalGirls] = await Promise.all([
     db.team.count(),
     db.wrestler.count({ where: { active: true } }),
     db.wrestler.count({ where: { active: false } }),
+    db.wrestler.count({ where: { isGirl: true } }),
   ]);
 
   return NextResponse.json({
@@ -16,5 +17,6 @@ export async function GET() {
     activeWrestlers,
     inactiveWrestlers,
     totalWrestlers: activeWrestlers + inactiveWrestlers,
+    totalGirls,
   });
 }

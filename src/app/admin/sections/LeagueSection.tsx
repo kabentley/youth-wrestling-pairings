@@ -14,6 +14,7 @@ type TeamRow = {
   wrestlerCount?: number;
   activeWrestlerCount?: number;
   inactiveWrestlerCount?: number;
+  girlsCount?: number;
   headCoachId?: string | null;
   headCoach?: { id: string; username: string } | null;
   coaches: { id: string; username: string }[];
@@ -37,6 +38,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     activeWrestlers: number;
     inactiveWrestlers: number;
     totalWrestlers: number;
+    totalGirls: number;
   } | null>(null);
   const [colorEdits, setColorEdits] = useState<Record<string, string>>({});
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string | undefined>>({});
@@ -660,7 +662,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
           <h3 style={{ margin: 0 }}>Teams</h3>
           {leagueStats && (
             <div className="admin-muted" style={{ fontSize: 16, fontWeight: 600 }}>
-              {leagueStats.teamCount} teams | {leagueStats.totalWrestlers} wrestlers ({leagueStats.activeWrestlers} active, {leagueStats.inactiveWrestlers} inactive)
+              {leagueStats.teamCount} teams | {leagueStats.totalWrestlers} wrestlers ({leagueStats.inactiveWrestlers} inactive) | {leagueStats.totalGirls} girls
             </div>
           )}
           <div style={{ display: "flex", gap: 12, marginLeft: "auto", flexWrap: "wrap" }}>
@@ -714,6 +716,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
                 <th>Symbol</th>
                 <th>Team</th>
                 <th>Wrestlers</th>
+                <th>Girls</th>
                 <th>Color</th>
                 <th>Head Coach</th>
                 <th>Actions</th>
@@ -790,6 +793,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
                     {(t.wrestlerCount ?? 0)}
                     {(t.inactiveWrestlerCount ?? 0) > 0 ? ` (inactive: ${t.inactiveWrestlerCount})` : ""}
                   </td>
+                  <td>{t.girlsCount ?? 0}</td>
                   <td>
                     <div className="color-cell">
                       <ColorPicker

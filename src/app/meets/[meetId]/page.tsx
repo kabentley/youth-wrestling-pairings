@@ -210,6 +210,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70]);
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
@@ -1332,7 +1333,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingsTableWidth(Math.floor(wrapper.getBoundingClientRect().width));
     return () => observer.disconnect();
   }, []);
-  const allowPairingsOverflow = orderedPairingsTeams.length >= 3;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setIsNarrowScreen(window.innerWidth <= 980);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  const allowPairingsOverflow =
+    orderedPairingsTeams.length >= 3 ||
+    isNarrowScreen ||
+    (pairingsTableWidth !== null && pairingsTableWidth < 700);
   const pairingsEffectiveColWidths = useMemo(() => {
     if (allowPairingsOverflow) return pairingsColWidths;
     if (pairingsTableWidth === null) return pairingsColWidths;
@@ -1353,6 +1364,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     return widths;
   }, [allowPairingsOverflow, pairingsColWidths, pairingsTableWidth]);
+  const pairingsColWidthsForView = useMemo(() => {
+    if (!isNarrowScreen) return pairingsEffectiveColWidths;
+    const next = [...pairingsEffectiveColWidths];
+    next[0] = Math.min(next[0], 70);
+    next[1] = Math.min(next[1], 70);
+    return next;
+  }, [isNarrowScreen, pairingsEffectiveColWidths]);
+  const currentColumnWidthsForView = useMemo(() => {
+    if (!isNarrowScreen) return currentColumnWidths;
+    const next = [...currentColumnWidths];
+    next[0] = Math.min(next[0], 70);
+    next[1] = Math.min(next[1], 70);
+    return next;
+  }, [isNarrowScreen, currentColumnWidths]);
+  const availableColumnWidthsForView = useMemo(() => {
+    if (!isNarrowScreen) return availableColumnWidths;
+    const next = [...availableColumnWidths];
+    next[0] = Math.min(next[0], 70);
+    next[1] = Math.min(next[1], 70);
+    return next;
+  }, [isNarrowScreen, availableColumnWidths]);
   const matchCounts = bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
     acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
@@ -2297,12 +2329,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           color: var(--accent);
           background: #f7f9fb;
         }
-          .pairings-table-wrapper {
-            margin-top: 12px;
-            max-height: calc(23 * 25px + 48px);
-            overflow-y: auto;
-            overflow-x: auto;
-          }
+        .pairings-table-wrapper {
+          margin-top: 12px;
+          max-height: calc(23 * 25px + 48px);
+          overflow-y: auto;
+          overflow-x: visible;
+        }
+        .current-matches-scroll {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
           .pairings-table-wrapper:focus {
             outline: none;
           }
@@ -2343,6 +2379,48 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             overflow-y: visible;
           }
         }
+        @media (max-width: 980px) {
+          .pairings-main-card {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          .pairings-table-wrapper,
+          .additional-matches-wrapper {
+            max-width: 100%;
+          }
+          .pairings-side-card {
+            overflow-x: auto;
+          }
+          .pairings-table-wrapper {
+            width: 100%;
+            overflow-x: visible;
+          }
+          .pairings-table {
+            width: 100%;
+            max-width: 100%;
+            table-layout: fixed;
+            overflow-x: visible;
+          }
+          .current-matches-scroll .pairings-table {
+            min-width: 820px;
+          }
+          .pairings-table-wrapper,
+          .additional-matches-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
+          .attendance-table {
+            width: max-content;
+            min-width: 640px;
+            max-width: none;
+            table-layout: auto;
+          }
+          .pairings-table th.pairings-name-cell,
+          .pairings-table td.pairings-name-cell {
+            width: 55px;
+            max-width: 55px;
+          }
+        }
         .pairings-table thead th {
           position: sticky;
           top: 0;
@@ -2380,6 +2458,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           font-weight: 600;
           font-size: 12px;
           cursor: pointer;
+        }
+        .pairing-tab .tab-symbol {
+          display: none;
+        }
+        @media (max-width: 980px) {
+          .pairing-tab .tab-full {
+            display: none;
+          }
+          .pairing-tab .tab-symbol {
+            display: inline;
+          }
         }
         .pairing-tab.active {
           background: #ffffff;
@@ -3067,7 +3156,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 1.2fr)", gap: 16, marginTop: 0 }}>
-        <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
+        <div className="pairings-main-card" style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0 }}>Pairings</h3>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -3118,7 +3207,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                 }}
               >
-                {team.symbol ? `${team.symbol} - ${team.name}` : team.name}
+                <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
+                <span className="tab-symbol">{team.symbol ?? team.name}</span>
               </button>
             );
             })}
@@ -3129,17 +3219,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           tabIndex={0}
           onKeyDown={handlePairingsKeyDown}
         >
-        <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
-            <colgroup>
-              <col style={{ width: pairingsEffectiveColWidths[0] }} />
-              <col style={{ width: pairingsEffectiveColWidths[1] }} />
-              <col style={{ width: pairingsEffectiveColWidths[2] }} />
-              <col style={{ width: pairingsEffectiveColWidths[3] }} />
-              <col style={{ width: pairingsEffectiveColWidths[4] }} />
-              <col style={{ width: pairingsEffectiveColWidths[5] }} />
-              <col style={{ width: pairingsEffectiveColWidths[6] }} />
-              <col style={{ width: pairingsEffectiveColWidths[7] }} />
-            </colgroup>
+            <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
+              <colgroup>
+                <col style={{ width: pairingsColWidthsForView[0] }} />
+                <col style={{ width: pairingsColWidthsForView[1] }} />
+                <col style={{ width: pairingsColWidthsForView[2] }} />
+                <col style={{ width: pairingsColWidthsForView[3] }} />
+                <col style={{ width: pairingsColWidthsForView[4] }} />
+                <col style={{ width: pairingsColWidthsForView[5] }} />
+                <col style={{ width: pairingsColWidthsForView[6] }} />
+                <col style={{ width: pairingsColWidthsForView[7] }} />
+              </colgroup>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
                 {[
@@ -3304,10 +3394,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
               {target && (
                 <>
-                  <div style={{ marginBottom: 10 }}>
+                <div style={{ marginBottom: 10 }}>
+                    <div className="current-matches-scroll">
                     <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
-                      {currentColumnWidths.map((w, idx) => (
+                      {currentColumnWidthsForView.map((w, idx) => (
                         <col key={`current-col-${idx}`} style={{ width: w }} />
                       ))}
                     </colgroup>
@@ -3407,14 +3498,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         })}
                       </tbody>
                     </table>
-                  </div>
+                    </div>
+                </div>
                     <h3 className="pairings-heading" style={{ margin: "10px 0 6px" }}>
                       Possible additional matches:
                     </h3>
                   <div className="pairings-table-wrapper additional-matches-wrapper">
                   <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
-                      {availableColumnWidths.map((w, idx) => (
+                      {availableColumnWidthsForView.map((w, idx) => (
                         <col key={`available-col-${idx}`} style={{ width: w }} />
                       ))}
                     </colgroup>
@@ -3720,7 +3812,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                           }}
                         >
-                          {team.symbol ? `${team.symbol} - ${team.name}` : team.name}
+                          <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
+                          <span className="tab-symbol">{team.symbol ?? team.name}</span>
                         </button>
                       );
                     })}
