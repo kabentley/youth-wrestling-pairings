@@ -1255,6 +1255,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const modalAttendanceRoster = modalAttendanceTeamId
     ? rosterSorted.filter(w => w.teamId === modalAttendanceTeamId)
     : rosterSorted;
+  const pairingsHeaderTeam = pairingsTeamId
+    ? teams.find(t => t.id === pairingsTeamId)
+    : activeTeamId ? teams.find(t => t.id === activeTeamId) : undefined;
+  const pairingsHeaderColor = pairingsHeaderTeam?.color
+    ? teamTextColor(pairingsHeaderTeam.id)
+    : "#2a3b4d";
   const modalAttendanceRosterWithOverrides = useMemo(
     () => modalAttendanceRoster.map(w => {
       if (!modalAttendanceOverrides.has(w.id)) return w;
@@ -2392,22 +2398,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             overflow-x: auto;
           }
           .pairings-table-wrapper {
-            width: 100%;
+            width: max-content;
+            min-width: 100%;
+            max-width: none;
+            display: inline-block;
             overflow-x: visible;
           }
           .pairings-table {
-            width: 100%;
-            max-width: 100%;
-            table-layout: fixed;
+            width: max-content;
+            min-width: 100%;
+            max-width: none;
+            table-layout: auto;
             overflow-x: visible;
           }
           .current-matches-scroll .pairings-table {
             min-width: 820px;
-          }
-          .pairings-table-wrapper,
-          .additional-matches-wrapper {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
           }
           .attendance-table {
             width: max-content;
@@ -2448,6 +2453,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           align-items: flex-end;
           border-bottom: 1px solid var(--line);
           margin-top: 8px;
+          flex-wrap: nowrap;
+          overflow: visible;
         }
         .pairing-tab {
           border: 1px solid var(--line);
@@ -2458,17 +2465,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           font-weight: 600;
           font-size: 12px;
           cursor: pointer;
+          flex: 0 0 auto;
         }
-        .pairing-tab .tab-symbol {
+        .pairing-tab .tab-full {
           display: none;
         }
-        @media (max-width: 980px) {
-          .pairing-tab .tab-full {
-            display: none;
-          }
-          .pairing-tab .tab-symbol {
-            display: inline;
-          }
+        .pairing-tab .tab-symbol {
+          display: inline;
         }
         .pairing-tab.active {
           background: #ffffff;
@@ -3157,9 +3160,45 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.8fr) minmax(0, 1.2fr)", gap: 16, marginTop: 0 }}>
         <div className="pairings-main-card" style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <h3 style={{ margin: 0 }}>Pairings</h3>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: isNarrowScreen ? "flex-start" : "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "nowrap",
+                flexDirection: isNarrowScreen ? "column" : "row",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap", minWidth: 0, flex: "1 1 auto", overflow: "hidden" }}>
+                {pairingsHeaderTeam && (
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: pairingsHeaderColor,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      maxWidth: isNarrowScreen ? 140 : 240,
+                      minWidth: 0,
+                      flex: "1 1 auto",
+                    }}
+                    title={pairingsHeaderTeam.name}
+                  >
+                    {pairingsHeaderTeam.name}
+                  </div>
+                )}
+              </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "nowrap",
+                alignItems: "center",
+                flex: "0 0 auto",
+                alignSelf: isNarrowScreen ? "stretch" : "auto",
+              }}
+            >
               <button
                 type="button"
                 className="nav-btn"
@@ -3206,6 +3245,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   fontWeight: isActive ? 700 : undefined,
                   boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                 }}
+                title={team.name}
               >
                 <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
                 <span className="tab-symbol">{team.symbol ?? team.name}</span>
@@ -3811,6 +3851,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             fontWeight: isActive ? 700 : undefined,
                             boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                           }}
+                          title={team.name}
                         >
                           <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
                           <span className="tab-symbol">{team.symbol ?? team.name}</span>
