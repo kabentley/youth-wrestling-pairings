@@ -115,6 +115,7 @@ export default function MeetsPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
   const [deletedMeets, setDeletedMeets] = useState<DeletedMeet[]>([]);
+  const [isLoadingMeets, setIsLoadingMeets] = useState(true);
   const [name, setName] = useState("");
   const [date, setDate] = useState(DEFAULT_DATE);
   const [location, setLocation] = useState("");
@@ -197,6 +198,7 @@ export default function MeetsPage() {
   ];
 
   async function load() {
+    setIsLoadingMeets(true);
     const [t, m, me] = await Promise.all([
       fetch("/api/teams"),
       fetch("/api/meets"),
@@ -246,6 +248,7 @@ export default function MeetsPage() {
     } else {
       setDeletedMeets([]);
     }
+    setIsLoadingMeets(false);
   }
 
   function toggleTeam(id: string) {
@@ -961,6 +964,30 @@ export default function MeetsPage() {
             grid-template-columns: 1fr;
           }
         }
+        @media (max-width: 640px) {
+          .card-header-row {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .card-header-actions {
+            width: 100%;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+          }
+          .meet-item-header {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .meet-item-actions {
+            width: 100%;
+            flex-wrap: wrap;
+            justify-content: flex-start;
+          }
+          .meet-item-actions .nav-btn,
+          .meet-item-actions .delete-btn {
+            flex: 1 1 90px;
+          }
+        }
       `}</style>
       <AppHeader links={headerLinks} />
 
@@ -1038,7 +1065,11 @@ export default function MeetsPage() {
                 )}
               </div>
             ))}
-            {meets.length === 0 && <div className="muted">No meets yet.</div>}
+            {meets.length === 0 && (
+              <div className="muted">
+                {isLoadingMeets ? "Loading..." : "No meets yet."}
+              </div>
+            )}
           </div>
         </section>
       </div>

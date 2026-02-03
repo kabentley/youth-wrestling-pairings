@@ -86,8 +86,6 @@ export default function CoachMyTeamPage() {
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
   const [defaultMaxMatchesPerWrestler, setDefaultMaxMatchesPerWrestler] = useState(5);
   const [defaultRestGap, setDefaultRestGap] = useState(4);
-  const [defaultMaxAgeGapDays, setDefaultMaxAgeGapDays] = useState(365);
-  const [maxAgeGapInput, setMaxAgeGapInput] = useState("1");
   const [maxMatchesInput, setMaxMatchesInput] = useState("5");
   const [restGapInput, setRestGapInput] = useState("4");
   const [parents, setParents] = useState<TeamMember[]>([]);
@@ -172,12 +170,10 @@ export default function CoachMyTeamPage() {
   const buildMeetDefaultsSnapshot = (
     maxMatches: number,
     restGap: number,
-    maxAgeGapDays: number,
     preferSameMat: boolean,
   ) => JSON.stringify({
     defaultMaxMatchesPerWrestler: maxMatches,
     defaultRestGap: restGap,
-    defaultMaxAgeGapDays: maxAgeGapDays,
     homeTeamPreferSameMat: preferSameMat,
   });
 
@@ -206,11 +202,6 @@ export default function CoachMyTeamPage() {
     setMatDirty(nextSnapshot !== snapshotRef.current);
   }, [rules, numMats]);
 
-  useEffect(() => {
-    const years = defaultMaxAgeGapDays / 365;
-    const rounded = Math.round(years * 2) / 2;
-    setMaxAgeGapInput(Number.isFinite(rounded) ? String(rounded) : "");
-  }, [defaultMaxAgeGapDays]);
   useEffect(() => {
     setMaxMatchesInput(String(defaultMaxMatchesPerWrestler));
   }, [defaultMaxMatchesPerWrestler]);
@@ -275,17 +266,14 @@ export default function CoachMyTeamPage() {
     setHomeTeamPreferSameMat(preferSameMat);
     const maxMatches = typeof team.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : 5;
     const restGap = typeof team.defaultRestGap === "number" ? team.defaultRestGap : 4;
-    const maxAgeGapDays = typeof team.defaultMaxAgeGapDays === "number" ? team.defaultMaxAgeGapDays : 365;
     setDefaultMaxMatchesPerWrestler(maxMatches);
     setDefaultRestGap(restGap);
-    setDefaultMaxAgeGapDays(maxAgeGapDays);
     setTeamHasLogo(Boolean(team.hasLogo));
     setInitialInfo({ website: websiteVal, location: locationVal });
     setInfoDirty(false);
     meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
       maxMatches,
       restGap,
-      maxAgeGapDays,
       preferSameMat,
     );
   };
@@ -399,7 +387,6 @@ export default function CoachMyTeamPage() {
   const currentMeetDefaultsSnapshot = buildMeetDefaultsSnapshot(
     defaultMaxMatchesPerWrestler,
     defaultRestGap,
-    defaultMaxAgeGapDays,
     homeTeamPreferSameMat,
   );
   const meetDefaultsDirty = Boolean(meetDefaultsSnapshot) && meetDefaultsSnapshot !== currentMeetDefaultsSnapshot;
@@ -473,7 +460,6 @@ export default function CoachMyTeamPage() {
           homeTeamPreferSameMat,
           defaultMaxMatchesPerWrestler,
           defaultRestGap,
-          defaultMaxAgeGapDays,
         }),
       });
       if (!res.ok) {
@@ -485,16 +471,13 @@ export default function CoachMyTeamPage() {
       const team = await res.json().catch(() => null);
       const maxMatches = typeof team?.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : defaultMaxMatchesPerWrestler;
       const restGap = typeof team?.defaultRestGap === "number" ? team.defaultRestGap : defaultRestGap;
-      const maxAgeGapDays = typeof team?.defaultMaxAgeGapDays === "number" ? team.defaultMaxAgeGapDays : defaultMaxAgeGapDays;
       const preferSameMat = typeof team?.homeTeamPreferSameMat === "boolean" ? team.homeTeamPreferSameMat : homeTeamPreferSameMat;
       setDefaultMaxMatchesPerWrestler(maxMatches);
       setDefaultRestGap(restGap);
-      setDefaultMaxAgeGapDays(maxAgeGapDays);
       setHomeTeamPreferSameMat(preferSameMat);
       meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
         maxMatches,
         restGap,
-        maxAgeGapDays,
         preferSameMat,
       );
       setMeetDefaultsMessage("Meet setup saved.");
@@ -961,39 +944,8 @@ export default function CoachMyTeamPage() {
                 <span>matches</span>
               </div>
             </label>
-            <label className="meet-setup-row">
-              <span className="meet-setup-label">Limit automatically selected bouts to an age difference of</span>
-              <div className="meet-setup-line">
-              <input
-                type="number"
-                min={1}
-                step="0.5"
-                value={maxAgeGapInput}
-                onChange={(e) => {
-                  const nextValue = e.target.value;
-                  setMaxAgeGapInput(nextValue);
-                  const parsed = Number(nextValue);
-                  if (Number.isNaN(parsed)) return;
-                  const roundedYears = Math.round(parsed * 2) / 2;
-                  const clampedYears = Math.max(1, roundedYears);
-                  const days = Math.round(clampedYears * 365);
-                  setDefaultMaxAgeGapDays(days);
-                }}
-                onBlur={() => {
-                  const parsed = Number(maxAgeGapInput);
-                  if (Number.isNaN(parsed)) return;
-                  const roundedYears = Math.round(parsed * 2) / 2;
-                  const clampedYears = Math.max(1, roundedYears);
-                  setMaxAgeGapInput(String(clampedYears));
-                  setDefaultMaxAgeGapDays(Math.round(clampedYears * 365));
-                }}
-                className="meet-setup-input"
-              />
-                <span>year(s)</span>
-              </div>
-            </label>
           </div>
-          <div className="meet-setup-actions">
+          <div className="meet-setup-actions" style={{ justifyContent: "flex-start" }}>
             <p
               className={`info-message ${meetDefaultsIsError ? "error" : "success"}${meetDefaultsMessage ? "" : " empty"}`}
               role={meetDefaultsMessage ? "status" : undefined}

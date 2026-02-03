@@ -144,8 +144,7 @@ export default function EnterResultsPage() {
     const type = bout.resultType?.trim() ?? null;
     const score = bout.resultScore?.trim() ?? null;
     if (
-      original !== undefined &&
-      original.winnerId === winnerId &&
+      original?.winnerId === winnerId &&
       original.type === type &&
       original.score === score
     ) {
