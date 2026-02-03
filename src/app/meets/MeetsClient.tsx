@@ -191,7 +191,6 @@ export default function MeetsPage() {
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
@@ -582,6 +581,16 @@ export default function MeetsPage() {
           border-color: var(--line);
           background: #f7f9fb;
         }
+        .nav-btn.primary {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #fff;
+        }
+        .nav-btn.primary:hover {
+          background: color-mix(in srgb, var(--accent) 85%, #000 15%);
+          border-color: color-mix(in srgb, var(--accent) 85%, #000 15%);
+          color: #fff;
+        }
         .team-head {
           display: inline-flex;
           align-items: center;
@@ -961,7 +970,7 @@ export default function MeetsPage() {
             <h2 className="card-title">Existing Meets</h2>
             <div className="card-header-actions">
               {canManageMeets && deletedMeets.length > 0 && (
-                <button className="btn ghost-btn" type="button" onClick={() => setRestoreDialogOpen(true)}>
+                <button className="btn btn-secondary" type="button" onClick={() => setRestoreDialogOpen(true)}>
                   Restore Deleted
                 </button>
               )}
@@ -991,6 +1000,14 @@ export default function MeetsPage() {
                 </div>
                 {canManageMeets && (
                   <div className="meet-item-actions">
+                    {m.status === "PUBLISHED" && (
+                      <button
+                        className="nav-btn primary"
+                        onClick={() => router.push(`/results/${m.id}`)}
+                      >
+                        Enter Results
+                      </button>
+                    )}
                     <button
                       className="nav-btn"
                       onClick={() => router.push(`/meets/${m.id}`)}

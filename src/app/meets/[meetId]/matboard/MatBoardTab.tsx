@@ -36,6 +36,77 @@ interface MatBoardTabProps {
   refreshIndex?: number;
 }
 
+type WrestlerEntry = {
+  id: string;
+  label: string;
+  color: string;
+  statusBg?: string;
+  conflictBg?: string;
+  singleMatch: boolean;
+  highlight: boolean;
+};
+
+function MatBoardWrestlerLabel({
+  entry,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  entry: WrestlerEntry;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const labelRef = useRef<HTMLSpanElement | null>(null);
+  const measureRef = useRef<HTMLSpanElement | null>(null);
+  const [tight, setTight] = useState(false);
+
+  useEffect(() => {
+    const labelEl = labelRef.current;
+    const measureEl = measureRef.current;
+    if (!labelEl || !measureEl) return;
+
+    const check = () => {
+      const available = labelEl.clientWidth;
+      const needed = measureEl.scrollWidth;
+      setTight(needed > available);
+    };
+
+    check();
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(check);
+      observer.observe(labelEl);
+      return () => observer.disconnect();
+    }
+    const onResize = () => check();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [entry.label]);
+
+  return (
+    <span
+      ref={labelRef}
+      data-role="wrestler"
+      className={[
+        entry.highlight ? "highlight" : "",
+        entry.singleMatch ? "single-match" : "",
+        tight ? "tight" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{
+        color: entry.color || undefined,
+        background: entry.statusBg ?? entry.conflictBg ?? undefined,
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {entry.label}
+      <span ref={measureRef} className="wrestler-label-measure" aria-hidden="true">
+        {entry.label}
+      </span>
+    </span>
+  );
+}
+
 export default function MatBoardTab({
   meetId,
   onMatAssignmentsChange,
@@ -801,6 +872,23 @@ export default function MatBoardTab({
           cursor: pointer;
           border-radius: 4px;
           padding: 1px 3px;
+          position: relative;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .bout-row span[data-role="wrestler"].tight {
+          font-size: 12px;
+        }
+        .wrestler-label-measure {
+          position: absolute;
+          left: -9999px;
+          top: 0;
+          white-space: nowrap;
+          font-size: 14px;
+          font-weight: 600;
+          visibility: hidden;
+          pointer-events: none;
         }
         .bout-row span.single-match {
           font-style: italic;
@@ -1007,27 +1095,12 @@ export default function MatBoardTab({
                           {formatBoutNumber(matNum, b.order, index + 1)}
                           </span>
                         {ordered.map(entry => (
-                          <span
+                          <MatBoardWrestlerLabel
                             key={entry.id}
-                            data-role="wrestler"
-                            className={[
-                              entry.highlight ? "highlight" : "",
-                              entry.singleMatch ? "single-match" : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            style={{
-                              color: entry.color || undefined,
-                              background:
-                                entry.statusBg ??
-                                entry.conflictBg ??
-                                undefined,
-                            }}
+                            entry={entry}
                             onMouseEnter={() => setHighlightWrestlerId(entry.id)}
                             onMouseLeave={() => setHighlightWrestlerId(null)}
-                          >
-                            {entry.label}
-                          </span>
+                          />
                         ))}
                       </div>
                     </div>

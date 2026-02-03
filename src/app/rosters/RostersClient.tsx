@@ -177,7 +177,6 @@ export default function RostersClient() {
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", roles: ["ADMIN"] as const },
@@ -1133,8 +1132,8 @@ export default function RostersClient() {
 
   const getResizeClientX = (e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     if ("touches" in e) {
-      const touch = e.touches[0] ?? e.changedTouches[0];
-      return touch?.clientX ?? 0;
+      const touch = e.touches[0];
+      return touch.clientX;
     }
     return e.clientX;
   };
@@ -1216,10 +1215,24 @@ export default function RostersClient() {
   const currentTeam = teams.find(t => t.id === selectedTeamId);
   const orderedTeams = useMemo(() => {
     const preferredTeamId = role === "ADMIN" ? adminTeamId ?? sessionTeamId : sessionTeamId;
-    if (!preferredTeamId) return teams;
-    const mine = teams.find(t => t.id === preferredTeamId);
-    if (!mine) return teams;
-    return [mine, ...teams.filter(t => t.id !== preferredTeamId)];
+    const sorted = [...teams];
+    sorted.sort((a, b) => {
+      const aSymbol = a.symbol.trim().toLowerCase();
+      const bSymbol = b.symbol.trim().toLowerCase();
+      if (aSymbol && bSymbol) {
+        const symbolCompare = aSymbol.localeCompare(bSymbol);
+        if (symbolCompare !== 0) return symbolCompare;
+      } else if (aSymbol) {
+        return -1;
+      } else if (bSymbol) {
+        return 1;
+      }
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+    if (!preferredTeamId) return sorted;
+    const mine = sorted.find(t => t.id === preferredTeamId);
+    if (!mine) return sorted;
+    return [mine, ...sorted.filter(t => t.id !== preferredTeamId)];
   }, [adminTeamId, role, sessionTeamId, teams]);
 
   useEffect(() => {

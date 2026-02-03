@@ -28,7 +28,6 @@ export default function AccountPage() {
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/account", label: "Account" },

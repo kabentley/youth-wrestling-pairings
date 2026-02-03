@@ -387,7 +387,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
-    { href: "/results", label: "Enter Results", roles: ["TABLE_WORKER", "COACH", "ADMIN"] as const },
     { href: "/parent", label: "My Wrestlers" },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
@@ -1928,6 +1927,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .nav-btn:hover {
           background: #f7f9fb;
         }
+        .nav-btn.primary {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: #fff;
+        }
+        .nav-btn.primary:hover {
+          background: color-mix(in srgb, var(--accent) 85%, #000 15%);
+          border-color: color-mix(in srgb, var(--accent) 85%, #000 15%);
+          color: #fff;
+        }
+        .nav-btn.secondary {
+          background: #fff;
+          border-color: var(--line);
+          color: var(--ink);
+        }
+        .nav-btn.secondary:hover {
+          background: #f7f9fb;
+          border-color: var(--line);
+          color: var(--ink);
+        }
         .nav-btn:disabled {
           cursor: not-allowed;
           opacity: 0.5;
@@ -2093,28 +2112,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           flex-direction: column;
           gap: 2px;
         }
-        .meet-status-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          background: transparent;
-          border: 1px solid var(--line);
-          border-radius: 6px;
-          padding: 4px 8px;
+        .meet-status-label {
           font-size: 12px;
-          font-weight: 600;
-          color: var(--ink);
-          cursor: pointer;
+          color: #5b6472;
         }
-        .meet-status-btn:hover:not(:disabled) {
-          background: #f7f9fb;
+        .meet-status-btn {
+          min-width: 120px;
+          text-align: center;
         }
-        .meet-status-btn:disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
-          color: var(--muted);
-          border-color: var(--line);
-          background: transparent;
+        .checkpoint-btn {
+          min-width: 120px;
+          text-align: center;
         }
         .meet-last-updated {
           font-size: 11px;
@@ -2926,28 +2934,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
         <div className="meet-heading-actions">
           <div className="meet-status">
-            <button
-              type="button"
-              className="meet-status-btn"
-              onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-              disabled={!canChangeStatus}
-              title={meetStatus === "PUBLISHED"
-                ? "Reopen this meet as Draft so coaches can edit pairings and attendance."
-                : "Publish this meet to lock pairings and show schedules to families."}
-            >
+            <span className="meet-status-label">
               Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
-            </button>
+            </span>
             {lastUpdatedAt && (
               <span className="meet-last-updated">
                 Last edited {new Date(lastUpdatedAt).toLocaleString()} by {lastUpdatedBy ?? "unknown"}
               </span>
             )}
           </div>
+          <button
+            type="button"
+            className="nav-btn primary meet-status-btn"
+            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
+            disabled={!canChangeStatus}
+            title={meetStatus === "PUBLISHED"
+              ? "Reopen this meet as Draft so coaches can edit pairings and attendance."
+              : "Publish this meet to lock pairings and show schedules to families."}
+          >
+            {meetStatus === "PUBLISHED" ? "Reopen as Draft" : "Publish"}
+          </button>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {isDraft && lockState.status !== "acquired" && (
               <button
                 type="button"
-                className="nav-btn"
+                className="nav-btn secondary"
                 onClick={() => {
                   if (wantsEdit) {
                     void (async () => {
@@ -2965,7 +2976,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             {isDraft && wantsEdit && lockState.status === "acquired" && (
               <button
                 type="button"
-                className="nav-btn"
+                className="nav-btn secondary"
                 onClick={() => {
                   void (async () => {
                     const released = await releaseLock("manual-release");
@@ -2989,7 +3000,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
             <button
               type="button"
-              className="nav-btn"
+              className="nav-btn primary checkpoint-btn"
               onClick={() => {
                 setCheckpointError(null);
                 setShowCheckpointModal(true);
@@ -3163,7 +3174,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         e.preventDefault();
                         e.stopPropagation();
                         const touch = e.touches[0];
-                        if (!touch) return;
                         resizeRef.current = {
                           kind: "pairings",
                           index,
@@ -3280,8 +3290,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                      minWidth: 0,
                    }}
                  >
-                   <span>{target?.isGirl ? <span style={{ color: sexColor(true) }}>Girl</span> : ""}</span>
-                   <span>Age: <span style={{ color: sexColor(target?.isGirl) }}>{targetAge ? `${targetAge}` : "—"}</span></span>
+                   <span>{target.isGirl ? <span style={{ color: sexColor(true) }}>Girl</span> : ""}</span>
+                   <span>Age: <span style={{ color: sexColor(target.isGirl) }}>{targetAge ? `${targetAge}` : "—"}</span></span>
                    <span>Weight: {target.weight}</span>
                    <span>Exp: {target.experienceYears}</span>
                    <span>Skill: {target.skill}</span>
@@ -3339,7 +3349,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const touch = e.touches[0];
-                                if (!touch) return;
                                 resizeRef.current = {
                                   kind: "current",
                                   index,
@@ -3448,7 +3457,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const touch = e.touches[0];
-                                if (!touch) return;
                                 resizeRef.current = {
                                   kind: "available",
                                   index,
@@ -3769,7 +3777,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   e.preventDefault();
                                   e.stopPropagation();
                                   const touch = e.touches[0];
-                                  if (!touch) return;
                                   resizeRef.current = {
                                     kind: "attendance",
                                     index,

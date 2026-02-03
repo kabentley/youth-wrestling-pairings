@@ -24,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       date: true,
       location: true,
       status: true,
+      homeTeamId: true,
       deletedAt: true,
     },
   });
