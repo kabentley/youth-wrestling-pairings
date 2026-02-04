@@ -10,6 +10,7 @@ import WallChartTab from "./wall/WallChartTab";
 import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR } from "@/lib/constants";
 
+// Render into document.body after mount to avoid SSR/DOM mismatches for modals.
 function ModalPortal({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -124,10 +125,12 @@ type CheckpointSaveRowProps = {
   onSave: (name: string) => Promise<boolean>;
 };
 
+// Inline form row for naming and saving a checkpoint.
 function CheckpointSaveRow({ onSave }: CheckpointSaveRowProps) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Guard empty names and provide optimistic UI while saving.
   const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -323,6 +326,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const initialCheckpointSavedRef = useRef(false);
   const pairingsInitRef = useRef(false);
 
+  // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
     const clearExisting = options.clearExisting ?? true;
     setAutoPairingsError(null);
@@ -379,6 +383,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
+  // Keep the home team first in the pairings tab order.
   const orderedPairingsTeams = useMemo(() => {
     if (!homeTeamId) return teams;
     const homeTeam = teams.find(t => t.id === homeTeamId);
@@ -406,6 +411,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
+  // Toggle edit mode and keep the URL in sync for deep links.
   const updateEditMode = useCallback((next: boolean, _reason?: string) => {
     if (!next) {
       suppressEditRequestedRef.current = true;
@@ -414,6 +420,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     router.replace(next ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`);
   }, [meetId, router]);
 
+  // Briefly flash a UI notice (used after saves).
   const triggerNoticeFlash = useCallback(() => {
     setFlashNotice(false);
     if (flashTimeoutRef.current) {
@@ -425,6 +432,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }, 0);
   }, []);
 
+  // Stop inactivity tracking and clear countdown.
   const clearInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
@@ -434,6 +442,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setInactivityRemainingMs(null);
   }, []);
 
+  // Centralized lock state update to keep timers/errors consistent.
   const updateLockState = useCallback((next: LockState) => {
     prevLockStatusRef.current = next.status;
     lockStatusRef.current = next.status;
@@ -446,6 +455,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [clearInactivityTimer]);
 
+  // Release the meet lock, optionally with a reason for server logs.
   const releaseLock = useCallback(async (reason?: string, keepalive = false) => {
     const url = reason
       ? `/api/meets/${meetId}/lock?reason=${encodeURIComponent(reason)}`
@@ -465,6 +475,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [meetId]);
 
+  // Reset inactivity timer and auto-release the lock after timeout.
   const resetInactivityTimer = useCallback(() => {
     clearInactivityTimer();
     inactivityDeadlineRef.current = Date.now() + INACTIVITY_RELEASE_MS;
@@ -517,6 +528,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
   }, []);
 
+  // Attempt to acquire the meet edit lock and surface server guidance if blocked.
   async function acquireLock() {
     const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
     if (res.status === 401) {
@@ -563,6 +575,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return false;
   }
 
+  // Poll lock status so the UI can reflect who currently owns the lock.
   const refreshLockStatus = useCallback(async () => {
     const res = await fetch(`/api/meets/${meetId}/lock`);
     if (res.status === 401) {
@@ -584,6 +597,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
   }, [meetId, updateLockState]);
 
+  // Display helpers for teams (symbol/name/color).
   function teamName(id: string) {
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
@@ -603,6 +617,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return team?.symbol ?? team?.name ?? id;
   }
 
+  // Export the meet as a .wrs bundle and download locally.
   async function exportMeet() {
     setExportingMeet(true);
     try {
@@ -633,12 +648,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Normalize checkpoint timestamps for consistent display.
   function formatCheckpointDate(value: string) {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return parsed.toLocaleString();
   }
 
+  // Apply a saved checkpoint and refresh derived views.
   async function applyCheckpoint(id: string, name: string) {
     if (!canEdit) return;
     const confirmed = window.confirm(
@@ -665,6 +682,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Remove a saved checkpoint entry.
   async function deleteCheckpoint(id: string) {
     if (!window.confirm("Delete this checkpoint? This cannot be undone.")) return;
     setCheckpointError(null);
@@ -683,17 +701,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Normalize missing attendance to a consistent default.
   function normalizeAttendance(status?: AttendanceStatus | null) {
     return status ?? "COMING";
   }
+  // Render-friendly label for attendance status chips.
   function formatStatusLabel(status: AttendanceStatus) {
     return status.replace(/_/g, " ").toLowerCase().replace(/^\w/, c => c.toUpperCase());
   }
 
+  // Stable key for a bout regardless of red/green order.
   function boutKey(redId: string, greenId: string) {
     return redId < greenId ? `${redId}|${greenId}` : `${greenId}|${redId}`;
   }
 
+  // Compute diffs between a checkpoint and current meet (attendance + bouts + mats).
   async function showCheckpointChanges(id: string, name: string) {
     setCheckpointError(null);
     setCheckpointDiffLoadingId(id);
@@ -707,6 +729,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       if (!payload) {
         throw new Error("Unable to read checkpoint.");
       }
+      // Build attendance changes by comparing checkpoint snapshot vs current roster state.
       const checkpointAttendance = new Map(payload.attendance.map(a => [a.wrestlerId, a.status]));
       const attendanceChanges = wrestlers
         .filter(w => wMap[w.id])
@@ -718,6 +741,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .filter(entry => entry.from !== entry.to)
         .sort((a, b) => (a.last === b.last ? a.first.localeCompare(b.first) : a.last.localeCompare(b.last)));
 
+      // Index current bouts by unordered key so red/green swaps don't matter.
       const currentBoutKeys = new Map<string, { redId: string; greenId: string; redTeam?: string; greenTeam?: string }>();
       for (const b of bouts) {
         currentBoutKeys.set(boutKey(b.redId, b.greenId), {
@@ -727,6 +751,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           greenTeam: teamSymbolById(wMap[b.greenId]?.teamId),
         });
       }
+      // Index checkpoint bouts the same way for diffing.
       const checkpointBoutKeys = new Map<string, { redId: string; greenId: string; redTeam?: string; greenTeam?: string }>();
       for (const b of payload.bouts) {
         checkpointBoutKeys.set(boutKey(b.redId, b.greenId), {
@@ -736,6 +761,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           greenTeam: teamSymbolById(wMap[b.greenId]?.teamId),
         });
       }
+      // Compute added/removed bouts between checkpoint and current state.
       const boutsAdded = [...currentBoutKeys.entries()]
         .filter(([key]) => !checkpointBoutKeys.has(key))
         .map(([, value]) => value);
@@ -743,6 +769,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .filter(([key]) => !currentBoutKeys.has(key))
         .map(([, value]) => value);
 
+      // Count any mat/order changes for bouts that exist in both snapshots.
       const currentBoutsByKey = new Map<string, { mat?: number | null; order?: number | null }>();
       for (const b of bouts) {
         currentBoutsByKey.set(boutKey(b.redId, b.greenId), { mat: b.mat ?? null, order: b.order ?? null });
@@ -770,9 +797,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Base team color (unadjusted) with a safe fallback.
   function teamColor(id: string) {
     return teams.find(t => t.id === id)?.color ?? "#000000";
   }
+  // Darken a hex color to improve contrast on light backgrounds.
   function darkenHex(color: string, amount: number) {
     if (!color.startsWith("#") || color.length !== 7) return color;
     const r = parseInt(color.slice(1, 3), 16);
@@ -785,6 +814,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const nb = Math.round(b * factor);
     return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
   }
+  // Adjust team color for readable text while preserving identity.
   function teamTextColor(id: string) {
     const color = teamColor(id);
     if (!color.startsWith("#") || color.length !== 7) return color;
@@ -798,6 +828,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (luminance > 0.6) return darkenHex(color, 0.3);
     return color;
   }
+  // Choose white/black based on background luminance.
   function contrastText(color?: string) {
     if (!color?.startsWith("#")) return "#ffffff";
     const hex = color.slice(1);
@@ -815,10 +846,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     LATE: "Arrive Late",
     EARLY: "Leave Early",
   };
+  // Normalize attendance status labels for UI chips.
   function statusLabel(status: AttendanceStatus | null | undefined) {
     if (!status) return "Coming";
     return STATUS_LABELS[status];
   }
+  // Format the remaining lock timeout as M:SS.
   function formatInactivityCountdown(ms: number) {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -832,14 +865,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     LATE: "#dff1ff",
   };
 
+  // Color encode attendance status in roster lists.
   function statusColor(status: AttendanceStatus | null | undefined) {
     if (!status) return "#e6f6ea";
     return STATUS_COLORS[status];
   }
 
+  // Treat NOT_COMING as excluded from pairings.
   function isNotAttending(status: AttendanceStatus | null | undefined) {
     return status === "NOT_COMING";
   }
+  // Convert birthdate string to decimal age in years.
   function ageYears(birthdate?: string) {
     if (!birthdate) return null;
     const bDate = new Date(birthdate);
@@ -848,17 +884,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const days = Math.floor((now.getTime() - bDate.getTime()) / (1000 * 60 * 60 * 24));
     return days / daysPerYear;
   }
+  // Provide a consistent accent color for girl/boy labels.
   function sexColor(isGirl?: boolean) {
     if (isGirl === true) return "#d81b60";
     if (isGirl === false) return "#1565c0";
     return undefined;
   }
+  // Format a mat+order into a human-friendly bout number.
   function boutNumber(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "";
     const displayOrder = Math.max(0, order - 1);
     const suffix = String(displayOrder).padStart(2, "0");
     return `${mat}${suffix}`;
   }
+  // Compare values with null-safe ordering and direction control.
   function sortValueCompare(a: string | number | null | undefined, b: string | number | null | undefined, dir: "asc" | "desc") {
     if (a == null && b == null) return 0;
     if (a == null) return 1;
@@ -868,17 +907,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const bStr = String(b);
     return dir === "asc" ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
   }
+  // Toggle sort direction or switch to a new key.
   function toggleSort(
     setter: React.Dispatch<React.SetStateAction<{ key: string; dir: "asc" | "desc" }>>,
     key: string,
   ) {
     setter((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
   }
+  // Visual indicator for active sort direction.
   function sortIndicator(sort: { key: string; dir: "asc" | "desc" }, key: string) {
     if (sort.key !== key) return null;
     return <span style={{ fontSize: 10, marginLeft: 4 }}>{sort.dir === "asc" ? "▲" : "▼"}</span>;
   }
 
+  // Load primary meet data (bouts, wrestlers, meet metadata, current user).
   const load = useCallback(async () => {
     const [bRes, wRes, mRes, meRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/pairings`),
@@ -954,6 +996,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [meetId, router]);
 
+  // Fetch change log + comments for the activity panel.
   const loadActivity = useCallback(async () => {
     const [changesRes, commentsRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/changes`),
@@ -969,6 +1012,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [meetId]);
 
+  // Fetch saved checkpoints for the meet.
   const loadCheckpoints = useCallback(async () => {
     const res = await fetch(`/api/meets/${meetId}/checkpoints`);
     if (!res.ok) return;
@@ -977,6 +1021,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setCheckpointsLoaded(true);
   }, [meetId]);
 
+  // Save a checkpoint with a validated, trimmed name.
   const saveCheckpointByName = useCallback(async (rawName: string) => {
     const name = rawName.trim().slice(0, 80);
     if (!name) return false;
@@ -1005,6 +1050,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [loadActivity, loadCheckpoints, meetId]);
 
+  // Save the initial checkpoint once after first data load.
   const maybeSaveInitialCheckpoint = useCallback(async () => {
     if (!initialCheckpointFlowRef.current || initialCheckpointSavedRef.current) return;
     const ok = await saveCheckpointByName("Meet created");
@@ -1081,6 +1127,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetName, canEdit]);
 
   useEffect(() => {
+    // Adjust column widths based on drag position for the active table.
     const handleResizeMove = (clientX: number) => {
       if (!resizeRef.current) return;
       const { kind, index, startX, startWidth } = resizeRef.current;
@@ -1236,6 +1283,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return () => clearInterval(interval);
   }, [wantsEdit, lockState.status]);
 
+  // Stable roster sort for attendance modal (last/first/team).
   const sortAttendanceRoster = useCallback((roster: Wrestler[]) => {
     return [...roster].sort((a, b) => {
       const getValue = (w: Wrestler) => {
@@ -1250,9 +1298,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
+  // Cache team labels for quick lookup in tables.
   const teamLabelById = useMemo(() => {
     return new Map(teams.map(team => [team.id, team.symbol ?? team.name]));
   }, [teams]);
+  // Sort roster for pairings and attendance displays.
   const rosterSorted = useMemo(() => {
     return [...wrestlers].sort((a, b) => {
       const teamA = teamLabelById.get(a.teamId) ?? a.teamId;
@@ -1281,12 +1331,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }),
     [modalAttendanceRoster, modalAttendanceOverrides],
   );
+  // Base roster for attendance modal (sorted once).
   const modalAttendanceBaseSorted = useMemo(() => {
     if (attendanceSort.key === "status") {
       return sortAttendanceRoster(modalAttendanceRosterWithOverrides);
     }
     return sortAttendanceRoster(modalAttendanceRoster);
   }, [attendanceSort.key, modalAttendanceRoster, modalAttendanceRosterWithOverrides, sortAttendanceRoster]);
+  // Apply local attendance overrides without mutating the base roster.
   const modalAttendanceSorted = useMemo(() => {
     if (attendanceSort.key === "status") {
       return modalAttendanceBaseSorted;
@@ -1363,6 +1415,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     orderedPairingsTeams.length >= 3 ||
     isNarrowScreen ||
     (pairingsTableWidth !== null && pairingsTableWidth < 700);
+  // Shrink columns proportionally when the table overflows the viewport.
   const pairingsEffectiveColWidths = useMemo(() => {
     if (allowPairingsOverflow) return pairingsColWidths;
     if (pairingsTableWidth === null) return pairingsColWidths;
@@ -1383,6 +1436,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     return widths;
   }, [allowPairingsOverflow, pairingsColWidths, pairingsTableWidth]);
+  // Clamp name columns on narrow screens for readability.
   const pairingsColWidthsForView = useMemo(() => {
     if (!isNarrowScreen) return pairingsEffectiveColWidths;
     const next = [...pairingsEffectiveColWidths];
@@ -1390,6 +1444,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     next[1] = Math.min(next[1], 70);
     return next;
   }, [isNarrowScreen, pairingsEffectiveColWidths]);
+  // Clamp name columns in the current-matches table on narrow screens.
   const currentColumnWidthsForView = useMemo(() => {
     if (!isNarrowScreen) return currentColumnWidths;
     const next = [...currentColumnWidths];
@@ -1397,6 +1452,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     next[1] = Math.min(next[1], 70);
     return next;
   }, [isNarrowScreen, currentColumnWidths]);
+  // Clamp name columns in the additional-matches table on narrow screens.
   const availableColumnWidthsForView = useMemo(() => {
     if (!isNarrowScreen) return availableColumnWidths;
     const next = [...availableColumnWidths];
@@ -1404,8 +1460,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     next[1] = Math.min(next[1], 70);
     return next;
   }, [isNarrowScreen, availableColumnWidths]);
+  // Index bouts by wrestler for fast tooltip lookups.
   const boutsByWrestlerId = useMemo(() => {
     const map = new Map<string, { bout: Bout; opponentId: string }[]>();
+    // Index both sides of each bout for quick opponent lookup.
     for (const bout of bouts) {
       if (bout.redId && bout.greenId) {
         const redList = map.get(bout.redId) ?? [];
@@ -1419,16 +1477,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     return map;
   }, [bouts]);
+  // Precompute match counts per wrestler for tables and tooltips.
   const matchCounts = bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
     acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
     return acc;
   }, new Map<string, number>());
   const getMatchCount = (id: string) => matchCounts.get(id) ?? 0;
+  // Show/update the floating tooltip near the cursor.
   const updateMatchesTooltip = useCallback((event: React.MouseEvent, wrestlerId: string) => {
     setMatchesTooltip({ wrestlerId, x: event.clientX, y: event.clientY });
   }, []);
+  // Hide the floating tooltip.
   const hideMatchesTooltip = useCallback(() => setMatchesTooltip(null), []);
+  // Suppress tooltip when hovering name cells; show elsewhere in the row.
   const handleMatchesHover = useCallback((event: React.MouseEvent, wrestlerId: string) => {
     const node = event.target as HTMLElement | null;
     if (node?.closest('[data-tooltip-skip="true"]')) {
@@ -1438,6 +1500,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     updateMatchesTooltip(event, wrestlerId);
   }, [hideMatchesTooltip, updateMatchesTooltip]);
 
+  // Sort pairings roster according to the active column.
   const pairingsSorted = [...attendingByTeam].sort((a, b) => {
     const getValue = (w: Wrestler) => {
       if (pairingsSort.key === "last") return w.last;
@@ -1453,6 +1516,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), pairingsSort.dir);
   });
 
+  // Keep the selected row visible during keyboard navigation.
   const scrollPairingsRowIntoView = useCallback((wrestlerId: string) => {
     const wrapper = pairingsTableWrapperRef.current;
     if (!wrapper) return;
@@ -1460,6 +1524,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     row?.scrollIntoView({ block: "nearest" });
   }, []);
 
+  // Jump to the wrestler's team tab and select them.
   const showMatchesForWrestler = useCallback((wrestler: Wrestler) => {
     setActiveTab("pairings");
     setPairingsTeamId(wrestler.teamId);
@@ -1469,6 +1534,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setTimeout(() => scrollPairingsRowIntoView(wrestler.id), 0);
   }, [scrollPairingsRowIntoView]);
 
+  // Keyboard navigation for the roster table.
   const handlePairingsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     if (pairingsSorted.length === 0) return;
@@ -1491,6 +1557,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [pairingsSorted, scrollPairingsRowIntoView, selectedPairingId]);
   const selectedMatchCount = selectedPairingId ? getMatchCount(selectedPairingId) : 0;
 
+  // Fetch candidate opponents based on current pairing constraints.
   async function loadCandidates(wrestlerId: string, overrides?: Partial<typeof settings>) {
     if (!wrestlerId) {
       setCandidates([]);
@@ -1515,6 +1582,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setCandidates(json.candidates ?? []);
   }
 
+  // Refresh meet + activity after mat changes.
   function refreshAfterMatAssignments() {
     void load();
     void loadActivity();
@@ -1589,6 +1657,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const { version: _version, ...query } = candidateFetchConfig;
     void loadCandidates(selectedPairingId, query);
   }, [selectedPairingId, candidateFetchConfig, maxMatchesPerWrestler, selectedMatchCount]);
+  // Aggregate attendance counts for summary display.
   const countAttendance = useCallback((roster: Wrestler[]) => {
     return roster.reduce(
       (acc, w) => {
@@ -1623,10 +1692,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const modalAttendanceTeam = modalAttendanceTeamId ? teams.find(t => t.id === modalAttendanceTeamId) : undefined;
   const addWrestlerTeamLabel = attendanceTeam?.name ?? "Selected Team";
 
+  // Current matches for the selected wrestler.
   const currentMatches = target
     ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
     : [];
   const targetMatchCount = target ? getMatchCount(target.id) : 0;
+  // Normalize current matches into rows with opponent + derived scores.
   const currentMatchRows = currentMatches.map((b) => {
     const opponentId = b.redId === target?.id ? b.greenId : b.redId;
     const signedScore = target
@@ -1640,6 +1711,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       signedScore,
     };
   });
+  // Sort current matches by the chosen column.
   const currentSorted = [...currentMatchRows].sort((a, b) => {
     const getValue = (row: typeof currentMatchRows[number]) => {
       const o = row.opponent;
@@ -1657,6 +1729,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
     return sortValueCompare(getValue(a), getValue(b), currentSort.dir);
   });
+  // Filter candidates against match limits and pairing rules.
   const availableFiltered = candidates
     .filter(() => {
       if (!target) return true;
@@ -1681,6 +1754,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       );
     })
     .map((c) => ({ opponent: c.opponent, score: c.score }));
+  // Sort candidate list by the chosen column.
   const availableSorted = [...availableFiltered].sort((a, b) => {
     const getValue = (row: { opponent: Wrestler; score: number }) => {
       const w = row.opponent;
@@ -1699,6 +1773,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
   const availableDisplay = availableSorted.slice(0, 20);
+  // Prefer home team on the left when showing checkpoint diffs.
   const getCheckpointBoutOrder = useCallback((b: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }) => {
     const red = wMap[b.redId];
     const green = wMap[b.greenId];
@@ -1713,11 +1788,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     return { leftId: b.redId, rightId: b.greenId, leftTeam: b.redTeam, rightTeam: b.greenTeam };
   }, [homeTeamId, wMap]);
+  // Color for pairing score deltas (good/bad).
   const deltaColor = (value: number) => {
     if (value < 0) return "#b00020";
     if (value > 0) return "#1b5e20";
     return undefined;
   };
+  // Delete meet setup + pairings and return to initial setup state.
   async function restartMeetSetup() {
     if (!canEdit) return;
     setRestartLoading(true);
@@ -1760,6 +1837,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Add a bout and refresh candidates/metadata.
   async function addMatch(redId: string, greenId: string) {
     if (!canEdit) return;
     const res = await fetch(`/api/meets/${meetId}/pairings/add`, {
@@ -1784,6 +1862,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Update attendance status and refresh dependent views.
   async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
     await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
@@ -1804,6 +1883,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
+  // Apply attendance change from the right-click context menu.
   async function handlePairingContextStatus(status: AttendanceStatus | null) {
     if (!canEdit) {
       setPairingContext(null);
@@ -1814,6 +1894,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingContext(null);
   }
 
+  // Remove a bout and refresh candidates/metadata.
   async function removeBout(boutId: string) {
     if (!canEdit) return;
     await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
@@ -1822,6 +1903,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (target) await loadCandidates(target.id);
   }
 
+  // Toggle meet status while ensuring lock ownership.
   async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
     if (!canChangeStatus) return;
     const ensureLock = async () => {
@@ -1849,6 +1931,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await loadActivity();
   }
 
+  // Persist meet name edits with debounce protection.
   async function saveMeetName() {
     if (!canEdit) return;
     const trimmed = meetName.trim();
@@ -1864,6 +1947,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await loadActivity();
   }
 
+  // Submit a new comment and refresh activity feed.
   async function submitComment() {
     const body = commentBody.trim();
     if (!body) return;
@@ -1877,6 +1961,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await loadActivity();
   }
 
+  // Track in-modal attendance overrides without mutating source data.
   const updateModalAttendanceStatus = (wrestlerId: string, status: AttendanceStatus | null) => {
     setModalAttendanceOverrides(prev => {
       const next = new Map(prev);
@@ -1885,9 +1970,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
   };
 
+  // Bulk apply attendance status to the current modal team.
   const setModalAttendanceForTeam = (status: AttendanceStatus | null) => {
     setModalAttendanceOverrides(prev => {
       const next = new Map(prev);
+      // Apply the same status to every wrestler in the modal roster.
       for (const wrestler of modalAttendanceRoster) {
         next.set(wrestler.id, status);
       }
@@ -1895,9 +1982,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
   };
 
+  // Persist attendance overrides and refresh data.
   const saveModalAttendanceChanges = useCallback(async () => {
     if (!canEdit) return false;
     const changes: { wrestlerId: string; status: AttendanceStatus | null }[] = [];
+    // Only persist rows that actually changed.
     for (const [wrestlerId, nextRaw] of modalAttendanceOverrides.entries()) {
       const wrestler = wMap[wrestlerId] ?? wrestlers.find(w => w.id === wrestlerId);
       if (!wrestler) continue;
@@ -1925,6 +2014,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return true;
   }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, wMap, wrestlers]);
 
+  // Create a new wrestler in the current team roster.
   async function submitAddWrestler() {
     if (!attendanceTeamId) return;
     setAddWrestlerMsg("");

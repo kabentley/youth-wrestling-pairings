@@ -106,7 +106,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Use Attendance to mark availability before fine-tuning pairings. In Pairings, click Attendance; you must hold the lock to edit [Meet > Start Editing, Meet > Pairings].",
           "Coming is the default. Not Coming removes the wrestler from pairing suggestions and deletes existing bouts for that wrestler.",
           "Arrive Late and Leave Early are planning flags. The wrestler still wrestles, but their name is highlighted so you can adjust bout order in Mat Assignments [Meet > Mat Assignments].",
-          "Right click a wrestler in the Pairings roster list to mark Not Coming, Arrive Late, or Leave Early without opening the attendance dialog [Meet > Pairings].",
+          "Right click a wrestler in the Pairings roster list to mark Not Coming, Arrive Late, or Leave Early without opening the attendance dialog. Right click a wrestler in Current Matches or Possible Additional Matches to switch the focus to that wrestler [Meet > Pairings].",
           "Best practice: update attendance first, then run auto pairings to fill gaps and refresh recommendations [Meet > Pairings].",
         ],
       },
