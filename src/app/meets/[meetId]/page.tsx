@@ -1699,6 +1699,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
   const availableDisplay = availableSorted.slice(0, 20);
+  const getCheckpointBoutOrder = useCallback((b: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }) => {
+    const red = wMap[b.redId];
+    const green = wMap[b.greenId];
+    const homeId = homeTeamId;
+    const redIsHome = Boolean(homeId && red?.teamId === homeId);
+    const greenIsHome = Boolean(homeId && green?.teamId === homeId);
+    if (redIsHome && !greenIsHome) {
+      return { leftId: b.redId, rightId: b.greenId, leftTeam: b.redTeam, rightTeam: b.greenTeam };
+    }
+    if (greenIsHome && !redIsHome) {
+      return { leftId: b.greenId, rightId: b.redId, leftTeam: b.greenTeam, rightTeam: b.redTeam };
+    }
+    return { leftId: b.redId, rightId: b.greenId, leftTeam: b.redTeam, rightTeam: b.greenTeam };
+  }, [homeTeamId, wMap]);
   const deltaColor = (value: number) => {
     if (value < 0) return "#b00020";
     if (value > 0) return "#1b5e20";
@@ -4383,6 +4397,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       {matchesTooltip && (() => {
         const tooltipWrestler = wMap[matchesTooltip.wrestlerId] ?? null;
         const fullName = tooltipWrestler ? `${tooltipWrestler.first} ${tooltipWrestler.last}`.trim() : matchesTooltip.wrestlerId;
+        const titleColor = tooltipWrestler ? teamTextColor(tooltipWrestler.teamId) : "#222";
         const rows = (boutsByWrestlerId.get(matchesTooltip.wrestlerId) ?? [])
           .slice()
           .sort((a, b) => {
@@ -4419,7 +4434,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             }}
             aria-hidden="true"
           >
-            <div style={{ fontWeight: 800, marginBottom: 6, color: "#222" }}>
+            <div style={{ fontWeight: 800, marginBottom: 6, color: titleColor }}>
               Current matches for {fullName}
             </div>
             {rows.length === 0 ? (
@@ -4431,11 +4446,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   const oppName = opp ? `${opp.first} ${opp.last}`.trim() : opponentId;
                   const team = opp ? teamSymbol(opp.teamId) : "";
                   const label = team ? `${oppName} (${team})` : oppName;
+                  const opponentColor = opp ? teamTextColor(opp.teamId) : "#333";
                   const num = boutNumber(bout.mat, bout.order);
+                  const oppMatchCount = getMatchCount(opponentId);
                   return (
-                    <div key={`${matchesTooltip.wrestlerId}-${bout.id}-${opponentId}`} style={{ color: "#333" }}>
+                    <div key={`${matchesTooltip.wrestlerId}-${bout.id}-${opponentId}`}>
                       <span style={{ fontWeight: 700, marginRight: 8 }}>{num}</span>
-                      <span>{label}</span>
+                      <span style={{ color: opponentColor }}>{label}</span>
+                      <span style={{ marginLeft: 8, color: "#666", fontSize: 12 }}>
+                        ({oppMatchCount})
+                      </span>
                     </div>
                   );
                 })}
@@ -4609,21 +4629,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <div className="diff-table-wrap">
                     <table className="diff-table diff-table-bouts">
                       <tbody>
-                        {checkpointDiff.boutsAdded.map((b, idx) => (
-                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
-                            <td>
-                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
-                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
-                                {b.redTeam ? ` (${b.redTeam})` : ""}
-                              </span>
-                              <span className="diff-vs-inline"> v </span>
-                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
-                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
-                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {checkpointDiff.boutsAdded.map((b, idx) => {
+                          const { leftId, rightId, leftTeam, rightTeam } = getCheckpointBoutOrder(b);
+                          const left = wMap[leftId];
+                          const right = wMap[rightId];
+                          return (
+                            <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                              <td>
+                                <span style={{ color: teamColorById(left?.teamId) ?? undefined }}>
+                                  {left?.first ?? "Unknown"} {left?.last ?? leftId}
+                                  {leftTeam ? ` (${leftTeam})` : ""}
+                                </span>
+                                <span className="diff-vs-inline"> v </span>
+                                <span style={{ color: teamColorById(right?.teamId) ?? undefined }}>
+                                  {right?.first ?? "Unknown"} {right?.last ?? rightId}
+                                  {rightTeam ? ` (${rightTeam})` : ""}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -4635,21 +4660,26 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   <div className="diff-table-wrap">
                     <table className="diff-table diff-table-bouts">
                       <tbody>
-                        {checkpointDiff.boutsRemoved.map((b, idx) => (
-                          <tr key={`${b.redId}-${b.greenId}-${idx}`}>
-                            <td>
-                              <span style={{ color: teamColorById(wMap[b.redId]?.teamId) ?? undefined }}>
-                                {wMap[b.redId]?.first ?? "Unknown"} {wMap[b.redId]?.last ?? b.redId}
-                                {b.redTeam ? ` (${b.redTeam})` : ""}
-                              </span>
-                              <span className="diff-vs-inline"> v </span>
-                              <span style={{ color: teamColorById(wMap[b.greenId]?.teamId) ?? undefined }}>
-                                {wMap[b.greenId]?.first ?? "Unknown"} {wMap[b.greenId]?.last ?? b.greenId}
-                                {b.greenTeam ? ` (${b.greenTeam})` : ""}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {checkpointDiff.boutsRemoved.map((b, idx) => {
+                          const { leftId, rightId, leftTeam, rightTeam } = getCheckpointBoutOrder(b);
+                          const left = wMap[leftId];
+                          const right = wMap[rightId];
+                          return (
+                            <tr key={`${b.redId}-${b.greenId}-${idx}`}>
+                              <td>
+                                <span style={{ color: teamColorById(left?.teamId) ?? undefined }}>
+                                  {left?.first ?? "Unknown"} {left?.last ?? leftId}
+                                  {leftTeam ? ` (${leftTeam})` : ""}
+                                </span>
+                                <span className="diff-vs-inline"> v </span>
+                                <span style={{ color: teamColorById(right?.teamId) ?? undefined }}>
+                                  {right?.first ?? "Unknown"} {right?.last ?? rightId}
+                                  {rightTeam ? ` (${rightTeam})` : ""}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
