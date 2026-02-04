@@ -56,6 +56,7 @@ export default function TeamDetail({ params }: { params: Promise<{ teamId: strin
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
+// Build a safe default mat rule, using presets when available.
 function defaultMatRule(index: number): MatRule {
   const fallback: MatRule = {
     matIndex: index + 1,
@@ -85,14 +86,18 @@ function defaultMatRule(index: number): MatRule {
   };
 }
 
+// Clamp num mats to the configured minimum/maximum.
 const clampNumMats = (value: number) => Math.max(MIN_MATS, Math.min(MAX_MATS, value));
 
+// Normalize mat rule list to a fixed count with safe defaults.
 const padRulesToCount = (rules: MatRule[], count: number) => {
+  // Re-index mats to keep UI order stable.
   const normalized = rules.slice(0, count).map((rule, idx) => ({
     ...rule,
     matIndex: idx + 1,
   }));
   if (normalized.length < count) {
+    // Fill missing mats with defaults so all rows render consistently.
     const additions = Array.from({ length: count - normalized.length }, (_, idx) =>
       defaultMatRule(normalized.length + idx),
     );
@@ -101,6 +106,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
   return normalized;
 };
 
+  // Load roster, mat rules, and team metadata for the page.
   async function load() {
     const [wRes, rRes, tRes] = await Promise.all([
       fetch(`/api/teams/${teamId}/wrestlers?includeInactive=${showInactive ? "1" : "0"}`),
@@ -111,6 +117,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     if (rRes.ok) {
       const json = await rRes.json();
       const sourceRules = (json.rules ?? []) as MatRule[];
+      // Parse numeric fields defensively to avoid NaN in the UI.
       const parsedRules: MatRule[] = sourceRules.map((rule, idx) => ({
         matIndex: idx + 1,
         color: rule.color ?? "",
@@ -138,17 +145,20 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     }
   }
 
+  // Update form state and clear any prior errors once the user edits.
   const updateFormFields = (updates: Partial<typeof form>) => {
     setForm(prev => ({ ...prev, ...updates }));
     setFormError(prev => (prev ? "" : prev));
   };
 
+  // Submit handler for the inline "add wrestler" form.
   const handleNewWrestlerSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canEdit) return;
     await add();
   };
 
+  // Validate new wrestler form before submitting.
   const validateNewWrestler = () => {
     if (!form.first.trim()) return "First name is required.";
     if (!form.last.trim()) return "Last name is required.";
@@ -173,6 +183,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     return "";
   };
 
+  // Create a new wrestler entry and refresh roster.
   async function add() {
     if (!canEdit) return;
     const validationMessage = validateNewWrestler();
@@ -204,11 +215,13 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     await load();
   }
 
+  // Persist mat rules + home team preference.
   async function saveMatRules() {
     if (!canEdit) return;
     setRuleMsg("");
     const normalizedRules = padRulesToCount(matRules, CONFIGURED_MATS);
     setMatRules(normalizedRules);
+    // Re-number mats so the API always receives a 1-based index.
     const rules = normalizedRules.map((rule, idx) => ({
       ...rule,
       matIndex: idx + 1,
@@ -226,6 +239,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     setTimeout(() => setRuleMsg(""), 1500);
   }
 
+  // Save the team color after validating hex format.
   async function saveTeamColor() {
     if (!canEdit) return;
     if (!/^#[0-9a-fA-F]{6}$/.test(teamColor)) {
@@ -244,6 +258,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     await load();
   }
 
+  // Upload team logo image and refresh.
   async function uploadTeamLogo(file: File | null) {
     if (!canEdit || !file) return;
     const form = new FormData();
@@ -260,6 +275,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     await load();
   }
 
+  // Clear team logo image and refresh.
   async function clearTeamLogo() {
     if (!canEdit) return;
     const res = await fetch(`/api/teams/${teamId}/logo`, { method: "DELETE" });
@@ -273,6 +289,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
 
   useEffect(() => { void load(); }, [teamId, showInactive]);
 
+  // Toggle active status for a wrestler (soft remove).
   async function setWrestlerActive(wrestlerId: string, active: boolean) {
     if (!canEdit) return;
     await fetch(`/api/teams/${teamId}/wrestlers/${wrestlerId}`, {
@@ -283,6 +300,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
     await load();
   }
 
+  // Save team website used for the "Team News" link.
   async function saveTeamWebsite() {
     if (!canEdit) return;
     setRuleMsg("");
@@ -342,11 +360,13 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
             />
             <label style={{ fontSize: 12, opacity: 0.7 }}>Named colors</label>
             <select value={teamColor} onChange={(e) => setTeamColor(e.target.value)} style={{ maxWidth: 240 }}>
+              {/* Named color list for quick selection. */}
               {NAMED_COLORS.map((c) => (
                 <option key={c.value} value={c.value}>{c.name}</option>
               ))}
             </select>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 22px)", gap: 6 }}>
+              {/* Clickable color swatches. */}
               {NAMED_COLORS.map((c) => (
                 <button
                   key={`${teamId}-${c.value}`}
@@ -392,7 +412,17 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
           <input placeholder="First" value={form.first} onChange={e => updateFormFields({ first: e.target.value })} disabled={!canEdit} />
           <input placeholder="Last" value={form.last} onChange={e => updateFormFields({ last: e.target.value })} disabled={!canEdit} />
           <input type="number" placeholder="Weight" value={form.weight} onChange={e => updateFormFields({ weight: Number(e.target.value) })} disabled={!canEdit} />
-          <input type="date" value={form.birthdate} onChange={e => updateFormFields({ birthdate: e.target.value })} disabled={!canEdit} />
+          <input
+            type="date"
+            value={form.birthdate}
+            onChange={e => updateFormFields({ birthdate: e.target.value })}
+            name="new-wrestler-birthdate"
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            disabled={!canEdit}
+          />
           <select value={form.isGirl ? "girl" : "boy"} onChange={e => updateFormFields({ isGirl: e.target.value === "girl" })} disabled={!canEdit}>
             <option value="boy">Boy</option>
             <option value="girl">Girl</option>
@@ -445,6 +475,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
             </tr>
           </thead>
           <tbody>
+            {/* Render all configured mat rules, padded to the configured count. */}
             {matRules.map((rule, idx) => (
               <tr key={idx} style={{ borderTop: "1px solid #eee" }}>
                 <td>{idx + 1}</td>
@@ -552,6 +583,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
           </tr>
         </thead>
         <tbody>
+          {/* Active roster list. */}
           {wrestlers.filter(w => w.active).map(w => (
             <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
               <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
@@ -578,6 +610,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
             </tr>
             </thead>
             <tbody>
+              {/* Inactive roster list. */}
               {wrestlers.filter(w => !w.active).map(w => (
                 <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
               <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
@@ -591,6 +624,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
               </td>
             </tr>
           ))}
+              {/* Show empty state when no inactive wrestlers are present. */}
               {wrestlers.filter(w => !w.active).length === 0 && (
                 <tr><td colSpan={7}>None</td></tr>
               )}

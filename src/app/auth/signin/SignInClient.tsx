@@ -282,6 +282,10 @@ export default function SignInClient() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="username"
                   autoFocus
                 />
               </div>

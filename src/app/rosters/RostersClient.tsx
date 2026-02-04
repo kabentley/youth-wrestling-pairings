@@ -41,17 +41,19 @@ type EditableWrestler = {
 type ViewerColumnKey = "last" | "first" | "age" | "sex" | "weight" | "experienceYears" | "skill" | "active";
 type ViewerColumn = { key: ViewerColumnKey; label: string; width: number };
 
+// Basic CSV parser that supports commas and quoted values.
 function parseCsv(text: string) {
-  // Basic CSV parser that supports commas and quoted values.
   const rows: string[][] = [];
   let cur = "";
   let row: string[] = [];
   let inQuotes = false;
 
+  // Flush the current cell into the row buffer.
   function pushCell() {
     row.push(cur);
     cur = "";
   }
+  // Flush the current row into the result set.
   function pushRow() {
     // ignore completely empty trailing row
     if (row.length === 1 && row[0].trim() === "") { row = []; return; }
@@ -59,6 +61,7 @@ function parseCsv(text: string) {
     row = [];
   }
 
+  // Walk the input once, handling quotes, commas, and line breaks.
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (ch === '"') {
@@ -91,6 +94,7 @@ function parseCsv(text: string) {
   const headers = hasHeader ? firstRow : requiredHeaders;
   const dataRows = hasHeader ? rows.slice(1) : rows;
 
+  // Convert rows to objects keyed by header names.
   const data = dataRows.filter(r => r.some(c => c.trim() !== "")).map(r => {
     const obj: Record<string, string> = {};
     for (let j = 0; j < headers.length; j++) obj[headers[j]] = (r[j] ?? "").trim();
@@ -100,6 +104,7 @@ function parseCsv(text: string) {
   return { headers, data };
 }
 
+// Main roster management UI (edit, import, and read-only views).
 export default function RostersClient() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -147,6 +152,9 @@ export default function RostersClient() {
   const [rosterControlsHeight, setRosterControlsHeight] = useState(0);
   const rosterSelectionStorageKey = "rosters:selectedTeamId";
   const daysPerYear = 365;
+  // Close delete modal on Escape.
+  // Load team list once auth state is known.
+  // Rebuild editable rows whenever the server roster changes.
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -156,6 +164,9 @@ export default function RostersClient() {
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, []);
+  // Adjust editable column widths for narrow screens.
+  // Restore last selected team from local storage.
+  // Handle column resizing for the editable roster table.
   useEffect(() => {
     const applyEditableWidths = () => {
       if (typeof window === "undefined") return;
@@ -169,6 +180,7 @@ export default function RostersClient() {
     window.addEventListener("resize", applyEditableWidths);
     return () => window.removeEventListener("resize", applyEditableWidths);
   }, []);
+  // Human-readable label for the import modal.
   const importTeamLabel = useMemo(() => {
     const team = teams.find(t => t.id === importTeamId);
     if (!team) return "no team selected";
@@ -182,11 +194,13 @@ export default function RostersClient() {
     { href: "/admin", label: "Admin", roles: ["ADMIN"] as const },
   ];
 
+  // Redirect to sign-in while preserving the return path.
   const redirectToLogin = () => {
     const callbackUrl = pathname || "/rosters";
     router.replace(`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   };
 
+  // Handle 401s consistently across data fetches.
   const handleUnauthorized = (res: Response) => {
     if (res.status === 401) {
       if (status !== "authenticated") {
@@ -197,6 +211,7 @@ export default function RostersClient() {
     return false;
   };
 
+  // Switch selected team, guarding against unsaved edits.
   const selectTeam = (teamId: string) => {
     if (hasDirtyChanges) {
       setRosterMsg("Save or discard your edits before switching teams.");
@@ -210,12 +225,14 @@ export default function RostersClient() {
     }
   };
 
+  // Load the team list for the team picker.
   async function load() {
     const tRes = await fetch("/api/teams");
     if (handleUnauthorized(tRes)) return;
     if (tRes.ok) setTeams(await tRes.json());
   }
 
+  // Convert birthdate to decimal years for display.
   function ageYears(birthdate: string) {
     const bDate = new Date(birthdate);
     if (Number.isNaN(bDate.getTime())) return null;
@@ -224,12 +241,15 @@ export default function RostersClient() {
     return days / daysPerYear;
   }
 
+  // Accent color for sex labels.
   function sexColor(isGirl?: boolean) {
     if (isGirl === true) return "#d81b60";
     if (isGirl === false) return "#1565c0";
     return undefined;
   }
 
+  // Default to the viewer's team for non-admin roles.
+  // Handle column resizing for the read-only roster table.
   useEffect(() => {
     if (status === "loading") return;
     if (status === "unauthenticated") {
@@ -238,6 +258,7 @@ export default function RostersClient() {
     }
     void load();
   }, [status]);
+  // Admin-only: resolve the admin's team to preselect when needed.
   useEffect(() => {
     if (selectedTeamId || hasDirtyChanges) return;
     if (typeof window === "undefined") return;
@@ -247,12 +268,14 @@ export default function RostersClient() {
     setSelectedTeamId(stored);
     setImportTeamId(stored);
   }, [selectedTeamId, hasDirtyChanges, teams]);
+  // Admin-only: preselect the admin team when no explicit selection exists.
   useEffect(() => {
     if ((role === "COACH" || role === "PARENT" || role === "TABLE_WORKER") && sessionTeamId && !selectedTeamId) {
       setSelectedTeamId(sessionTeamId);
       setImportTeamId(sessionTeamId);
     }
   }, [role, sessionTeamId, selectedTeamId]);
+  // Clear import summary when switching teams.
   useEffect(() => {
     if (role !== "ADMIN") return;
     let active = true;
@@ -279,6 +302,7 @@ export default function RostersClient() {
       window.removeEventListener("focus", handleFocus);
     };
   }, [role]);
+  // Allow deep-linking to a team via the query string.
   useEffect(() => {
     if (role !== "ADMIN") return;
     if (!adminTeamId) return;
@@ -288,6 +312,7 @@ export default function RostersClient() {
     setImportTeamId(adminTeamId);
   }, [role, adminTeamId, selectedTeamId, hasDirtyChanges]);
 
+  // Close import modal on Escape.
   useEffect(() => {
     setImportSummary("");
   }, [selectedTeamId]);
@@ -317,6 +342,7 @@ export default function RostersClient() {
     };
   }, [showImportModal]);
 
+  // Normalize XLSX date values or Date objects to YYYY-MM-DD.
   function normalizeDateValue(value: unknown) {
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
       return value.toISOString().slice(0, 10);
@@ -332,6 +358,7 @@ export default function RostersClient() {
     return null;
   }
 
+  // Normalize a cell value to a trimmed string (with date coercion for birthdate).
   function normalizeCellValue(key: string, value: unknown) {
     if (value == null) return "";
     if (value instanceof Date || typeof value === "number") {
@@ -343,6 +370,7 @@ export default function RostersClient() {
     return String(value).trim();
   }
 
+  // Parse CSV/XLSX roster files into normalized rows.
   async function parseRosterFile(f: File) {
     const lower = f.name.toLowerCase();
     if (lower.endsWith(".xlsx")) {
@@ -353,6 +381,7 @@ export default function RostersClient() {
       const sheet = workbook.Sheets[sheetName];
       const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
       const headers = rawRows.length ? Object.keys(rawRows[0]) : [];
+      // Normalize each XLSX row into string values.
       const data = rawRows.map(row => {
         const normalized: Record<string, string> = {};
         for (const [key, value] of Object.entries(row)) {
@@ -367,6 +396,7 @@ export default function RostersClient() {
     return { headers: parsed.headers, data: parsed.data };
   }
 
+  // Reset import state and build a preview for the chosen file.
   async function onChooseFile(f: File | null) {
     setFile(f);
     setPreview(null);
@@ -387,10 +417,12 @@ export default function RostersClient() {
     }
   }
 
+  // Normalize header keys for loose matching.
   function normalizeKey(key: string) {
     return key.toLowerCase().replace(/[^a-z0-9]/g, "");
   }
 
+  // Coerce a gender/sex cell to a boolean if possible.
   function normalizeIsGirl(value: string) {
     const normalized = value.trim().toLowerCase();
     if (!normalized) return undefined;
@@ -399,12 +431,15 @@ export default function RostersClient() {
     return undefined;
   }
 
+  // Map raw row fields to canonical roster columns.
   function normalizeRow(r: Record<string, string>) {
+    // Build a normalized header map for flexible column matching.
     const normalizedMap = Object.entries(r).reduce<Record<string, string>>((acc, [key, value]) => {
       acc[normalizeKey(key)] = value;
       return acc;
     }, {});
 
+    // Helper to read the first non-empty value across possible header aliases.
     const get = (...keys: string[]) => {
       for (const k of keys) {
         const direct = r[k];
@@ -459,10 +494,12 @@ export default function RostersClient() {
     return { first, last, weight, birthdate, experienceYears, skill, isGirl };
   }
 
+  // Build a stable key used to compare roster entries.
   function buildRosterKey(first: string, last: string, birthdate: string) {
     return `${first.trim().toLowerCase()}|${last.trim().toLowerCase()}|${birthdate}`;
   }
 
+  // Parse, validate, and import roster rows via the API.
   async function importCsv() {
     setImportMsg("");
     setImportError("");
@@ -486,7 +523,9 @@ export default function RostersClient() {
         return;
       }
 
+      // Normalize rows into canonical fields.
       const normalized = parsed.data.map(normalizeRow);
+      // Identify rows missing required numeric fields for detailed error reporting.
       const skippedRows = normalized
         .map((w, idx) => ({
           row: idx + 2,
@@ -530,6 +569,7 @@ export default function RostersClient() {
       }
 
       if (roster.length > 0) {
+        // Estimate how many new wrestlers would be added to avoid accidental imports.
         const existingKeys = new Set(
           roster.map(w => buildRosterKey(w.first, w.last, w.birthdate.slice(0, 10))),
         );
@@ -599,6 +639,7 @@ export default function RostersClient() {
     }
   }
 
+  // Load the full roster (including inactive) for the selected team.
   async function loadRoster(teamId: string) {
     setRosterMsg("");
     if (!teamId) {
@@ -617,6 +658,7 @@ export default function RostersClient() {
     setRoster(await res.json());
   }
 
+  // Reload roster whenever the selected team changes.
   useEffect(() => {
     if (!selectedTeamId) {
       setRoster([]);
@@ -625,6 +667,7 @@ export default function RostersClient() {
     void loadRoster(selectedTeamId);
   }, [selectedTeamId]);
 
+  // Track row dirty state to enable save/cancel actions.
   const updateDirtyState = (rowId: string, dirty: boolean) => {
     setDirtyRowIds(prev => {
       const next = new Set(prev);
@@ -637,6 +680,7 @@ export default function RostersClient() {
     });
   };
 
+  // Compare a row against the original snapshot.
   const isRowDirty = (row: EditableWrestler) => {
       if (row.isNew) {
         return Boolean(
@@ -663,10 +707,12 @@ export default function RostersClient() {
     );
   };
 
+  // Recompute dirty state after a row edit.
   const markRowDirtyState = (row: EditableWrestler) => {
     updateDirtyState(row.id, isRowDirty(row));
   };
 
+  // Record validation errors for a specific row.
   const setRowFieldErrors = (rowId: string, errors: Set<keyof EditableWrestler>) => {
     setFieldErrors(prev => {
       const next = { ...prev };
@@ -679,10 +725,12 @@ export default function RostersClient() {
     });
   };
 
+  // Helper to check whether a cell has a validation error.
   const hasFieldError = (rowId: string, field: keyof EditableWrestler) => {
     return fieldErrors[rowId]?.has(field) ?? false;
   };
 
+  // Validate a roster row and return its error set.
   const validateRow = (row: EditableWrestler) => {
     const errors = new Set<keyof EditableWrestler>();
     const first = row.first.trim();
@@ -711,6 +759,7 @@ export default function RostersClient() {
     return errors.size === 0;
   };
 
+  // Persist a single row (create or update) after validation.
   const persistRow = async (row: EditableWrestler) => {
     if (!selectedTeamId) return false;
     if (!validateRow(row)) return false;
@@ -719,6 +768,7 @@ export default function RostersClient() {
     const hasOriginal = originalRowsRef.current[row.id] !== undefined;
     const isNewRecord = row.isNew ?? !hasOriginal;
     if (isNewRecord) {
+      // Avoid duplicate names within the team.
       const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
       const duplicate = editableRows.some(other => {
         if (other.id === row.id) return false;
@@ -770,11 +820,13 @@ export default function RostersClient() {
     return true;
   };
 
+  // Finalize a new row so it becomes a normal editable row.
   const prepareNewRowForSave = (row: EditableWrestler) => {
     if (!row.isNew) return;
     const first = row.first.trim();
     const last = row.last.trim();
     if (first && last) {
+      // Block duplicate names before creating a new row slot.
       const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
       const duplicate = editableRows.some(other => {
         if (other.id === row.id) return false;
@@ -798,18 +850,21 @@ export default function RostersClient() {
     setRosterMsg("New roster change ready. Save changes to persist.");
   };
 
+  // Show the destructive delete confirmation modal.
   const openDeleteModal = (row: EditableWrestler) => {
     setDeleteError("");
     setDeleteTarget(row);
     setShowDeleteModal(true);
   };
 
+  // Close delete modal and clear target state.
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setDeleteTarget(null);
     setDeleteError("");
   };
 
+  // Permanently delete a wrestler and clear their bouts.
   const confirmDeleteWrestler = async () => {
     if (!selectedTeamId || !deleteTarget) return;
     setIsDeletingWrestler(true);
@@ -830,6 +885,7 @@ export default function RostersClient() {
     }
   };
 
+  // Persist all dirty rows (create/update) in one pass.
   const saveAllChanges = async () => {
     if (!selectedTeamId || dirtyRowIds.size === 0) return;
     if (hasFieldValidationErrors) {
@@ -841,6 +897,7 @@ export default function RostersClient() {
       const rowsToSave = editableRows.filter(row => dirtyRowIds.has(row.id));
       const hasNewRows = rowsToSave.some(row => row.isNew);
       const updatedRowsById = new Map(rowsToSave.map(row => [row.id, row]));
+      // Save each dirty row sequentially to surface server errors.
       for (const row of rowsToSave) {
         const ok = await persistRow(row);
         if (!ok) return;
@@ -873,6 +930,7 @@ export default function RostersClient() {
     }
   };
 
+  // Discard local edits and reload from the server.
   const cancelChanges = async () => {
     if (!selectedTeamId) return;
     setDirtyRowIds(new Set());
@@ -881,6 +939,7 @@ export default function RostersClient() {
     await loadRoster(selectedTeamId);
   };
 
+  // Update a single editable cell and revalidate the row.
   const handleFieldChange = (rowId: string, field: keyof EditableWrestler, value: string | boolean) => {
     setRosterMsg("");
     setEditableRows(rows =>
@@ -893,6 +952,7 @@ export default function RostersClient() {
       }),
     );
   };
+  // Columns for the editable spreadsheet-like roster.
   const rosterSheetColumns = [
     { key: "last", label: "Last" },
     { key: "first", label: "First" },
@@ -916,6 +976,7 @@ export default function RostersClient() {
     skill: 110,
     active: 110,
   }));
+  // Adjust read-only column widths for narrow screens.
   useEffect(() => {
     const applyWidths = () => {
       if (typeof window === "undefined") return;
@@ -950,6 +1011,7 @@ export default function RostersClient() {
     return () => window.removeEventListener("resize", applyWidths);
   }, []);
 
+  // Render column widths for the editable roster table.
   const renderColGroup = () => (
     <colgroup>
       {spreadsheetColWidths.map((width, idx) => (
@@ -958,11 +1020,13 @@ export default function RostersClient() {
     </colgroup>
   );
 
+  // Render the sort direction indicator for active column.
   const renderSortArrow = (key: string) => {
     if (sortConfig.key !== key) return null;
     return <span className="sort-arrow">{sortConfig.dir === "asc" ? "▲" : "▼"}</span>;
   };
 
+  // Toggle sort direction or switch to a new sort key.
   const handleSortColumn = (key: string) => {
     setSortConfig(prev => {
       if (prev.key === key) {
@@ -972,6 +1036,7 @@ export default function RostersClient() {
     });
   };
 
+  // Return a comparable value for sorting editable rows.
   const getSortValue = (row: EditableWrestler, key: string) => {
     switch (key) {
       case "last":
@@ -996,6 +1061,7 @@ export default function RostersClient() {
         return row.last.toLowerCase();
     }
   };
+  // Return a comparable value for sorting read-only rows.
   const getViewerSortValue = (row: Wrestler, key: ViewerColumnKey) => {
     switch (key) {
       case "last":
@@ -1028,6 +1094,7 @@ export default function RostersClient() {
   const includeInactiveRows = allowInactiveView && showInactive;
   const filteredEditableRows = savedEditableRows.filter(row => includeInactiveRows || row.active);
 
+  // Sort the editable rows for display.
   const sortedEditableRows = useMemo(() => {
     const rows = [...filteredEditableRows];
     rows.sort((a, b) => {
@@ -1057,6 +1124,7 @@ export default function RostersClient() {
       active: w.active,
     }));
     const originals: Record<string, EditableWrestler> = {};
+    // Capture a baseline snapshot for dirty comparisons.
     rows.forEach(r => {
       originals[r.id] = r;
     });
@@ -1086,15 +1154,18 @@ export default function RostersClient() {
         }),
       );
     };
+    // Track mouse drag for column resizing.
     function onMouseMove(e: MouseEvent) {
       handleResizeMove(e.clientX);
     }
+    // Track touch drag for column resizing.
     function onTouchMove(e: TouchEvent) {
       if (!rosterResizeRef.current) return;
       if (e.touches.length === 0) return;
       e.preventDefault();
       handleResizeMove(e.touches[0].clientX);
     }
+    // Clear resize state on drag end.
     function onResizeEnd() {
       rosterResizeRef.current = null;
     }
@@ -1126,15 +1197,18 @@ export default function RostersClient() {
       const newWidth = startWidth + clampedDelta;
       setSpectatorColWidths(widths => ({ ...widths, [key]: newWidth, [nextKey]: nextWidth }));
     };
+    // Track mouse drag for column resizing.
     function onMouseMove(e: MouseEvent) {
       handleResizeMove(e.clientX);
     }
+    // Track touch drag for column resizing.
     function onTouchMove(e: TouchEvent) {
       if (!spectatorResizeRef.current) return;
       if (e.touches.length === 0) return;
       e.preventDefault();
       handleResizeMove(e.touches[0].clientX);
     }
+    // Clear resize state on drag end.
     function onResizeEnd() {
       spectatorResizeRef.current = null;
     }
@@ -1152,6 +1226,7 @@ export default function RostersClient() {
     };
   }, []);
 
+  // Normalize pointer position across mouse and touch events.
   const getResizeClientX = (e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     if ("touches" in e) {
       const touch = e.touches[0];
@@ -1160,6 +1235,7 @@ export default function RostersClient() {
     return e.clientX;
   };
 
+  // Start column resize drag in the editable table.
   const handleColMouseDown = (index: number, e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     e.preventDefault();
     const nextIndex = index + 1 < spreadsheetColWidths.length ? index + 1 : null;
@@ -1173,6 +1249,7 @@ export default function RostersClient() {
     };
   };
 
+  // Start column resize drag in the read-only table.
   const handleSpectatorColMouseDown = (key: ViewerColumnKey, e: ReactMouseEvent<HTMLSpanElement> | ReactTouchEvent<HTMLSpanElement>) => {
     e.preventDefault();
     const currentIndex = spectatorColumns.findIndex(col => col.key === key);
@@ -1187,12 +1264,14 @@ export default function RostersClient() {
     };
   };
 
+  // Format age with one decimal place for display cells.
   const getAgeLabel = (birthdate: string) => {
     if (!birthdate) return "";
     const yrs = ageYears(birthdate);
     return typeof yrs === "number" ? yrs.toFixed(1) : "";
   };
 
+  // Column definitions for the read-only roster table.
   const rosterViewerColumns: ViewerColumn[] = [
     { key: "last", label: "Last", width: 120 },
     { key: "first", label: "First", width: 120 },
@@ -1206,6 +1285,7 @@ export default function RostersClient() {
   const spectatorColumns = hideSkillAndStatus
     ? rosterViewerColumns.filter(col => col.key !== "skill" && col.key !== "active")
     : rosterViewerColumns;
+  // Render a single cell in the read-only roster table.
   const renderSpectatorCell = (key: ViewerColumnKey, wrestler: Wrestler) => {
     switch (key) {
       case "last":
@@ -1235,6 +1315,7 @@ export default function RostersClient() {
     }
   };
   const currentTeam = teams.find(t => t.id === selectedTeamId);
+  // Order teams alphabetically, preferring the viewer's team first.
   const orderedTeams = useMemo(() => {
     const preferredTeamId = role === "ADMIN" ? adminTeamId ?? sessionTeamId : sessionTeamId;
     const sorted = [...teams];
@@ -1257,12 +1338,14 @@ export default function RostersClient() {
     return [mine, ...sorted.filter(t => t.id !== preferredTeamId)];
   }, [adminTeamId, role, sessionTeamId, teams]);
 
+  // Disable inactive toggle for roles that should not see it.
   useEffect(() => {
     if (!allowInactiveView && showInactive) {
       setShowInactive(false);
     }
   }, [allowInactiveView, showInactive]);
 
+  // Create a new blank editable row for inline entry.
   const createEmptyRow = (id?: string): EditableWrestler => ({
     id: id ?? `new-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
     first: "",
@@ -1276,6 +1359,7 @@ export default function RostersClient() {
     isNew: true,
   });
 
+  // Allow Enter to commit a new row and create another.
   const handleNewRowInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>, row: EditableWrestler) => {
     if (event.key !== "Enter" || !row.isNew || !isRowDirty(row)) return;
     event.preventDefault();
@@ -1284,6 +1368,7 @@ export default function RostersClient() {
 
   const fieldRefs = useRef<Map<string, HTMLInputElement | HTMLSelectElement>>(new Map());
 
+  // Track field refs so keyboard navigation can move focus.
   const registerFieldRef = (rowId: string, field: keyof EditableWrestler, el: HTMLInputElement | HTMLSelectElement | null) => {
     const key = `${rowId}-${field}`;
     if (el) {
@@ -1293,12 +1378,14 @@ export default function RostersClient() {
     }
   };
 
+  // Focus a specific editable cell by row + field.
   const focusField = (rowId: string, field: keyof EditableWrestler) => {
     const key = `${rowId}-${field}`;
     const target = fieldRefs.current.get(key);
     target?.focus();
   };
 
+  // Move focus to the same field on the next/previous row.
   const focusAdjacentRow = (rowId: string, field: keyof EditableWrestler, direction: "up" | "down") => {
     const allRows = [...newRows, ...sortedEditableRows];
     const idx = allRows.findIndex(r => r.id === rowId);
@@ -1308,6 +1395,7 @@ export default function RostersClient() {
     focusField(nextRow.id, field);
   };
 
+  // Keyboard shortcuts for row navigation and save/cancel.
   const handleInputKeyDown = (
     event: ReactKeyboardEvent<HTMLInputElement | HTMLSelectElement>,
     row: EditableWrestler,
@@ -1320,6 +1408,7 @@ export default function RostersClient() {
     }
   };
 
+  // Render a single editable roster row.
   const renderEditableRow = (row: EditableWrestler, isNewRow = false) => {
     const ageDisplay = row.birthdate ? getAgeLabel(row.birthdate) : "";
     const lastClass = `spreadsheet-input${hasFieldError(row.id, "last") ? " field-error" : ""}`;
@@ -1366,6 +1455,13 @@ export default function RostersClient() {
             className={birthdateClass}
             value={row.birthdate}
             onChange={e => handleFieldChange(row.id, "birthdate", e.target.value)}
+            name={`birthdate-${row.id}`}
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-bwignore="true"
+            data-roboform-ignore="true"
+            data-rfignore="true"
             disabled={!canEditRoster}
             ref={el => registerFieldRef(row.id, "birthdate", el)}
             onKeyDown={e => handleInputKeyDown(e, row, "birthdate")}
@@ -1474,6 +1570,7 @@ export default function RostersClient() {
     );
   };
 
+  // Build a sorted read-only roster for non-editing viewers.
   const displayRoster = useMemo(() => {
     const viewerSortKey = spectatorColumns.some(col => col.key === sortConfig.key)
       ? (sortConfig.key as ViewerColumnKey)
@@ -1493,6 +1590,7 @@ export default function RostersClient() {
     return rows;
   }, [roster, includeInactiveRows, sortConfig, spectatorColumns]);
 
+  // Aggregate roster totals for summary display.
   const rosterTotals = useMemo(() => {
     const total = roster.length;
     const inactive = roster.filter(w => !w.active).length;
@@ -1500,12 +1598,15 @@ export default function RostersClient() {
     return { total, inactive, girls };
   }, [roster]);
 
+  // Export only active wrestlers.
   const downloadableRoster = useMemo(() => displayRoster.filter(row => row.active), [displayRoster]);
 
+  // Build and download a CSV export of the active roster.
   const downloadRosterCsv = () => {
     if (!selectedTeamId) return;
     if (downloadableRoster.length === 0) return;
 
+    // Escape commas/quotes for CSV output.
     const escape = (value: string | number | boolean) => {
       const text = String(value);
       if (text.includes(",") || text.includes("\n") || text.includes("\"")) {
@@ -1514,6 +1615,7 @@ export default function RostersClient() {
       return text;
     };
 
+    // Convert rows to CSV-safe cell arrays.
     const rows = downloadableRoster.map(row => {
       const birthdateValue = row.birthdate ? row.birthdate.split("T")[0] : "";
       return [
@@ -1539,6 +1641,7 @@ export default function RostersClient() {
     URL.revokeObjectURL(url);
   };
 
+  // Measure the roster header to pin scrolling content below it.
   useEffect(() => {
     const el = rosterControlsRef.current;
     if (!el) return;
@@ -2448,6 +2551,7 @@ export default function RostersClient() {
                       disabled={teams.length === 0 || hasDirtyChanges}
                     >
                       <option value="" disabled>Select a team</option>
+                      {/* Team selector options (ordered with preferred team first). */}
                       {orderedTeams.map(t => (
                         <option key={t.id} value={t.id}>
                           {t.symbol ? `${t.symbol} - ${t.name}` : t.name}
@@ -2579,6 +2683,7 @@ export default function RostersClient() {
                         {renderColGroup()}
                         <thead>
                           <tr>
+                            {/* Column headers with sorting + resize handles. */}
                             {rosterSheetColumns.map((col, idx) => (
                               <th key={col.key} className={col.key === "actions" ? "action-cell" : ""}>
                                 {col.key === "actions" ? (
@@ -2610,6 +2715,7 @@ export default function RostersClient() {
                               </td>
                             </tr>
                           ) : (
+                            // Render the "new row" entry at the top.
                             newRows.map(row => renderEditableRow(row, true))
                           )}
                         </tbody>
@@ -2626,6 +2732,7 @@ export default function RostersClient() {
                               </td>
                             </tr>
                           ) : (
+                            // Render sorted editable roster rows.
                             sortedEditableRows.map(row => renderEditableRow(row))
                           )}
                         </tbody>
@@ -2636,12 +2743,14 @@ export default function RostersClient() {
                   <div className="roster-table">
                     <table>
                       <colgroup>
+                        {/* Fixed column widths for read-only roster. */}
                         {spectatorColumns.map(col => (
                           <col key={col.key} style={{ width: spectatorColWidths[col.key] }} />
                         ))}
                       </colgroup>
                       <thead>
                         <tr>
+                          {/* Column headers with sorting + resize handles. */}
                           {spectatorColumns.map(col => (
                             <th key={col.key} className="roster-th">
                               <button
@@ -2662,6 +2771,7 @@ export default function RostersClient() {
                         </tr>
                       </thead>
                       <tbody>
+                        {/* Render read-only roster rows. */}
                         {displayRoster.map(w => (
                           <tr key={w.id} className={w.active ? "" : "inactive-row"}>
                             {spectatorColumns.map(col => (
@@ -2755,12 +2865,14 @@ export default function RostersClient() {
                   <table className="preview-table">
                     <thead>
                       <tr>
+                        {/* Preview headers (first 8 columns). */}
                         {preview.headers.slice(0, 8).map(h => (
                           <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
+                      {/* Preview rows (first 8 columns). */}
                       {preview.rows.map((r, i) => (
                         <tr key={i}>
                           {preview.headers.slice(0, 8).map(h => (
