@@ -607,11 +607,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const team = teams.find(t => t.id === teamId);
     return team?.symbol ?? team?.name ?? "";
   }
-  function teamColorById(teamId?: string | null) {
-    if (!teamId) return undefined;
-    const team = teams.find(t => t.id === teamId);
-    return team?.color ?? undefined;
-  }
   function teamSymbol(id: string) {
     const team = teams.find(t => t.id === id);
     return team?.symbol ?? team?.name ?? id;
@@ -3332,7 +3327,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
-                      maxWidth: isNarrowScreen ? 140 : 240,
+                      maxWidth: isNarrowScreen ? 140 : "100%",
                       minWidth: 0,
                       flex: "1 1 auto",
                     }}
@@ -4678,7 +4673,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         {checkpointDiff.attendance.map(entry => (
                           <tr key={entry.wrestlerId}>
                             <td
-                              style={{ color: teamColorById(wMap[entry.wrestlerId]?.teamId) ?? undefined }}
+                              style={{ color: teamTextColor(wMap[entry.wrestlerId]?.teamId ?? "") }}
                             >
                               {entry.first} {entry.last}
                               {teamSymbolById(wMap[entry.wrestlerId]?.teamId)
@@ -4726,12 +4721,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           return (
                             <tr key={`${b.redId}-${b.greenId}-${idx}`}>
                               <td>
-                                <span style={{ color: teamColorById(left?.teamId) ?? undefined }}>
+                                <span style={{ color: teamTextColor(left?.teamId ?? "") }}>
                                   {left?.first ?? "Unknown"} {left?.last ?? leftId}
                                   {leftTeam ? ` (${leftTeam})` : ""}
                                 </span>
                                 <span className="diff-vs-inline"> v </span>
-                                <span style={{ color: teamColorById(right?.teamId) ?? undefined }}>
+                                <span style={{ color: teamTextColor(right?.teamId ?? "") }}>
                                   {right?.first ?? "Unknown"} {right?.last ?? rightId}
                                   {rightTeam ? ` (${rightTeam})` : ""}
                                 </span>
@@ -4757,12 +4752,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           return (
                             <tr key={`${b.redId}-${b.greenId}-${idx}`}>
                               <td>
-                                <span style={{ color: teamColorById(left?.teamId) ?? undefined }}>
+                                <span style={{ color: teamTextColor(left?.teamId ?? "") }}>
                                   {left?.first ?? "Unknown"} {left?.last ?? leftId}
                                   {leftTeam ? ` (${leftTeam})` : ""}
                                 </span>
                                 <span className="diff-vs-inline"> v </span>
-                                <span style={{ color: teamColorById(right?.teamId) ?? undefined }}>
+                                <span style={{ color: teamTextColor(right?.teamId ?? "") }}>
                                   {right?.first ?? "Unknown"} {right?.last ?? rightId}
                                   {rightTeam ? ` (${rightTeam})` : ""}
                                 </span>
