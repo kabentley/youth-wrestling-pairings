@@ -94,7 +94,6 @@ export default function CoachMyTeamPage() {
   const [savingTeam, setSavingTeam] = useState(false);
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
-  const headCoach = staff.find((member) => member.role === "COACH" && member.id === headCoachId) ?? null;
   const [logoLoading, setLogoLoading] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [role, setRole] = useState<UserRole | null>(null);

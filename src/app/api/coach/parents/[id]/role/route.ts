@@ -55,7 +55,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   });
   if (parsed.data.role === "COACH" && !team.headCoachId) {
     await db.team.update({
-      where: { id: user.teamId },
+      where: { id: teamId },
       data: { headCoachId: id },
     });
   }

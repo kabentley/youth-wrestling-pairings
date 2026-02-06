@@ -25,6 +25,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [msg, setMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [leagueName, setLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
@@ -60,35 +61,40 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
 
   async function load() {
-    const [tRes, lRes, sRes] = await Promise.all([
-      fetch("/api/teams"),
-      fetch("/api/league"),
-      fetch("/api/league/stats"),
-    ]);
-    if (tRes.ok) setTeams(await tRes.json());
-    if (lRes.ok) {
-      const league = await lRes.json();
-      setLeagueName(league.name ?? "");
-      setLeagueHasLogo(Boolean(league.hasLogo));
-      setLeagueWebsite(league.website ?? "");
-      if (typeof league.ageAllowancePctPerYear === "number") {
-        setAgeAllowancePctPerYear(league.ageAllowancePctPerYear);
+    setIsLoading(true);
+    try {
+      const [tRes, lRes, sRes] = await Promise.all([
+        fetch("/api/teams"),
+        fetch("/api/league"),
+        fetch("/api/league/stats"),
+      ]);
+      if (tRes.ok) setTeams(await tRes.json());
+      if (lRes.ok) {
+        const league = await lRes.json();
+        setLeagueName(league.name ?? "");
+        setLeagueHasLogo(Boolean(league.hasLogo));
+        setLeagueWebsite(league.website ?? "");
+        if (typeof league.ageAllowancePctPerYear === "number") {
+          setAgeAllowancePctPerYear(league.ageAllowancePctPerYear);
+        }
+        if (typeof league.experienceAllowancePctPerYear === "number") {
+          setExperienceAllowancePctPerYear(league.experienceAllowancePctPerYear);
+        }
+        if (typeof league.skillAllowancePctPerPoint === "number") {
+          setSkillAllowancePctPerPoint(league.skillAllowancePctPerPoint);
+        }
+        if (typeof league.maxAgeGapYears === "number") {
+          setMaxAgeGapYears(league.maxAgeGapYears);
+        }
+        if (typeof league.maxWeightDiffPct === "number") {
+          setMaxWeightDiffPct(league.maxWeightDiffPct);
+        }
       }
-      if (typeof league.experienceAllowancePctPerYear === "number") {
-        setExperienceAllowancePctPerYear(league.experienceAllowancePctPerYear);
+      if (sRes.ok) {
+        setLeagueStats(await sRes.json());
       }
-      if (typeof league.skillAllowancePctPerPoint === "number") {
-        setSkillAllowancePctPerPoint(league.skillAllowancePctPerPoint);
-      }
-      if (typeof league.maxAgeGapYears === "number") {
-        setMaxAgeGapYears(league.maxAgeGapYears);
-      }
-      if (typeof league.maxWeightDiffPct === "number") {
-        setMaxWeightDiffPct(league.maxWeightDiffPct);
-      }
-    }
-    if (sRes.ok) {
-      setLeagueStats(await sRes.json());
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -660,6 +666,11 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       <div className="admin-card">
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>Teams</h3>
+          {isLoading && (
+            <div className="admin-muted" style={{ fontSize: 16, fontWeight: 600 }}>
+              Loading...
+            </div>
+          )}
           {leagueStats && (
             <div className="admin-muted" style={{ fontSize: 16, fontWeight: 600 }}>
               {leagueStats.teamCount} teams | {leagueStats.totalWrestlers} wrestlers ({leagueStats.inactiveWrestlers} inactive) | {leagueStats.totalGirls} girls
@@ -723,131 +734,139 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               </tr>
             </thead>
             <tbody>
-              {teams.map((t) => (
-                <tr key={t.id}>
-                  <td>
-                    <div className="logo-cell">
-                      <input
-                        id={`team-logo-file-${t.id}`}
-                        className="file-input"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
-                        onChange={(e) => {
-                          void uploadLogo(t.id, e.target.files?.[0] ?? null);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      <label className="logo-button" htmlFor={`team-logo-file-${t.id}`}>
-                        {t.hasLogo ? (
-                          <img
-                            src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`}
-                            alt={`${t.name} logo`}
-                            className="admin-team-logo"
-                          />
-                        ) : (
-                          <span className="admin-muted">Set Logo</span>
-                        )}
-                      </label>
-                    </div>
-                  </td>
-                  <td>
-                    <input
-                      value={getTeamSymbol(t)}
-                      onChange={(e) => {
-                        const nextSymbol = e.target.value;
-                        setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        commitTeamDetails(
-                          t.id,
-                          getTeamName(t),
-                          getTeamSymbol(t),
-                          normalizeHeadCoachId(getTeamHeadCoachId(t)),
-                        );
-                      }}
-                      className="admin-input-sm"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={getTeamName(t)}
-                      onChange={(e) => {
-                        const nextName = e.target.value;
-                        setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        commitTeamDetails(
-                          t.id,
-                          getTeamName(t),
-                          getTeamSymbol(t),
-                          normalizeHeadCoachId(getTeamHeadCoachId(t)),
-                        );
-                      }}
-                    />
-                  </td>
-                  <td>
-                    {(t.wrestlerCount ?? 0)}
-                    {(t.inactiveWrestlerCount ?? 0) > 0 ? ` (inactive: ${t.inactiveWrestlerCount})` : ""}
-                  </td>
-                  <td>{t.girlsCount ?? 0}</td>
-                  <td>
-                    <div className="color-cell">
-                      <ColorPicker
-                        value={colorEdits[t.id] ?? t.color}
-                        onChange={(next) => setTeamColor(t.id, next)}
-                        idPrefix={`team-color-${t.id}`}
-                        buttonClassName="color-swatch"
-                        buttonStyle={{ backgroundColor: colorEdits[t.id] ?? t.color }}
-                        buttonAriaLabel={`Choose color for ${t.name}`}
-                        showNativeColorInput
-                      />
-                    </div>
-                  </td>
-              <td>
-                <select
-                  value={getTeamHeadCoachId(t)}
-                  onChange={(e) => {
-                    const nextHeadCoachId = e.target.value;
-                    setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
-                    commitTeamDetails(
-                      t.id,
-                      getTeamName(t),
-                      getTeamSymbol(t),
-                      normalizeHeadCoachId(nextHeadCoachId),
-                    );
-                  }}
-                >
-                  <option value="">Select head coach</option>
-                  {t.coaches.map((coach) => (
-                    <option key={coach.id} value={coach.id}>
-                      {coach.username}
-                    </option>
-                  ))}
-                  {t.headCoach && !t.coaches.some((coach) => coach.id === t.headCoach?.id) && (
-                    <option value={t.headCoach.id}>{t.headCoach.username}</option>
-                  )}
-                </select>
-                {!t.coaches.length && (
-                  <div className="admin-muted" style={{ marginTop: 4 }}>
-                    No coaches assigned yet.
-                  </div>
-                )}
-              </td>
-                  <td className="admin-actions">
-                    <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>
-                      Delete Team
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {teams.length === 0 && (
+              {isLoading ? (
                 <tr>
-                  <td colSpan={7}>No teams yet.</td>
+                  <td colSpan={8}>Loading...</td>
                 </tr>
+              ) : (
+                <>
+                  {teams.map((t) => (
+                    <tr key={t.id}>
+                      <td>
+                        <div className="logo-cell">
+                          <input
+                            id={`team-logo-file-${t.id}`}
+                            className="file-input"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
+                            onChange={(e) => {
+                              void uploadLogo(t.id, e.target.files?.[0] ?? null);
+                              e.currentTarget.value = "";
+                            }}
+                          />
+                          <label className="logo-button" htmlFor={`team-logo-file-${t.id}`}>
+                            {t.hasLogo ? (
+                              <img
+                                src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`}
+                                alt={`${t.name} logo`}
+                                className="admin-team-logo"
+                              />
+                            ) : (
+                              <span className="admin-muted">Set Logo</span>
+                            )}
+                          </label>
+                        </div>
+                      </td>
+                      <td>
+                        <input
+                          value={getTeamSymbol(t)}
+                          onChange={(e) => {
+                            const nextSymbol = e.target.value;
+                            setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            commitTeamDetails(
+                              t.id,
+                              getTeamName(t),
+                              getTeamSymbol(t),
+                              normalizeHeadCoachId(getTeamHeadCoachId(t)),
+                            );
+                          }}
+                          className="admin-input-sm"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={getTeamName(t)}
+                          onChange={(e) => {
+                            const nextName = e.target.value;
+                            setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            commitTeamDetails(
+                              t.id,
+                              getTeamName(t),
+                              getTeamSymbol(t),
+                              normalizeHeadCoachId(getTeamHeadCoachId(t)),
+                            );
+                          }}
+                        />
+                      </td>
+                      <td>
+                        {(t.wrestlerCount ?? 0)}
+                        {(t.inactiveWrestlerCount ?? 0) > 0 ? ` (inactive: ${t.inactiveWrestlerCount})` : ""}
+                      </td>
+                      <td>{t.girlsCount ?? 0}</td>
+                      <td>
+                        <div className="color-cell">
+                          <ColorPicker
+                            value={colorEdits[t.id] ?? t.color}
+                            onChange={(next) => setTeamColor(t.id, next)}
+                            idPrefix={`team-color-${t.id}`}
+                            buttonClassName="color-swatch"
+                            buttonStyle={{ backgroundColor: colorEdits[t.id] ?? t.color }}
+                            buttonAriaLabel={`Choose color for ${t.name}`}
+                            showNativeColorInput
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <select
+                          value={getTeamHeadCoachId(t)}
+                          onChange={(e) => {
+                            const nextHeadCoachId = e.target.value;
+                            setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
+                            commitTeamDetails(
+                              t.id,
+                              getTeamName(t),
+                              getTeamSymbol(t),
+                              normalizeHeadCoachId(nextHeadCoachId),
+                            );
+                          }}
+                        >
+                          <option value="">Select head coach</option>
+                          {t.coaches.map((coach) => (
+                            <option key={coach.id} value={coach.id}>
+                              {coach.username}
+                            </option>
+                          ))}
+                          {t.headCoach && !t.coaches.some((coach) => coach.id === t.headCoach?.id) && (
+                            <option value={t.headCoach.id}>{t.headCoach.username}</option>
+                          )}
+                        </select>
+                        {!t.coaches.length && (
+                          <div className="admin-muted" style={{ marginTop: 4 }}>
+                            No coaches assigned yet.
+                          </div>
+                        )}
+                      </td>
+                      <td className="admin-actions">
+                        <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>
+                          Delete Team
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {teams.length === 0 && (
+                    <tr>
+                      <td colSpan={8}>No teams yet.</td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>

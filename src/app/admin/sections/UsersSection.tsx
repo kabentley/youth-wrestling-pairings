@@ -32,27 +32,35 @@ export default function UsersSection() {
   const [role, setRole] = useState<UserRow["role"]>("COACH");
   const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   async function load(overrides?: { page?: number; query?: string; pageSize?: number; teamFilter?: string }) {
-    const params = new URLSearchParams({
-      q: (overrides?.query ?? query).trim(),
-      teamId: (overrides?.teamFilter ?? teamFilter).trim(),
-      page: String(overrides?.page ?? page),
-      pageSize: String(overrides?.pageSize ?? pageSize),
-    });
-    const [uRes, tRes] = await Promise.all([
-      fetch(`/api/admin/users?${params}`),
-      fetch("/api/teams"),
-    ]);
-    if (!uRes.ok) {
-      setMsg("Not authorized.");
-      return;
+    setIsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        q: (overrides?.query ?? query).trim(),
+        teamId: (overrides?.teamFilter ?? teamFilter).trim(),
+        page: String(overrides?.page ?? page),
+        pageSize: String(overrides?.pageSize ?? pageSize),
+      });
+      const [uRes, tRes] = await Promise.all([
+        fetch(`/api/admin/users?${params}`),
+        fetch("/api/teams"),
+      ]);
+      if (!uRes.ok) {
+        setMsg("Not authorized.");
+        return;
+      }
+      const data = await uRes.json();
+      setUsers(data.items ?? []);
+      setTotal(Number(data.total ?? 0));
+      setAdminCount(Number(data.adminCount ?? 0));
+      if (tRes.ok) setTeams(await tRes.json());
+    } catch {
+      setMsg("Unable to load users.");
+    } finally {
+      setIsLoading(false);
     }
-    const data = await uRes.json();
-    setUsers(data.items ?? []);
-    setTotal(Number(data.total ?? 0));
-    setAdminCount(Number(data.adminCount ?? 0));
-    if (tRes.ok) setTeams(await tRes.json());
   }
 
   useEffect(() => {
@@ -205,7 +213,7 @@ export default function UsersSection() {
             <option value={200}>200</option>
           </select>
           <div className="admin-muted">
-            {total === 0 ? "No users" : `Showing ${showingFrom}-${showingTo} of ${total}`}
+            {isLoading ? "Loading..." : (total === 0 ? "No users" : `Showing ${showingFrom}-${showingTo} of ${total}`)}
           </div>
         </form>
         <div className="admin-pager">
@@ -286,56 +294,64 @@ export default function UsersSection() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.username}</td>
-                <td>{u.email}</td>
-                <td>{u.phone ?? ""}</td>
-                <td>{u.name}</td>
-                <td>
-                  <select
-                    value={u.role}
-                    onChange={(e) => setUserRole(u.id, e.target.value as UserRow["role"])}
-                    disabled={u.role === "ADMIN" && adminCount <= 1}
-                    title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot remove the last admin" : undefined}
-                  >
-                    <option value="ADMIN">ADMIN</option>
-                    <option value="COACH">COACH</option>
-                    <option value="PARENT">PARENT</option>
-                    <option value="TABLE_WORKER">TABLE_WORKER</option>
-                  </select>
-                </td>
-                <td>
-                  <select
-                    value={u.teamId ?? ""}
-                    onChange={(e) => setUserTeam(u.id, e.target.value || null)}
-                  >
-                    <option value="">None</option>
-                    {teams.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.symbol})
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>{formatLastLogin(u.lastLoginAt)}</td>
-                <td className="admin-actions">
-                  <button className="admin-btn admin-btn-ghost" onClick={() => resetPassword(u.id)}>Reset Password</button>
-                  <button
-                    className="admin-btn admin-btn-danger"
-                    onClick={() => deleteUser(u.id, u.username)}
-                    disabled={u.role === "ADMIN" && adminCount <= 1}
-                    title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot delete the last admin" : undefined}
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && (
+            {isLoading ? (
               <tr>
-                <td colSpan={8}>No users found.</td>
+                <td colSpan={8}>Loading...</td>
               </tr>
+            ) : (
+              <>
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td>{u.username}</td>
+                    <td>{u.email}</td>
+                    <td>{u.phone ?? ""}</td>
+                    <td>{u.name}</td>
+                    <td>
+                      <select
+                        value={u.role}
+                        onChange={(e) => setUserRole(u.id, e.target.value as UserRow["role"])}
+                        disabled={u.role === "ADMIN" && adminCount <= 1}
+                        title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot remove the last admin" : undefined}
+                      >
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="COACH">COACH</option>
+                        <option value="PARENT">PARENT</option>
+                        <option value="TABLE_WORKER">TABLE_WORKER</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={u.teamId ?? ""}
+                        onChange={(e) => setUserTeam(u.id, e.target.value || null)}
+                      >
+                        <option value="">None</option>
+                        {teams.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.symbol})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{formatLastLogin(u.lastLoginAt)}</td>
+                    <td className="admin-actions">
+                      <button className="admin-btn admin-btn-ghost" onClick={() => resetPassword(u.id)}>Reset Password</button>
+                      <button
+                        className="admin-btn admin-btn-danger"
+                        onClick={() => deleteUser(u.id, u.username)}
+                        disabled={u.role === "ADMIN" && adminCount <= 1}
+                        title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot delete the last admin" : undefined}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={8}>No users found.</td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
