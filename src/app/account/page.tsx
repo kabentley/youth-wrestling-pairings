@@ -12,12 +12,14 @@ export default function AccountPage() {
   const role = (session?.user as any)?.role as string | undefined;
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [teamId, setTeamId] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [nameMsg, setNameMsg] = useState("");
   const [emailMsg, setEmailMsg] = useState("");
   const [teamMsg, setTeamMsg] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
@@ -41,6 +43,7 @@ export default function AccountPage() {
       .then((json) => {
         if (!active) return;
         setUsername(String(json.username ?? ""));
+        setName(String(json.name ?? ""));
         setEmail(String(json.email ?? ""));
         setTeamId(String(json.teamId ?? ""));
       })
@@ -76,6 +79,21 @@ export default function AccountPage() {
       return;
     }
     setEmailMsg("Email updated.");
+  }
+
+  async function saveName() {
+    setNameMsg("");
+    const res = await fetch("/api/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setNameMsg(json?.error ?? "Unable to update name.");
+      return;
+    }
+    setNameMsg("Name updated.");
   }
 
   async function saveTeam() {
@@ -149,6 +167,20 @@ export default function AccountPage() {
         <div className="account-header">
           <h1>Account{username ? `: ${username}` : ""}</h1>
           {accountErr && <div className="account-error">{accountErr}</div>}
+        </div>
+
+        <div className="account-card">
+          <h3>Name</h3>
+          <div className="account-row">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Full name"
+            />
+            <button className="account-btn" onClick={saveName}>Save Name</button>
+          </div>
+          {nameMsg && <div className="account-muted">{nameMsg}</div>}
         </div>
 
         <div className="account-card">
@@ -272,8 +304,7 @@ const accountStyles = `
     padding: 28px 18px 40px;
   }
   .account-shell {
-    max-width: 960px;
-    margin: 0 auto;
+    width: 100%;
   }
   .account-header {
     display: flex;
@@ -281,6 +312,15 @@ const accountStyles = `
     justify-content: space-between;
     gap: 12px;
     margin: 12px 0 16px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 12px;
+    width: 100%;
+  }
+  .account-header h1 {
+    margin: 0;
+    font-family: "Oswald", Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
   }
   .account-card {
     background: var(--card);

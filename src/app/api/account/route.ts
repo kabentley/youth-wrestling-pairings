@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
 
 const BodySchema = z.object({
+  name: z.string().trim().max(80).optional(),
   email: z.string().trim().email().optional(),
   teamId: z.string().trim().optional().or(z.literal("")),
 });
@@ -15,6 +16,7 @@ export async function GET() {
     where: { id: user.id },
     select: {
       username: true,
+      name: true,
       email: true,
       role: true,
       teamId: true,
@@ -25,6 +27,7 @@ export async function GET() {
   const teamLabel = full.team ? `${full.team.name} (${full.team.symbol})`.trim() : null;
   return NextResponse.json({
     username: full.username,
+    name: full.name,
     email: full.email,
     role: full.role,
     teamId: full.teamId,
@@ -38,9 +41,13 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input." }, { status: 400 });
   }
-  const { email, teamId } = parsed.data;
+  const { name, email, teamId } = parsed.data;
 
-  const data: { email?: string; teamId?: string | null } = {};
+  const data: { name?: string | null; email?: string; teamId?: string | null } = {};
+  if (name !== undefined) {
+    const trimmed = name.trim();
+    data.name = trimmed ? trimmed : null;
+  }
   if (email) {
     data.email = email.trim().toLowerCase();
   }

@@ -94,6 +94,7 @@ export default function CoachMyTeamPage() {
   const [savingTeam, setSavingTeam] = useState(false);
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
+  const headCoach = staff.find((member) => member.role === "COACH" && member.id === headCoachId) ?? null;
   const [logoLoading, setLogoLoading] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
   const [role, setRole] = useState<UserRole | null>(null);
@@ -234,9 +235,15 @@ export default function CoachMyTeamPage() {
     updateSnapshot(normalized, desiredNumMats);
   };
 
-  const loadTeamRoles = async () => {
-    const res = await fetch("/api/coach/parents");
-    if (!res.ok) return;
+  const loadTeamRoles = async (id: string) => {
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(id)}` : "";
+    const res = await fetch(`/api/coach/parents${query}`);
+    if (!res.ok) {
+      setParents([]);
+      setStaff([]);
+      setHeadCoachId(null);
+      return;
+    }
     const payload = await res.json().catch(() => null);
     const resolvedHead = payload?.team?.headCoachId ?? null;
     setHeadCoachId(resolvedHead);
@@ -323,8 +330,8 @@ export default function CoachMyTeamPage() {
     if (!teamId) return;
     void loadTeamDetails(teamId);
     void loadMatRules(teamId);
-    if (role === "COACH") {
-      void loadTeamRoles();
+    if (role === "COACH" || role === "ADMIN") {
+      void loadTeamRoles(teamId);
     }
   }, [teamId, role]);
 
@@ -513,7 +520,8 @@ export default function CoachMyTeamPage() {
   const updateRole = async (member: TeamMember, nextRole: TeamMember["role"]) => {
     if (!teamId || member.role === nextRole) return;
     setSavingParent((prev) => ({ ...prev, [member.id]: true }));
-    const res = await fetch(`/api/coach/parents/${member.id}/role`, {
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    const res = await fetch(`/api/coach/parents/${member.id}/role${query}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: nextRole }),
@@ -539,7 +547,10 @@ export default function CoachMyTeamPage() {
       phone: updated.phone ?? "",
       role: updated.role,
     };
-    setHeadCoachId((prev) => (normalized.role === "COACH" && normalized.id ? normalized.id : prev));
+    setHeadCoachId((prev) => {
+      if (normalized.role !== "COACH" || !normalized.id) return prev;
+      return prev ?? normalized.id;
+    });
     setParents((prev) => {
       const filtered = prev.filter(p => p.id !== normalized.id);
       return normalized.role === "PARENT" ? [...filtered, normalized] : filtered;
@@ -562,7 +573,7 @@ export default function CoachMyTeamPage() {
             disabled={Boolean(savingParent[member.id])}
             onClick={() => void updateRole(member, "TABLE_WORKER")}
           >
-            Demote to Table Worker
+            Change to Table Worker
           </button>
           <button
             type="button"
@@ -570,7 +581,7 @@ export default function CoachMyTeamPage() {
             disabled={Boolean(savingParent[member.id])}
             onClick={() => void updateRole(member, "PARENT")}
           >
-            Demote to Parent
+            Change to Parent
           </button>
         </div>
       );
@@ -591,7 +602,7 @@ export default function CoachMyTeamPage() {
             disabled={Boolean(savingParent[member.id])}
             onClick={() => void updateRole(member, "PARENT")}
           >
-            Demote to Parent
+            Change to Parent
           </button>
         </div>
       );
@@ -787,7 +798,7 @@ export default function CoachMyTeamPage() {
                   onValueChange={(value) => adjustMatCount(value)}
                   normalize={(value) => Math.round(value)}
                 />
-                <div className="mat-summary-note">The table below always lists five mats; use this input to indicate the number of mats you actually have.</div>
+                <div className="mat-summary-note">The table below always lists six mats; use this input to indicate the number of mats you actually have.</div>
               </div>
             </div>
           </div>
@@ -979,7 +990,7 @@ export default function CoachMyTeamPage() {
                       <span className="coach-staff-role">{getRoleLabel(member)}</span>
                     </div>
                     <div className="coach-staff-contact">
-                      {member.name ?? member.email}
+                      {member.name ? `${member.name} - ${member.email}` : member.email}
                       {member.phone ? ` · ${member.phone}` : ""}
                     </div>
                     {renderStaffActions(member)}
@@ -1476,6 +1487,7 @@ const coachStyles = `
   .coach-table td {
     padding: 12px 14px;
     border-bottom: 1px solid var(--line);
+    text-align: left;
   }
   .coach-table th {
     background: #f7f9fb;
