@@ -83,7 +83,20 @@ export default function AppHeader({
       .then(data => {
         if (!active) return;
         const list = Array.isArray(data) ? data : [];
-        setTeamOptions(list.map((team: any) => ({
+        const sorted = [...list].sort((a: any, b: any) => {
+          const aSymbol = String(a?.symbol ?? "").toLowerCase();
+          const bSymbol = String(b?.symbol ?? "").toLowerCase();
+          if (aSymbol && bSymbol) {
+            const symbolCompare = aSymbol.localeCompare(bSymbol);
+            if (symbolCompare !== 0) return symbolCompare;
+          } else if (aSymbol || bSymbol) {
+            return aSymbol ? -1 : 1;
+          }
+          const aName = String(a?.name ?? "").toLowerCase();
+          const bName = String(b?.name ?? "").toLowerCase();
+          return aName.localeCompare(bName);
+        });
+        setTeamOptions(sorted.map((team: any) => ({
           id: team.id,
           name: team.name,
           symbol: team.symbol,

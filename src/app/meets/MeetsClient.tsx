@@ -945,6 +945,24 @@ export default function MeetsPage() {
           border: 1px solid #c62828;
           color: #fff;
         }
+        .meet-action-view {
+          background: #2e7d32;
+          border: 1px solid #256b29;
+          color: #fff;
+        }
+        .meet-action-view:hover {
+          background: #256b29;
+          border-color: #1f5d24;
+        }
+        .meet-action-edit {
+          background: #1e88e5;
+          border: 1px solid #1b78c7;
+          color: #fff;
+        }
+        .meet-action-edit:hover {
+          background: #1b78c7;
+          border-color: #1769aa;
+        }
         .meet-item-actions {
           display: flex;
           gap: 8px;
@@ -980,12 +998,18 @@ export default function MeetsPage() {
           }
           .meet-item-actions {
             width: 100%;
-            flex-wrap: wrap;
-            justify-content: flex-start;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
           }
           .meet-item-actions .nav-btn,
           .meet-item-actions .delete-btn {
-            flex: 1 1 90px;
+            width: 100%;
+            min-width: 0;
+          }
+          .meet-action-view,
+          .meet-action-results {
+            grid-column: 1 / -1;
           }
         }
       `}</style>
@@ -1029,26 +1053,26 @@ export default function MeetsPage() {
                   <div className="meet-item-actions">
                     {m.status === "PUBLISHED" && (
                       <button
-                        className="nav-btn primary"
+                        className="nav-btn primary meet-action-results"
                         onClick={() => router.push(`/results/${m.id}`)}
                       >
                         Enter Results
                       </button>
                     )}
                     <button
-                      className="nav-btn"
+                      className="nav-btn meet-action-view"
                       onClick={() => router.push(`/meets/${m.id}`)}
                     >
                       View
                     </button>
                     <button
-                      className="nav-btn"
+                      className="nav-btn meet-action-edit"
                       onClick={() => router.push(`/meets/${m.id}?edit=1`)}
                     >
                       Edit
                     </button>
                     <button
-                      className="nav-btn delete-btn"
+                      className="nav-btn delete-btn meet-action-delete"
                       onClick={() => openDeleteDialog(m)}
                       disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
                     >

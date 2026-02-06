@@ -2414,10 +2414,30 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           overflow-y: scroll;
           padding-right: 6px;
         }
+        .change-log-scroll {
+          overflow-x: hidden;
+        }
+        .comments-scroll {
+          overflow-x: hidden;
+        }
         .panel-scroll.fill {
           flex: 1;
           max-height: none;
           min-height: 0;
+        }
+        .change-log-row {
+          margin: 2px 0;
+          line-height: 1.1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .comments-row {
+          margin: 2px 0;
+          line-height: 1.1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .attendance-table {
           table-layout: fixed;
@@ -2997,6 +3017,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           background: #ffffff;
         }
         @media (max-width: 720px) {
+          .change-log-scroll {
+            overflow-x: auto;
+            padding-bottom: 6px;
+          }
+          .change-log-row {
+            overflow: visible;
+            text-overflow: clip;
+            width: max-content;
+          }
+          .comments-scroll {
+            overflow-x: auto;
+            padding-bottom: 6px;
+          }
+          .comments-row {
+            overflow: visible;
+            text-overflow: clip;
+            width: max-content;
+          }
           .modal-card.attendance-modal {
             width: 92vw;
             max-height: 92vh;
@@ -3887,9 +3925,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 placeholder="Leave a note for other coaches..."
               />
             </div>
-            <div className="panel-scroll fill" style={{ display: "block", marginTop: 12, fontSize: 13 }}>
+            <div className="panel-scroll fill comments-scroll" style={{ display: "block", marginTop: 12, fontSize: 13 }}>
               {comments.map(comment => (
-                <div key={comment.id} style={{ margin: "2px 0", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div key={comment.id} className="comments-row">
                   <span style={{ fontWeight: 600 }}>
                     {comment.author?.username ?? "unknown"}
                   </span>{" "}
@@ -3906,9 +3944,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         {showChangeLog && (
           <div className="panel fill" style={{ marginTop: 10 }}>
             <h3 className="panel-title">Change Log</h3>
-            <div className="panel-scroll fill" style={{ display: "block", fontSize: 13 }}>
+            <div className="panel-scroll fill change-log-scroll" style={{ display: "block", fontSize: 13 }}>
               {changes.map(change => (
-                <div key={change.id} style={{ margin: "2px 0", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div key={change.id} className="change-log-row">
                   <span style={{ fontWeight: 600 }}>
                     {change.actor?.username ?? "unknown"}
                   </span>{" "}
