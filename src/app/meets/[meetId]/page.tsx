@@ -312,6 +312,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [restartError, setRestartError] = useState<string | null>(null);
   const [showAutoPairingsConfirm, setShowAutoPairingsConfirm] = useState(false);
   const [clearAutoPairingsBeforeRun, setClearAutoPairingsBeforeRun] = useState(true);
+  const [pruneTargetMatches, setPruneTargetMatches] = useState<number | null>(null);
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
@@ -339,12 +340,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           throw new Error(errorText || "Unable to clear existing bouts.");
         }
       }
+        const targetMatchesValue = matchesPerWrestler ?? savedMatchesPerWrestler ?? undefined;
+        const pruneTargetValue = pruneTargetMatches ?? targetMatchesValue ?? undefined;
+        const effectivePruneTarget = targetMatchesValue !== undefined && pruneTargetValue !== undefined
+          ? Math.max(pruneTargetValue, targetMatchesValue)
+          : pruneTargetValue;
         const payload = {
           firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
           allowSameTeamMatches: settings.allowSameTeamMatches,
           girlsWrestleGirls: settings.girlsWrestleGirls,
           matchesPerWrestler: matchesPerWrestler ?? undefined,
-          pruneTargetMatches: savedMatchesPerWrestler ?? undefined,
+          pruneTargetMatches: effectivePruneTarget,
           maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
           preserveMats: !clearExisting,
         };
@@ -396,6 +402,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
   const [matchesTooltip, setMatchesTooltip] = useState<MatchesTooltip | null>(null);
   const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
+  const pruneTargetMin = matchesPerWrestler ?? savedMatchesPerWrestler ?? 1;
+  const pruneTargetDisplay = pruneTargetMatches ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? "";
   const attendanceStatusStyles: Record<AttendanceStatus, { background: string; borderColor: string }> = {
     COMING: { background: "#eaf6e6", borderColor: "#c6e2ba" },
     NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
@@ -974,9 +982,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setMatchesPerWrestler(
           typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
         );
-        setSavedMatchesPerWrestler(
-          typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
-        );
+        const nextTargetMatches = typeof meetJson.matchesPerWrestler === "number"
+          ? meetJson.matchesPerWrestler
+          : null;
+        setSavedMatchesPerWrestler(nextTargetMatches);
+        setPruneTargetMatches(nextTargetMatches);
         setMaxMatchesPerWrestler(
           typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
         );
@@ -1389,6 +1399,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setModalAttendanceOverrides(new Map());
     }
   }, [showAutoPairingsModal]);
+  useEffect(() => {
+    if (matchesPerWrestler === null) return;
+    setPruneTargetMatches((prev) => {
+      if (prev === null || prev < matchesPerWrestler) return matchesPerWrestler;
+      return prev;
+    });
+  }, [matchesPerWrestler]);
   useEffect(() => {
     const wrapper = pairingsTableWrapperRef.current;
     if (!wrapper) return;
@@ -3907,6 +3924,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
             {showChangeLog ? "Hide Change Log" : "Show Change Log"}
           </button>
+          <span style={{ fontSize: 17, fontWeight: 600, color: "#2f3237", alignSelf: "center" }}>
+            Total matches: {bouts.length}
+          </span>
         </div>
         {showComments && (
           <div className="panel fill" style={{ marginTop: 10 }}>
@@ -4394,6 +4414,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   onChange={(e) => setClearAutoPairingsBeforeRun(e.target.checked)}
                 />
                 Clear all existing bouts before generating
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 0, fontSize: 13 }}>
+                Remove all bouts where both wrestlers have more than
+                <input
+                  type="number"
+                  min={pruneTargetMin}
+                  max={5}
+                  value={pruneTargetDisplay}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === "") {
+                      setPruneTargetMatches(null);
+                      return;
+                    }
+                    const parsed = Number.parseInt(value, 10);
+                    if (Number.isNaN(parsed)) return;
+                    setPruneTargetMatches(Math.max(pruneTargetMin, Math.min(5, parsed)));
+                  }}
+                  style={{ width: 64 }}
+                />
+                matches
               </label>
               <div className="modal-actions">
                 <button

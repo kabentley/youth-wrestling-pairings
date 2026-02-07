@@ -49,7 +49,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     maxWeightDiffPct,
     maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet.maxMatchesPerWrestler,
   });
-  await logMeetChange(meetId, user.id, "Generated pairings.");
+  const createdCount = result.created;
+  const targetMatches = settings.matchesPerWrestler;
+  await logMeetChange(
+    meetId,
+    user.id,
+    `Generated pairings (${createdCount} bout${createdCount === 1 ? "" : "s"}; target ${targetMatches} matches).`,
+  );
+  const removedCount = result.removedOverTarget;
+  if (removedCount > 0) {
+    const pruneTarget = settings.pruneTargetMatches ?? settings.matchesPerWrestler;
+    const targetLabel = pruneTarget ? `more than ${pruneTarget}` : "too many";
+    await logMeetChange(
+      meetId,
+      user.id,
+      `Removed ${removedCount} bout${removedCount === 1 ? "" : "s"} where both wrestlers had ${targetLabel} matches.`,
+    );
+  }
   if (settings.preserveMats) {
     const assignResult = await assignMatsForMeet(meetId, { preserveExisting: true });
     if (assignResult.assigned > 0) {

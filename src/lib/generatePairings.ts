@@ -98,10 +98,12 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     maxMatches,
     Math.max(1, Math.floor(settings.matchesPerWrestler ?? 2)),
   );
-  const pruneTargetMatches = Math.min(
-    maxMatches,
-    Math.max(1, Math.floor(settings.pruneTargetMatches ?? targetMatches)),
-  );
+  const pruneTargetMatches = settings.pruneTargetMatches === undefined
+    ? undefined
+    : Math.min(
+        maxMatches,
+        Math.max(1, Math.floor(settings.pruneTargetMatches)),
+      );
 
   /**
    * Applies hard eligibility filters that remove impossible/illegal pairings
@@ -202,28 +204,30 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
    * Pruning pass: remove the newest bouts where both wrestlers are above the
    * prune target, which keeps everyone close to the configured match count.
    */
-  const allBoutsForPrune = await db.bout.findMany({
-    where: { meetId },
-    select: { id: true, redId: true, greenId: true, createdAt: true },
-    orderBy: { createdAt: "desc" },
-  });
-  const totalMatchCounts = new Map<string, number>();
-  for (const bout of allBoutsForPrune) {
-    totalMatchCounts.set(bout.redId, (totalMatchCounts.get(bout.redId) ?? 0) + 1);
-    totalMatchCounts.set(bout.greenId, (totalMatchCounts.get(bout.greenId) ?? 0) + 1);
-  }
   const toDelete: string[] = [];
-  for (const bout of allBoutsForPrune) {
-    const redCount = totalMatchCounts.get(bout.redId) ?? 0;
-    const greenCount = totalMatchCounts.get(bout.greenId) ?? 0;
-    if (redCount > pruneTargetMatches && greenCount > pruneTargetMatches) {
-      toDelete.push(bout.id);
-      totalMatchCounts.set(bout.redId, redCount - 1);
-      totalMatchCounts.set(bout.greenId, greenCount - 1);
+  if (pruneTargetMatches !== undefined) {
+    const allBoutsForPrune = await db.bout.findMany({
+      where: { meetId },
+      select: { id: true, redId: true, greenId: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const totalMatchCounts = new Map<string, number>();
+    for (const bout of allBoutsForPrune) {
+      totalMatchCounts.set(bout.redId, (totalMatchCounts.get(bout.redId) ?? 0) + 1);
+      totalMatchCounts.set(bout.greenId, (totalMatchCounts.get(bout.greenId) ?? 0) + 1);
     }
-  }
-  if (toDelete.length > 0) {
-    await db.bout.deleteMany({ where: { id: { in: toDelete } } });
+    for (const bout of allBoutsForPrune) {
+      const redCount = totalMatchCounts.get(bout.redId) ?? 0;
+      const greenCount = totalMatchCounts.get(bout.greenId) ?? 0;
+      if (redCount > pruneTargetMatches && greenCount > pruneTargetMatches) {
+        toDelete.push(bout.id);
+        totalMatchCounts.set(bout.redId, redCount - 1);
+        totalMatchCounts.set(bout.greenId, greenCount - 1);
+      }
+    }
+    if (toDelete.length > 0) {
+      await db.bout.deleteMany({ where: { id: { in: toDelete } } });
+    }
   }
 
   return {

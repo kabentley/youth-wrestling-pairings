@@ -636,9 +636,9 @@ export default function EnterResultsPage() {
               const firstTeamLabel = first.team.symbol ?? first.team.name;
               const secondTeamLabel = second.team.symbol ?? second.team.name;
               const winnerColor = b.resultWinnerId === b.red.id
-                ? (b.red.team.color ?? "#000000")
+                ? matTextColor(b.red.team.color)
                 : b.resultWinnerId === b.green.id
-                  ? (b.green.team.color ?? "#000000")
+                  ? matTextColor(b.green.team.color)
                   : undefined;
               return (
                 <tr
@@ -651,11 +651,11 @@ export default function EnterResultsPage() {
                 >
                   <td className="bout-num">{boutLabel(b.mat, b.order)}</td>
                   <td className="name-col">
-                    <span className="wrestler" style={{ color: first.team.color ?? "#000000" }}>
+                    <span className="wrestler" style={{ color: matTextColor(first.team.color) }}>
                       {firstLabel} ({firstTeamLabel})
                     </span>
                     <span className="vs">v</span>
-                    <span className="wrestler" style={{ color: second.team.color ?? "#000000" }}>
+                    <span className="wrestler" style={{ color: matTextColor(second.team.color) }}>
                       {secondLabel} ({secondTeamLabel})
                     </span>
                   </td>
@@ -674,10 +674,10 @@ export default function EnterResultsPage() {
                       style={{ color: winnerColor }}
                     >
                       <option value="">No winner</option>
-                      <option value={b.red.id}>
+                      <option value={b.red.id} style={{ color: matTextColor(b.red.team.color), fontWeight: 600 }}>
                         {redLabel} ({b.red.team.symbol ?? b.red.team.name})
                       </option>
-                      <option value={b.green.id}>
+                      <option value={b.green.id} style={{ color: matTextColor(b.green.team.color), fontWeight: 600 }}>
                         {greenLabel} ({b.green.team.symbol ?? b.green.team.name})
                       </option>
                     </select>
