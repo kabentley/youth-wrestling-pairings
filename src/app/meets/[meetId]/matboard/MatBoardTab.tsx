@@ -132,8 +132,23 @@ export default function MatBoardTab({
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    boutId: string;
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+    numberBg: string;
+    numberBorder: string;
+    number: string;
+    entries: WrestlerEntry[];
+  } | null>(null);
   const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
   const dropIndexRef = useRef<{ mat: number; index: number } | null>(null);
+  const dragImageRef = useRef<HTMLImageElement | null>(null);
+  const dragPreviewFrameRef = useRef<number | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
   const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
@@ -141,6 +156,44 @@ export default function MatBoardTab({
   useEffect(() => {
     void load();
   }, [meetId, refreshIndex]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+    dragImageRef.current = img;
+  }, []);
+
+  const handleDragPreviewMove = (event: React.DragEvent<HTMLElement>) => {
+    if (!draggingRef.current) return;
+    if (event.clientX === 0 && event.clientY === 0) return;
+    if (dragPreviewFrameRef.current !== null) return;
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    dragPreviewFrameRef.current = window.requestAnimationFrame(() => {
+      dragPreviewFrameRef.current = null;
+      const active = draggingRef.current;
+      if (!active) return;
+      const target = dropIndexRef.current;
+      const matNum = target?.mat ?? active.fromMat;
+      const list = mats[keyMat(matNum)] ?? [];
+      const fallbackIndex = Math.max(0, list.findIndex(item => item.id === active.boutId));
+      const index = target?.index ?? (fallbackIndex >= 0 ? fallbackIndex : list.length);
+      const bout = bouts.find(item => item.id === active.boutId);
+      if (!bout) return;
+      const previewEntries = buildPreviewEntries(bout, matNum, index);
+      setDragPreview(prev =>
+        prev
+          ? {
+              ...prev,
+              x: clientX,
+              y: clientY,
+              entries: previewEntries,
+            }
+          : prev,
+      );
+    });
+  };
+
 
   useEffect(() => {
     if (!meetSettings) return;
@@ -658,6 +711,77 @@ export default function MatBoardTab({
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
   }
 
+  function buildPreviewEntries(b: Bout, targetMat: number, targetIndex: number) {
+    const matLists = Array.from({ length: numMats }, (_, idx) => {
+      const matNum = idx + 1;
+      const list = mats[keyMat(matNum)] ?? [];
+      const without = list.filter(item => item.id !== b.id);
+      if (matNum !== targetMat) return without;
+      const next = without.slice();
+      const insertIndex = Math.max(0, Math.min(targetIndex, next.length));
+      next.splice(insertIndex, 0, b);
+      return next;
+    });
+    const minGapFor = (wrestlerId: string) => {
+      if (conflictGap <= 0) return undefined;
+      const orders: number[] = [];
+      for (const list of matLists) {
+        list.forEach((bout, idx) => {
+          if (bout.redId === wrestlerId || bout.greenId === wrestlerId) {
+            orders.push(idx + 1);
+          }
+        });
+      }
+      orders.sort((a, b) => a - b);
+      let minGap: number | undefined;
+      for (let i = 0; i < orders.length; i++) {
+        for (let j = i + 1; j < orders.length; j++) {
+          const gap = orders[j] - orders[i];
+          if (gap > conflictGap) break;
+          minGap = minGap === undefined ? gap : Math.min(minGap, gap);
+        }
+      }
+      return minGap;
+    };
+    const conflictOpacity = (value?: number) => {
+      if (!value) return 0;
+      const maxGap = Math.max(1, conflictGap);
+      const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
+      return 0.1 + 0.5 * ratio;
+    };
+    const redGap = minGapFor(b.redId);
+    const greenGap = minGapFor(b.greenId);
+    const conflictBgRed =
+      redGap !== undefined ? `rgba(255,138,160,${conflictOpacity(redGap)})` : undefined;
+    const conflictBgGreen =
+      greenGap !== undefined ? `rgba(255,138,160,${conflictOpacity(greenGap)})` : undefined;
+    const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
+    const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
+    const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
+    const singleMatchRed = (matchCounts.get(b.redId) ?? 0) === 1;
+    const singleMatchGreen = (matchCounts.get(b.greenId) ?? 0) === 1;
+    return [
+      {
+        id: b.redId,
+        label: rTxt,
+        color: rColor,
+        statusBg: statusBgRed,
+        conflictBg: conflictBgRed,
+        singleMatch: singleMatchRed,
+        highlight: false,
+      },
+      {
+        id: b.greenId,
+        label: gTxt,
+        color: gColor,
+        statusBg: statusBgGreen,
+        conflictBg: conflictBgGreen,
+        singleMatch: singleMatchGreen,
+        highlight: false,
+      },
+    ];
+  }
+
   const formatBoutNumber = (matNum: number, order?: number | null, fallback?: number) => {
     const ordValue = Math.max(0, (order ?? fallback ?? 1) - 1);
     const ordStr = String(ordValue);
@@ -703,7 +827,10 @@ export default function MatBoardTab({
   };
 
   return (
-    <section className={`matboard-tab${canEdit ? "" : " readonly"}`}>
+    <section
+      className={`matboard-tab${canEdit ? "" : " readonly"}`}
+      onDragOverCapture={handleDragPreviewMove}
+    >
       <style>{`
         .matboard-tab {
           background: #fff;
@@ -838,10 +965,31 @@ export default function MatBoardTab({
           gap: 0;
         }
         .bout.dragging {
-          opacity: 1;
-          box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
-          border-color: #c3c9d5;
+          opacity: 0.3;
+          box-shadow: 0 0 0 2px rgba(63, 83, 111, 0.2);
+          border: 1px dashed #8a93a1;
+          background: #f7f9fc;
           transform: translateY(-1px);
+          cursor: grabbing;
+        }
+        .drag-preview {
+          position: fixed;
+          z-index: 2000;
+          pointer-events: none;
+        }
+        .drag-preview-card {
+          border: 1px solid #cbd3de;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.78);
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+          padding: 2px 6px;
+          overflow: hidden;
+        }
+        .drag-preview-card .bout-row {
+          grid-template-columns: max-content 1fr 1fr;
+        }
+        .drag-preview-card .bout-row span.number {
+          min-width: 30px;
         }
         .bout-row {
           display: grid;
@@ -956,7 +1104,10 @@ export default function MatBoardTab({
             <div
               key={matNum}
               className="mat-card"
-              onDragOver={e => e.preventDefault()}
+              onDragOver={e => {
+                e.preventDefault();
+                dropIndexRef.current = { mat: matNum, index: list.length };
+              }}
               onDrop={e => {
                 e.preventDefault();
                 const active = draggingRef.current;
@@ -966,6 +1117,7 @@ export default function MatBoardTab({
                 setDragging(null);
                 draggingRef.current = null;
                 dropIndexRef.current = null;
+                setDragPreview(null);
               }}
             >
               <h4>
@@ -1035,6 +1187,10 @@ export default function MatBoardTab({
         },
       ];
       const ordered = entries;
+      const previewNumber = formatBoutNumber(matNum, b.order, index + 1);
+      const previewNumberBg = getMatNumberBackground(originalMatColor);
+      const previewNumberBorder =
+        b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent";
       return (
         <div
           key={b.id}
@@ -1042,21 +1198,38 @@ export default function MatBoardTab({
           draggable={canEdit}
               onDragStart={e => {
                 if (!canEdit) return;
-                const target = e.target as HTMLElement | null;
-                if (target?.dataset.role === "wrestler") {
-                  e.preventDefault();
-                  return;
-                }
+                dropIndexRef.current = null;
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData("text/plain", b.id);
+                if (dragImageRef.current) {
+                  e.dataTransfer.setDragImage(dragImageRef.current, 0, 0);
+                }
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const offsetX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                const offsetY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
                 const next = { boutId: b.id, fromMat: matNum };
                 draggingRef.current = next;
                 setDragging(next);
+                const previewEntries = buildPreviewEntries(b, matNum, index);
+                setDragPreview({
+                  boutId: b.id,
+                  x: e.clientX,
+                  y: e.clientY,
+                  offsetX,
+                  offsetY,
+                  width: rect.width,
+                  height: rect.height,
+                  numberBg: previewNumberBg,
+                  numberBorder: previewNumberBorder,
+                  number: previewNumber,
+                  entries: previewEntries,
+                });
               }}
                       onDragEnd={() => {
                         draggingRef.current = null;
                         setDragging(null);
                         dropIndexRef.current = null;
+                        setDragPreview(null);
                       }}
                       onDragOver={e => {
                         e.preventDefault();
@@ -1072,6 +1245,7 @@ export default function MatBoardTab({
                         setDragging(null);
                         draggingRef.current = null;
                         dropIndexRef.current = null;
+                        setDragPreview(null);
                       }}
                     >
                       <div className="bout-row">
@@ -1103,6 +1277,42 @@ export default function MatBoardTab({
           );
         })}
       </div>
+      {dragPreview && (
+        <div
+          className="drag-preview"
+          style={{ left: dragPreview.x - dragPreview.offsetX, top: dragPreview.y - dragPreview.offsetY }}
+        >
+          <div
+            className="drag-preview-card"
+            style={{ width: dragPreview.width, height: dragPreview.height + 2 }}
+          >
+            <div className="bout-row">
+              <span
+                className="number"
+                style={{
+                  backgroundColor: dragPreview.numberBg,
+                  borderColor: dragPreview.numberBorder,
+                }}
+              >
+                {dragPreview.number}
+              </span>
+              {dragPreview.entries.map(entry => (
+                <span
+                  key={entry.id}
+                  data-role="wrestler"
+                  className={entry.singleMatch ? "single-match" : ""}
+                  style={{
+                    color: entry.color || undefined,
+                    background: entry.statusBg ?? entry.conflictBg ?? undefined,
+                  }}
+                >
+                  {entry.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

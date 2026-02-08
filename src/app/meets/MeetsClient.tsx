@@ -460,12 +460,41 @@ export default function MeetsPage() {
     }
   }, [currentTeamId, hasRestartDefaults]);
 
+  const teamsBySymbol = useMemo(() => {
+    const list = [...teams];
+    list.sort((a, b) => {
+      const aSymbol = a.symbol.trim();
+      const bSymbol = b.symbol.trim();
+      const aLabel = (aSymbol.length > 0 ? aSymbol : a.name).toLowerCase();
+      const bLabel = (bSymbol.length > 0 ? bSymbol : b.name).toLowerCase();
+      if (aLabel < bLabel) return -1;
+      if (aLabel > bLabel) return 1;
+      const aName = (a.name || "").toLowerCase();
+      const bName = (b.name || "").toLowerCase();
+      if (aName < bName) return -1;
+      if (aName > bName) return 1;
+      return 0;
+    });
+    return list;
+  }, [teams]);
   const otherTeams = currentTeamId
-    ? teams.filter(t => t.id !== currentTeamId)
-    : teams;
+    ? teamsBySymbol.filter(t => t.id !== currentTeamId)
+    : teamsBySymbol;
   const otherTeamIds = currentTeamId
     ? teamIds.filter(id => id !== currentTeamId)
     : teamIds;
+  const teamIdsBySymbol = useMemo(() => {
+    const byId = new Map(teams.map(team => [team.id, team]));
+    return [...teamIds].sort((a, b) => {
+      const aTeam = byId.get(a);
+      const bTeam = byId.get(b);
+      const aLabel = (aTeam?.symbol ?? aTeam?.name ?? a).toLowerCase();
+      const bLabel = (bTeam?.symbol ?? bTeam?.name ?? b).toLowerCase();
+      if (aLabel < bLabel) return -1;
+      if (aLabel > bLabel) return 1;
+      return 0;
+    });
+  }, [teamIds, teams]);
   const canManageMeets = role === "COACH" || role === "ADMIN";
   const isAdmin = role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
@@ -1234,8 +1263,8 @@ export default function MeetsPage() {
                   }}
                   disabled={!canManageMeets || !isAdmin}
                 >
-                  {teamIds.length === 0 && <option value="">Select teams first</option>}
-                  {teamIds.map(id => {
+                  {teamIdsBySymbol.length === 0 && <option value="">Select teams first</option>}
+                  {teamIdsBySymbol.map(id => {
                     const t = teams.find(team => team.id === id);
                     return (
                       <option key={id} value={id}>{t ? formatTeamName(t) : id}</option>
