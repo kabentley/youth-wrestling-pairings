@@ -17,13 +17,25 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { pairingScore: "asc" }],
   });
+  const sourceIds = [...new Set(bouts.map(b => b.source).filter((id): id is string => Boolean(id)))];
+  const sourceUsers = sourceIds.length > 0
+    ? await db.user.findMany({
+      where: { id: { in: sourceIds } },
+      select: { id: true, name: true, username: true },
+    })
+    : [];
+  const sourceMap = new Map(sourceUsers.map(user => [user.id, user]));
   const statuses = await db.meetWrestlerStatus.findMany({
     where: { meetId, status: { in: ["NOT_COMING"] } },
     select: { wrestlerId: true },
   });
   const absentIds = new Set(statuses.map(s => s.wrestlerId));
   const filtered = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
-  return NextResponse.json(filtered);
+  const enriched = filtered.map(b => ({
+    ...b,
+    sourceUser: b.source ? sourceMap.get(b.source) ?? null : null,
+  }));
+  return NextResponse.json(enriched);
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ meetId: string }> }) {

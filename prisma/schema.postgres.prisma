@@ -22,6 +22,7 @@ enum MeetWrestlerStatusType {
   EARLY
   ABSENT
 }
+
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -262,6 +263,7 @@ model Bout {
   order     Int?
   originalMat Int?
 
+  source    String?
   createdAt DateTime @default(now())
 
   @@index([meetId])

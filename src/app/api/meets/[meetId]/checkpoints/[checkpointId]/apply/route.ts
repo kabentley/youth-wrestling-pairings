@@ -19,6 +19,8 @@ const BoutSchema = z.object({
   mat: z.number().int().nullable().optional(),
   order: z.number().int().nullable().optional(),
   originalMat: z.number().int().nullable().optional(),
+  source: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
 });
 
 const PayloadSchema = z.object({
@@ -171,6 +173,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
           mat: b.mat ?? null,
           order: b.order ?? null,
           originalMat: b.originalMat ?? null,
+          source: b.source ?? null,
+          ...(b.createdAt ? { createdAt: new Date(b.createdAt) } : {}),
         })),
       });
     }

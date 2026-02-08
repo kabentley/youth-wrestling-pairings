@@ -251,6 +251,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
       redId: b.redId,
       greenId: b.greenId,
       pairingScore: b.pairingScore,
+      source: null,
     })),
   });
 
@@ -262,7 +263,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   if (pruneTargetMatches !== undefined) {
     const allBoutsForPrune = await db.bout.findMany({
       where: { meetId },
-      select: { id: true, redId: true, greenId: true, createdAt: true },
+      select: { id: true, redId: true, greenId: true, createdAt: true, source: true },
       orderBy: { createdAt: "desc" },
     });
     const totalMatchCounts = new Map<string, number>();
@@ -271,6 +272,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
       totalMatchCounts.set(bout.greenId, (totalMatchCounts.get(bout.greenId) ?? 0) + 1);
     }
     for (const bout of allBoutsForPrune) {
+      if (bout.source) continue;
       const redCount = totalMatchCounts.get(bout.redId) ?? 0;
       const greenCount = totalMatchCounts.get(bout.greenId) ?? 0;
       if (redCount > pruneTargetMatches && greenCount > pruneTargetMatches) {

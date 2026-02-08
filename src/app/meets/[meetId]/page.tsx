@@ -54,6 +54,9 @@ type Bout = {
   pairingScore: number;
   mat?: number | null;
   order?: number | null;
+  source?: string | null;
+  createdAt?: string;
+  sourceUser?: { id: string; name?: string | null; username?: string | null } | null;
 };
 
 type Candidate = {
@@ -103,7 +106,17 @@ type MatchesTooltip =
       at: string;
       x: number;
       y: number;
-    };
+    }
+  | {
+      mode: "manual";
+      left: { name: string; teamId: string | null };
+      right: { name: string; teamId: string | null };
+      by: string;
+      at: string;
+      x: number;
+      y: number;
+    }
+  | { mode: "auto"; at: string; x: number; y: number };
 type MeetCheckpoint = {
   id: string;
   name: string;
@@ -119,7 +132,16 @@ type CheckpointPayload = {
   meetDate: string;
   teamIds: string[];
   attendance: { wrestlerId: string; status: AttendanceStatus }[];
-  bouts: { redId: string; greenId: string; pairingScore: number; mat?: number | null; order?: number | null; originalMat?: number | null }[];
+  bouts: {
+    redId: string;
+    greenId: string;
+    pairingScore: number;
+    mat?: number | null;
+    order?: number | null;
+    originalMat?: number | null;
+    source?: string | null;
+    createdAt?: string;
+  }[];
 };
 type CheckpointDiff = {
   name: string;
@@ -238,7 +260,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(70);
-  const [currentBoutColWidth, setCurrentBoutColWidth] = useState(90);
+  const [currentSourceColWidth, setCurrentSourceColWidth] = useState(80);
   const [availableTeamColWidth, setAvailableTeamColWidth] = useState(70);
 
   const sharedColumnWidths = {
@@ -264,7 +286,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.skill,
     sharedColumnWidths.score,
     sharedColumnWidths.matches,
-    currentBoutColWidth,
+    currentSourceColWidth,
   ];
 
   const rejectedBadgeColWidth = 90;
@@ -1186,7 +1208,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           setCurrentTeamColWidth(nextWidth);
         } else if (index === 10) {
           const nextWidth = Math.max(60, startWidth + delta);
-          setCurrentBoutColWidth(nextWidth);
+          setCurrentSourceColWidth(nextWidth);
         }
       } else {
         const pairingsIndex = AVAILABLE_SHARED_COLUMN_MAP[index];
@@ -1537,6 +1559,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     details: { left: { name: string; teamId: string | null }; right: { name: string; teamId: string | null }; by: string; at: string },
   ) => {
     setMatchesTooltip({ mode: "rejected", ...details, x: event.clientX, y: event.clientY });
+  }, []);
+  const showManualTooltip = useCallback((
+    event: React.MouseEvent,
+    details: { left: { name: string; teamId: string | null }; right: { name: string; teamId: string | null }; by: string; at: string },
+  ) => {
+    setMatchesTooltip({ mode: "manual", ...details, x: event.clientX, y: event.clientY });
+  }, []);
+  const showAutoTooltip = useCallback((event: React.MouseEvent, at: string) => {
+    setMatchesTooltip({ mode: "auto", at, x: event.clientX, y: event.clientY });
   }, []);
   // Hide the floating tooltip.
   const hideMatchesTooltip = useCallback(() => setMatchesTooltip(null), []);
@@ -2526,6 +2557,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           .match-row-hover:hover {
             box-shadow: 0 0 0 2px #1e88e5 inset;
             background: #f2f8ff;
+          }
+          .match-row-hover:has(td[data-no-row-hover]:hover) {
+            box-shadow: none;
+            background: transparent;
           }
           .pairings-pane.readonly .match-row-hover:hover {
             box-shadow: none;
@@ -3701,7 +3736,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Skill", key: "skill" },
                             { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
-                              { label: "Bout #", key: "bout" },
+                            { label: "Source", key: "source" },
                             ].map((col, index) => (
                           <th
                             key={col.label}
@@ -3741,11 +3776,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       <tbody>
                             {currentMatches.length === 0 && (
                               <tr>
-                                <td colSpan={11} style={{ color: "#666" }}>None</td>
+                                <td colSpan={12} style={{ color: "#666" }}>None</td>
                               </tr>
                             )}
                         {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
                           const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
+                          const manualCoachId = bout.source ?? null;
+                          const manualCoachName = bout.sourceUser?.name ?? bout.sourceUser?.username ?? "Coach";
+                          const manualCoachAt = bout.createdAt ? new Date(bout.createdAt).toLocaleString() : "unknown time";
+                          const autoAt = bout.createdAt ? new Date(bout.createdAt).toLocaleString() : "unknown time";
+                          const red = wMap[bout.redId];
+                          const green = wMap[bout.greenId];
+                          const manualDetails = {
+                            left: { name: red ? `${red.first} ${red.last}`.trim() : bout.redId, teamId: red?.teamId ?? null },
+                            right: { name: green ? `${green.first} ${green.last}`.trim() : bout.greenId, teamId: green?.teamId ?? null },
+                            by: manualCoachName,
+                            at: manualCoachAt,
+                          };
                          return (
                                 <tr
                                   key={bout.id}
@@ -3788,7 +3835,100 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               <td align="left">
                                 {getMatchCount(opponentId)}
                               </td>
-                              <td align="left">{boutNumber(bout.mat, bout.order)}</td>
+                              <td
+                                align="left"
+                                data-no-row-hover="true"
+                                data-tooltip-skip="true"
+                                style={!manualCoachId ? { cursor: "pointer" } : { cursor: "pointer" }}
+                                onMouseMove={(event) => {
+                                  if (manualCoachId) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  showAutoTooltip(event, autoAt);
+                                }}
+                                onMouseLeave={(event) => {
+                                  if (manualCoachId) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  hideMatchesTooltip();
+                                }}
+                              >
+                                {manualCoachId ? (
+                                  <span
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                    }}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                    }}
+                                    onMouseMove={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      showManualTooltip(event, manualDetails);
+                                    }}
+                                    onMouseLeave={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      hideMatchesTooltip();
+                                    }}
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      letterSpacing: "0.4px",
+                                      textTransform: "uppercase",
+                                      color: "#1f5e8a",
+                                      background: "#e7f0fb",
+                                      border: "1px solid #c6def5",
+                                      padding: "1px 6px",
+                                      borderRadius: 999,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Coach
+                                  </span>
+                                ) : (
+                                  <span
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                    }}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                    }}
+                                    onMouseMove={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      showAutoTooltip(event, autoAt);
+                                    }}
+                                    onMouseLeave={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      hideMatchesTooltip();
+                                    }}
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      letterSpacing: "0.4px",
+                                      textTransform: "uppercase",
+                                      color: "#6a7483",
+                                      background: "#f7f9fc",
+                                      border: "1px solid #e4e9f2",
+                                      padding: "1px 6px",
+                                      borderRadius: 999,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Auto
+                                  </span>
+                                )}
+                              </td>
                                </tr>
                           );
                         })}
@@ -3903,6 +4043,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <td
                               align="left"
                               data-tooltip-skip="true"
+                              data-no-row-hover="true"
+                              style={rejected ? { cursor: "pointer" } : undefined}
                               onMouseEnter={(event) => {
                                 if (!rejectedInfo) return;
                                 event.stopPropagation();
@@ -3931,6 +4073,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             >
                               {rejected && (
                                 <span
+                                  onMouseDown={event => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                  }}
+                                  onClick={event => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                  }}
                                   style={{
                                     fontSize: 10,
                                     fontWeight: 700,
@@ -3941,6 +4091,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     border: "1px solid #f4c7c3",
                                     padding: "1px 6px",
                                     borderRadius: 999,
+                                    cursor: "pointer",
                                   }}
                                 >
                                   Rejected
@@ -4716,6 +4867,81 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </div>
               <div style={{ color: "#444", marginTop: 4 }}>
                 This matchup will not be used for future auto pairings.
+              </div>
+            </div>
+          );
+        }
+
+        if (matchesTooltip.mode === "manual") {
+          const leftSymbol = matchesTooltip.left.teamId
+            ? (teams.find(t => t.id === matchesTooltip.left.teamId)?.symbol ?? "")
+            : "";
+          const rightSymbol = matchesTooltip.right.teamId
+            ? (teams.find(t => t.id === matchesTooltip.right.teamId)?.symbol ?? "")
+            : "";
+          const leftLabel = leftSymbol
+            ? `${matchesTooltip.left.name} (${leftSymbol})`
+            : matchesTooltip.left.name;
+          const rightLabel = rightSymbol
+            ? `${matchesTooltip.right.name} (${rightSymbol})`
+            : matchesTooltip.right.name;
+          const leftColor = matchesTooltip.left.teamId
+            ? teamTextColor(matchesTooltip.left.teamId)
+            : "#222";
+          const rightColor = matchesTooltip.right.teamId
+            ? teamTextColor(matchesTooltip.right.teamId)
+            : "#222";
+          return (
+            <div
+              style={{
+                position: "fixed",
+                left,
+                top,
+                width: tooltipWidth,
+                zIndex: 1000,
+                background: "#fff",
+                border: "1px solid rgba(0,0,0,0.15)",
+                borderRadius: 10,
+                boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+                padding: "10px 12px",
+                pointerEvents: "none",
+                fontSize: 13,
+              }}
+              aria-hidden="true"
+            >
+              <div style={{ fontWeight: 800, marginBottom: 6, color: "#1f5e8a" }}>
+                Added by {matchesTooltip.by} on {matchesTooltip.at}
+              </div>
+              <div style={{ color: "#444" }}>
+                <span style={{ color: leftColor, fontWeight: 700 }}>{leftLabel}</span>
+                <span style={{ margin: "0 6px" }}>vs</span>
+                <span style={{ color: rightColor, fontWeight: 700 }}>{rightLabel}</span>
+              </div>
+            </div>
+          );
+        }
+
+        if (matchesTooltip.mode === "auto") {
+          return (
+            <div
+              style={{
+                position: "fixed",
+                left,
+                top,
+                width: tooltipWidth,
+                zIndex: 1000,
+                background: "#fff",
+                border: "1px solid rgba(0,0,0,0.15)",
+                borderRadius: 10,
+                boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+                padding: "10px 12px",
+                pointerEvents: "none",
+                fontSize: 13,
+              }}
+              aria-hidden="true"
+            >
+              <div style={{ fontWeight: 800, color: "#4a5568" }}>
+                Automatically generated on {matchesTooltip.at}
               </div>
             </div>
           );

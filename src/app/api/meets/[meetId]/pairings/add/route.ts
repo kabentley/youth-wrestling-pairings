@@ -126,15 +126,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       redId: orderedRed.id,
       greenId: orderedGreen.id,
       pairingScore: computedScore,
+      source: user.id,
     },
   });
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
+  const sourceUser = { id: user.id, username: user.username, name: null };
 
   const redName = formatWrestlerLabel(orderedRed) ?? "wrestler 1";
   const greenName = formatWrestlerLabel(orderedGreen) ?? "wrestler 2";
   await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
-  return NextResponse.json(updatedBout ?? bout);
+  return NextResponse.json({ ...(updatedBout ?? bout), sourceUser });
 }
 
 const RANGE_PENALTY_SCALE = 50;

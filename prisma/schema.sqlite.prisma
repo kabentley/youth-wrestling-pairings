@@ -249,6 +249,7 @@ model Bout {
   order     Int?
   originalMat Int?
 
+  source    String?
   createdAt DateTime @default(now())
 
   @@index([meetId])

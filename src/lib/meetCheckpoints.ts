@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 
 export type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
 
+export type BoutSource = string | null;
+
 export type MeetCheckpointPayload = {
   version: 1;
   name: string;
@@ -18,6 +20,8 @@ export type MeetCheckpointPayload = {
     mat?: number | null;
     order?: number | null;
     originalMat?: number | null;
+    source?: BoutSource;
+    createdAt?: string;
   }[];
 };
 
@@ -55,7 +59,16 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
     }),
     db.bout.findMany({
       where: { meetId },
-      select: { redId: true, greenId: true, pairingScore: true, mat: true, order: true, originalMat: true },
+      select: {
+        redId: true,
+        greenId: true,
+        pairingScore: true,
+        mat: true,
+        order: true,
+        originalMat: true,
+        source: true,
+        createdAt: true,
+      },
     }),
   ]);
 
@@ -87,6 +100,8 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
       mat: b.mat ?? null,
       order: b.order ?? null,
       originalMat: b.originalMat ?? null,
+      source: b.source ?? null,
+      createdAt: b.createdAt.toISOString(),
     })),
   };
 }
