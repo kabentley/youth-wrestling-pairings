@@ -28,6 +28,8 @@ export type PairingSettings = {
   pruneTargetMatches?: number;
   /** Upper bound for matches per wrestler (hard cap per generation pass). */
   maxMatchesPerWrestler?: number;
+  /** Optional home team used to order red/green assignments. */
+  homeTeamId?: string | null;
 };
 
 /** Returns the absolute day difference between two dates (rounded to whole days). */
@@ -74,6 +76,28 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   const wrestlers = meetTeams
     .flatMap(mt => mt.team.wrestlers)
     .filter(w => w.active && !absentIds.has(w.id));
+  const teamOrder = (() => {
+    const order = new Map<string, number>();
+    const homeId = settings.homeTeamId ?? null;
+    const allTeams = meetTeams.map(mt => mt.team);
+    const label = (team: (typeof allTeams)[number]) =>
+      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+    let idx = 0;
+    if (homeId) {
+      order.set(homeId, idx);
+      idx += 1;
+    }
+    const ordered = allTeams
+      .filter(team => team.id !== homeId)
+      .sort((a, b) => label(a).localeCompare(label(b)));
+    for (const team of ordered) {
+      if (!order.has(team.id)) {
+        order.set(team.id, idx);
+        idx += 1;
+      }
+    }
+    return order;
+  })();
   const matchCounts = new Map<string, number>();
   const paired = new Set<string>();
 
@@ -131,6 +155,27 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   function pairKey(a: string, b: string) {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
+  function compareWrestlers(a: typeof pool[number], b: typeof pool[number]) {
+    const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    const aLast = a.last.toLowerCase();
+    const bLast = b.last.toLowerCase();
+    const lastCompare = aLast.localeCompare(bLast);
+    if (lastCompare !== 0) return lastCompare;
+    const aFirst = a.first.toLowerCase();
+    const bFirst = b.first.toLowerCase();
+    const firstCompare = aFirst.localeCompare(bFirst);
+    if (firstCompare !== 0) return firstCompare;
+    return a.id.localeCompare(b.id);
+  }
+  function orderBout(a: typeof pool[number], b: typeof pool[number], scoreFromA: number) {
+    const compare = compareWrestlers(a, b);
+    if (compare <= 0) {
+      return { redId: a.id, greenId: b.id, pairingScore: scoreFromA };
+    }
+    return { redId: b.id, greenId: a.id, pairingScore: -scoreFromA };
+  }
   /** Fisher–Yates shuffle for unbiased in-place order randomization. */
   function shuffle<T>(items: T[]) {
     const next = [...items];
@@ -186,7 +231,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
         matchCounts.set(a.id, currentA + 1);
         matchCounts.set(best.b.id, (matchCounts.get(best.b.id) ?? 0) + 1);
         paired.add(pairKey(a.id, best.b.id));
-        newBouts.push({ redId: a.id, greenId: best.b.id, pairingScore: best.score });
+        newBouts.push(orderBout(a, best.b, best.score));
       }
     }
   }

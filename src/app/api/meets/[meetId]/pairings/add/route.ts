@@ -23,6 +23,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     throw err;
   }
   const body = BodySchema.parse(await req.json());
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      homeTeamId: true,
+      meetTeams: { select: { team: { select: { id: true, name: true, symbol: true } } } },
+    },
+  });
+  if (!meet) {
+    return NextResponse.json({ error: "Meet not found." }, { status: 404 });
+  }
   const absent = await db.meetWrestlerStatus.findMany({
     where: { meetId, status: { in: ["NOT_COMING"] }, wrestlerId: { in: [body.redId, body.greenId] } },
     select: { wrestlerId: true },
@@ -57,30 +67,72 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       id: true,
       first: true,
       last: true,
+      teamId: true,
       weight: true,
       birthdate: true,
       experienceYears: true,
       skill: true,
-      team: { select: { symbol: true } },
+      team: { select: { symbol: true, name: true } },
     },
   });
   const red = wrestlers.find(w => w.id === body.redId);
   const green = wrestlers.find(w => w.id === body.greenId);
-  const computedScore = red && green ? pairingScore(red, green, scoreOptions ?? undefined).score : 0;
+  if (!red || !green) {
+    return NextResponse.json({ error: "Wrestler not found." }, { status: 404 });
+  }
+  const teamOrder = (() => {
+    const order = new Map<string, number>();
+    const homeId = meet.homeTeamId ?? null;
+    const allTeams = meet.meetTeams.map(mt => mt.team);
+    const label = (team: (typeof allTeams)[number]) =>
+      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+    let idx = 0;
+    if (homeId) {
+      order.set(homeId, idx);
+      idx += 1;
+    }
+    const ordered = allTeams
+      .filter(team => team.id !== homeId)
+      .sort((a, b) => label(a).localeCompare(label(b)));
+    for (const team of ordered) {
+      if (!order.has(team.id)) {
+        order.set(team.id, idx);
+        idx += 1;
+      }
+    }
+    return order;
+  })();
+  const compareWrestlers = (a: typeof red, b: typeof green) => {
+    const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    const aLast = a.last.toLowerCase();
+    const bLast = b.last.toLowerCase();
+    const lastCompare = aLast.localeCompare(bLast);
+    if (lastCompare !== 0) return lastCompare;
+    const aFirst = a.first.toLowerCase();
+    const bFirst = b.first.toLowerCase();
+    const firstCompare = aFirst.localeCompare(bFirst);
+    if (firstCompare !== 0) return firstCompare;
+    return a.id.localeCompare(b.id);
+  };
+  const orderedRed = compareWrestlers(red, green) <= 0 ? red : green;
+  const orderedGreen = orderedRed.id === red.id ? green : red;
+  const computedScore = pairingScore(orderedRed, orderedGreen, scoreOptions ?? undefined).score;
 
   const bout = await db.bout.create({
     data: {
       meetId,
-      redId: body.redId,
-      greenId: body.greenId,
+      redId: orderedRed.id,
+      greenId: orderedGreen.id,
       pairingScore: computedScore,
     },
   });
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
 
-  const redName = formatWrestlerLabel(red) ?? "wrestler 1";
-  const greenName = formatWrestlerLabel(green) ?? "wrestler 2";
+  const redName = formatWrestlerLabel(orderedRed) ?? "wrestler 1";
+  const greenName = formatWrestlerLabel(orderedGreen) ?? "wrestler 2";
   await logMeetChange(meetId, user.id, `Added match for ${redName} with ${greenName}.`);
   return NextResponse.json(updatedBout ?? bout);
 }

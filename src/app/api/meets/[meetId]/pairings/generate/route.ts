@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const [meet, league] = await Promise.all([
     db.meet.findUnique({
       where: { id: meetId },
-      select: { maxMatchesPerWrestler: true, deletedAt: true },
+      select: { maxMatchesPerWrestler: true, deletedAt: true, homeTeamId: true },
     }),
     db.league.findFirst({ select: { maxAgeGapYears: true, maxWeightDiffPct: true } }),
   ]);
@@ -48,6 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     maxAgeGapDays,
     maxWeightDiffPct,
     maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet.maxMatchesPerWrestler,
+    homeTeamId: meet.homeTeamId ?? null,
   });
   const createdCount = result.created;
   const targetMatches = settings.matchesPerWrestler;

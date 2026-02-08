@@ -635,6 +635,8 @@ export default function EnterResultsPage() {
               const secondLabel = second.id === b.red.id ? redLabel : greenLabel;
               const firstTeamLabel = first.team.symbol ?? first.team.name;
               const secondTeamLabel = second.team.symbol ?? second.team.name;
+              const firstOptionColor = matTextColor(first.team.color);
+              const secondOptionColor = matTextColor(second.team.color);
               const winnerColor = b.resultWinnerId === b.red.id
                 ? matTextColor(b.red.team.color)
                 : b.resultWinnerId === b.green.id
@@ -674,11 +676,11 @@ export default function EnterResultsPage() {
                       style={{ color: winnerColor }}
                     >
                       <option value="">No winner</option>
-                      <option value={b.red.id} style={{ color: matTextColor(b.red.team.color), fontWeight: 600 }}>
-                        {redLabel} ({b.red.team.symbol ?? b.red.team.name})
+                      <option value={first.id} style={{ color: firstOptionColor, fontWeight: 600 }}>
+                        {firstLabel} ({firstTeamLabel})
                       </option>
-                      <option value={b.green.id} style={{ color: matTextColor(b.green.team.color), fontWeight: 600 }}>
-                        {greenLabel} ({b.green.team.symbol ?? b.green.team.name})
+                      <option value={second.id} style={{ color: secondOptionColor, fontWeight: 600 }}>
+                        {secondLabel} ({secondTeamLabel})
                       </option>
                     </select>
                   </td>

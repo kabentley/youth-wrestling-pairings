@@ -46,7 +46,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { deletedAt: true },
+    select: { deletedAt: true, homeTeamId: true },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
@@ -71,7 +71,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
-    select: { teamId: true },
+    select: { teamId: true, team: { select: { id: true, name: true, symbol: true } } },
   });
   const meetTeamIds = meetTeams.map(mt => mt.teamId);
   const meetSignature = buildTeamSignature(meetTeamIds);
@@ -81,13 +81,59 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
   const wrestlers = await db.wrestler.findMany({
     where: { teamId: { in: meetTeamIds } },
-    select: { id: true, active: true },
+    select: { id: true, active: true, first: true, last: true, teamId: true },
   });
   const wrestlerIds = new Set(wrestlers.map(w => w.id));
   const activeIds = new Set(wrestlers.filter(w => w.active).map(w => w.id));
 
   const attendance = payload.attendance.filter(a => wrestlerIds.has(a.wrestlerId) && activeIds.has(a.wrestlerId));
-  const bouts = payload.bouts.filter(b => activeIds.has(b.redId) && activeIds.has(b.greenId));
+  const teamOrder = (() => {
+    const order = new Map<string, number>();
+    const homeId = meet.homeTeamId ?? null;
+    const allTeams = meetTeams.map(mt => mt.team);
+    const label = (team: (typeof allTeams)[number]) =>
+      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+    let idx = 0;
+    if (homeId) {
+      order.set(homeId, idx);
+      idx += 1;
+    }
+    const ordered = allTeams
+      .filter(team => team.id !== homeId)
+      .sort((a, b) => label(a).localeCompare(label(b)));
+    for (const team of ordered) {
+      if (!order.has(team.id)) {
+        order.set(team.id, idx);
+        idx += 1;
+      }
+    }
+    return order;
+  })();
+  const wrestlerById = new Map(wrestlers.map(w => [w.id, w]));
+  const compareWrestlers = (aId: string, bId: string) => {
+    const a = wrestlerById.get(aId);
+    const b = wrestlerById.get(bId);
+    if (!a || !b) return aId.localeCompare(bId);
+    const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    const aLast = (a.last ?? "").toLowerCase();
+    const bLast = (b.last ?? "").toLowerCase();
+    const lastCompare = aLast.localeCompare(bLast);
+    if (lastCompare !== 0) return lastCompare;
+    const aFirst = (a.first ?? "").toLowerCase();
+    const bFirst = (b.first ?? "").toLowerCase();
+    const firstCompare = aFirst.localeCompare(bFirst);
+    if (firstCompare !== 0) return firstCompare;
+    return a.id.localeCompare(b.id);
+  };
+  const bouts = payload.bouts
+    .filter(b => activeIds.has(b.redId) && activeIds.has(b.greenId))
+    .map(b => {
+      const compare = compareWrestlers(b.redId, b.greenId);
+      if (compare <= 0) return b;
+      return { ...b, redId: b.greenId, greenId: b.redId, pairingScore: -b.pairingScore };
+    });
 
   await db.$transaction(async (tx) => {
     await tx.meetWrestlerStatus.deleteMany({ where: { meetId } });

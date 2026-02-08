@@ -1014,9 +1014,6 @@ export default function MatBoardTab({
         b.originalMat != null && b.originalMat !== matNum
           ? getMatColor(b.originalMat)
           : matColor;
-      const homeTeamId = meetSettings?.homeTeamId ?? null;
-      const isHomeRed = homeTeamId ? wMap[b.redId]?.teamId === homeTeamId : false;
-      const isHomeGreen = homeTeamId ? wMap[b.greenId]?.teamId === homeTeamId : false;
       const entries = [
         {
           id: b.redId,
@@ -1037,13 +1034,7 @@ export default function MatBoardTab({
           highlight: isGreenHighlighted,
         },
       ];
-      const ordered = (() => {
-        if (homeTeamId) {
-          if (isHomeGreen && !isHomeRed) return [entries[1], entries[0]];
-          return entries;
-        }
-        return entries;
-      })();
+      const ordered = entries;
       return (
         <div
           key={b.id}

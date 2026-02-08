@@ -1785,21 +1785,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return sortValueCompare(getValue(a), getValue(b), availableSort.dir);
   });
   const availableDisplay = availableSorted.slice(0, 20);
-  // Prefer home team on the left when showing checkpoint diffs.
+  // Preserve stored red/green ordering for checkpoint diffs.
   const getCheckpointBoutOrder = useCallback((b: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }) => {
-    const red = wMap[b.redId];
-    const green = wMap[b.greenId];
-    const homeId = homeTeamId;
-    const redIsHome = Boolean(homeId && red?.teamId === homeId);
-    const greenIsHome = Boolean(homeId && green?.teamId === homeId);
-    if (redIsHome && !greenIsHome) {
-      return { leftId: b.redId, rightId: b.greenId, leftTeam: b.redTeam, rightTeam: b.greenTeam };
-    }
-    if (greenIsHome && !redIsHome) {
-      return { leftId: b.greenId, rightId: b.redId, leftTeam: b.greenTeam, rightTeam: b.redTeam };
-    }
     return { leftId: b.redId, rightId: b.greenId, leftTeam: b.redTeam, rightTeam: b.greenTeam };
-  }, [homeTeamId, wMap]);
+  }, []);
   // Color for pairing score deltas (good/bad).
   const deltaColor = (value: number) => {
     if (value < 0) return "#b00020";

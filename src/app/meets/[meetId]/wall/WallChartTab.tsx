@@ -465,11 +465,8 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   function cellText(bout: Bout) {
     const red = wMap.get(bout.redId);
     const green = wMap.get(bout.greenId);
-    const homeTeamId = meet.homeTeamId ?? null;
-    const redIsHome = Boolean(homeTeamId && red?.teamId === homeTeamId);
-    const greenIsHome = Boolean(homeTeamId && green?.teamId === homeTeamId);
-    const left = redIsHome && !greenIsHome ? red : greenIsHome && !redIsHome ? green : red;
-    const right = left === red ? green : red;
+    const left = red;
+    const right = green;
     const leftTeam = left ? (tMap.get(left.teamId) ?? "") : "";
     const rightTeam = right ? (tMap.get(right.teamId) ?? "") : "";
     return {
