@@ -79,6 +79,8 @@ model Wrestler {
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("WrestlerStatusHistory")
   parentLinks     UserChild[]
   wonBouts        Bout[]   @relation("BoutWinner")
+  rejectedPairsAsA MeetRejectedPair[] @relation("MeetRejectedPairA")
+  rejectedPairsAsB MeetRejectedPair[] @relation("MeetRejectedPairB")
 
   @@index([teamId])
   @@index([last, first])
@@ -118,6 +120,7 @@ model Meet {
   wrestlerStatuses MeetWrestlerStatus[]
   meetChanges MeetChange[]
   meetComments MeetComment[]
+  rejectedPairs MeetRejectedPair[]
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
   checkpoints MeetCheckpoint[]
 }
@@ -200,6 +203,26 @@ model MeetComment {
   @@index([authorId])
 }
 
+model MeetRejectedPair {
+  id          String   @id @default(cuid())
+  meetId      String
+  pairKey     String
+  wrestlerAId String
+  wrestlerBId String
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  meet      Meet     @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("MeetRejectedPairCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  wrestlerA Wrestler @relation("MeetRejectedPairA", fields: [wrestlerAId], references: [id], onDelete: Cascade)
+  wrestlerB Wrestler @relation("MeetRejectedPairB", fields: [wrestlerBId], references: [id], onDelete: Cascade)
+
+  @@unique([meetId, pairKey])
+  @@index([meetId])
+  @@index([wrestlerAId])
+  @@index([wrestlerBId])
+}
+
 model TeamMatRule {
   id            String  @id @default(cuid())
   teamId        String
@@ -280,6 +303,7 @@ model User {
   deletedMeets  Meet[]   @relation("MeetDeletedBy")
   meetChanges   MeetChange[] @relation("MeetChangeActor")
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
+  rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   children      UserChild[]

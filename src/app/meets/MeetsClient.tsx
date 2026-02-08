@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import NumberInput from "@/components/NumberInput";
+import { formatTeamName } from "@/lib/formatTeamName";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 type RestartDefaults = {
@@ -54,7 +55,7 @@ function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | n
     if (seen.has(id)) return;
     const team = byId.get(id);
     if (!team) return;
-    const label = (team.symbol || team.name || "Team").trim();
+    const label = (team.symbol || "").trim();
     if (!label) return;
     ordered.push(label);
     seen.add(id);
@@ -67,8 +68,8 @@ function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | n
     .map(id => byId.get(id))
     .filter((team): team is Team => Boolean(team))
     .sort((a, b) => {
-      const aLabel = (a.symbol || a.name || "").toLowerCase();
-      const bLabel = (b.symbol || b.name || "").toLowerCase();
+      const aLabel = formatTeamName(a).toLowerCase();
+      const bLabel = formatTeamName(b).toLowerCase();
       if (aLabel < bLabel) return -1;
       if (aLabel > bLabel) return 1;
       return 0;
@@ -1046,7 +1047,7 @@ export default function MeetsPage() {
                   <div className="muted">
                     - {new Date(m.date).toISOString().slice(0, 10)}
                     {m.location ? ` - ${m.location}` : ""} -{" "}
-                    {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
+                    {m.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}
                   </div>
                 </div>
                 {canManageMeets && (
@@ -1200,7 +1201,7 @@ export default function MeetsPage() {
                       disabled={!canManageMeets || isEditing}
                     />
                     <span style={{ flex: 1 }}>
-                      {t.name} {t.symbol ? `(${t.symbol})` : ""}
+                      {formatTeamName(t)}
                     </span>
                   </label>
                 ))}
@@ -1229,7 +1230,7 @@ export default function MeetsPage() {
                   {teamIds.map(id => {
                     const t = teams.find(team => team.id === id);
                     return (
-                      <option key={id} value={id}>{t?.symbol ?? id}</option>
+                      <option key={id} value={id}>{t ? formatTeamName(t) : id}</option>
                     );
                   })}
                 </select>
@@ -1300,7 +1301,7 @@ export default function MeetsPage() {
                           {m.deletedBy?.username ? ` by ${m.deletedBy.username}` : ""}
                         </div>
                         <div className="muted">
-                          Teams: {m.meetTeams.map(mt => mt.team.symbol).join(", ")}
+                          Teams: {m.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}
                         </div>
                       </div>
                       <div className="restore-actions">

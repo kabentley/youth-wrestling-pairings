@@ -6,6 +6,8 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
+import { adjustTeamTextColor } from "@/lib/contrastText";
+import { formatTeamName } from "@/lib/formatTeamName";
 
 type Team = {
   id: string;
@@ -184,7 +186,7 @@ export default function RostersClient() {
   const importTeamLabel = useMemo(() => {
     const team = teams.find(t => t.id === importTeamId);
     if (!team) return "no team selected";
-    return `${team.name} (${team.symbol})`;
+    return formatTeamName(team);
   }, [importTeamId, teams]);
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -2554,7 +2556,7 @@ export default function RostersClient() {
                       {/* Team selector options (ordered with preferred team first). */}
                       {orderedTeams.map(t => (
                         <option key={t.id} value={t.id}>
-                          {t.symbol ? `${t.symbol} - ${t.name}` : t.name}
+                          {formatTeamName(t)}
                         </option>
                       ))}
                     </select>
@@ -2821,7 +2823,7 @@ export default function RostersClient() {
                     aria-hidden="true"
                   />
                 ) : null}
-                <div className="import-team-label" style={{ color: currentTeam?.color ?? undefined }}>
+                <div className="import-team-label" style={{ color: adjustTeamTextColor(currentTeam?.color) }}>
                   {importTeamLabel}
                 </div>
               </div>

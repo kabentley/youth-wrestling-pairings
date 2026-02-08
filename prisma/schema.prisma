@@ -3,25 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 
 
-enum Role {
-  ADMIN
-  COACH
-  PARENT
-  TABLE_WORKER
-}
-
-enum MeetWrestlerStatusType {
-  COMING
-  NOT_COMING
-  LATE
-  EARLY
-  ABSENT
-}
+// enums are not supported by the sqlite connector; use string fields instead.
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -79,6 +66,8 @@ model Wrestler {
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("WrestlerStatusHistory")
   parentLinks     UserChild[]
   wonBouts        Bout[]   @relation("BoutWinner")
+  rejectedPairsAsA MeetRejectedPair[] @relation("MeetRejectedPairA")
+  rejectedPairsAsB MeetRejectedPair[] @relation("MeetRejectedPairB")
 
   @@index([teamId])
   @@index([last, first])
@@ -118,6 +107,7 @@ model Meet {
   wrestlerStatuses MeetWrestlerStatus[]
   meetChanges MeetChange[]
   meetComments MeetComment[]
+  rejectedPairs MeetRejectedPair[]
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
   checkpoints MeetCheckpoint[]
 }
@@ -142,7 +132,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     MeetWrestlerStatusType
+  status     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -198,6 +188,26 @@ model MeetComment {
 
   @@index([meetId])
   @@index([authorId])
+}
+
+model MeetRejectedPair {
+  id          String   @id @default(cuid())
+  meetId      String
+  pairKey     String
+  wrestlerAId String
+  wrestlerBId String
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  meet      Meet     @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("MeetRejectedPairCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  wrestlerA Wrestler @relation("MeetRejectedPairA", fields: [wrestlerAId], references: [id], onDelete: Cascade)
+  wrestlerB Wrestler @relation("MeetRejectedPairB", fields: [wrestlerBId], references: [id], onDelete: Cascade)
+
+  @@unique([meetId, pairKey])
+  @@index([meetId])
+  @@index([wrestlerAId])
+  @@index([wrestlerBId])
 }
 
 model TeamMatRule {
@@ -257,7 +267,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          Role     @default(PARENT)
+  role          String   @default("PARENT")
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -268,6 +278,7 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
+  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -280,10 +291,10 @@ model User {
   deletedMeets  Meet[]   @relation("MeetDeletedBy")
   meetChanges   MeetChange[] @relation("MeetChangeActor")
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
+  rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   children      UserChild[]
-  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

@@ -17,6 +17,7 @@ const SettingsSchema = z.object({
   pruneTargetMatches: z.number().int().min(1).max(5).optional(),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   preserveMats: z.boolean().optional(),
+  allowRejectedMatchups: z.boolean().optional().default(false),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {

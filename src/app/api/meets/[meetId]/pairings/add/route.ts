@@ -85,7 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     const homeId = meet.homeTeamId ?? null;
     const allTeams = meet.meetTeams.map(mt => mt.team);
     const label = (team: (typeof allTeams)[number]) =>
-      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+      (team.symbol || team.name || team.id).toLowerCase();
     let idx = 0;
     if (homeId) {
       order.set(homeId, idx);

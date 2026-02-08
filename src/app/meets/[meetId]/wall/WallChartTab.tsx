@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ControlBar from "./ControlBar";
 
+import { formatTeamName } from "@/lib/formatTeamName";
 type MeetData = {
   id: string;
   name: string;
@@ -449,8 +450,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
       .sort((a, b) => a.name.localeCompare(b.name));
     return {
       id: mt.team.id,
-      name: mt.team.name,
-      symbol: mt.team.symbol,
+      label: formatTeamName(mt.team),
       color: mt.team.color ?? "#000",
       members,
     };
@@ -458,7 +458,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
 
   const headerLabel =
     meet.name
-      ? `${meet.name} · ${meet.meetTeams.map(mt => mt.team.name).join(", ")}`
+      ? `${meet.name} · ${meet.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}`
       : meet.name;
   const cardLabel = meet.name;
 
@@ -527,10 +527,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
           {teamCharts.map(team => (
             <article key={team.id} className="team-block">
               <div className="team-header">
-                <div className="team-name">
-                  {team.name}
-                  {team.symbol ? ` (${team.symbol})` : ""}
-                </div>
+                <div className="team-name">{team.label}</div>
                 <span className="card-meet-label">{cardLabel}</span>
               </div>
               {team.members.length === 0 ? (

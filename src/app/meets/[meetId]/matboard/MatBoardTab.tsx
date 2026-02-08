@@ -610,7 +610,7 @@ export default function MatBoardTab({
    */
   function teamName(teamId: string) {
     const team = teams.find(t => t.id === teamId);
-    return team?.symbol ?? team?.name ?? teamId;
+    return team?.symbol ?? teamId;
   }
 
   /**

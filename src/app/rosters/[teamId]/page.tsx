@@ -3,8 +3,9 @@ import { useSession } from "next-auth/react";
 import { use, useEffect, useState, type FormEvent } from "react";
 
 import AppHeader from "@/components/AppHeader";
-import type { MatRule } from "@/lib/matRules";
-import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import { adjustTeamTextColor } from "@/lib/contrastText";
+import { formatTeamName } from "@/lib/formatTeamName";
+import { DEFAULT_MAT_RULES, type MatRule } from "@/lib/matRules";
 
 type Wrestler = {
   id: string;
@@ -324,7 +325,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
           <img src={`/api/teams/${teamId}/logo/file?v=${teamLogoVersion}`} alt={`${team.name} logo`} style={{ width: 56, height: 56, objectFit: "contain" }} />
         ) : null}
         <h2 style={{ margin: 0 }}>
-          {team?.symbol ? `${team.symbol} ${team.name}` : (team?.name ?? "Team")}
+          {formatTeamName(team)}
         </h2>
         {team?.website && (
           <a href={`${team.website.replace(/\/$/, "")}/news`} target="_blank" rel="noreferrer">
@@ -586,7 +587,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
           {/* Active roster list. */}
           {wrestlers.filter(w => w.active).map(w => (
             <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
+              <td style={{ color: adjustTeamTextColor(team?.color) }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
               <td>{w.weight}</td>
               <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
               <td>{w.isGirl ? "Girl" : "Boy"}</td>
@@ -613,7 +614,7 @@ const padRulesToCount = (rules: MatRule[], count: number) => {
               {/* Inactive roster list. */}
               {wrestlers.filter(w => !w.active).map(w => (
                 <tr key={w.id} style={{ borderTop: "1px solid #ddd" }}>
-              <td style={{ color: team?.color ?? "#000000" }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
+              <td style={{ color: adjustTeamTextColor(team?.color) }}>{w.first} {w.last} ({team?.symbol ?? team?.name ?? ""})</td>
                   <td>{w.weight}</td>
                   <td>{new Date(w.birthdate).toISOString().slice(0,10)}</td>
                   <td>{w.isGirl ? "Girl" : "Boy"}</td>

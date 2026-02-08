@@ -92,7 +92,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     const homeId = meet.homeTeamId ?? null;
     const allTeams = meetTeams.map(mt => mt.team);
     const label = (team: (typeof allTeams)[number]) =>
-      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+      (team.symbol || team.name || team.id).toLowerCase();
     let idx = 0;
     if (homeId) {
       order.set(homeId, idx);
@@ -117,12 +117,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
     const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;
     if (aOrder !== bOrder) return aOrder - bOrder;
-    const aLast = (a.last ?? "").toLowerCase();
-    const bLast = (b.last ?? "").toLowerCase();
+    const aLast = a.last.toLowerCase();
+    const bLast = b.last.toLowerCase();
     const lastCompare = aLast.localeCompare(bLast);
     if (lastCompare !== 0) return lastCompare;
-    const aFirst = (a.first ?? "").toLowerCase();
-    const bFirst = (b.first ?? "").toLowerCase();
+    const aFirst = a.first.toLowerCase();
+    const bFirst = b.first.toLowerCase();
     const firstCompare = aFirst.localeCompare(bFirst);
     if (firstCompare !== 0) return firstCompare;
     return a.id.localeCompare(b.id);

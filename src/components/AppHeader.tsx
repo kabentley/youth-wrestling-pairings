@@ -3,6 +3,8 @@
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 
+import { formatTeamName } from "@/lib/formatTeamName";
+
 type Role = "PARENT" | "COACH" | "ADMIN" | "TABLE_WORKER";
 /** Single navigation item displayed in the header. */
 type LinkItem = { href: string; label: string; minRole?: Role; roles?: readonly Role[] };
@@ -352,8 +354,7 @@ export default function AppHeader({
                     />
                   )}
                   <span className="app-header-team-name">
-                    <span>{user.team.symbol ?? ""}</span>
-                    <span>{user.team.name}</span>
+                    {formatTeamName(user.team)}
                   </span>
                 </span>
               ) : null}
@@ -396,7 +397,7 @@ export default function AppHeader({
                 <option value="">Change team</option>
                 {teamOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {option.symbol ? `${option.symbol} – ${option.name}` : option.name}
+                    {formatTeamName(option)}
                   </option>
                 ))}
               </select>

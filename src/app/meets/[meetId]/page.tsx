@@ -9,6 +9,8 @@ import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR } from "@/lib/constants";
+import { formatTeamName } from "@/lib/formatTeamName";
+import { pairKey } from "@/lib/pairKey";
 
 // Render into document.body after mount to avoid SSR/DOM mismatches for modals.
 function ModalPortal({ children }: { children: React.ReactNode }) {
@@ -91,11 +93,17 @@ type MeetComment = {
   createdAt: string;
   author?: { username?: string | null } | null;
 };
-type MatchesTooltip = {
-  wrestlerId: string;
-  x: number;
-  y: number;
-};
+type MatchesTooltip =
+  | { mode: "matches"; wrestlerId: string; x: number; y: number }
+  | {
+      mode: "rejected";
+      left: { name: string; teamId: string | null };
+      right: { name: string; teamId: string | null };
+      by: string;
+      at: string;
+      x: number;
+      y: number;
+    };
 type MeetCheckpoint = {
   id: string;
   name: string;
@@ -259,6 +267,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentBoutColWidth,
   ];
 
+  const rejectedBadgeColWidth = 90;
   const availableColumnWidths = [
     sharedColumnWidths.last,
     sharedColumnWidths.first,
@@ -270,6 +279,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.skill,
     sharedColumnWidths.score,
     sharedColumnWidths.matches,
+    rejectedBadgeColWidth,
   ];
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
   const lastSavedNameRef = useRef("");
@@ -298,6 +308,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const meetDeletedRef = useRef(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const candidatesReqIdRef = useRef(0);
+  const [rejectedPairs, setRejectedPairs] = useState<Map<string, { a: { name: string; teamId: string | null }; b: { name: string; teamId: string | null }; by: string; at: string }>>(new Map());
 
   const [settings, setSettings] = useState({
     enforceAgeGapCheck: true,
@@ -311,8 +322,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [restartLoading, setRestartLoading] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
   const [showAutoPairingsConfirm, setShowAutoPairingsConfirm] = useState(false);
-  const [clearAutoPairingsBeforeRun, setClearAutoPairingsBeforeRun] = useState(true);
+  const [clearAutoPairingsBeforeRun, setClearAutoPairingsBeforeRun] = useState(false);
   const [pruneTargetMatches, setPruneTargetMatches] = useState<number | null>(null);
+  const [allowRejectedMatchups, setAllowRejectedMatchups] = useState(false);
+  const [autoPairingsConfirmAutoRun, setAutoPairingsConfirmAutoRun] = useState(false);
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
@@ -353,6 +366,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           pruneTargetMatches: effectivePruneTarget,
           maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
           preserveMats: !clearExisting,
+          allowRejectedMatchups: allowRejectedMatchups && rejectedPairs.size > 0,
         };
         const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
           method: "POST",
@@ -606,10 +620,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [meetId, updateLockState]);
 
   // Display helpers for teams (symbol/name/color).
-  function teamName(id: string) {
-    const team = teams.find(t => t.id === id);
-    return team?.symbol ?? team?.name ?? id;
-  }
   function teamSymbolById(teamId?: string | null) {
     if (!teamId) return "";
     const team = teams.find(t => t.id === teamId);
@@ -925,11 +935,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   // Load primary meet data (bouts, wrestlers, meet metadata, current user).
   const load = useCallback(async () => {
-    const [bRes, wRes, mRes, meRes] = await Promise.all([
+    const [bRes, wRes, mRes, meRes, rRes] = await Promise.all([
       fetch(`/api/meets/${meetId}/pairings`),
       fetch(`/api/meets/${meetId}/wrestlers`),
       fetch(`/api/meets/${meetId}`),
       fetch("/api/me"),
+      fetch(`/api/meets/${meetId}/rejected-pairs`),
     ]);
     if ([bRes, wRes, mRes].some(r => r.status === 401)) {
       setAuthMsg("Please sign in to view this meet.");
@@ -998,6 +1009,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
       setCurrentUsername(meJson?.username ?? null);
+    }
+    if (rRes.ok) {
+      const rejectedJson = await rRes.json().catch(() => ({}));
+      const rows = Array.isArray(rejectedJson?.pairs) ? rejectedJson.pairs : [];
+      const next = new Map<string, { a: { name: string; teamId: string | null }; b: { name: string; teamId: string | null }; by: string; at: string }>();
+      for (const row of rows) {
+        if (!row || typeof row.pairKey !== "string") continue;
+        const a = row.wrestlerA ? `${row.wrestlerA.first} ${row.wrestlerA.last}`.trim() : "Wrestler";
+        const b = row.wrestlerB ? `${row.wrestlerB.first} ${row.wrestlerB.last}`.trim() : "Wrestler";
+        const by = row.createdBy?.username ?? "unknown user";
+        const at = row.createdAt ? new Date(row.createdAt).toLocaleString() : "unknown time";
+        next.set(row.pairKey, {
+          a: { name: a, teamId: row.wrestlerA?.teamId ?? null },
+          b: { name: b, teamId: row.wrestlerB?.teamId ?? null },
+          by,
+          at,
+        });
+      }
+      setRejectedPairs(next);
+    } else {
+      setRejectedPairs(new Map());
     }
   }, [meetId, router]);
 
@@ -1305,7 +1337,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   // Cache team labels for quick lookup in tables.
   const teamLabelById = useMemo(() => {
-    return new Map(teams.map(team => [team.id, team.symbol ?? team.name]));
+    return new Map(teams.map(team => [team.id, formatTeamName(team)]));
   }, [teams]);
   // Sort roster for pairings and attendance displays.
   const rosterSorted = useMemo(() => {
@@ -1497,8 +1529,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, new Map<string, number>());
   const getMatchCount = (id: string) => matchCounts.get(id) ?? 0;
   // Show/update the floating tooltip near the cursor.
-  const updateMatchesTooltip = useCallback((event: React.MouseEvent, wrestlerId: string) => {
-    setMatchesTooltip({ wrestlerId, x: event.clientX, y: event.clientY });
+  const showMatchesTooltip = useCallback((event: React.MouseEvent, wrestlerId: string) => {
+    setMatchesTooltip({ mode: "matches", wrestlerId, x: event.clientX, y: event.clientY });
+  }, []);
+  const showRejectedTooltip = useCallback((
+    event: React.MouseEvent,
+    details: { left: { name: string; teamId: string | null }; right: { name: string; teamId: string | null }; by: string; at: string },
+  ) => {
+    setMatchesTooltip({ mode: "rejected", ...details, x: event.clientX, y: event.clientY });
   }, []);
   // Hide the floating tooltip.
   const hideMatchesTooltip = useCallback(() => setMatchesTooltip(null), []);
@@ -1509,8 +1547,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       hideMatchesTooltip();
       return;
     }
-    updateMatchesTooltip(event, wrestlerId);
-  }, [hideMatchesTooltip, updateMatchesTooltip]);
+    showMatchesTooltip(event, wrestlerId);
+  }, [hideMatchesTooltip, showMatchesTooltip]);
 
   // Sort pairings roster according to the active column.
   const pairingsSorted = [...attendingByTeam].sort((a, b) => {
@@ -3395,7 +3433,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 type="button"
                 className="nav-btn"
                 onClick={() => {
-                  setClearAutoPairingsBeforeRun(true);
+                  setClearAutoPairingsBeforeRun(false);
+                  setAllowRejectedMatchups(false);
+                  setAutoPairingsConfirmAutoRun(false);
                   setShowAutoPairingsConfirm(true);
                 }}
                 disabled={!canEdit || autoPairingsLoading}
@@ -3437,9 +3477,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   fontWeight: isActive ? 700 : undefined,
                   boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                 }}
-                title={team.name}
+                title={formatTeamName(team)}
               >
-                <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
+                <span className="tab-full">{formatTeamName(team)}</span>
                 <span className="tab-symbol">{team.symbol ?? team.name}</span>
               </button>
             );
@@ -3609,7 +3649,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 >
                   {target.first} {target.last}
                   <span style={{ fontSize: 14, fontWeight: 600, color: "#555" }}>
-                    ({teamName(target.teamId)})
+                    ({teamSymbolById(target.teamId)})
                   </span>
                   <span style={{ width: 14, height: 14, background: teamColor(target.teamId), display: "inline-block", borderRadius: 3 }} />
                 </span>
@@ -3815,11 +3855,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             />
                           </th>
                         ))}
+                        <th className="pairings-th" />
                       </tr>
                     </thead>
                     <tbody>
                       {availableDisplay.map(({ opponent: o, score }) => {
                         const matchColor = teamTextColor(o.teamId);
+                        const rejectedInfo = rejectedPairs.get(pairKey(target.id, o.id));
+                        const rejected = Boolean(rejectedInfo);
                         return (
                           <tr
                             key={o.id}
@@ -3857,12 +3900,59 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                 {Number.isFinite(score) ? score.toFixed(2) : ""}
                               </td>
                             <td align="left">{getMatchCount(o.id)}</td>
+                            <td
+                              align="left"
+                              data-tooltip-skip="true"
+                              onMouseEnter={(event) => {
+                                if (!rejectedInfo) return;
+                                event.stopPropagation();
+                                showRejectedTooltip(event, {
+                                  left: rejectedInfo.b,
+                                  right: rejectedInfo.a,
+                                  by: rejectedInfo.by,
+                                  at: rejectedInfo.at,
+                                });
+                              }}
+                              onMouseMove={(event) => {
+                                if (!rejectedInfo) return;
+                                event.stopPropagation();
+                                showRejectedTooltip(event, {
+                                  left: rejectedInfo.b,
+                                  right: rejectedInfo.a,
+                                  by: rejectedInfo.by,
+                                  at: rejectedInfo.at,
+                                });
+                              }}
+                              onMouseLeave={(event) => {
+                                if (!rejectedInfo) return;
+                                event.stopPropagation();
+                                hideMatchesTooltip();
+                              }}
+                            >
+                              {rejected && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.4px",
+                                    textTransform: "uppercase",
+                                    color: "#8a1c1c",
+                                    background: "#fdecea",
+                                    border: "1px solid #f4c7c3",
+                                    padding: "1px 6px",
+                                    borderRadius: 999,
+                                  }}
+                                >
+                                  Rejected
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
                       {availableDisplay.length === 0 && (
                         <tr>
-                          <td colSpan={10}>
+                          <td colSpan={11}>
                             {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
                               ? "Wrestler already has maximum number of bouts"
                               : "No candidates meet the current limits."}
@@ -4077,9 +4167,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             fontWeight: isActive ? 700 : undefined,
                             boxShadow: isActive ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
                           }}
-                          title={team.name}
+                          title={formatTeamName(team)}
                         >
-                          <span className="tab-full">{team.symbol ? `${team.symbol} - ${team.name}` : team.name}</span>
+                          <span className="tab-full">{formatTeamName(team)}</span>
                           <span className="tab-symbol">{team.symbol ?? team.name}</span>
                         </button>
                       );
@@ -4276,12 +4366,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       }
                       const saved = await saveModalAttendanceChanges();
                       if (!saved) return;
-                      let ran = true;
                       if (autoPairingsModalMode === "auto") {
-                        ran = await rerunAutoPairings();
-                      }
-                      if (ran) {
-                        await maybeSaveInitialCheckpoint();
+                        setShowAutoPairingsModal(false);
+                        setClearAutoPairingsBeforeRun(false);
+                        setAllowRejectedMatchups(false);
+                        setAutoPairingsConfirmAutoRun(true);
+                        setShowAutoPairingsConfirm(true);
+                        return;
                       }
                       setShowAutoPairingsModal(false);
                     })();
@@ -4313,7 +4404,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       {showAutoPairingsConfirm && (
         <ModalPortal>
-          <div className="modal-backdrop" onClick={() => setShowAutoPairingsConfirm(false)}>
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              setAutoPairingsConfirmAutoRun(false);
+              setShowAutoPairingsConfirm(false);
+            }}
+          >
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: 0 }}>Run Auto Pairings</h3>
               <div style={{ fontSize: 13, color: "#5b6472" }}>
@@ -4404,6 +4501,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 />
                 Clear all existing bouts before generating
               </label>
+              {rejectedPairs.size > 0 && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 0, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={allowRejectedMatchups}
+                    onChange={(e) => setAllowRejectedMatchups(e.target.checked)}
+                  />
+                  Allow previously rejected matchups
+                </label>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 0, fontSize: 13 }}>
                 Remove all bouts where both wrestlers have more than
                 <input
@@ -4429,7 +4536,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <button
                   className="nav-btn"
                   type="button"
-                  onClick={() => setShowAutoPairingsConfirm(false)}
+                  onClick={() => {
+                    setAutoPairingsConfirmAutoRun(false);
+                    setShowAutoPairingsConfirm(false);
+                  }}
                   disabled={autoPairingsLoading}
                 >
                   Cancel
@@ -4439,8 +4549,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   type="button"
                   onClick={() => {
                     void (async () => {
+                      const shouldSaveCheckpoint = autoPairingsConfirmAutoRun;
+                      setAutoPairingsConfirmAutoRun(false);
                       setShowAutoPairingsConfirm(false);
-                      await rerunAutoPairings({ clearExisting: clearAutoPairingsBeforeRun });
+                      const ran = await rerunAutoPairings({ clearExisting: clearAutoPairingsBeforeRun });
+                      if (ran && shouldSaveCheckpoint) {
+                        await maybeSaveInitialCheckpoint();
+                      }
                     })();
                   }}
                   disabled={!canEdit || autoPairingsLoading}
@@ -4548,8 +4663,67 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         );
       })()}
       {matchesTooltip && (() => {
+        const tooltipWidth = 320;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth ? Math.min(matchesTooltip.x + 14, viewportWidth - tooltipWidth - 8) : matchesTooltip.x;
+        const top = viewportHeight ? Math.min(matchesTooltip.y + 14, viewportHeight - 200) : matchesTooltip.y;
+
+        if (matchesTooltip.mode === "rejected") {
+          const leftSymbol = matchesTooltip.left.teamId
+            ? (teams.find(t => t.id === matchesTooltip.left.teamId)?.symbol ?? "")
+            : "";
+          const rightSymbol = matchesTooltip.right.teamId
+            ? (teams.find(t => t.id === matchesTooltip.right.teamId)?.symbol ?? "")
+            : "";
+          const leftLabel = leftSymbol
+            ? `${matchesTooltip.left.name} (${leftSymbol})`
+            : matchesTooltip.left.name;
+          const rightLabel = rightSymbol
+            ? `${matchesTooltip.right.name} (${rightSymbol})`
+            : matchesTooltip.right.name;
+          const leftColor = matchesTooltip.left.teamId
+            ? teamTextColor(matchesTooltip.left.teamId)
+            : "#222";
+          const rightColor = matchesTooltip.right.teamId
+            ? teamTextColor(matchesTooltip.right.teamId)
+            : "#222";
+          return (
+            <div
+              style={{
+                position: "fixed",
+                left,
+                top,
+                width: tooltipWidth,
+                zIndex: 1000,
+                background: "#fff",
+                border: "1px solid rgba(0,0,0,0.15)",
+                borderRadius: 10,
+                boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+                padding: "10px 12px",
+                pointerEvents: "none",
+                fontSize: 13,
+              }}
+              aria-hidden="true"
+            >
+              <div style={{ fontWeight: 800, marginBottom: 6, color: "#8a1c1c" }}>
+                Rejected by {matchesTooltip.by} on {matchesTooltip.at}
+              </div>
+              <div style={{ color: "#444" }}>
+                <span style={{ color: leftColor, fontWeight: 700 }}>{leftLabel}</span>
+                <span style={{ margin: "0 6px" }}>vs</span>
+                <span style={{ color: rightColor, fontWeight: 700 }}>{rightLabel}</span>
+              </div>
+              <div style={{ color: "#444", marginTop: 4 }}>
+                This matchup will not be used for future auto pairings.
+              </div>
+            </div>
+          );
+        }
+
         const tooltipWrestler = wMap[matchesTooltip.wrestlerId] ?? null;
         const fullName = tooltipWrestler ? `${tooltipWrestler.first} ${tooltipWrestler.last}`.trim() : matchesTooltip.wrestlerId;
+        const titleTeam = tooltipWrestler ? teamSymbolById(tooltipWrestler.teamId) : "";
         const titleColor = tooltipWrestler ? teamTextColor(tooltipWrestler.teamId) : "#222";
         const rows = (boutsByWrestlerId.get(matchesTooltip.wrestlerId) ?? [])
           .slice()
@@ -4562,12 +4736,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             if (orderA !== orderB) return orderA - orderB;
             return a.bout.id.localeCompare(b.bout.id);
           });
-
-        const tooltipWidth = 320;
-        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
-        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
-        const left = viewportWidth ? Math.min(matchesTooltip.x + 14, viewportWidth - tooltipWidth - 8) : matchesTooltip.x;
-        const top = viewportHeight ? Math.min(matchesTooltip.y + 14, viewportHeight - 200) : matchesTooltip.y;
 
         return (
           <div
@@ -4588,7 +4756,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             aria-hidden="true"
           >
             <div style={{ fontWeight: 800, marginBottom: 6, color: titleColor }}>
-              Current matches for {fullName}
+              Current matches for {fullName}{titleTeam ? ` (${titleTeam})` : ""}
             </div>
             {rows.length === 0 ? (
               <div style={{ color: "#666" }}>No matches.</div>

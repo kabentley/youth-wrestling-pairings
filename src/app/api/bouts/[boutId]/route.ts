@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { formatWrestlerLabel } from "@/lib/meetChangeFormat";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { normalizePair, pairKey } from "@/lib/pairKey";
 import { requireRole } from "@/lib/rbac";
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ boutId: string }> }) {
@@ -29,7 +30,22 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ bout
     throw err;
   }
 
-  await db.bout.delete({ where: { id: boutId } });
+  const [wrestlerAId, wrestlerBId] = normalizePair(bout.redId, bout.greenId);
+  const key = pairKey(bout.redId, bout.greenId);
+  await db.$transaction(async (tx) => {
+    await tx.bout.delete({ where: { id: boutId } });
+    await tx.meetRejectedPair.upsert({
+      where: { meetId_pairKey: { meetId: bout.meetId, pairKey: key } },
+      update: { createdById: user.id },
+      create: {
+        meetId: bout.meetId,
+        pairKey: key,
+        wrestlerAId,
+        wrestlerBId,
+        createdById: user.id,
+      },
+    });
+  });
   const wrestlers = await db.wrestler.findMany({
     where: { id: { in: [bout.redId, bout.greenId] } },
     select: { id: true, first: true, last: true, team: { select: { symbol: true } } },

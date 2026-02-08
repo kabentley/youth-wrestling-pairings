@@ -1,6 +1,7 @@
 import { MAX_MATCHES_PER_WRESTLER } from "./constants";
 import { db } from "./db";
 import { pairingScore, weightPctDiff } from "./pairingScore";
+import { pairKey } from "./pairKey";
 
 /**
  * Settings used by the automatic pairing generator.
@@ -21,6 +22,9 @@ export type PairingSettings = {
 
   /** If true, only allow matchups within the same sex (girls vs girls, boys vs boys). */
   girlsWrestleGirls: boolean;
+
+  /** If true, include matchups that were previously rejected. */
+  allowRejectedMatchups?: boolean;
 
   /** Target matches per wrestler for this generation pass. */
   matchesPerWrestler?: number;
@@ -81,7 +85,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     const homeId = settings.homeTeamId ?? null;
     const allTeams = meetTeams.map(mt => mt.team);
     const label = (team: (typeof allTeams)[number]) =>
-      (team.symbol ?? team.name ?? team.id ?? "").toLowerCase();
+      (team.symbol || team.name || team.id).toLowerCase();
     let idx = 0;
     if (homeId) {
       order.set(homeId, idx);
@@ -110,6 +114,15 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     matchCounts.set(bout.redId, (matchCounts.get(bout.redId) ?? 0) + 1);
     matchCounts.set(bout.greenId, (matchCounts.get(bout.greenId) ?? 0) + 1);
     paired.add(pairKey(bout.redId, bout.greenId));
+  }
+  if (!settings.allowRejectedMatchups) {
+    const rejectedPairs = await db.meetRejectedPair.findMany({
+      where: { meetId },
+      select: { pairKey: true },
+    });
+    for (const rejected of rejectedPairs) {
+      paired.add(rejected.pairKey);
+    }
   }
 
   const pool = [...wrestlers].sort((a, b) => a.weight - b.weight);
@@ -151,10 +164,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     return true;
   }
 
-  /** Normalizes a pair so A/B and B/A map to the same key. */
-  function pairKey(a: string, b: string) {
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
-  }
   function compareWrestlers(a: typeof pool[number], b: typeof pool[number]) {
     const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
     const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;

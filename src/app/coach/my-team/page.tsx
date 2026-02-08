@@ -5,8 +5,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
 import NumberInput from "@/components/NumberInput";
-import type { MatRule } from "@/lib/matRules";
-import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import { adjustTeamTextColor } from "@/lib/contrastText";
+import { formatTeamName } from "@/lib/formatTeamName";
+import { DEFAULT_MAT_RULES, type MatRule } from "@/lib/matRules";
 
 const CONFIGURED_MATS = 6;
 const MIN_MATS = 1;
@@ -95,7 +96,8 @@ export default function CoachMyTeamPage() {
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
   const [logoLoading, setLogoLoading] = useState(false);
-  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string; symbol?: string | null }[]>([]);
+  const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [initialInfo, setInitialInfo] = useState({ website: "", location: "" });
   const [infoDirty, setInfoDirty] = useState(false);
@@ -141,6 +143,7 @@ export default function CoachMyTeamPage() {
       const profile = await meRes.json();
       setRole(profile.role ?? null);
       setTeamSymbol(profile.team?.symbol ?? null);
+      setMyTeamId(profile.teamId ?? null);
       if (!profile.teamId && profile.role !== "ADMIN") {
         console.warn("You must be assigned to a team to use this page.");
         return;
@@ -162,6 +165,13 @@ export default function CoachMyTeamPage() {
       console.error("Unable to load team settings.");
     }
   };
+
+  const orderedTeams = (() => {
+    if (!myTeamId) return teams;
+    const mine = teams.find(t => t.id === myTeamId);
+    if (!mine) return teams;
+    return [mine, ...teams.filter(t => t.id !== myTeamId)];
+  })();
 
   const snapshotRef = useRef("");
   const meetDefaultsSnapshotRef = useRef("");
@@ -626,7 +636,7 @@ export default function CoachMyTeamPage() {
             <h1 className="team-title">
               Team Settings For: {teamName}
               {teamSymbol ? (
-                <span style={{ color: teamColor, marginLeft: 6 }}>
+                <span style={{ color: adjustTeamTextColor(teamColor), marginLeft: 6 }}>
                   ({teamSymbol})
                 </span>
               ) : null}
@@ -646,9 +656,9 @@ export default function CoachMyTeamPage() {
                 }}
               >
                 <option value="">Select a team</option>
-                {teams.map(t => (
+                {orderedTeams.map(t => (
                   <option key={t.id} value={t.id}>
-                    {t.name}
+                    {formatTeamName(t)}
                   </option>
                 ))}
               </select>

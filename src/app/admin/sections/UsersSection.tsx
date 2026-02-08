@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
+import { formatTeamName } from "@/lib/formatTeamName";
+
 type UserRow = {
   id: string;
   username: string;
@@ -196,7 +198,7 @@ export default function UsersSection() {
             <option value="">All teams</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.symbol})
+                {formatTeamName(t)}
               </option>
             ))}
           </select>
@@ -263,7 +265,7 @@ export default function UsersSection() {
             <option value="">Select team</option>
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.symbol})
+                {formatTeamName(t)}
               </option>
             ))}
           </select>
@@ -327,7 +329,7 @@ export default function UsersSection() {
                         <option value="">None</option>
                         {teams.map((t) => (
                           <option key={t.id} value={t.id}>
-                            {t.name} ({t.symbol})
+                            {formatTeamName(t)}
                           </option>
                         ))}
                       </select>
