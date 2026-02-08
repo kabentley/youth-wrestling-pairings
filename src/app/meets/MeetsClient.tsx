@@ -1045,9 +1045,8 @@ export default function MeetsPage() {
                     </span>
                   </div>
                   <div className="muted">
-                    - {new Date(m.date).toISOString().slice(0, 10)}
-                    {m.location ? ` - ${m.location}` : ""} -{" "}
-                    {m.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}
+                    {new Date(m.date).toISOString().slice(0, 10)}
+                    {m.location ? ` - ${m.location}` : ""}
                   </div>
                 </div>
                 {canManageMeets && (

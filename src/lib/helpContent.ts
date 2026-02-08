@@ -79,6 +79,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "The Meets page lists meets by date with name, date, location, team symbols, and status [Meets]. Coaches see meets for their team; admins see all meets.",
           "Use View to open, Edit for edit mode, and Delete to remove a meet. The list also shows last edit info and a Restore Deleted option when there are deleted meets [Meets].",
+          "Delete is a soft delete so the meet can be restored. Purge permanently removes a deleted meet and cannot be undone [Meets > Restore Deleted].",
           "Create New Meet opens the setup dialog for name/date/teams and settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > New Meet].",
           "Draft means the meet is still in setup and supports full editing with the lock.",
           "Published means the plan is ready to share; you can reopen as draft if changes are needed [Meet > Publish].",
@@ -129,6 +130,8 @@ export const HELP_PAGES: HelpPage[] = [
           "Use Girls wrestle girls to limit pairings to same-sex matchups. This setting defaults on for new meets and can be toggled during pairing review [Meet > Pairings].",
           "Pairings fairness settings live in the admin Pairings Settings tab and apply immediately to new pairing suggestions; existing bouts keep their saved scores until you regenerate pairings [Admin > Pairings Settings, Meet > Pairings].",
           "Run Auto Pairings can clear current bouts or keep them, depending on the Clear existing bouts option in the dialog [Meet > Pairings].",
+          "Remove all bouts where both wrestlers have more than the target matches removes bouts after auto pairings run. It removes bouts where both wrestlers have more than the target number of matches [Meet > Pairings].",
+          "Removing a bout marks that matchup as rejected for the meet. Rejected matchups show a badge in Additional Matches and will not be recreated by auto pairings unless you enable Allow previously rejected matchups in the run dialog [Meet > Pairings].",
           "Use the additional matches list to add or remove bouts [Meet > Pairings > Additional Matches]. Enforce weight checks when required and document exceptions in comments [Meet > Comments].",
           "Use rest gap settings to avoid scheduling the same wrestler too close together. This improves pacing, especially in multi-mat meets [Team Settings > Meet Setup, Meet > Pairings].",
           "Watch match counts to spread opportunities evenly and avoid overbooking any wrestler [Meet > Pairings].",
