@@ -1034,21 +1034,29 @@ export default function MeetsPage() {
             </div>
           </div>
           <div className="meet-list">
-            {visibleMeets.map(m => (
-              <div key={m.id} className="meet-item">
-                <div className="meet-item-header">
-                <div>
-                  <div className="meet-title-row">
-                    <a href={`/meets/${m.id}`}>{m.name}</a>
-                    <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
-                      {m.status === "PUBLISHED" ? "Published" : "Draft"}
-                    </span>
+            {visibleMeets.map(m => {
+              const homeTeam =
+                m.homeTeamId
+                  ? m.meetTeams.find(mt => mt.team.id === m.homeTeamId)?.team
+                    ?? teams.find(team => team.id === m.homeTeamId)
+                  : null;
+              const homeTeamLabel = homeTeam?.name ?? "";
+              return (
+                <div key={m.id} className="meet-item">
+                  <div className="meet-item-header">
+                  <div>
+                    <div className="meet-title-row">
+                      <a href={`/meets/${m.id}`}>{m.name}</a>
+                      <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
+                        {m.status === "PUBLISHED" ? "Published" : "Draft"}
+                      </span>
+                    </div>
+                    <div className="muted">
+                      {new Date(m.date).toISOString().slice(0, 10)}
+                      {homeTeamLabel ? ` - ${homeTeamLabel}` : ""}
+                      {m.location ? ` - ${m.location}` : ""}
+                    </div>
                   </div>
-                  <div className="muted">
-                    {new Date(m.date).toISOString().slice(0, 10)}
-                    {m.location ? ` - ${m.location}` : ""}
-                  </div>
-                </div>
                 {canManageMeets && (
                   <div className="meet-item-actions">
                     {m.status === "PUBLISHED" && (
@@ -1087,8 +1095,9 @@ export default function MeetsPage() {
                       {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
                   </div>
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
             {meets.length === 0 && (
               <div className="muted">
                 {isLoadingMeets ? "Loading..." : "No meets yet."}
@@ -1298,9 +1307,6 @@ export default function MeetsPage() {
                         <div className="muted">
                           Deleted {m.deletedAt ? new Date(m.deletedAt).toLocaleString() : "recently"}
                           {m.deletedBy?.username ? ` by ${m.deletedBy.username}` : ""}
-                        </div>
-                        <div className="muted">
-                          Teams: {m.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}
                         </div>
                       </div>
                       <div className="restore-actions">
