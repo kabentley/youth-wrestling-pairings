@@ -32,9 +32,9 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ bout
 
   const [wrestlerAId, wrestlerBId] = normalizePair(bout.redId, bout.greenId);
   const key = pairKey(bout.redId, bout.greenId);
-  await db.$transaction(async (tx) => {
+  const rejectedPair = await db.$transaction(async (tx) => {
     await tx.bout.delete({ where: { id: boutId } });
-    await tx.meetRejectedPair.upsert({
+    return tx.meetRejectedPair.upsert({
       where: { meetId_pairKey: { meetId: bout.meetId, pairKey: key } },
       update: { createdById: user.id },
       create: {
@@ -43,6 +43,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ bout
         wrestlerAId,
         wrestlerBId,
         createdById: user.id,
+      },
+      select: {
+        pairKey: true,
+        createdAt: true,
+        createdBy: { select: { username: true, teamId: true, team: { select: { color: true } } } },
+        wrestlerA: { select: { first: true, last: true, teamId: true } },
+        wrestlerB: { select: { first: true, last: true, teamId: true } },
       },
     });
   });
@@ -55,5 +62,5 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ bout
   const redName = formatWrestlerLabel(red) ?? "wrestler 1";
   const greenName = formatWrestlerLabel(green) ?? "wrestler 2";
   await logMeetChange(bout.meetId, user.id, `Removed match for ${redName} with ${greenName}.`);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, removedBoutId: bout.id, rejectedPair });
 }

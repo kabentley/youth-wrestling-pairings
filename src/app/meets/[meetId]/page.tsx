@@ -1085,7 +1085,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     ]);
     if (changesRes.ok) {
       const changesJson = await changesRes.json().catch(() => []);
-      setChanges(Array.isArray(changesJson) ? changesJson : []);
+      const changeList = Array.isArray(changesJson) ? changesJson : [];
+      setChanges(changeList);
+      const latest = changeList[0];
+      setLastUpdatedAt(latest?.createdAt ?? null);
+      setLastUpdatedBy(latest?.actor?.username ?? null);
     }
     if (commentsRes.ok) {
       const commentsJson = await commentsRes.json().catch(() => []);
@@ -1593,6 +1597,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, []);
   // Hide the floating tooltip.
   const hideMatchesTooltip = useCallback(() => setMatchesTooltip(null), []);
+  // On touch devices, hide tooltips on any tap.
+  useEffect(() => {
+    if (!matchesTooltip) return;
+    const handleTap = () => {
+      hideMatchesTooltip();
+    };
+    document.addEventListener("pointerdown", handleTap);
+    document.addEventListener("touchstart", handleTap);
+    return () => {
+      document.removeEventListener("pointerdown", handleTap);
+      document.removeEventListener("touchstart", handleTap);
+    };
+  }, [matchesTooltip, hideMatchesTooltip]);
   // Suppress tooltip when hovering name cells; show elsewhere in the row.
   const handleMatchesHover = useCallback((event: React.MouseEvent, wrestlerId: string) => {
     const node = event.target as HTMLElement | null;
@@ -1989,8 +2006,36 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   // Remove a bout and refresh candidates/metadata.
   async function removeBout(boutId: string) {
     if (!canEdit) return;
-    await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
-    await load();
+    const res = await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = payload?.error ?? `Unable to remove match (${res.status}).`;
+      window.alert(message);
+      return;
+    }
+    setBouts(prev => prev.filter(b => b.id !== boutId));
+    if (payload?.rejectedPair) {
+      const row = payload.rejectedPair;
+      if (typeof row.pairKey === "string") {
+        const a = row.wrestlerA ? `${row.wrestlerA.first} ${row.wrestlerA.last}`.trim() : "Wrestler";
+        const b = row.wrestlerB ? `${row.wrestlerB.first} ${row.wrestlerB.last}`.trim() : "Wrestler";
+        const by = row.createdBy?.username ?? "unknown user";
+        const at = row.createdAt ? new Date(row.createdAt).toLocaleString() : "unknown time";
+        setRejectedPairs(prev => {
+          const next = new Map(prev);
+          next.set(row.pairKey, {
+            a: { name: a, teamId: row.wrestlerA?.teamId ?? null },
+            b: { name: b, teamId: row.wrestlerB?.teamId ?? null },
+            by,
+            at,
+            byTeamId: row.createdBy?.teamId ?? null,
+            byTeamColor: row.createdBy?.team?.color ?? null,
+          });
+          return next;
+        });
+      }
+    }
+    setCandidateRefreshVersion(prev => prev + 1);
     await loadActivity();
     if (target) await loadCandidates(target.id);
   }
