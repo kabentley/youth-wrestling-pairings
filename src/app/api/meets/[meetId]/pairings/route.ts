@@ -21,10 +21,16 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
   const sourceUsers = sourceIds.length > 0
     ? await db.user.findMany({
       where: { id: { in: sourceIds } },
-      select: { id: true, name: true, username: true },
+      select: { id: true, name: true, username: true, teamId: true, team: { select: { color: true } } },
     })
     : [];
-  const sourceMap = new Map(sourceUsers.map(user => [user.id, user]));
+  const sourceMap = new Map(sourceUsers.map(user => [user.id, {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    teamId: user.teamId,
+    teamColor: user.team?.color ?? null,
+  }]));
   const statuses = await db.meetWrestlerStatus.findMany({
     where: { meetId, status: { in: ["NOT_COMING"] } },
     select: { wrestlerId: true },

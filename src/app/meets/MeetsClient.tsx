@@ -1261,7 +1261,7 @@ export default function MeetsPage() {
                     const t = next ? teams.find(team => team.id === next) : null;
                     if (t?.address) setLocation(t.address);
                   }}
-                  disabled={!canManageMeets || !isAdmin}
+                  disabled={!canManageMeets || (!isAdmin && isEditing)}
                 >
                   {teamIdsBySymbol.length === 0 && <option value="">Select teams first</option>}
                   {teamIdsBySymbol.map(id => {

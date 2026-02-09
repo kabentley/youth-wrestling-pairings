@@ -16,7 +16,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     select: {
       pairKey: true,
       createdAt: true,
-      createdBy: { select: { username: true } },
+      createdBy: { select: { username: true, teamId: true, team: { select: { color: true } } } },
       wrestlerA: { select: { first: true, last: true, teamId: true } },
       wrestlerB: { select: { first: true, last: true, teamId: true } },
     },

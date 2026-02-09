@@ -56,7 +56,13 @@ type Bout = {
   order?: number | null;
   source?: string | null;
   createdAt?: string;
-  sourceUser?: { id: string; name?: string | null; username?: string | null } | null;
+  sourceUser?: {
+    id: string;
+    name?: string | null;
+    username?: string | null;
+    teamId?: string | null;
+    teamColor?: string | null;
+  } | null;
 };
 
 type Candidate = {
@@ -330,7 +336,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const meetDeletedRef = useRef(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const candidatesReqIdRef = useRef(0);
-  const [rejectedPairs, setRejectedPairs] = useState<Map<string, { a: { name: string; teamId: string | null }; b: { name: string; teamId: string | null }; by: string; at: string }>>(new Map());
+  const [rejectedPairs, setRejectedPairs] = useState<Map<string, {
+    a: { name: string; teamId: string | null };
+    b: { name: string; teamId: string | null };
+    by: string;
+    at: string;
+    byTeamId: string | null;
+    byTeamColor: string | null;
+  }>>(new Map());
 
   const [settings, setSettings] = useState({
     enforceAgeGapCheck: true,
@@ -1035,7 +1048,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (rRes.ok) {
       const rejectedJson = await rRes.json().catch(() => ({}));
       const rows = Array.isArray(rejectedJson?.pairs) ? rejectedJson.pairs : [];
-      const next = new Map<string, { a: { name: string; teamId: string | null }; b: { name: string; teamId: string | null }; by: string; at: string }>();
+      const next = new Map<string, {
+        a: { name: string; teamId: string | null };
+        b: { name: string; teamId: string | null };
+        by: string;
+        at: string;
+        byTeamId: string | null;
+        byTeamColor: string | null;
+      }>();
       for (const row of rows) {
         if (!row || typeof row.pairKey !== "string") continue;
         const a = row.wrestlerA ? `${row.wrestlerA.first} ${row.wrestlerA.last}`.trim() : "Wrestler";
@@ -1047,6 +1067,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           b: { name: b, teamId: row.wrestlerB?.teamId ?? null },
           by,
           at,
+          byTeamId: row.createdBy?.teamId ?? null,
+          byTeamColor: row.createdBy?.team?.color ?? null,
         });
       }
       setRejectedPairs(next);
@@ -3736,7 +3758,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Skill", key: "skill" },
                             { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
-                            { label: "Source", key: "source" },
+                            { label: "AddedBy", key: "source" },
                             ].map((col, index) => (
                           <th
                             key={col.label}
@@ -3782,7 +3804,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
                           const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
                           const manualCoachId = bout.source ?? null;
-                          const manualCoachName = bout.sourceUser?.name ?? bout.sourceUser?.username ?? "Coach";
+                          const manualCoachUsername = bout.sourceUser?.username ?? null;
+                          const manualCoachName = bout.sourceUser?.name ?? manualCoachUsername ?? "Coach";
+                          const manualCoachLabel = manualCoachUsername ?? bout.sourceUser?.name ?? "Coach";
+                          const manualCoachBy = manualCoachUsername ?? manualCoachName;
+                          const manualCoachTeamId = bout.sourceUser?.teamId ?? null;
+                          const manualCoachColor =
+                            bout.sourceUser?.teamColor ?? (manualCoachTeamId ? teamColor(manualCoachTeamId) : null);
+                          const manualCoachText = manualCoachColor ? contrastText(manualCoachColor) : "#1f5e8a";
+                          const manualCoachBorder = manualCoachColor
+                            ? darkenHex(manualCoachColor, 0.2)
+                            : "#c6def5";
                           const manualCoachAt = bout.createdAt ? new Date(bout.createdAt).toLocaleString() : "unknown time";
                           const autoAt = bout.createdAt ? new Date(bout.createdAt).toLocaleString() : "unknown time";
                           const red = wMap[bout.redId];
@@ -3790,7 +3822,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                           const manualDetails = {
                             left: { name: red ? `${red.first} ${red.last}`.trim() : bout.redId, teamId: red?.teamId ?? null },
                             right: { name: green ? `${green.first} ${green.last}`.trim() : bout.greenId, teamId: green?.teamId ?? null },
-                            by: manualCoachName,
+                            by: manualCoachBy,
                             at: manualCoachAt,
                           };
                          return (
@@ -3876,19 +3908,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                     style={{
                                       fontSize: 10,
                                       fontWeight: 700,
-                                      letterSpacing: "0.4px",
-                                      textTransform: "uppercase",
-                                      color: "#1f5e8a",
-                                      background: "#e7f0fb",
-                                      border: "1px solid #c6def5",
+                                      letterSpacing: "0.2px",
+                                      color: manualCoachText,
+                                      background: manualCoachColor ?? "#e7f0fb",
+                                      border: `1px solid ${manualCoachBorder}`,
                                       padding: "1px 6px",
                                       borderRadius: 999,
                                       display: "inline-flex",
                                       alignItems: "center",
+                                      maxWidth: 140,
+                                      justifyContent: "center",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
                                       cursor: "pointer",
                                     }}
                                   >
-                                    Coach
+                                    {manualCoachLabel}
                                   </span>
                                 ) : (
                                   <span
@@ -3995,7 +4031,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             />
                           </th>
                         ))}
-                        <th className="pairings-th" />
+                        <th className="pairings-th" align="left">RejectedBy</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4003,6 +4039,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         const matchColor = teamTextColor(o.teamId);
                         const rejectedInfo = rejectedPairs.get(pairKey(target.id, o.id));
                         const rejected = Boolean(rejectedInfo);
+                        const rejectedBaseColor = rejected
+                          ? (rejectedInfo?.byTeamColor ?? (rejectedInfo?.byTeamId ? teamColor(rejectedInfo.byTeamId) : null))
+                          : null;
+                        const rejectedBadgeColor = rejectedBaseColor;
+                        const rejectedBadgeText = rejectedBadgeColor ? contrastText(rejectedBadgeColor) : "#8a1c1c";
+                        const rejectedBadgeBorder = rejectedBadgeColor ? darkenHex(rejectedBadgeColor, 0.2) : "#f4c7c3";
                         return (
                           <tr
                             key={o.id}
@@ -4084,17 +4126,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                                   style={{
                                     fontSize: 10,
                                     fontWeight: 700,
-                                    letterSpacing: "0.4px",
-                                    textTransform: "uppercase",
-                                    color: "#8a1c1c",
-                                    background: "#fdecea",
-                                    border: "1px solid #f4c7c3",
+                                    letterSpacing: "0.2px",
+                                    color: rejectedBadgeText,
+                                    background: rejectedBadgeColor ?? "#fdecea",
+                                    border: `1px solid ${rejectedBadgeBorder}`,
                                     padding: "1px 6px",
                                     borderRadius: 999,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    maxWidth: 140,
+                                    justifyContent: "center",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
                                     cursor: "pointer",
                                   }}
                                 >
-                                  Rejected
+                                  {rejectedInfo?.by ?? "Rejected"}
                                 </span>
                               )}
                             </td>

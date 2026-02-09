@@ -131,7 +131,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   await assignMatToBout(meetId, bout.id);
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
-  const sourceUser = { id: user.id, username: user.username, name: null };
+  const sourceRecord = await db.user.findUnique({
+    where: { id: user.id },
+    select: { id: true, username: true, name: true, teamId: true, team: { select: { color: true } } },
+  });
+  const sourceUser = sourceRecord
+    ? {
+      id: sourceRecord.id,
+      username: sourceRecord.username,
+      name: sourceRecord.name,
+      teamId: sourceRecord.teamId,
+      teamColor: sourceRecord.team?.color ?? null,
+    }
+    : { id: user.id, username: user.username, name: null, teamId: user.teamId ?? null, teamColor: null };
 
   const redName = formatWrestlerLabel(orderedRed) ?? "wrestler 1";
   const greenName = formatWrestlerLabel(orderedGreen) ?? "wrestler 2";

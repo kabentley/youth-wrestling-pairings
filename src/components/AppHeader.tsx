@@ -414,6 +414,11 @@ export default function AppHeader({
             ) : null}
             <button
               onClick={async () => {
+                try {
+                  await fetch("/api/meets/lock/release", { method: "POST", keepalive: true });
+                } catch {
+                  // ignore
+                }
                 await signOut({ redirect: false });
                 window.location.href = "/auth/signin";
               }}

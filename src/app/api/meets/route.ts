@@ -132,12 +132,10 @@ export async function POST(req: Request) {
   if (!parsed.teamIds.includes(creatorTeamId)) {
     return NextResponse.json({ error: "Creator's team must be part of the meet" }, { status: 400 });
   }
-  if (user.role !== "ADMIN" && parsed.homeTeamId && parsed.homeTeamId !== creatorTeamId) {
-    return NextResponse.json({ error: "Only admins can change the home team." }, { status: 403 });
+  if (parsed.homeTeamId && !parsed.teamIds.includes(parsed.homeTeamId)) {
+    return NextResponse.json({ error: "Home team must be part of the meet" }, { status: 400 });
   }
-  const homeTeamId = user.role === "ADMIN"
-    ? (parsed.homeTeamId ?? creatorTeamId)
-    : creatorTeamId;
+  const homeTeamId = parsed.homeTeamId ?? creatorTeamId;
 
   const now = new Date();
   const meetTeams = await db.team.findMany({
