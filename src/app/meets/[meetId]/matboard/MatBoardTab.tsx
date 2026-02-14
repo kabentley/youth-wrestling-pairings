@@ -44,6 +44,7 @@ type WrestlerEntry = {
   conflictBg?: string;
   singleMatch: boolean;
   highlight: boolean;
+  outlineColor?: string | null;
 };
 
 function MatBoardWrestlerLabel({
@@ -95,6 +96,10 @@ function MatBoardWrestlerLabel({
       style={{
         color: entry.color || undefined,
         background: entry.statusBg ?? entry.conflictBg ?? undefined,
+        outline: entry.highlight ? `2px solid ${entry.color || "#111"}` : undefined,
+        outlineOffset: entry.highlight ? 1 : undefined,
+        boxShadow: entry.outlineColor ? `0 0 0 2px ${entry.outlineColor}` : undefined,
+        borderRadius: entry.outlineColor ? 4 : undefined,
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -357,6 +362,21 @@ export default function MatBoardTab({
     }
     return counts;
   }, [mats]);
+
+  const draggingDetails = (() => {
+    if (!dragging) return null;
+    const bout = bouts.find(item => item.id === dragging.boutId);
+    if (!bout) return null;
+    const red = wMap[bout.redId];
+    const green = wMap[bout.greenId];
+    return {
+      boutId: bout.id,
+      redId: bout.redId,
+      greenId: bout.greenId,
+      redColor: red ? teamTextColor(red.teamId) : "#333",
+      greenColor: green ? teamTextColor(green.teamId) : "#333",
+    };
+  })();
 
   const conflictSeverity = useMemo(() => {
     if (conflictGap <= 0) return new Map<string, number>();
@@ -744,7 +764,8 @@ export default function MatBoardTab({
       return minGap;
     };
     const conflictOpacity = (value?: number) => {
-      if (!value) return 0;
+      if (value === undefined) return 0;
+      if (value <= 0) return 0.65;
       const maxGap = Math.max(1, conflictGap);
       const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
       return 0.1 + 0.5 * ratio;
@@ -1041,9 +1062,6 @@ export default function MatBoardTab({
         .bout-row span.single-match {
           font-style: italic;
         }
-        .bout-row span[data-role="wrestler"].highlight {
-          outline: 2px solid #111;
-        }
         .empty-slot {
           font-size: 12px;
           opacity: 0.7;
@@ -1186,6 +1204,13 @@ export default function MatBoardTab({
           highlight: isGreenHighlighted,
         },
       ];
+      const isDragging = dragging?.boutId === b.id;
+      if (draggingDetails && !isDragging) {
+        if (b.redId === draggingDetails.redId) entries[0].outlineColor = draggingDetails.redColor;
+        if (b.redId === draggingDetails.greenId) entries[0].outlineColor = draggingDetails.greenColor;
+        if (b.greenId === draggingDetails.redId) entries[1].outlineColor = draggingDetails.redColor;
+        if (b.greenId === draggingDetails.greenId) entries[1].outlineColor = draggingDetails.greenColor;
+      }
       const ordered = entries;
       const previewNumber = formatBoutNumber(matNum, b.order, index + 1);
       const previewNumberBg = getMatNumberBackground(originalMatColor);
@@ -1194,7 +1219,7 @@ export default function MatBoardTab({
       return (
         <div
           key={b.id}
-          className={`bout${dragging?.boutId === b.id ? " dragging" : ""}`}
+          className={`bout${isDragging ? " dragging" : ""}`}
           draggable={canEdit}
               onDragStart={e => {
                 if (!canEdit) return;
