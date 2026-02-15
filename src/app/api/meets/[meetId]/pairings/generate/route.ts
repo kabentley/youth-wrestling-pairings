@@ -53,31 +53,42 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   const createdCount = result.created;
   const targetMatches = settings.matchesPerWrestler;
+  const changeMessages: string[] = [];
+  const generatedMessage = `Generated pairings (${createdCount} bout${createdCount === 1 ? "" : "s"}; target ${targetMatches} matches).`;
   await logMeetChange(
     meetId,
     user.id,
-    `Generated pairings (${createdCount} bout${createdCount === 1 ? "" : "s"}; target ${targetMatches} matches).`,
+    generatedMessage,
   );
+  changeMessages.push(generatedMessage);
   const removedCount = result.removedOverTarget;
   if (removedCount > 0) {
     const pruneTarget = settings.pruneTargetMatches ?? settings.matchesPerWrestler;
     const targetLabel = pruneTarget ? `more than ${pruneTarget}` : "too many";
+    const removedMessage = `Removed ${removedCount} bout${removedCount === 1 ? "" : "s"} where both wrestlers had ${targetLabel} matches.`;
     await logMeetChange(
       meetId,
       user.id,
-      `Removed ${removedCount} bout${removedCount === 1 ? "" : "s"} where both wrestlers had ${targetLabel} matches.`,
+      removedMessage,
     );
+    changeMessages.push(removedMessage);
   }
   if (settings.preserveMats) {
     const assignResult = await assignMatsForMeet(meetId, { preserveExisting: true });
     if (assignResult.assigned > 0) {
-      await logMeetChange(meetId, user.id, "Assigned mats for new bouts.");
+      const assignedMessage = "Assigned mats for new bouts.";
+      await logMeetChange(meetId, user.id, assignedMessage);
+      changeMessages.push(assignedMessage);
     }
-    return NextResponse.json({ ...result, ...assignResult, reordered: 0 });
+    return NextResponse.json({ ...result, ...assignResult, reordered: 0, changeMessages });
   }
   const assignResult = await assignMatsForMeet(meetId);
-  await logMeetChange(meetId, user.id, "Assigned mats.");
+  const assignedMessage = "Assigned mats.";
+  await logMeetChange(meetId, user.id, assignedMessage);
+  changeMessages.push(assignedMessage);
   const reorderResult = await reorderBoutsForMeet(meetId);
-  await logMeetChange(meetId, user.id, "Reordered mats.");
-  return NextResponse.json({ ...result, ...assignResult, ...reorderResult });
+  const reorderedMessage = "Reordered mats.";
+  await logMeetChange(meetId, user.id, reorderedMessage);
+  changeMessages.push(reorderedMessage);
+  return NextResponse.json({ ...result, ...assignResult, ...reorderResult, changeMessages });
 }

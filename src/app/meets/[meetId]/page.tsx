@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
@@ -412,9 +412,32 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           const json = await generateRes.json().catch(() => null);
           throw new Error(json?.error ?? "Unable to generate new pairings.");
         }
+        const generateJson = await generateRes.json().catch(() => null);
+        const changeMessages = Array.isArray(generateJson?.changeMessages)
+          ? generateJson.changeMessages.filter(
+              (message: unknown): message is string =>
+                typeof message === "string" && message.trim().length > 0,
+            )
+          : [];
+        const addedCount = typeof generateJson?.created === "number" ? generateJson.created : 0;
+        const removedCount =
+          typeof generateJson?.removedOverTarget === "number" ? generateJson.removedOverTarget : 0;
         await load();
       await loadActivity();
-      setShowAutoPairingsModal(false);
+      const dialogMessages = changeMessages.length > 0
+        ? changeMessages
+        : [
+            `Added ${addedCount} bout${addedCount === 1 ? "" : "s"}.`,
+            `Removed ${removedCount} bout${removedCount === 1 ? "" : "s"}.`,
+          ];
+      flushSync(() => {
+        setShowAutoPairingsModal(false);
+        setAutoPairingsLoading(false);
+      });
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => resolve(), 0);
+      });
+      window.alert(`Auto pairings complete.\n\n${dialogMessages.join("\n")}`);
       return true;
     } catch (err) {
       setAutoPairingsError(err instanceof Error ? err.message : "Unable to rerun auto pairings.");
@@ -3803,7 +3826,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Skill", key: "skill" },
                             { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
-                            { label: "AddedBy", key: "source" },
+                            { label: "Added By", key: "source" },
                             ].map((col, index) => (
                           <th
                             key={col.label}
@@ -4076,7 +4099,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             />
                           </th>
                         ))}
-                        <th className="pairings-th" align="left">RejectedBy</th>
+                        <th className="pairings-th" align="left">Rejected By</th>
                       </tr>
                     </thead>
                     <tbody>

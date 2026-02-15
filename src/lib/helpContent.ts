@@ -25,17 +25,17 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Role overview",
         paragraphs: [
           "Coaches set up meets and keep rosters accurate. Strong roster data and clear setup lead to fair pairings, smooth mat flow, and reliable results [Rosters, Meets, Team Settings].",
-          "Each team has one head coach [Admin > League & Teams > Teams] and may have multiple assistant coaches. The head coach is the primary contact, while assistant coaches have the same day-to-day permissions [Team Settings, Rosters, Meets].",
-          "Coaches can create and edit meets and adjust team and mat settings for their team [Meets, Team Settings]. Assistant coaches can also take the lock during specific phases [Team Settings > Team Roles].",
-          "Head coach is a continuity label, not a special permission set. Only admins can change the head coach, and each team keeps a single head coach for clarity [Admin > Users, Admin > League & Teams].",
+          "Each team has one head coach [Admin > Teams] and may have multiple assistant coaches. The head coach is the primary contact, while assistant coaches have the same day-to-day permissions [Team Settings, Rosters, Meets].",
+          "Coaches can create and edit meets and adjust team and mat settings for their team [Meets, Team Settings]. Assistant coaches use the same workflows, including locks, pairings, mat assignments, and results [Meet > Start Editing, Meet > Mat Assignments, Meets > Enter Results].",
+          "Head coach is a continuity label, not a special permission set. Only admins can change the head coach, and each team keeps a single head coach for clarity [Admin > Users, Admin > Teams].",
           "When several coaches work the same meet, agree on who holds the lock by phase. One coach can build pairings while another reviews read-only, then hand off the lock for mat order or results [Meet > Start Editing, Meet > Release Lock, Meet > Comments].",
         ],
       },
       {
         title: "Account and permissions",
         paragraphs: [
-          "New accounts start as parents. Head coaches can promote parents to assistant coaches or table workers for their team [Team Settings > Team Roles].",
-          "Table workers enter bout results and keep mat sheets accurate. This is ideal for trusted volunteers who should not change pairings [Results > select meet].",
+          "New accounts start as parents. Coaches can promote parents to assistant coaches or table workers for their team [Team Settings > Team Roles].",
+          "Table workers enter bout results and keep mat sheets accurate. This is ideal for trusted volunteers who should not change pairings [Meets > Enter Results].",
           "Promote gradually: table worker for meet-day help, assistant coach for people you trust to adjust pairings and mat order [Team Settings > Team Roles].",
         ],
       },
@@ -47,7 +47,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Meet Setup controls match limits, rest gap, and auto-pairing limits used when creating new meets [Team Settings > Meet Setup]. These defaults speed up meet creation.",
           "Mat Setup defines mat count, colors, and age or experience ranges for each mat [Team Settings > Mat Setup].",
           "Team Roles manages promotions and staff assignments [Team Settings > Team Roles].",
-          "Use Rosters to add or import wrestlers and keep weights and availability current before each meet [Rosters].",
+          "Use Rosters to add or import wrestlers and keep weights and active status current before each meet [Rosters].",
           "If pairings look odd, verify roster data first. Accurate weights, ages, and experience drive better recommendations [Rosters].",
         ],
       },
@@ -66,9 +66,9 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Creating a new meet",
         paragraphs: [
-          "Go to [Meets] and choose [New Meet]. Enter the meet name and date, then select the other teams. Your team is always included.",
-          "The home team drives defaults for mats and pairing preferences. By default it is the team of the coach who created the meet; only admins can change it [Admin > Users].",
-          "Set the number of mats and the target matches per wrestler; these shape layout and auto-pairing output [Meets > New Meet].",
+          "Go to [Meets] and choose [Create New Meet]. Enter the meet date, then select the other teams. Your team is always included.",
+          "The home team drives defaults for mats and pairing preferences. Coaches can choose the home team while creating the meet, but after the meet is created only admins can change it [Meets > Create New Meet, Meet > Edit].",
+          "Set the number of mats and the target matches per wrestler; these shape layout and auto-pairing output [Meets > Create New Meet].",
           "Review match limits, rest gap, and auto-pairing limits before saving; these settings drive fairness and pacing [Team Settings > Meet Setup, Meet > Pairings].",
           "Click Create Meet to open the draft in edit mode and confirm attendance before pairings run [Meet > Pairings].",
           "Attendance always comes first. Use Generate Automatic Pairings when creating the meet if you want auto pairings to run after attendance; otherwise you can keep manual pairings [Meet > Pairings].",
@@ -80,7 +80,7 @@ export const HELP_PAGES: HelpPage[] = [
           "The Meets page lists meets by date with name, date, location, team symbols, and status [Meets]. Coaches see meets for their team; admins see all meets.",
           "Use View to open, Edit for edit mode, and Delete to remove a meet. The list also shows last edit info and a Restore Deleted option when there are deleted meets [Meets].",
           "Delete is a soft delete so the meet can be restored. Purge permanently removes a deleted meet and cannot be undone [Meets > Restore Deleted].",
-          "Create New Meet opens the setup dialog for name/date/teams and settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > New Meet].",
+          "Create New Meet opens the setup dialog for date/teams and settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > Create New Meet].",
           "Draft means the meet is still in setup and supports full editing with the lock.",
           "Published means the plan is ready to share; you can reopen as draft if changes are needed [Meet > Publish].",
         ],
@@ -126,7 +126,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Start with automatic pairings, then review and adjust [Meet > Pairings]. The goal is fair, safe, and realistic matchups, not a perfect mathematical result.",
           "Weight, age, experience, and skill are the primary matching factors. With accurate roster data, the top suggestions are usually strong starting points, but coaches should still apply judgment [Rosters, Meet > Pairings].",
-          "The Δ column shows the weight percentage difference between wrestlers, biased by age, experience, and skill. Values closer to zero are tighter matches; a positive value favors the first wrestler and a negative value favors the second [Meet > Pairings].",
+          "The Delta column shows the weight percentage difference between wrestlers, biased by age, experience, and skill. Values closer to zero are tighter matches; a positive value favors the first wrestler and a negative value favors the second [Meet > Pairings].",
           "Use Girls wrestle girls to limit pairings to same-sex matchups. This setting defaults on for new meets and can be toggled during pairing review [Meet > Pairings].",
           "Pairings fairness settings live in the admin Pairings Settings tab and apply immediately to new pairing suggestions; existing bouts keep their saved scores until you regenerate pairings [Admin > Pairings Settings, Meet > Pairings].",
           "Run Auto Pairings can clear current bouts or keep them, depending on the Clear existing bouts option in the dialog [Meet > Pairings].",
@@ -150,13 +150,13 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Plan prints around stability. Rosters are best printed early for check-in and weigh-ins, while wall charts and mat sheets should be printed after mat order is stable [Meet > Wall Charts].",
           "If pairings or mat assignments change, assume any paper already handed out is outdated. Communicate changes and reprint what table workers and coaches will reference [Meet > Comments].",
-          "Use Export Meet on the Pairings card to download a zip with the legacy Pairings2010 files (.wrs, .web.xml, .excel.xml, and pairings.xsl). This helps coaches who still use the old program and provides an archival backup [Meet > Pairings].",
+          "Use Checkpoints, then Export to .wrs, to download a zip with the legacy Pairings2010 files (.wrs, .web.xml, .excel.xml, and pairings.xsl). This helps coaches who still use the old program and provides an archival backup [Meet > Checkpoints].",
         ],
       },
       {
         title: "Running the meet",
         paragraphs: [
-          "Confirm weigh-ins are complete before final pairing changes [Meet > Pairings]. Assign a coach or table worker to keep results entry current as bouts finish [Results].",
+          "Confirm weigh-ins are complete before final pairing changes [Meet > Pairings]. Assign a coach or table worker to keep results entry current as bouts finish [Meets > Enter Results].",
           "If mat order shifts due to delays or substitutions, update the plan and reprint affected sheets [Meet > Mat Assignments, Meet > Wall Charts]. Keep rosters updated if late scratches occur [Rosters].",
           "Keep the workflow simple. Make pairing changes only when necessary, communicate them clearly, and stabilize the plan so table workers and coaches can trust what they see [Meet > Comments].",
         ],
@@ -173,9 +173,9 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Results entry",
         paragraphs: [
-          "Enter results as bouts finish and confirm winners and result details [Results > select meet]. Accurate results prevent duplicate work and simplify reporting later.",
-          "If multiple people enter results, assign mats so two people are not entering the same bout. The goal is speed and accuracy [Results].",
-          "Before final reporting, scan for missing results so the data is complete. Use results for standings or summaries as required by your league [Results].",
+          "Enter results as bouts finish and confirm winners and result details [Meets > Enter Results]. Accurate results prevent duplicate work and simplify reporting later.",
+          "If multiple people enter results, assign mats so two people are not entering the same bout. The goal is speed and accuracy [Meets > Enter Results].",
+          "Before final reporting, scan for missing results so the data is complete. Use results for standings or summaries as required by your league [Meets > Enter Results].",
         ],
       },
       {
@@ -195,42 +195,42 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Role overview",
         paragraphs: [
-          "Admins manage league-wide settings, onboarding, and access control from [Admin > League & Teams] and [Admin > Users]. This role keeps the season organized.",
-          "Admin access should focus on setup, oversight, and troubleshooting so coaches can run day-to-day meet workflows without surprises. Use [Admin > Users] for role issues and [Admin > League & Teams] for structural changes.",
-          "Admins can create and edit teams and rosters for every team, which helps with onboarding, corrections, and emergency fixes [Admin > League & Teams, Rosters].",
+          "Admins manage league-wide settings, onboarding, and access control from [Admin > League], [Admin > Teams], [Admin > Pairings Settings], and [Admin > Users]. This role keeps the season organized.",
+          "Admin access should focus on setup, oversight, and troubleshooting so coaches can run day-to-day meet workflows without surprises. Use [Admin > Users] for role issues and [Admin > League] or [Admin > Teams] for structural changes.",
+          "Admins can create and edit teams and rosters for every team, which helps with onboarding, corrections, and emergency fixes [Admin > Teams, Rosters].",
           "Admins can also create and edit meets when needed for oversight, corrections, or shared league events [Meets].",
-          "A good season kickoff checklist is league branding, teams created, head coach assigned for every team, and users verified with correct roles and team assignments [Admin > League & Teams, Admin > Users].",
+          "A good season kickoff checklist is league branding, teams created, head coach assigned for every team, and users verified with correct roles and team assignments [Admin > League, Admin > Teams, Admin > Users].",
         ],
       },
       {
         title: "League setup",
         paragraphs: [
-          "Start by setting the league name, logo, website, and branding so printouts and screens are consistent across teams [Admin > League & Teams > League]. These details help families and staff recognize official materials.",
-          "Create a team record for each club or school and set names and symbols so teams are easy to recognize on screens and printouts [Admin > League & Teams > Teams].",
-          "Set team colors and upload team logos for readability. Colors and logos appear throughout the site and help families and staff identify teams at a glance [Admin > League & Teams > Teams].",
-          "Assign a head coach to each team so every team has a primary contact and someone responsible for coordination [Admin > League & Teams > Teams, Admin > Users].",
+          "Start by setting the league name, logo, website, and branding so printouts and screens are consistent across teams [Admin > League]. These details help families and staff recognize official materials.",
+          "Create a team record for each club or school and set names and symbols so teams are easy to recognize on screens and printouts [Admin > Teams].",
+          "Set team colors and upload team logos for readability. Colors and logos appear throughout the site and help families and staff identify teams at a glance [Admin > Teams].",
+          "Assign a head coach to each team so every team has a primary contact and someone responsible for coordination [Admin > Teams, Admin > Users].",
           "If a team does not already have a head coach, the first coach assigned becomes the head coach automatically [Admin > Users].",
           "Head coach is a designation, not a separate permission level. Day-to-day, all coaches have the same capabilities, but the label helps with ownership and continuity [Admin > Users].",
-          "Use the Teams table to upload logos, update details, and remove teams when necessary. Deleting a team is destructive, so use it only when you are sure it should be removed [Admin > League & Teams > Teams].",
+          "Use the Teams table to upload logos, update details, and remove teams when necessary. Deleting a team is destructive, so use it only when you are sure it should be removed [Admin > Teams].",
         ],
       },
       {
         title: "Export, import, and new year reset",
         paragraphs: [
-          "Use export to back up teams and rosters before major changes or at season end [Admin > League & Teams > Export Teams + Rosters]. Save the zip file somewhere safe.",
-          "Use import to restore teams and rosters from a prior export or a league-provided file [Admin > League & Teams > Import Teams + Rosters]. Import clears existing rosters first, so confirm you have a backup before proceeding.",
-          "Import and reset require typing a confirmation word. This is intentional because these actions are destructive and difficult to undo [Admin > League & Teams].",
-          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > League & Teams > Reset For New Year]. This is permanent and should be done only after exporting what you want to keep.",
+          "Use export to back up teams and rosters before major changes or at season end [Admin > Teams > Export Teams + Rosters]. Save the zip file somewhere safe.",
+          "Use import to restore teams and rosters from a prior export or a league-provided file [Admin > Teams > Import Teams + Rosters]. Import clears existing rosters first, so confirm you have a backup before proceeding.",
+          "Import and reset require typing a confirmation word. This is intentional because these actions are destructive and difficult to undo [Admin > Teams].",
+          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > Teams > Reset For New Year]. This is permanent and should be done only after exporting what you want to keep.",
         ],
       },
       {
         title: "User access and support",
         paragraphs: [
           "New accounts begin with a parent role. Parents can view team information but do not have editing permissions by default, and you can confirm this on [Admin > Users].",
-          "Head coaches can promote parents to assistant coaches or table workers [Team Settings > Team Roles]. Admins can also resolve role issues or correct team assignments from [Admin > Users].",
+          "Coaches can promote parents to assistant coaches or table workers [Team Settings > Team Roles]. Admins can also resolve role issues or correct team assignments from [Admin > Users].",
           "If a meet is blocked by access problems, confirm the user role and team assignment on [Admin > Users], then confirm lock status on the meet page using Start Editing [Meet > Start Editing].",
           "Admins can promote other users to admin when additional league oversight is needed [Admin > Users]. There must always be at least one admin, so the last remaining admin cannot be removed.",
-          "Keep team assignments clean. Coaches, parents, and table workers should be assigned to a team so the site shows the right rosters and meets. Admins are league-wide and are not assigned to a team [Admin > Users].",
+          "Keep team assignments clean. Coaches, parents, and table workers should be assigned to a team so the site shows the right rosters and meets. Admins keep league-wide access regardless of team assignment [Admin > Users].",
         ],
       },
       {
@@ -245,8 +245,8 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Governance and oversight",
         paragraphs: [
-          "Admins should avoid routine meet editing unless asked so coaches can keep control of their workflow. Step in when there is a dispute, a technical issue, or a need for cross-team coordination [Meets > select meet].",
-          "Use your access to review data quality, promote consistency across teams, and support first-time users with training or documentation [Admin > League & Teams, Admin > Users].",
+          "Admins should avoid routine meet editing unless asked so coaches can keep control of their workflow. Step in when there is a dispute, a technical issue, or a need for cross-team coordination [Meets].",
+          "Use your access to review data quality, promote consistency across teams, and support first-time users with training or documentation [Admin > League, Admin > Teams, Admin > Users].",
           "When someone reports missing meets or missing editing access, check role, team assignment, and meet status. Draft meets are editable by coaches with the lock, while published meets are intended to be stable and may need to be reopened as draft for changes [Admin > Users, Meets].",
         ],
       },
@@ -260,7 +260,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Role overview",
         paragraphs: [
           "When you create an account you begin as a parent [Sign Up]. Parents can link their wrestler, view upcoming meets and match history, and see published meet information, but cannot edit team data by default [My Wrestlers].",
-          "If you need to help run a meet, ask your head coach to promote you to assistant coach or table worker. Table worker access is designed for volunteers who record results without changing pairings [Team Settings > Team Roles].",
+          "If you need to help run a meet, ask a coach to promote you to assistant coach or table worker. Table worker access is designed for volunteers who record results without changing pairings [Team Settings > Team Roles].",
         ],
       },
       {
@@ -274,8 +274,8 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "What a table worker does",
         paragraphs: [
-          "A table worker tracks bout results at a mat and keeps the bout sheet accurate. This role is essential for keeping the event moving and reporting accurate results [Results > select meet].",
-          "Table workers focus on recording scores, winners, and bout order updates. They do not edit pairings or roster data unless given a coaching role [Results].",
+          "A table worker tracks bout results at a mat and keeps the bout sheet accurate. This role is essential for keeping the event moving and reporting accurate results [Meets > Enter Results].",
+          "Table workers focus on recording scores, winners, and bout order updates. They do not edit pairings or roster data unless given a coaching role [Meets > Enter Results].",
           "If you are a table worker, coordinate with the head coach on which mat you are responsible for and how changes will be communicated. Most meet-day confusion comes from outdated paper, so confirm you are using the latest plan.",
         ],
       },
@@ -290,7 +290,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Working with coaches",
         paragraphs: [
           "Coaches may share instructions for weigh-ins, check-in, or mat assignments. Use the help guide and the page labels to follow the workflow [Help].",
-          "When the meet is active, avoid editing unless you have been promoted and asked to make changes. If you are promoted to table worker, focus on entering results accurately and quickly [Results].",
+          "When the meet is active, avoid editing unless you have been promoted and asked to make changes. If you are promoted to table worker, focus on entering results accurately and quickly [Meets > Enter Results].",
         ],
       },
     ],

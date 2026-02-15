@@ -1184,7 +1184,7 @@ export default function MatBoardTab({
         b.originalMat != null && b.originalMat !== matNum
           ? getMatColor(b.originalMat)
           : matColor;
-      const entries = [
+      const entries: WrestlerEntry[] = [
         {
           id: b.redId,
           label: rTxt,
