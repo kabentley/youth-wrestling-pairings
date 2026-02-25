@@ -106,20 +106,36 @@ export default function UsersSection() {
   }
 
   async function setUserRole(id: string, newRole: UserRow["role"]) {
-    await fetch(`/api/admin/users/${id}`, {
+    setMsg("");
+    const res = await fetch(`/api/admin/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: newRole }),
     });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to update role.");
+      await load();
+      return;
+    }
+    setMsg("User updated.");
     await load();
   }
 
   async function setUserTeam(id: string, newTeamId: string | null) {
-    await fetch(`/api/admin/users/${id}`, {
+    setMsg("");
+    const res = await fetch(`/api/admin/users/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ teamId: newTeamId }),
     });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to update team.");
+      await load();
+      return;
+    }
+    setMsg("User updated.");
     await load();
   }
 

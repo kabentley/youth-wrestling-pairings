@@ -104,6 +104,9 @@ export const authOptions: NextAuthOptions = {
         const twoFactorMethod = credentials?.twoFactorMethod ?? "email";
         const twoFactorCode = credentials?.twoFactorCode ?? "";
         const bypassEmailVerification = credentials?.bypassEmailVerification === "true";
+        const skipEmailVerification = process.env.SKIP_EMAIL_VERIFICATION === "true";
+        const skipTwoFactorVerification =
+          process.env.SKIP_2FA_VERIFICATION === "true" || skipEmailVerification;
 
         if (!username || !password) return null;
 
@@ -128,12 +131,12 @@ export const authOptions: NextAuthOptions = {
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
 
-        const requireEmailVerified = process.env.SKIP_EMAIL_VERIFICATION === "true" ? false : true;
+        const requireEmailVerified = skipEmailVerification ? false : true;
         if (requireEmailVerified && !user.emailVerified && !(process.env.NODE_ENV !== "production" && bypassEmailVerification)) {
           throw new Error("EMAIL_NOT_VERIFIED");
         }
 
-        if (user.role === "COACH") {
+        if (user.role === "COACH" && !skipTwoFactorVerification) {
           if (process.env.NODE_ENV !== "production" && bypassEmailVerification) {
             return {
               id: user.id,

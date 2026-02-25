@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth/next";
 
 import { adminStyles } from "./adminStyles";
 import type { AdminTabKey } from "./AdminTabs";
 import AdminTabs from "./AdminTabs";
 
-import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/rbac";
 
 
 type Props = {
@@ -13,25 +12,24 @@ type Props = {
 };
 
 export default async function AdminHome({ searchParams }: Props) {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as any)?.role as string | undefined;
-
-  if (!session) {
-    return (
-      <main className="admin">
-        <style>{adminStyles}</style>
-        <div className="admin-shell">
-          <h1 className="admin-title">Admin</h1>
-          <div className="admin-card">
-            <p>You must sign in.</p>
-            <Link href="/auth/signin">Sign in</Link>
+  try {
+    await requireAdmin();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "";
+    if (message === "UNAUTHORIZED") {
+      return (
+        <main className="admin">
+          <style>{adminStyles}</style>
+          <div className="admin-shell">
+            <h1 className="admin-title">Admin</h1>
+            <div className="admin-card">
+              <p>You must sign in.</p>
+              <Link href="/auth/signin">Sign in</Link>
+            </div>
           </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (role !== "ADMIN") {
+        </main>
+      );
+    }
     return (
       <main className="admin">
         <style>{adminStyles}</style>

@@ -25,15 +25,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const data: Prisma.UserUncheckedUpdateInput = {};
   const finalRole = body.role ?? existing.role;
   const finalTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
-  let teamForHeadCheck = null;
-  if (finalTeamId) {
-    teamForHeadCheck = await db.team.findUnique({
-      where: { id: finalTeamId },
-      select: { headCoachId: true },
-    });
-    if (teamForHeadCheck?.headCoachId === id && finalRole !== "COACH") {
-      return NextResponse.json({ error: "Only admins can remove the head coach role." }, { status: 403 });
-    }
+  const currentHeadTeam = await db.team.findFirst({
+    where: { headCoachId: id },
+    select: { name: true, symbol: true },
+  });
+  if (finalRole === "ADMIN" && currentHeadTeam) {
+    const teamLabel = `${currentHeadTeam.name} (${currentHeadTeam.symbol})`;
+    return NextResponse.json(
+      { error: `Head coach cannot be promoted to admin. Reassign head coach for ${teamLabel} first.` },
+      { status: 400 },
+    );
   }
   if (body.email) {
     data.email = body.email.trim().toLowerCase();
@@ -64,24 +65,35 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       data,
       select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
     });
+    const currentHeadTeamRecord = await tx.team.findFirst({
+      where: { headCoachId: id },
+      select: { id: true },
+    });
     if (finalRole === "COACH" && finalTeamId) {
-      const currentHeadTeam = await tx.team.findFirst({
-        where: { headCoachId: id },
-        select: { id: true },
-      });
-      if (currentHeadTeam && currentHeadTeam.id !== finalTeamId) {
+      if (currentHeadTeamRecord && currentHeadTeamRecord.id !== finalTeamId) {
         await tx.team.update({
-          where: { id: currentHeadTeam.id },
+          where: { id: currentHeadTeamRecord.id },
           data: { headCoachId: null },
         });
       }
-      const headCoachId = teamForHeadCheck?.headCoachId;
-      if (!headCoachId || headCoachId === id) {
+      const targetTeam = await tx.team.findUnique({
+        where: { id: finalTeamId },
+        select: { headCoachId: true },
+      });
+      if (!targetTeam?.headCoachId || targetTeam.headCoachId === id) {
         await tx.team.update({
           where: { id: finalTeamId },
           data: { headCoachId: id },
         });
       }
+      return updatedUser;
+    }
+
+    if (currentHeadTeamRecord) {
+      await tx.team.update({
+        where: { id: currentHeadTeamRecord.id },
+        data: { headCoachId: null },
+      });
     }
     return updatedUser;
   });
