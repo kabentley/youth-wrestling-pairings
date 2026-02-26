@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     const pattern = `%${token.toLowerCase()}%`;
     return Prisma.sql`(LOWER(w."first") LIKE ${pattern} OR LOWER(w."last") LIKE ${pattern})`;
   });
-  const nameWhere = Prisma.join(tokenClauses, Prisma.sql` AND `);
+  const nameWhere = Prisma.join(tokenClauses, " AND ");
 
   const wrestlers = await db.$queryRaw<Array<{
     id: string;
