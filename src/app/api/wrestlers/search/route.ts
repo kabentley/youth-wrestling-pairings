@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -12,18 +13,10 @@ const QuerySchema = z.object({
 function tokenize(q: string) {
   return q
     .trim()
-    .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 3);
 }
-
-const clauseForToken = (token: string) => ({
-  OR: [
-    { first: { contains: token } },
-    { last: { contains: token } },
-  ],
-});
 
 export async function GET(req: Request) {
   const { userId } = await requireSession();
@@ -39,34 +32,46 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "No team assigned." }, { status: 400 });
   }
 
-  const where =
-    tokens.length === 1
-      ? {
-          active: true,
-          OR: clauseForToken(tokens[0]).OR,
-        }
-      : {
-          active: true,
-          AND: tokens.map((t) => clauseForToken(t)),
-        };
+  if (tokens.length === 0) {
+    return NextResponse.json([]);
+  }
 
-  const teamFilter = { teamId: user.teamId };
-
-  const wrestlers = await db.wrestler.findMany({
-    where: { ...where, ...teamFilter },
-    take: limit,
-    select: {
-      id: true,
-      guid: true,
-      first: true,
-      last: true,
-      teamId: true,
-      birthdate: true,
-      active: true,
-      team: { select: { name: true, symbol: true, color: true } },
-    },
-    orderBy: [{ last: "asc" }, { first: "asc" }],
+  const tokenClauses = tokens.map((token) => {
+    const pattern = `%${token.toLowerCase()}%`;
+    return Prisma.sql`(LOWER(w."first") LIKE ${pattern} OR LOWER(w."last") LIKE ${pattern})`;
   });
+  const nameWhere = Prisma.join(tokenClauses, Prisma.sql` AND `);
+
+  const wrestlers = await db.$queryRaw<Array<{
+    id: string;
+    guid: string;
+    first: string;
+    last: string;
+    teamId: string;
+    birthdate: string | Date | null;
+    teamName: string;
+    teamSymbol: string | null;
+    teamColor: string | null;
+  }>>(Prisma.sql`
+    SELECT
+      w."id",
+      w."guid",
+      w."first",
+      w."last",
+      w."teamId",
+      w."birthdate",
+      t."name" AS "teamName",
+      t."symbol" AS "teamSymbol",
+      t."color" AS "teamColor"
+    FROM "Wrestler" w
+    INNER JOIN "Team" t ON t."id" = w."teamId"
+    WHERE
+      w."active" = ${true}
+      AND w."teamId" = ${user.teamId}
+      AND (${nameWhere})
+    ORDER BY w."last" ASC, w."first" ASC
+    LIMIT ${limit}
+  `);
 
   return NextResponse.json(
     wrestlers.map((w) => ({
@@ -75,9 +80,9 @@ export async function GET(req: Request) {
       first: w.first,
       last: w.last,
       teamId: w.teamId,
-      teamName: w.team.name,
-      teamSymbol: w.team.symbol,
-      teamColor: w.team.color,
+      teamName: w.teamName,
+      teamSymbol: w.teamSymbol ?? undefined,
+      teamColor: w.teamColor ?? undefined,
       birthdate: w.birthdate,
     })),
   );
