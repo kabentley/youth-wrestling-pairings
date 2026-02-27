@@ -215,23 +215,37 @@ export default function ParentPage() {
   }
   function formatMatchResult(match: Match) {
     const result = match.result;
-    const parts: string[] = [];
-    if (result.winnerId) {
-      parts.push(result.winnerId === match.childId ? "W" : "L");
+    const outcome = result.winnerId
+      ? (result.winnerId === match.childId ? "W" : "L")
+      : "";
+    const score = result.score?.trim() ?? "";
+    const time = result.time?.trim() ?? "";
+    const rawType = result.type?.trim().toUpperCase() ?? "";
+    const type =
+      rawType === "PIN" ? "FALL"
+      : rawType === "MAJOR" ? "MAJ"
+      : rawType;
+
+    const coreParts: string[] = [];
+    if (outcome) coreParts.push(outcome);
+
+    if (type === "FALL") {
+      if (time) coreParts.push(time);
+      else if (score) coreParts.push(score);
+      const core = coreParts.join(" ").trim();
+      return core ? `${core} (pin)` : "pin";
     }
-    if (result.type) {
-      parts.push(result.type);
-    }
-    if (result.score) {
-      parts.push(result.score);
-    }
-    if (result.period !== null) {
-      parts.push(`P${result.period}`);
-    }
-    if (result.time) {
-      parts.push(result.time);
-    }
-    return parts.join(" · ");
+
+    if (score) coreParts.push(score);
+    if (time) coreParts.push(time);
+    const core = coreParts.join(" ").trim();
+
+    if (type === "MAJ") return core ? `${core} (major)` : "major";
+    if (type === "TF") return core ? `${core} (TF)` : "TF";
+    if (type === "FOR") return core ? `${core} (forfeit)` : "forfeit";
+    if (type === "DQ") return core ? `${core} (DQ)` : "DQ";
+    if (type === "DEC" || !type) return core;
+    return core ? `${core} (${type})` : type;
   }
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -496,3 +510,4 @@ export default function ParentPage() {
     </main>
   );
 }
+

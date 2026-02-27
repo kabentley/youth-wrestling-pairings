@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireAnyRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
@@ -55,14 +54,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
   const absentIds = new Set(absent.map(a => a.wrestlerId));
   if (absentIds.has(bout.redId) || absentIds.has(bout.greenId)) {
     return NextResponse.json({ error: "Cannot record results for a bout with a not-attending wrestler" }, { status: 400 });
-  }
-
-  try {
-    await requireMeetLock(bout.meetId, user.id);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
   }
 
   // Validate winnerId (must be red or green if provided)

@@ -35,7 +35,6 @@ type ResultSnapshot = {
   type: string | null;
   score: string | null;
 };
-type LockState = { status: "loading" | "acquired" | "locked"; lockedByUsername?: string | null; lockExpiresAt?: string | null };
 
 const RESULT_TYPES = ["DEC", "MAJ", "TF", "FALL", "DQ", "FOR"];
 
@@ -45,12 +44,10 @@ export default function EnterResultsPage() {
   const [meet, setMeet] = useState<MeetInfo | null>(null);
   const [bouts, setBouts] = useState<BoutRow[]>([]);
   const [msg, setMsg] = useState("");
-  const [authMsg, setAuthMsg] = useState("");
-  const [lockState, setLockState] = useState<LockState>({ status: "loading" });
   const [activeMat, setActiveMat] = useState<number | "unassigned">("unassigned");
-  const lockStatusRef = useRef<LockState["status"]>("loading");
   const [matColors, setMatColors] = useState<Record<number, string | null>>({});
   const originalResultsRef = useRef<Record<string, ResultSnapshot | undefined>>({});
+  const boutsRef = useRef<BoutRow[]>([]);
 
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -62,7 +59,7 @@ export default function EnterResultsPage() {
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
-  const canEdit = lockState.status === "acquired" && !authMsg;
+  const canEdit = true;
 
   function boutLabel(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "Unassigned";
@@ -72,7 +69,11 @@ export default function EnterResultsPage() {
   }
 
   function updateBout(id: string, patch: Partial<BoutRow>) {
-    setBouts((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    setBouts((prev) => {
+      const next = prev.map((b) => (b.id === id ? { ...b, ...patch } : b));
+      boutsRef.current = next;
+      return next;
+    });
   }
 
   async function load() {
@@ -85,7 +86,9 @@ export default function EnterResultsPage() {
     }
     const json = await res.json();
     setMeet(json.meet ?? null);
-    setBouts(Array.isArray(json.bouts) ? json.bouts : []);
+    const nextBouts = Array.isArray(json.bouts) ? json.bouts : [];
+    setBouts(nextBouts);
+    boutsRef.current = nextBouts;
     const original: Record<string, { winnerId: string | null; type: string | null; score: string | null }> = {};
     if (Array.isArray(json.bouts)) {
       for (const bout of json.bouts) {
@@ -99,46 +102,9 @@ export default function EnterResultsPage() {
     originalResultsRef.current = original;
   }
 
-  function updateLockState(next: LockState) {
-    lockStatusRef.current = next.status;
-    setLockState(next);
-  }
-
-  async function acquireLock() {
-    const res = await fetch(`/api/meets/${meetId}/lock`, { method: "POST" });
-    if (res.status === 401) {
-      setAuthMsg("Please sign in to enter results.");
-      return;
-    }
-    if (res.status === 403) {
-      const json = await res.json().catch(() => ({}));
-      setAuthMsg(json?.error ?? "You are not authorized to enter results.");
-      return;
-    }
-    if (res.status === 409) {
-      const json = await res.json().catch(() => ({}));
-      updateLockState({
-        status: "locked",
-        lockedByUsername: json?.lockedByUsername ?? null,
-        lockExpiresAt: json?.lockExpiresAt ?? null,
-      });
-      return;
-    }
-    if (res.ok) {
-      const json = await res.json().catch(() => ({}));
-      updateLockState({
-        status: "acquired",
-        lockExpiresAt: json?.lockExpiresAt ?? null,
-      });
-    }
-  }
-
-  async function releaseLock() {
-    await fetch(`/api/meets/${meetId}/lock`, { method: "DELETE", keepalive: true }).catch(() => {});
-  }
-
-  async function saveResult(bout: BoutRow) {
-    if (!canEdit) return;
+  async function saveResult(boutId: string) {
+    const bout = boutsRef.current.find((row) => row.id === boutId);
+    if (!bout) return;
     const original = originalResultsRef.current[bout.id];
     const winnerId = bout.resultWinnerId ?? null;
     const type = bout.resultType?.trim() ?? null;
@@ -216,22 +182,6 @@ export default function EnterResultsPage() {
     void fetchMatColors();
     return () => {
       cancelled = true;
-    };
-  }, [meetId]);
-
-  useEffect(() => {
-    void acquireLock();
-    const interval = setInterval(() => {
-      if (lockStatusRef.current === "acquired") {
-        void acquireLock();
-      }
-    }, 60_000);
-    const onBeforeUnload = () => { void releaseLock(); };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      void releaseLock();
     };
   }, [meetId]);
 
@@ -564,13 +514,6 @@ export default function EnterResultsPage() {
         </div>
       </div>
 
-      {authMsg && <div className="notice">{authMsg}</div>}
-      {lockState.status === "locked" && (
-        <div className="lock">
-          Editing locked by {lockState.lockedByUsername ?? "another user"}. Try again when they are done.
-          <button className="btn" style={{ marginLeft: 10 }} onClick={acquireLock}>Try again</button>
-        </div>
-      )}
       {msg && <div style={{ marginBottom: 12 }}>{msg}</div>}
 
       <div className="pairings-tab-bar" role="tablist" aria-label="Mat tabs">
@@ -648,7 +591,7 @@ export default function EnterResultsPage() {
                   onBlur={(e) => {
                     const next = e.relatedTarget as HTMLElement | null;
                     if (next && e.currentTarget.contains(next)) return;
-                    void saveResult(b);
+                    void saveResult(b.id);
                   }}
                 >
                   <td className="bout-num">{boutLabel(b.mat, b.order)}</td>
@@ -669,7 +612,7 @@ export default function EnterResultsPage() {
                       onKeyDown={(e) => {
                         if (e.key !== "Enter") return;
                         e.preventDefault();
-                        void saveResult(b);
+                        void saveResult(b.id);
                         focusNextRow(index);
                       }}
                       disabled={!canEdit}
@@ -691,7 +634,7 @@ export default function EnterResultsPage() {
                       onKeyDown={(e) => {
                         if (e.key !== "Enter") return;
                         e.preventDefault();
-                        void saveResult(b);
+                        void saveResult(b.id);
                         focusNextRow(index);
                       }}
                       disabled={!canEdit}
@@ -709,7 +652,7 @@ export default function EnterResultsPage() {
                       onKeyDown={(e) => {
                         if (e.key !== "Enter") return;
                         e.preventDefault();
-                        void saveResult(b);
+                        void saveResult(b.id);
                         focusNextRow(index);
                       }}
                       disabled={!canEdit}
