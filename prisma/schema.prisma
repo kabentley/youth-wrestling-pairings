@@ -248,6 +248,7 @@ model Bout {
   mat       Int?
   order     Int?
   originalMat Int?
+  locked    Boolean  @default(false)
 
   source    String?
   createdAt DateTime @default(now())

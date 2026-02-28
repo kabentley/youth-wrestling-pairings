@@ -19,6 +19,7 @@ const BoutSchema = z.object({
   mat: z.number().int().nullable().optional(),
   order: z.number().int().nullable().optional(),
   originalMat: z.number().int().nullable().optional(),
+  locked: z.boolean().optional(),
   source: z.string().nullable().optional(),
   createdAt: z.string().optional(),
 });
@@ -173,6 +174,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
           mat: b.mat ?? null,
           order: b.order ?? null,
           originalMat: b.originalMat ?? null,
+          locked: b.locked ?? false,
           source: b.source ?? null,
           ...(b.createdAt ? { createdAt: new Date(b.createdAt) } : {}),
         })),

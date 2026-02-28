@@ -20,6 +20,7 @@ export type MeetCheckpointPayload = {
     mat?: number | null;
     order?: number | null;
     originalMat?: number | null;
+    locked?: boolean;
     source?: BoutSource;
     createdAt?: string;
   }[];
@@ -66,6 +67,7 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
         mat: true,
         order: true,
         originalMat: true,
+        locked: true,
         source: true,
         createdAt: true,
       },
@@ -100,6 +102,7 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
       mat: b.mat ?? null,
       order: b.order ?? null,
       originalMat: b.originalMat ?? null,
+      locked: b.locked ?? false,
       source: b.source ?? null,
       createdAt: b.createdAt.toISOString(),
     })),

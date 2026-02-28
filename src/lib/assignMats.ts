@@ -151,6 +151,11 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     select: { id: true, teamId: true, birthdate: true, experienceYears: true, first: true, last: true },
   });
   const wMap = new Map(wrestlers.map(w => [w.id, w]));
+  const earlyStatuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId, status: "EARLY" },
+    select: { wrestlerId: true },
+  });
+  const earlyIds = new Set(earlyStatuses.map(s => s.wrestlerId));
 
   const numMats = Math.max(MIN_MATS, s.numMats ?? meet.numMats);
   const preserveExisting = Boolean(s.preserveExisting);
@@ -274,8 +279,17 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
       }
     }
 
-    const order = mats[bestMat].boutIds.length + 1;
-    mats[bestMat].boutIds.push(b.id);
+    const insertAtHead = earlyIds.has(b.redId) || earlyIds.has(b.greenId);
+    const order = insertAtHead ? 1 : mats[bestMat].boutIds.length + 1;
+    if (insertAtHead) {
+      mats[bestMat].boutIds.unshift(b.id);
+      await db.bout.updateMany({
+        where: { meetId, mat: bestMat + 1, order: { not: null } },
+        data: { order: { increment: 1 } },
+      });
+    } else {
+      mats[bestMat].boutIds.push(b.id);
+    }
 
     await db.bout.update({
       where: { id: b.id },

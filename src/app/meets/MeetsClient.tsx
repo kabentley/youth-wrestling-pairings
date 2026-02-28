@@ -128,7 +128,6 @@ export default function MeetsPage() {
   const [homeTeamMaxMats, setHomeTeamMaxMats] = useState(MAX_MATS);
   const [allowSameTeamMatches, setAllowSameTeamMatches] = useState(false);
   const [girlsWrestleGirls, setGirlsWrestleGirls] = useState(true);
-  const [autoPairings, setAutoPairings] = useState(true);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
@@ -175,7 +174,6 @@ export default function MeetsPage() {
     setNumMats(DEFAULT_NUM_MATS);
     setAllowSameTeamMatches(false);
     setGirlsWrestleGirls(false);
-    setAutoPairings(true);
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
@@ -289,7 +287,7 @@ export default function MeetsPage() {
           matchesPerWrestler,
           maxMatchesPerWrestler,
           restGap,
-          autoPairings,
+          autoPairings: true,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -334,8 +332,7 @@ export default function MeetsPage() {
       } else {
         const created = await addMeet();
         if (created?.id) {
-          const autoParam = autoPairings ? "&autogen=1" : "";
-          router.push(`/meets/${created.id}?edit=1&autopair=1${autoParam}`);
+          router.push(`/meets/${created.id}?edit=1&autopair=1&autogen=1`);
         }
       }
       closeCreateModal({ skipCreateQueryCleanup: true });
@@ -1215,15 +1212,6 @@ export default function MeetsPage() {
                     />
                     <span className="muted">Girls wrestle girls</span>
                   </label>
-                  <label className="row" style={{ margin: 0 }}>
-                    <input
-                      type="checkbox"
-                    checked={autoPairings}
-                    onChange={e => setAutoPairings(e.target.checked)}
-                    disabled={!canManageMeets}
-                  />
-                  <span className="muted">Generate Automatic Pairings</span>
-                </label>
               </div>
 
           <div style={{ marginTop: 8 }}>

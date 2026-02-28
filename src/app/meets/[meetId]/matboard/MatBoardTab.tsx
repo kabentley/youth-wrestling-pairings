@@ -24,6 +24,7 @@ type Bout = {
   mat?: number | null;
   order?: number | null;
   originalMat?: number | null;
+  locked?: boolean;
 };
 const keyMat = (m: number) => String(m);
 const MAX_MATS = 6;
@@ -40,11 +41,16 @@ type WrestlerEntry = {
   id: string;
   label: string;
   color: string;
-  statusBg?: string;
+  status?: "EARLY" | "LATE" | null;
   conflictBg?: string;
   singleMatch: boolean;
   highlight: boolean;
   outlineColor?: string | null;
+};
+type MatboardStatusContext = {
+  x: number;
+  y: number;
+  wrestlerId: string;
 };
 
 function MatBoardWrestlerLabel({
@@ -95,7 +101,6 @@ function MatBoardWrestlerLabel({
         .join(" ")}
       style={{
         color: entry.color || undefined,
-        background: entry.statusBg ?? entry.conflictBg ?? undefined,
         outline: entry.highlight ? `2px solid ${entry.color || "#111"}` : undefined,
         outlineOffset: entry.highlight ? 1 : undefined,
         boxShadow: entry.outlineColor ? `0 0 0 2px ${entry.outlineColor}` : undefined,
@@ -109,6 +114,13 @@ function MatBoardWrestlerLabel({
         {entry.label}
       </span>
     </span>
+  );
+}
+
+function MatBoardWrestlerStatus({ status }: { status?: "EARLY" | "LATE" | null }) {
+  if (status !== "EARLY" && status !== "LATE") return null;
+  return (
+    <span className={`wrestler-status ${status === "EARLY" ? "early" : "late"}`}>{status}</span>
   );
 }
 
@@ -134,6 +146,10 @@ export default function MatBoardTab({
   } | null>(null);
   const [italicizeSingles, setItalicizeSingles] = useState(true);
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
+  const [lockedBoutIds, setLockedBoutIds] = useState<Set<string>>(new Set());
+  const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
@@ -293,6 +309,24 @@ export default function MatBoardTab({
     };
   }, [dirty, canEdit]);
 
+  useEffect(() => {
+    if (!statusContext) return;
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && statusMenuRef.current?.contains(target)) return;
+      setStatusContext(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setStatusContext(null);
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [statusContext]);
+
   /**
    * Load the meet pairings and associated wrestlers, then stash them in state.
    * Also resets error messaging and dirty tracking after a successful refresh.
@@ -315,6 +349,7 @@ export default function MatBoardTab({
 
     const bJson: Bout[] = await bRes.json();
     setBouts(bJson.map(b => ({ ...b, originalMat: b.originalMat ?? b.mat ?? null })));
+    setLockedBoutIds(new Set(bJson.filter(b => Boolean(b.locked)).map(b => b.id)));
 
     const wJson = await wRes.json();
     setTeams(wJson.teams);
@@ -495,6 +530,68 @@ export default function MatBoardTab({
     return a.length - b.length;
   }
 
+  type OrderConstraint = { minOrder: number; maxOrder: number };
+
+  function buildOrderConstraints(list: Bout[]) {
+    const constraints = new Map<string, OrderConstraint>();
+    const listSize = Math.max(1, list.length);
+    const earlyMaxOrder = Math.max(1, Math.ceil(listSize / 3));
+    const lateMinOrder = Math.max(1, Math.floor((2 * listSize) / 3) + 1);
+    const middleThirdMin = earlyMaxOrder + 1;
+    const middleThirdMax = lateMinOrder - 1;
+    const fallbackMiddleMin = Math.floor((listSize + 1) / 2);
+    const fallbackMiddleMax = Math.ceil((listSize + 1) / 2);
+    for (let idx = 0; idx < list.length; idx++) {
+      const bout = list[idx];
+      const redStatus = wMap[bout.redId]?.status;
+      const greenStatus = wMap[bout.greenId]?.status;
+      let minOrder = 1;
+      let maxOrder = listSize;
+      const hasEarly = redStatus === "EARLY" || greenStatus === "EARLY";
+      const hasLate = redStatus === "LATE" || greenStatus === "LATE";
+      if (hasEarly && hasLate) {
+        minOrder = middleThirdMin <= middleThirdMax ? middleThirdMin : fallbackMiddleMin;
+        maxOrder = middleThirdMin <= middleThirdMax ? middleThirdMax : fallbackMiddleMax;
+      } else {
+        if (hasEarly) {
+          maxOrder = Math.min(maxOrder, earlyMaxOrder);
+        }
+        if (hasLate) {
+          minOrder = Math.max(minOrder, lateMinOrder);
+        }
+      }
+      if (minOrder > maxOrder) {
+        minOrder = fallbackMiddleMin;
+        maxOrder = fallbackMiddleMax;
+      }
+      constraints.set(bout.id, { minOrder, maxOrder });
+    }
+    return constraints;
+  }
+
+  function orderAllowed(order: number, constraint?: OrderConstraint) {
+    if (!constraint) return true;
+    return order >= constraint.minOrder && order <= constraint.maxOrder;
+  }
+
+  function buildLockedPositions(list: Bout[]) {
+    const positions = new Map<string, number>();
+    for (let idx = 0; idx < list.length; idx++) {
+      if (lockedBoutIds.has(list[idx].id)) {
+        positions.set(list[idx].id, idx);
+      }
+    }
+    return positions;
+  }
+
+  function listRespectsLockedPositions(list: Bout[], lockedPositions: Map<string, number>) {
+    for (const [boutId, index] of lockedPositions.entries()) {
+      if (index < 0 || index >= list.length) return false;
+      if (list[index]?.id !== boutId) return false;
+    }
+    return true;
+  }
+
   /**
    * Collect all bout orders from mats other than the provided index to check cross-mat conflicts.
    */
@@ -552,17 +649,21 @@ export default function MatBoardTab({
   }
 
   /**
-   * Attempt to reorder a single mat to reduce conflicts by shuffling bouts within the local list.
+   * Attempt to reorder a single mat to reduce conflicts by swapping bouts within the local list.
    */
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
     const working = list.slice();
     if (gap <= 0 || working.length < 2) return working;
     allMats[matIndex] = working;
     const otherOrders = buildOtherMatOrders(allMats, matIndex);
+    const constraints = buildOrderConstraints(working);
+    const lockedPositions = buildLockedPositions(working);
+    if (lockedPositions.size >= working.length) return working;
 
     for (let pass = 0; pass < 10; pass++) {
       for (let idx = 0; idx < working.length; idx++) {
         const bout = working[idx];
+        if (lockedPositions.has(bout.id)) continue;
         const order = idx + 1;
         if (
           !hasConflict(bout, order, otherOrders, gap) &&
@@ -572,27 +673,29 @@ export default function MatBoardTab({
         }
         const baseScore = computeConflictSummary(allMats, gap);
         const attempts = Math.min(8, Math.max(1, working.length - 1));
-        let moved = false;
         for (let attempt = 0; attempt < attempts; attempt++) {
           let target = Math.floor(Math.random() * working.length);
           if (target === idx) {
             target = (target + 1) % working.length;
           }
           if (target === idx) continue;
-          working.splice(idx, 1);
-          working.splice(target, 0, bout);
+          const targetBout = working[target];
+          if (lockedPositions.has(targetBout.id)) continue;
+          const newCurrentOrder = target + 1;
+          const newTargetOrder = idx + 1;
+          if (!orderAllowed(newCurrentOrder, constraints.get(bout.id))) continue;
+          if (!orderAllowed(newTargetOrder, constraints.get(targetBout.id))) continue;
+          [working[idx], working[target]] = [working[target], working[idx]];
+          if (!listRespectsLockedPositions(working, lockedPositions)) {
+            [working[idx], working[target]] = [working[target], working[idx]];
+            continue;
+          }
           const candidateScore = computeConflictSummary(allMats, gap);
           if (compareConflictSummary(candidateScore, baseScore) < 0) {
-            moved = true;
-            idx = Math.max(-1, target - 1);
+            idx = Math.max(-1, Math.min(idx, target) - 1);
             break;
           }
-          working.splice(target, 1);
-          working.splice(idx, 0, bout);
-        }
-        if (!moved) {
-          working.splice(idx, 1);
-          working.splice(idx, 0, bout);
+          [working[idx], working[target]] = [working[target], working[idx]];
         }
       }
     }
@@ -629,6 +732,82 @@ export default function MatBoardTab({
     dirtyRef.current = true;
   }
 
+  function toggleBoutLock(boutId: string) {
+    if (!canEdit) return;
+    setLockedBoutIds(prev => {
+      const next = new Set(prev);
+      if (next.has(boutId)) {
+        next.delete(boutId);
+      } else {
+        next.add(boutId);
+      }
+      return next;
+    });
+    setDirty(true);
+    dirtyRef.current = true;
+  }
+
+  function lockAllOnMat(matNum: number) {
+    if (!canEdit) return;
+    const ids = (mats[keyMat(matNum)] ?? []).map(b => b.id);
+    if (ids.length === 0) return;
+    setLockedBoutIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+    setDirty(true);
+    dirtyRef.current = true;
+  }
+
+  function unlockAllOnMat(matNum: number) {
+    if (!canEdit) return;
+    const ids = (mats[keyMat(matNum)] ?? []).map(b => b.id);
+    if (ids.length === 0) return;
+    setLockedBoutIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+    setDirty(true);
+    dirtyRef.current = true;
+  }
+
+  async function updateWrestlerStatus(wrestlerId: string, status: "EARLY" | "LATE" | null) {
+    const res = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wrestlerId, status }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error(payload?.error ?? "Unable to update wrestler status.");
+    }
+  }
+
+  async function handleStatusContextSelection(status: "EARLY" | "LATE" | null) {
+    if (!statusContext || statusSaving || !canEdit) return;
+    const wrestlerId = statusContext.wrestlerId;
+    setStatusSaving(true);
+    try {
+      await updateWrestlerStatus(wrestlerId, status);
+      setWMap(prev => {
+        const current = prev[wrestlerId];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [wrestlerId]: { ...current, status },
+        };
+      });
+      setStatusContext(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update wrestler status.";
+      setMsg(message);
+    } finally {
+      setStatusSaving(false);
+    }
+  }
+
   /**
    * Persist the current bout ordering for every mat back to the server and refresh the view.
    */
@@ -654,7 +833,10 @@ export default function MatBoardTab({
     await fetch(`/api/meets/${meetId}/bouts/reorder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mats: payload }),
+      body: JSON.stringify({
+        mats: payload,
+        lockedBoutIds: [...lockedBoutIds],
+      }),
       keepalive: Boolean(opts?.keepalive),
     });
 
@@ -777,8 +959,6 @@ export default function MatBoardTab({
     const conflictBgGreen =
       greenGap !== undefined ? `rgba(255,138,160,${conflictOpacity(greenGap)})` : undefined;
     const { rTxt, gTxt, rColor, gColor, rStatus, gStatus } = boutLabel(b);
-    const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
-    const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
     const singleMatchRed = (matchCounts.get(b.redId) ?? 0) === 1;
     const singleMatchGreen = (matchCounts.get(b.greenId) ?? 0) === 1;
     return [
@@ -786,7 +966,7 @@ export default function MatBoardTab({
         id: b.redId,
         label: rTxt,
         color: rColor,
-        statusBg: statusBgRed,
+        status: rStatus === "EARLY" || rStatus === "LATE" ? rStatus : null,
         conflictBg: conflictBgRed,
         singleMatch: singleMatchRed,
         highlight: false,
@@ -795,7 +975,7 @@ export default function MatBoardTab({
         id: b.greenId,
         label: gTxt,
         color: gColor,
-        statusBg: statusBgGreen,
+        status: gStatus === "EARLY" || gStatus === "LATE" ? gStatus : null,
         conflictBg: conflictBgGreen,
         singleMatch: singleMatchGreen,
         highlight: false,
@@ -1014,7 +1194,7 @@ export default function MatBoardTab({
         }
         .bout-row {
           display: grid;
-          grid-template-columns: max-content 1fr 1fr;
+          grid-template-columns: max-content max-content 1fr 1fr;
           gap: 0;
           font-size: 11px;
           opacity: 0.9;
@@ -1042,9 +1222,44 @@ export default function MatBoardTab({
           border-radius: 4px;
           padding: 1px 3px;
           position: relative;
+          flex: 1 1 auto;
+          min-width: 0;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        .bout-row span.wrestler-cell {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          width: 100%;
+          min-width: 0;
+          border-radius: 4px;
+          padding: 1px 2px;
+          box-sizing: border-box;
+          background: #fff;
+        }
+        .bout-row span.wrestler-status {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          align-self: stretch;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1;
+          letter-spacing: 0.03em;
+          border-radius: 4px;
+          padding: 0 7px;
+          color: #1f2933;
+          white-space: nowrap;
+        }
+        .bout-row span.wrestler-status.early {
+          background: #f3eadf;
+        }
+        .bout-row span.wrestler-status.late {
+          background: #dff1ff;
         }
         .bout-row span[data-role="wrestler"].tight {
           font-size: 12px;
@@ -1069,6 +1284,89 @@ export default function MatBoardTab({
           border: 1px dashed #ddd;
           border-radius: 10px;
         }
+        .bout-lock-btn {
+          border: 1px solid #d5dbe2;
+          background: #fff;
+          color: #384656;
+          border-radius: 4px;
+          padding: 0 5px;
+          margin-right: 4px;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1.5;
+          cursor: pointer;
+        }
+        .bout-lock-btn.locked {
+          background: #1d232b;
+          border-color: #1d232b;
+          color: #fff;
+        }
+        .bout-lock-btn[disabled] {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .matboard-status-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 2200;
+        }
+        .matboard-status-menu {
+          position: fixed;
+          z-index: 2210;
+          width: 210px;
+          background: #fff;
+          border: 1px solid #d5dbe2;
+          border-radius: 8px;
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+          padding: 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .matboard-status-title {
+          font-size: 12px;
+          font-weight: 700;
+          color: #384656;
+          padding: 4px 6px;
+          border-bottom: 1px solid #edf1f5;
+          margin-bottom: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .matboard-status-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border: 1px solid #d5dbe2;
+          border-radius: 6px;
+          padding: 6px 8px;
+          font-size: 12px;
+          color: #1f2933;
+          background: #fff;
+          cursor: pointer;
+        }
+        .matboard-status-item .check {
+          width: 14px;
+          text-align: center;
+          font-weight: 700;
+        }
+        .matboard-status-item.early {
+          background: #f3eadf;
+          border-color: #e2c8ad;
+        }
+        .matboard-status-item.late {
+          background: #dff1ff;
+          border-color: #b6defc;
+        }
+        .matboard-status-item.clear {
+          background: #eef6ee;
+          border-color: #c6e2ba;
+        }
+        .matboard-status-item[disabled] {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
         .conflict {
           background: #ffd6df;
         }
@@ -1081,7 +1379,7 @@ export default function MatBoardTab({
           padding: 3px;
         }
         .bout-row {
-          grid-template-columns: max-content 1fr 1fr;
+          grid-template-columns: max-content max-content 1fr 1fr;
           font-size: 10px;
           gap: 0;
           padding: 0;
@@ -1118,6 +1416,9 @@ export default function MatBoardTab({
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];
           const matColor = getMatColor(matNum);
+          const lockedCount = list.reduce((count, bout) => count + (lockedBoutIds.has(bout.id) ? 1 : 0), 0);
+          const allLocked = list.length > 0 && lockedCount === list.length;
+          const anyLocked = lockedCount > 0;
           return (
             <div
               key={matNum}
@@ -1147,14 +1448,32 @@ export default function MatBoardTab({
                     aria-hidden="true"
                   />
                 </span>
-                <button
-                  className="nav-btn reorder-inline-btn"
-                  onClick={() => reorderMat(matNum)}
-                  disabled={!canEdit}
-                  style={{ fontSize: 12, padding: "0px 8px" }}
-                >
-                  Reorder
-                </button>
+                <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                  <button
+                    className="nav-btn reorder-inline-btn"
+                    onClick={() => lockAllOnMat(matNum)}
+                    disabled={!canEdit || list.length === 0 || allLocked}
+                    style={{ fontSize: 12, padding: "0px 8px" }}
+                  >
+                    Lock All
+                  </button>
+                  <button
+                    className="nav-btn reorder-inline-btn"
+                    onClick={() => unlockAllOnMat(matNum)}
+                    disabled={!canEdit || !anyLocked}
+                    style={{ fontSize: 12, padding: "0px 8px" }}
+                  >
+                    Unlock All
+                  </button>
+                  <button
+                    className="nav-btn reorder-inline-btn"
+                    onClick={() => reorderMat(matNum)}
+                    disabled={!canEdit || allLocked}
+                    style={{ fontSize: 12, padding: "0px 8px" }}
+                  >
+                    Reorder
+                  </button>
+                </div>
                 <span style={{ fontSize: 12, opacity: 0.7 }}>{list.length} bouts</span>
               </h4>
               <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
@@ -1172,12 +1491,10 @@ export default function MatBoardTab({
         const ratio = Math.max(0, Math.min(1, (maxGap - value) / maxGap));
         return 0.1 + 0.5 * ratio;
       };
-                  const conflictBgRed =
+      const conflictBgRed =
                     severityRed !== undefined ? `rgba(255,138,160,${conflictOpacity(severityRed)})` : undefined;
-                  const conflictBgGreen =
+      const conflictBgGreen =
                     severityGreen !== undefined ? `rgba(255,138,160,${conflictOpacity(severityGreen)})` : undefined;
-                  const statusBgRed = rStatus === "EARLY" ? "#f3eadf" : rStatus === "LATE" ? "#dff1ff" : undefined;
-      const statusBgGreen = gStatus === "EARLY" ? "#f3eadf" : gStatus === "LATE" ? "#dff1ff" : undefined;
       const isRedHighlighted = highlightWrestlerId === b.redId;
       const isGreenHighlighted = highlightWrestlerId === b.greenId;
       const originalMatColor =
@@ -1189,7 +1506,7 @@ export default function MatBoardTab({
           id: b.redId,
           label: rTxt,
           color: rColor,
-          statusBg: statusBgRed,
+          status: rStatus === "EARLY" || rStatus === "LATE" ? rStatus : null,
           conflictBg: conflictBgRed,
           singleMatch: singleMatchRed,
           highlight: isRedHighlighted,
@@ -1198,13 +1515,14 @@ export default function MatBoardTab({
           id: b.greenId,
           label: gTxt,
           color: gColor,
-          statusBg: statusBgGreen,
+          status: gStatus === "EARLY" || gStatus === "LATE" ? gStatus : null,
           conflictBg: conflictBgGreen,
           singleMatch: singleMatchGreen,
           highlight: isGreenHighlighted,
         },
       ];
       const isDragging = dragging?.boutId === b.id;
+      const isLockedBout = lockedBoutIds.has(b.id);
       if (draggingDetails && !isDragging) {
         if (b.redId === draggingDetails.redId) entries[0].outlineColor = draggingDetails.redColor;
         if (b.redId === draggingDetails.greenId) entries[0].outlineColor = draggingDetails.greenColor;
@@ -1276,21 +1594,71 @@ export default function MatBoardTab({
                       <div className="bout-row">
                           <span
                             className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
+                            role="button"
+                            tabIndex={canEdit ? 0 : -1}
+                            title={isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder"}
+                            aria-label={isLockedBout ? "Unlock bout position" : "Lock bout position"}
+                            aria-pressed={isLockedBout}
+                            onMouseDown={e => e.stopPropagation()}
+                            onClick={e => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleBoutLock(b.id);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key !== "Enter" && e.key !== " ") return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              toggleBoutLock(b.id);
+                            }}
                           style={{
                             backgroundColor: getMatNumberBackground(originalMatColor),
                             borderColor:
                               b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent",
+                            cursor: canEdit ? "pointer" : undefined,
                           }}
                         >
                           {formatBoutNumber(matNum, b.order, index + 1)}
                           </span>
+                        <button
+                          type="button"
+                          className={`bout-lock-btn${isLockedBout ? " locked" : ""}`}
+                          title={isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder"}
+                          aria-label={isLockedBout ? "Unlock bout position" : "Lock bout position"}
+                          aria-pressed={isLockedBout}
+                          disabled={!canEdit}
+                          draggable={false}
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleBoutLock(b.id);
+                          }}
+                        >
+                          {isLockedBout ? "L" : "-"}
+                        </button>
                         {ordered.map(entry => (
-                          <MatBoardWrestlerLabel
+                          <span
                             key={entry.id}
-                            entry={entry}
-                            onMouseEnter={() => setHighlightWrestlerId(entry.id)}
-                            onMouseLeave={() => setHighlightWrestlerId(null)}
-                          />
+                            className="wrestler-cell"
+                            style={{ background: entry.conflictBg ?? "#fff" }}
+                            onContextMenu={event => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setStatusContext({
+                                x: event.clientX,
+                                y: event.clientY,
+                                wrestlerId: entry.id,
+                              });
+                            }}
+                          >
+                            <MatBoardWrestlerLabel
+                              entry={entry}
+                              onMouseEnter={() => setHighlightWrestlerId(entry.id)}
+                              onMouseLeave={() => setHighlightWrestlerId(null)}
+                            />
+                            <MatBoardWrestlerStatus status={entry.status} />
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -1324,20 +1692,80 @@ export default function MatBoardTab({
               {dragPreview.entries.map(entry => (
                 <span
                   key={entry.id}
-                  data-role="wrestler"
-                  className={entry.singleMatch ? "single-match" : ""}
-                  style={{
-                    color: entry.color || undefined,
-                    background: entry.statusBg ?? entry.conflictBg ?? undefined,
-                  }}
+                  className="wrestler-cell"
+                  style={{ background: entry.conflictBg ?? "#fff" }}
                 >
-                  {entry.label}
+                  <span
+                    data-role="wrestler"
+                    className={entry.singleMatch ? "single-match" : ""}
+                    style={{ color: entry.color || undefined }}
+                  >
+                    {entry.label}
+                  </span>
+                  <MatBoardWrestlerStatus status={entry.status} />
                 </span>
               ))}
             </div>
           </div>
         </div>
       )}
+      {statusContext && (() => {
+        const wrestler = wMap[statusContext.wrestlerId];
+        const label = wrestler ? `${wrestler.first} ${wrestler.last}` : statusContext.wrestlerId;
+        const currentStatus = wrestler?.status === "EARLY" || wrestler?.status === "LATE" ? wrestler.status : null;
+        const menuWidth = 210;
+        const menuHeight = 142;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth ? Math.min(statusContext.x, viewportWidth - menuWidth - 8) : statusContext.x;
+        const top = viewportHeight ? Math.min(statusContext.y, viewportHeight - menuHeight - 8) : statusContext.y;
+        return (
+          <>
+            <div className="matboard-status-backdrop" />
+            <div
+              ref={statusMenuRef}
+              className="matboard-status-menu"
+              style={{ left, top }}
+              onContextMenu={event => event.preventDefault()}
+            >
+              <div className="matboard-status-title">{label}</div>
+              <button
+                type="button"
+                className="matboard-status-item late"
+                disabled={!canEdit || statusSaving}
+                onClick={() => {
+                  void handleStatusContextSelection("LATE");
+                }}
+              >
+                <span>Arrive Late</span>
+                <span className="check">{currentStatus === "LATE" ? "✓" : ""}</span>
+              </button>
+              <button
+                type="button"
+                className="matboard-status-item early"
+                disabled={!canEdit || statusSaving}
+                onClick={() => {
+                  void handleStatusContextSelection("EARLY");
+                }}
+              >
+                <span>Leave Early</span>
+                <span className="check">{currentStatus === "EARLY" ? "✓" : ""}</span>
+              </button>
+              <button
+                type="button"
+                className="matboard-status-item clear"
+                disabled={!canEdit || statusSaving}
+                onClick={() => {
+                  void handleStatusContextSelection(null);
+                }}
+              >
+                <span>Clear Early/Late</span>
+                <span className="check">{currentStatus === null ? "✓" : ""}</span>
+              </button>
+            </div>
+          </>
+        );
+      })()}
     </section>
   );
 }

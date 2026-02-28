@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
 import WallChartTab from "./wall/WallChartTab";
@@ -364,6 +364,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
   const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+  const [autoPairingsSummary, setAutoPairingsSummary] = useState<string | null>(null);
   const [autoPairingsSlow, setAutoPairingsSlow] = useState(false);
   const autoPairingsSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [exportingMeet, setExportingMeet] = useState(false);
@@ -379,6 +380,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
     const clearExisting = options.clearExisting ?? true;
     setAutoPairingsError(null);
+    setAutoPairingsSummary(null);
     setAutoPairingsLoading(true);
     try {
       if (clearExisting) {
@@ -430,14 +432,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             `Added ${addedCount} bout${addedCount === 1 ? "" : "s"}.`,
             `Removed ${removedCount} bout${removedCount === 1 ? "" : "s"}.`,
           ];
-      flushSync(() => {
-        setShowAutoPairingsModal(false);
-        setAutoPairingsLoading(false);
-      });
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => resolve(), 0);
-      });
-      window.alert(`Auto pairings complete.\n\n${dialogMessages.join("\n")}`);
+      setAutoPairingsSummary(`Auto pairings: ${dialogMessages.join(" ")}`);
+      setShowAutoPairingsModal(false);
       return true;
     } catch (err) {
       setAutoPairingsError(err instanceof Error ? err.message : "Unable to rerun auto pairings.");
@@ -4273,6 +4269,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <span style={{ fontSize: 17, fontWeight: 600, color: "#2f3237", alignSelf: "center" }}>
             Total matches: {bouts.length}
           </span>
+          {autoPairingsSummary && (
+            <span style={{ fontSize: 13, color: "#4b5563", alignSelf: "center" }}>
+              {autoPairingsSummary}
+            </span>
+          )}
         </div>
         {showComments && (
           <div className="panel fill" style={{ marginTop: 10 }}>

@@ -141,7 +141,9 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Mat assignments",
         paragraphs: [
           "Mat Assignments is the running order for the gym. Drag and drop bouts to balance mats or group divisions or teams when your format requires it [Meet > Mat Assignments].",
+          "Use bout locks to hold matches in place when you reorder. Click on a bout number to lock or unlock that bout, and use Lock All or Unlock All on a mat to lock or unlock all bouts [Meet > Mat Assignments].",
           "Use Reorder to improve rest time between bouts based on the rest gap setting. It is most useful after major pairing edits or large mat moves [Meet > Mat Assignments].",
+          "Reorder only moves unlocked bouts. If every bout on a mat is locked, Reorder is disabled for that mat until at least one bout is unlocked [Meet > Mat Assignments].",
           "Confirm each mat has a sensible flow and coaches can cover their wrestlers. If you make major changes close to start time, communicate them and reprint affected sheets [Meet > Comments].",
         ],
       },

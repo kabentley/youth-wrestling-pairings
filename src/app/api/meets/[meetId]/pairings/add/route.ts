@@ -255,6 +255,11 @@ async function assignMatToBout(meetId: string, boutId: string) {
 
   const bout = bouts.find(b => b.id === boutId);
   if (!bout) return;
+  const earlyStatuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId, status: "EARLY", wrestlerId: { in: [bout.redId, bout.greenId] } },
+    select: { wrestlerId: true },
+  });
+  const insertAtHead = earlyStatuses.length > 0;
 
   function getWrestler(id: string) {
     return wMap.get(id) ?? null;
@@ -320,7 +325,13 @@ async function assignMatToBout(meetId: string, boutId: string) {
     }
   }
 
-  const order = matCounts[bestMat] + 1;
+  const order = insertAtHead ? 1 : matCounts[bestMat] + 1;
+  if (insertAtHead) {
+    await db.bout.updateMany({
+      where: { meetId, mat: bestMat + 1, order: { not: null } },
+      data: { order: { increment: 1 } },
+    });
+  }
   await db.bout.update({
     where: { id: boutId },
     data: {
