@@ -621,6 +621,10 @@ export default function MeetsPage() {
           border-color: color-mix(in srgb, var(--accent) 85%, #000 15%);
           color: #fff;
         }
+        .nav-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
         .team-head {
           display: inline-flex;
           align-items: center;
@@ -1001,6 +1005,12 @@ export default function MeetsPage() {
           min-width: 90px;
           text-align: center;
         }
+        .meet-item-actions .meet-action-results-wrap {
+          display: inline-flex;
+        }
+        .meet-item-actions .meet-action-results-wrap .nav-btn {
+          width: 100%;
+        }
         .meet-item-actions .delete-btn {
           min-width: 100px;
         }
@@ -1033,6 +1043,9 @@ export default function MeetsPage() {
           .meet-item-actions .delete-btn {
             width: 100%;
             min-width: 0;
+          }
+          .meet-item-actions .meet-action-results-wrap {
+            width: 100%;
           }
           .meet-action-view,
           .meet-action-results {
@@ -1085,14 +1098,18 @@ export default function MeetsPage() {
                   </div>
                 {canManageMeets && (
                   <div className="meet-item-actions">
-                    {m.status === "PUBLISHED" && (
+                    <span
+                      className="meet-action-results-wrap meet-action-results"
+                      title={m.status !== "PUBLISHED" ? "Meet is still in Draft status" : undefined}
+                    >
                       <button
-                        className="nav-btn primary meet-action-results"
+                        className="nav-btn primary"
                         onClick={() => router.push(`/results/${m.id}`)}
+                        disabled={m.status !== "PUBLISHED"}
                       >
-                        Enter Results
+                        Results
                       </button>
-                    )}
+                    </span>
                     <button
                       className="nav-btn meet-action-view"
                       onClick={() => router.push(`/meets/${m.id}`)}
