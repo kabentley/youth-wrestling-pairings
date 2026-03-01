@@ -19,6 +19,33 @@ function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
 }
 
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const rawUsername = (searchParams.get("username") ?? "").trim();
+
+  if (!rawUsername) {
+    return NextResponse.json({ available: null });
+  }
+  if (rawUsername.includes("@")) {
+    return NextResponse.json({ available: false, reason: "Username cannot include @." });
+  }
+  if (rawUsername.length < 6 || rawUsername.length > 32) {
+    return NextResponse.json({ available: false, reason: "Username must be 6-32 characters." });
+  }
+
+  const username = normalizeUsername(rawUsername);
+  if (username.startsWith("oauth-")) {
+    return NextResponse.json({ available: false, reason: "Choose a different username." });
+  }
+
+  const existing = await db.user.findUnique({
+    where: { username },
+    select: { id: true },
+  });
+
+  return NextResponse.json({ available: !existing });
+}
+
 function normalizeNullableString(value?: string | null) {
   const trimmed = value?.trim();
   if (!trimmed) return null;

@@ -102,7 +102,7 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
       mat: b.mat ?? null,
       order: b.order ?? null,
       originalMat: b.originalMat ?? null,
-      locked: b.locked ?? false,
+      locked: b.locked,
       source: b.source ?? null,
       createdAt: b.createdAt.toISOString(),
     })),

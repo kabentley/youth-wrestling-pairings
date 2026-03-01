@@ -15,13 +15,10 @@ export default function SignInClient() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [twoFactorMethod, setTwoFactorMethod] = useState<"email" | "sms">("email");
+  const twoFactorMethod: "email" | "sms" = "email";
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [err, setErr] = useState("");
-  const [info, setInfo] = useState("");
-  const [resendEmail, setResendEmail] = useState("");
-  const [bypassEmailVerification, setBypassEmailVerification] = useState(process.env.NODE_ENV !== "production");
   type OauthProviderKey = "google" | "apple" | "facebook";
   const providerKeys: OauthProviderKey[] = ["google", "apple", "facebook"];
   const [oauthProviders, setOauthProviders] = useState<Partial<Record<OauthProviderKey, { id: string }>>>({});
@@ -55,7 +52,6 @@ export default function SignInClient() {
 
   async function submit() {
     setErr("");
-    setInfo("");
     const base = window.location.origin;
     const callbackUrl = postLoginUrl.startsWith("http") ? postLoginUrl : `${base}${postLoginUrl}`;
     const res = await signIn("credentials", {
@@ -64,15 +60,10 @@ export default function SignInClient() {
       password,
       twoFactorMethod,
       twoFactorCode: twoFactorRequired ? twoFactorCode : "",
-      bypassEmailVerification: bypassEmailVerification ? "true" : "false",
       callbackUrl,
     });
 
     if (res?.error) {
-      if (res.error === "EMAIL_NOT_VERIFIED") {
-        setErr("Please verify your email before signing in.");
-        return;
-      }
       if (res.error === "2FA_REQUIRED") {
         setTwoFactorRequired(true);
         setErr("Enter the code that was sent to you.");
@@ -98,26 +89,6 @@ export default function SignInClient() {
       return;
     }
     window.location.href = res?.url ?? postLoginUrl;
-  }
-
-  async function resendVerification() {
-    setErr("");
-    setInfo("");
-    if (!resendEmail.trim()) {
-      setErr("Enter your email to resend the verification link.");
-      return;
-    }
-    const res = await fetch("/api/auth/resend-verification", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: resendEmail }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setErr(json?.error ?? "Unable to resend verification email.");
-      return;
-    }
-    setInfo("Verification email sent.");
   }
 
   return (
@@ -253,30 +224,7 @@ export default function SignInClient() {
               }}
             >
               <div className="form-group">
-                <label>Two-factor delivery</label>
-                <label className="remember">
-                  <input
-                    type="radio"
-                    name="twoFactorMethod"
-                    value="email"
-                    checked={twoFactorMethod === "email"}
-                    onChange={() => setTwoFactorMethod("email")}
-                  />
-                  Email
-                </label>
-                <label className="remember">
-                  <input
-                    type="radio"
-                    name="twoFactorMethod"
-                    value="sms"
-                    checked={twoFactorMethod === "sms"}
-                    onChange={() => setTwoFactorMethod("sms")}
-                  />
-                  SMS
-                </label>
-              </div>
-              <div className="form-group">
-                <label htmlFor="username">Username</label>
+                <label htmlFor="username">Username (not email address)</label>
                 <input
                   id="username"
                   type="text"
@@ -319,25 +267,10 @@ export default function SignInClient() {
                   Show password
                 </label>
               </div>
-              <div className="center-links">
-                <div><Link href="/auth/forgot-password">Forgot your password?</Link></div>
-                <div><Link href="/auth/forgot-password">Need Help/FAQ?</Link></div>
-              </div>
-              {process.env.NODE_ENV !== "production" && (
-                <label className="remember">
-                  <input
-                    type="checkbox"
-                    checked={bypassEmailVerification}
-                    onChange={(e) => setBypassEmailVerification(e.target.checked)}
-                  />
-                  Bypass email verification (dev only)
-                </label>
-              )}
               <button className="btn-full" onClick={submit}>
                 {twoFactorRequired ? "Verify" : "Login"}
               </button>
               {err && <div className="error">{err}</div>}
-              {info && <div style={{ color: "#2e7d32", fontSize: 12, marginTop: 6 }}>{info}</div>}
             {hasOauthProviders && (
                 <div className="center-links" style={{ marginTop: 12 }}>
                   <div style={{ marginBottom: 8 }}>Or sign in with</div>
@@ -375,18 +308,6 @@ export default function SignInClient() {
                   </div>
                 </div>
               )}
-              <div className="center-links" style={{ marginTop: 12 }}>
-                <div style={{ marginBottom: 6 }}>Resend verification email</div>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={resendEmail}
-                  onChange={(e) => setResendEmail(e.target.value)}
-                />
-                <button className="btn-full" style={{ marginTop: 8 }} onClick={resendVerification}>
-                  Resend
-                </button>
-              </div>
             </form>
           </div>
         </div>

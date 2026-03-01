@@ -34,14 +34,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Invalid query parameters." }, { status: 400 });
   }
   const { q, page, pageSize, teamId } = parsed.data;
+  const rawDbUrl = process.env.DATABASE_URL ?? "";
+  const dbUrl = rawDbUrl.trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  const isSqlite = dbUrl.startsWith("file:");
+  const contains = (value: string) =>
+    isSqlite
+      ? ({ contains: value })
+      : ({ contains: value, mode: "insensitive" as const });
   const where = {
     ...(teamId ? { teamId } : {}),
     ...(q
       ? {
           OR: [
-            { username: { contains: q, mode: "insensitive" as const } },
-            { email: { contains: q, mode: "insensitive" as const } },
-            { name: { contains: q, mode: "insensitive" as const } },
+            { username: contains(q) },
+            { email: contains(q) },
+            { name: contains(q) },
           ],
         }
       : {}),

@@ -50,7 +50,8 @@ export default function UsersSection() {
         fetch("/api/teams"),
       ]);
       if (!uRes.ok) {
-        setMsg("Not authorized.");
+        const data = await uRes.json().catch(() => null);
+        setMsg(formatError(data?.error) ?? (uRes.status === 401 || uRes.status === 403 ? "Not authorized." : "Unable to load users."));
         return;
       }
       const data = await uRes.json();

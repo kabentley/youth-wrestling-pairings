@@ -1,21 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { formatTeamName } from "@/lib/formatTeamName";
 
 export default function SignUpPage() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
-  const [teams, setTeams] = useState<Array<{ id: string; name: string; symbol: string }>>([]);
+  const [teams, setTeams] = useState<Array<{
+    id: string;
+    name: string;
+    symbol: string;
+    hasLogo?: boolean;
+    headCoach?: { username: string; name?: string | null } | null;
+  }>>([]);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
+  const [teamTypeahead, setTeamTypeahead] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [msg, setMsg] = useState("");
   const [msgTone, setMsgTone] = useState<"error" | "success" | "">("");
+  const [usernameInputError, setUsernameInputError] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+  const [usernameStatusMsg, setUsernameStatusMsg] = useState("Pick a public username. May not be an email address.");
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [createdTeam, setCreatedTeam] = useState<{
+    id: string;
+    name: string;
+    symbol: string;
+    hasLogo?: boolean;
+    headCoach?: { username: string; name?: string | null } | null;
+  } | null>(null);
+  const teamPickerRef = useRef<HTMLDivElement | null>(null);
+  const teamOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const teamTypeaheadResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -36,17 +60,119 @@ export default function SignUpPage() {
       .then(res => res.ok ? res.json() : [])
       .then(json => {
         if (!active) return;
-        setTeams(Array.isArray(json) ? json : []);
+        const list = Array.isArray(json) ? json : [];
+        list.sort((a, b) => {
+          const aSymbol = (a.symbol ?? "").trim();
+          const bSymbol = (b.symbol ?? "").trim();
+          const symbolCmp = aSymbol.localeCompare(bSymbol, undefined, { sensitivity: "base" });
+          if (symbolCmp !== 0) return symbolCmp;
+          return (a.name ?? "").trim().localeCompare((b.name ?? "").trim(), undefined, { sensitivity: "base" });
+        });
+        setTeams(list);
       })
       .catch(() => {});
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const next = username.trim();
+    if (!next) {
+      setUsernameStatus("idle");
+      setUsernameStatusMsg("Pick a public username. May not be an email address.");
+      return;
+    }
+    if (next.includes("@")) {
+      setUsernameStatus("invalid");
+      setUsernameStatusMsg("Username cannot include @.");
+      return;
+    }
+    if (next.length < 6 || next.length > 32) {
+      setUsernameStatus("invalid");
+      setUsernameStatusMsg("Username must be 6-32 characters.");
+      return;
+    }
+
+    const controller = new AbortController();
+    setUsernameStatus("checking");
+    setUsernameStatusMsg("Checking availability...");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/signup?username=${encodeURIComponent(next)}`, {
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => ({}));
+        if (json?.available === true) {
+          setUsernameStatus("available");
+          setUsernameStatusMsg("Username is available.");
+          return;
+        }
+        setUsernameStatus("taken");
+        setUsernameStatusMsg(typeof json?.reason === "string" ? json.reason : "Username is already taken.");
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        setUsernameStatus("invalid");
+        setUsernameStatusMsg("Unable to check username right now.");
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [username]);
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (!teamPickerRef.current) return;
+      if (teamPickerRef.current.contains(event.target as Node)) return;
+      setTeamMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (teamTypeaheadResetRef.current) {
+        clearTimeout(teamTypeaheadResetRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!teamMenuOpen || !teamId) return;
+    const node = teamOptionRefs.current[teamId];
+    if (!node) return;
+    node.scrollIntoView({ block: "nearest" });
+  }, [teamId, teamMenuOpen]);
+
   async function submit() {
     setMsg("");
     setMsgTone("");
+    if (username.includes("@")) {
+      setMsg("Username cannot include @.");
+      setMsgTone("error");
+      return;
+    }
+    if (usernameStatus === "checking") {
+      setMsg("Checking username availability. Please try again.");
+      setMsgTone("error");
+      return;
+    }
+    if (usernameStatus === "taken" || usernameStatus === "invalid") {
+      setMsg(usernameStatusMsg || "Choose a different username.");
+      setMsgTone("error");
+      return;
+    }
     if (!email.trim()) {
       setMsg("Email is required.");
+      setMsgTone("error");
+      return;
+    }
+    if (!name.trim()) {
+      setMsg("Name is required.");
       setMsgTone("error");
       return;
     }
@@ -89,10 +215,55 @@ export default function SignUpPage() {
       return;
     }
 
-    setMsg("Account created. Check your email to verify before signing in.");
-    setMsgTone("success");
-    alert("Account created. Check your email to verify before signing in.");
-    window.location.href = "/auth/signin";
+    const teamForWelcome = teams.find((team) => team.id === teamId) ?? null;
+    setCreatedTeam(teamForWelcome);
+    setWelcomeOpen(true);
+    setMsg("");
+    setMsgTone("");
+  }
+
+  const selectedTeam = teams.find((team) => team.id === teamId) ?? null;
+  const selectedTeamInitial = (selectedTeam?.symbol ?? selectedTeam?.name ?? "T").slice(0, 1).toUpperCase();
+
+  function openTeamMenu() {
+    setTeamMenuOpen(true);
+  }
+
+  function commitTeamSelection() {
+    if (!teamId) return;
+    setTeamMenuOpen(false);
+  }
+
+  function pickTeamBySymbolPrefix(prefix: string, cycle = false) {
+    const normalized = prefix.trim().toLowerCase();
+    if (!normalized) return false;
+    const matches = teams.filter((team) => team.symbol.trim().toLowerCase().startsWith(normalized));
+    if (matches.length === 0) return false;
+    if (cycle && matches.length > 1) {
+      const currentIndex = matches.findIndex((team) => team.id === teamId);
+      const next = matches[(currentIndex + 1) % matches.length];
+      setTeamId(next.id);
+      return true;
+    }
+    setTeamId(matches[0].id);
+    return true;
+  }
+
+  function handleTeamTypeaheadKey(rawKey: string) {
+    if (rawKey.length !== 1) return;
+    const key = rawKey.toLowerCase();
+    const nextBuffer = `${teamTypeahead}${key}`;
+    const cycleSingleChar = teamTypeahead === key && key.length === 1;
+    let matched = pickTeamBySymbolPrefix(nextBuffer, cycleSingleChar && nextBuffer.length === 1);
+    if (!matched) {
+      matched = pickTeamBySymbolPrefix(key, true);
+      if (!matched) return;
+      setTeamTypeahead(key);
+    } else {
+      setTeamTypeahead(nextBuffer);
+    }
+    if (teamTypeaheadResetRef.current) clearTimeout(teamTypeaheadResetRef.current);
+    teamTypeaheadResetRef.current = setTimeout(() => setTeamTypeahead(""), 800);
   }
 
   return (
@@ -125,6 +296,16 @@ export default function SignUpPage() {
           gap: 12px;
           margin-bottom: 16px;
         }
+        .top-signin {
+          margin-left: auto;
+          border: 1px solid var(--line);
+          background: #ffffff;
+          color: var(--ink);
+          text-decoration: none;
+          padding: 8px 12px;
+          border-radius: 4px;
+          font-weight: 600;
+        }
         .signup-title {
           font-family: "Oswald", Arial, sans-serif;
           letter-spacing: 0.6px;
@@ -138,29 +319,11 @@ export default function SignUpPage() {
         }
         .signup-card {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          grid-template-columns: minmax(0, 1fr);
           border: 1px solid var(--line);
           border-radius: 8px;
           overflow: hidden;
           background: var(--card);
-        }
-        .signup-left {
-          padding: 26px 24px;
-          background: #f7f9fb;
-          border-right: 1px solid var(--line);
-        }
-        .signup-left h2 { margin: 0 0 8px; }
-        .signup-left p { margin: 0 0 12px; color: var(--muted); }
-        .signup-left ul { margin: 0 0 16px 18px; color: var(--muted); }
-        .signup-left li { margin-bottom: 4px; }
-        .ghost-btn {
-          display: inline-block;
-          border: 1px solid var(--line);
-          color: var(--ink);
-          text-decoration: none;
-          padding: 8px 12px;
-          border-radius: 4px;
-          font-weight: 600;
         }
         .signup-right { padding: 26px 24px; }
         .logo {
@@ -177,6 +340,100 @@ export default function SignUpPage() {
           border-radius: 4px;
           padding: 9px 10px;
           font-size: 14px;
+        }
+        .username-status {
+          font-size: 12px;
+        }
+        .username-status.idle,
+        .username-status.checking {
+          color: var(--muted);
+        }
+        .username-status.available {
+          color: #2e7d32;
+        }
+        .username-status.taken,
+        .username-status.invalid {
+          color: #b00020;
+        }
+        .team-picker {
+          position: relative;
+        }
+        .team-picker-trigger {
+          width: 100%;
+          border: 1px solid var(--line);
+          border-radius: 4px;
+          padding: 8px 10px;
+          font-size: 14px;
+          background: #fff;
+          color: #1d232b;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          cursor: pointer;
+        }
+        .team-picker-trigger-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+        .team-picker-caret {
+          color: #5a6673;
+          font-size: 12px;
+        }
+        .team-menu {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          max-height: 260px;
+          overflow: auto;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 6px;
+          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+          z-index: 20;
+        }
+        .team-menu-item {
+          width: 100%;
+          border: 0;
+          border-bottom: 1px solid #edf1f5;
+          background: #fff;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          text-align: left;
+          padding: 8px 10px;
+          font-size: 14px;
+          cursor: pointer;
+        }
+        .team-menu-item:last-child {
+          border-bottom: 0;
+        }
+        .team-menu-item:hover {
+          background: #f7f9fb;
+        }
+        .team-menu-item.active {
+          background: #eef6ff;
+        }
+        .team-option-logo {
+          width: 22px;
+          height: 22px;
+          object-fit: contain;
+          border-radius: 999px;
+          flex: 0 0 22px;
+          background: #fff;
+        }
+        .team-option-fallback {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--line);
+          color: #5a6673;
+          font-weight: 700;
+          font-size: 11px;
+          background: #f7f9fb;
         }
         .strength {
           height: 8px;
@@ -203,33 +460,104 @@ export default function SignUpPage() {
           text-transform: uppercase;
           letter-spacing: 0.6px;
         }
+        .btn-full:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
         .msg-error { color: #b00020; font-size: 12px; margin-top: 6px; }
         .msg-success { color: #2e7d32; font-size: 12px; margin-top: 6px; }
+        .welcome-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(16, 24, 32, 0.55);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 200;
+        }
+        .welcome-modal {
+          width: min(580px, 100%);
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.2);
+          padding: 18px 18px 16px;
+        }
+        .welcome-team {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          background: #f7f9fb;
+          margin-bottom: 12px;
+        }
+        .welcome-team-meta {
+          min-width: 0;
+        }
+        .welcome-team-logo {
+          width: 42px;
+          height: 42px;
+          object-fit: contain;
+          border-radius: 999px;
+          background: #fff;
+          border: 1px solid var(--line);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          color: #5a6673;
+        }
+        .welcome-team-name {
+          margin: 0;
+          font-size: 16px;
+        }
+        .welcome-team-coach {
+          margin-top: 6px;
+          font-size: 15px;
+          color: #1d232b;
+          line-height: 1.35;
+        }
+        .welcome-copy {
+          margin: 0 0 10px;
+          color: var(--ink);
+          line-height: 1.35;
+        }
+        .welcome-title {
+          margin: 0 0 12px;
+          font-size: 34px;
+          font-weight: 800;
+          letter-spacing: 0.6px;
+          line-height: 1.1;
+          color: #0d3b66;
+          text-transform: uppercase;
+        }
+        .welcome-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+        .welcome-btn-primary {
+          border: 0;
+          background: var(--accent);
+          color: #fff;
+          border-radius: 6px;
+          padding: 8px 12px;
+          font-weight: 700;
+        }
         @media (max-width: 900px) {
           .signup-card { grid-template-columns: 1fr; }
-          .signup-left { border-right: none; border-bottom: 1px solid var(--line); }
         }
       `}</style>
       <div className="signup-shell">
         <div className="signup-brand">
           <img className="signup-logo" src="/api/league/logo/file" alt="League logo" />
           <h1 className="signup-title">{leagueName}</h1>
+          <Link className="top-signin" href="/auth/signin">Sign in</Link>
         </div>
         <div className="signup-card">
-          <div className="signup-left">
-            <h2>Welcome</h2>
-            <p>Create your account and begin using the wrestling scheduler.</p>
-            <ul>
-              <li>Claim/Create your profiles</li>
-              <li>Manage teams and rosters</li>
-              <li>Generate pairings and mats</li>
-              <li>Share match info with parents</li>
-              <li>Print and wall charts ready</li>
-              <li>Track meet progress</li>
-            </ul>
-            <Link className="ghost-btn" href="/auth/signin">Sign in</Link>
-          </div>
-
           <div className="signup-right">
             <img className="logo" src="/api/league/logo/file" alt="League logo" />
             <form
@@ -244,11 +572,28 @@ export default function SignUpPage() {
                   id="username"
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="username"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw.includes("@")) {
+                      setUsernameInputError("may not contain @");
+                    } else {
+                      setUsernameInputError("");
+                    }
+                    setUsername(raw.replaceAll("@", ""));
+                  }}
                 />
+                {usernameInputError ? (
+                  <div className="username-status invalid">{usernameInputError}</div>
+                ) : (
+                  <div className={`username-status ${usernameStatus}`}>{usernameStatusMsg}</div>
+                )}
               </div>
               <div className="form-group">
-                <label htmlFor="email">Email (required)</label>
+                <label htmlFor="email">Email</label>
                 <input
                   id="email"
                   type="email"
@@ -258,7 +603,7 @@ export default function SignUpPage() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="phone">Phone (optional, E.164)</label>
+                <label htmlFor="phone">Phone (optional)</label>
                 <input
                   id="phone"
                   type="tel"
@@ -267,22 +612,130 @@ export default function SignUpPage() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="name">Name (optional)</label>
+                <label htmlFor="name">Your name</label>
                 <input
                   id="name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  required
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="team">Team (required)</label>
-                <select id="team" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-                  <option value="">Select a team</option>
-                  {teams.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>
-                  ))}
-                </select>
+                <label htmlFor="team">Team</label>
+                <div className="team-picker" ref={teamPickerRef}>
+                  <button
+                    id="team"
+                    type="button"
+                    className="team-picker-trigger"
+                    aria-haspopup="listbox"
+                    aria-expanded={teamMenuOpen}
+                    onClick={() => {
+                      if (teamMenuOpen) {
+                        setTeamMenuOpen(false);
+                      } else {
+                        openTeamMenu();
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (teamMenuOpen) {
+                          commitTeamSelection();
+                        } else {
+                          openTeamMenu();
+                        }
+                        return;
+                      }
+                      if (event.key === "ArrowDown" || event.key === " ") {
+                        event.preventDefault();
+                        openTeamMenu();
+                        return;
+                      }
+                      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                        event.preventDefault();
+                        openTeamMenu();
+                        handleTeamTypeaheadKey(event.key);
+                      }
+                    }}
+                  >
+                    <span className="team-picker-trigger-label">
+                      {selectedTeam ? (
+                        <>
+                          {selectedTeam.hasLogo ? (
+                            <img
+                              src={`/api/teams/${selectedTeam.id}/logo/file`}
+                              alt={`${selectedTeam.name} logo`}
+                              className="team-option-logo"
+                            />
+                          ) : (
+                            <span className="team-option-logo team-option-fallback" aria-hidden>
+                              {selectedTeamInitial}
+                            </span>
+                          )}
+                          <span>{formatTeamName(selectedTeam)}</span>
+                        </>
+                      ) : (
+                        <span>Select a team</span>
+                      )}
+                    </span>
+                    <span className="team-picker-caret" aria-hidden>{teamMenuOpen ? "^" : "v"}</span>
+                  </button>
+                  {teamMenuOpen && (
+                    <div
+                      className="team-menu"
+                      role="listbox"
+                      aria-labelledby="team"
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setTeamMenuOpen(false);
+                          return;
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitTeamSelection();
+                          return;
+                        }
+                        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                          event.preventDefault();
+                          handleTeamTypeaheadKey(event.key);
+                        }
+                      }}
+                    >
+                      {teams.map((team) => {
+                        const initial = (team.symbol || team.name || "T").slice(0, 1).toUpperCase();
+                        return (
+                          <button
+                            key={team.id}
+                            type="button"
+                            className={`team-menu-item ${team.id === teamId ? "active" : ""}`}
+                            role="option"
+                            aria-selected={team.id === teamId}
+                            ref={(node) => {
+                              teamOptionRefs.current[team.id] = node;
+                            }}
+                            onClick={() => {
+                              setTeamId(team.id);
+                              setTeamMenuOpen(false);
+                            }}
+                          >
+                            {team.hasLogo ? (
+                              <img
+                                src={`/api/teams/${team.id}/logo/file`}
+                                alt={`${team.name} logo`}
+                                className="team-option-logo"
+                              />
+                            ) : (
+                              <span className="team-option-logo team-option-fallback" aria-hidden>{initial}</span>
+                            )}
+                            <span>{formatTeamName(team)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="form-group">
                 <label htmlFor="password">Password</label>
@@ -316,13 +769,62 @@ export default function SignUpPage() {
                   Show password
                 </label>
               </div>
-              <button className="btn-full" type="submit">Create account</button>
+              <button className="btn-full" type="submit" disabled={usernameStatus === "checking"}>Create account</button>
               {msg && msgTone === "error" && <div className="msg-error">{msg}</div>}
               {msg && msgTone === "success" && <div className="msg-success">{msg}</div>}
             </form>
           </div>
         </div>
       </div>
+      {welcomeOpen && (
+        <div className="welcome-modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to your new account">
+          <div className="welcome-modal">
+            <p className="welcome-title">
+              <strong>Welcome</strong>
+            </p>
+            {createdTeam && (
+              <div className="welcome-team">
+                {createdTeam.hasLogo ? (
+                  <img
+                    src={`/api/teams/${createdTeam.id}/logo/file`}
+                    alt={`${createdTeam.name} logo`}
+                    className="welcome-team-logo"
+                  />
+                ) : (
+                  <span className="welcome-team-logo" aria-hidden>
+                    {(createdTeam.symbol.trim() || createdTeam.name.trim() || "T").slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <div className="welcome-team-meta">
+                  <h3 className="welcome-team-name">{formatTeamName(createdTeam)}</h3>
+                  <div className="welcome-team-coach">
+                    <div>
+                      <strong>Head coach:</strong>{" "}
+                      {createdTeam.headCoach?.username
+                        ? `${createdTeam.headCoach.username} (${(createdTeam.headCoach.name ?? "").trim() || "Not provided"})`
+                        : "Not assigned"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <p className="welcome-copy">
+              If you are a coach, ask your head coach to promote your account to a coach account.
+            </p>
+            <div className="welcome-actions">
+              <button
+                type="button"
+                className="welcome-btn-primary"
+                onClick={() => {
+                  window.location.href = "/auth/signin";
+                }}
+              >
+                Continue to Sign in
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -152,6 +152,8 @@ export default function MatBoardTab({
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
+  const lastLockAnchorRef = useRef<{ matNum: number; index: number } | null>(null);
+  const lockDragRef = useRef<{ matNum: number; shouldLock: boolean; touched: Set<string> } | null>(null);
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
   const [dragPreview, setDragPreview] = useState<{
     boutId: string;
@@ -284,6 +286,18 @@ export default function MatBoardTab({
   }, [canEdit]);
 
   useEffect(() => {
+    const stopLockDrag = () => {
+      lockDragRef.current = null;
+    };
+    window.addEventListener("mouseup", stopLockDrag);
+    window.addEventListener("dragend", stopLockDrag);
+    return () => {
+      window.removeEventListener("mouseup", stopLockDrag);
+      window.removeEventListener("dragend", stopLockDrag);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!dirty || !canEdit) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
@@ -359,6 +373,7 @@ export default function MatBoardTab({
 
     setDirty(false);
     dirtyRef.current = false;
+    lastLockAnchorRef.current = null;
 
   }
 
@@ -530,6 +545,23 @@ export default function MatBoardTab({
     return a.length - b.length;
   }
 
+  function totalConflictCount(summary: number[]) {
+    return summary.reduce((sum, value) => sum + value, 0);
+  }
+
+  function allowConflictIncreaseForConstraintFix(
+    baseScore: number[],
+    candidateScore: number[],
+    fixedViolations: number,
+  ) {
+    if (fixedViolations <= 0) return false;
+    const baseTotal = totalConflictCount(baseScore);
+    const candidateTotal = totalConflictCount(candidateScore);
+    const increase = candidateTotal - baseTotal;
+    // Permit a small increase in conflicts when it fixes early/late range violations.
+    return increase <= Math.max(2, fixedViolations * 2);
+  }
+
   type OrderConstraint = { minOrder: number; maxOrder: number };
 
   function buildOrderConstraints(list: Bout[]) {
@@ -648,12 +680,27 @@ export default function MatBoardTab({
     return false;
   }
 
+  function countOrderConstraintViolations(
+    list: Bout[],
+    constraints: Map<string, OrderConstraint>,
+  ) {
+    let violations = 0;
+    for (let idx = 0; idx < list.length; idx++) {
+      const bout = list[idx];
+      const order = idx + 1;
+      if (!orderAllowed(order, constraints.get(bout.id))) {
+        violations += 1;
+      }
+    }
+    return violations;
+  }
+
   /**
    * Attempt to reorder a single mat to reduce conflicts by swapping bouts within the local list.
    */
   function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
     const working = list.slice();
-    if (gap <= 0 || working.length < 2) return working;
+    if (working.length < 2) return working;
     allMats[matIndex] = working;
     const otherOrders = buildOtherMatOrders(allMats, matIndex);
     const constraints = buildOrderConstraints(working);
@@ -665,13 +712,14 @@ export default function MatBoardTab({
         const bout = working[idx];
         if (lockedPositions.has(bout.id)) continue;
         const order = idx + 1;
-        if (
-          !hasConflict(bout, order, otherOrders, gap) &&
-          !hasSameMatConflictAt(working, idx, gap)
-        ) {
+        const hasCrossMatConflict = hasConflict(bout, order, otherOrders, gap);
+        const hasSameMatConflict = hasSameMatConflictAt(working, idx, gap);
+        const outOfConstraintRange = !orderAllowed(order, constraints.get(bout.id));
+        if (!hasCrossMatConflict && !hasSameMatConflict && !outOfConstraintRange) {
           continue;
         }
         const baseScore = computeConflictSummary(allMats, gap);
+        const baseViolations = countOrderConstraintViolations(working, constraints);
         const attempts = Math.min(8, Math.max(1, working.length - 1));
         for (let attempt = 0; attempt < attempts; attempt++) {
           let target = Math.floor(Math.random() * working.length);
@@ -691,7 +739,16 @@ export default function MatBoardTab({
             continue;
           }
           const candidateScore = computeConflictSummary(allMats, gap);
-          if (compareConflictSummary(candidateScore, baseScore) < 0) {
+          const candidateViolations = countOrderConstraintViolations(working, constraints);
+          const scoreCompare = compareConflictSummary(candidateScore, baseScore);
+          const fixedViolations = baseViolations - candidateViolations;
+          if (
+            scoreCompare < 0 ||
+            (scoreCompare === 0 && fixedViolations > 0) ||
+            (scoreCompare > 0 &&
+              fixedViolations > 0 &&
+              allowConflictIncreaseForConstraintFix(baseScore, candidateScore, fixedViolations))
+          ) {
             idx = Math.max(-1, Math.min(idx, target) - 1);
             break;
           }
@@ -732,19 +789,80 @@ export default function MatBoardTab({
     dirtyRef.current = true;
   }
 
-  function toggleBoutLock(boutId: string) {
+  function toggleBoutLock(
+    boutId: string,
+    opts?: { matNum?: number; index?: number; shiftKey?: boolean },
+  ) {
     if (!canEdit) return;
+    const matNum = opts?.matNum;
+    const index = opts?.index;
+    const shiftKey = Boolean(opts?.shiftKey);
+    const matList = matNum !== undefined ? (mats[keyMat(matNum)] ?? []) : [];
     setLockedBoutIds(prev => {
       const next = new Set(prev);
-      if (next.has(boutId)) {
-        next.delete(boutId);
-      } else {
+      const shouldLock = !next.has(boutId);
+      const anchor = lastLockAnchorRef.current;
+      const hasRange =
+        shiftKey &&
+        matNum !== undefined &&
+        index !== undefined &&
+        anchor !== null &&
+        anchor.matNum === matNum;
+
+      if (hasRange) {
+        const start = Math.min(anchor.index, index);
+        const end = Math.max(anchor.index, index);
+        for (let i = start; i <= end; i++) {
+          const id = matList[i]?.id;
+          if (!id) continue;
+          if (shouldLock) next.add(id);
+          else next.delete(id);
+        }
+      } else if (shouldLock) {
         next.add(boutId);
+      } else {
+        next.delete(boutId);
+      }
+      return next;
+    });
+    if (matNum !== undefined && index !== undefined) {
+      lastLockAnchorRef.current = { matNum, index };
+    }
+    setDirty(true);
+    dirtyRef.current = true;
+  }
+
+  function setBoutLockState(boutId: string, shouldLock: boolean) {
+    if (!canEdit) return;
+    setLockedBoutIds(prev => {
+      const has = prev.has(boutId);
+      if ((shouldLock && has) || (!shouldLock && !has)) return prev;
+      const next = new Set(prev);
+      if (shouldLock) {
+        next.add(boutId);
+      } else {
+        next.delete(boutId);
       }
       return next;
     });
     setDirty(true);
     dirtyRef.current = true;
+  }
+
+  function startLockDrag(boutId: string, matNum: number, index: number, shouldLock: boolean) {
+    if (!canEdit) return;
+    lockDragRef.current = { matNum, shouldLock, touched: new Set([boutId]) };
+    setBoutLockState(boutId, shouldLock);
+    lastLockAnchorRef.current = { matNum, index };
+  }
+
+  function applyLockDrag(boutId: string, matNum: number) {
+    const drag = lockDragRef.current;
+    if (!drag) return;
+    if (drag.matNum !== matNum) return;
+    if (drag.touched.has(boutId)) return;
+    drag.touched.add(boutId);
+    setBoutLockState(boutId, drag.shouldLock);
   }
 
   function lockAllOnMat(matNum: number) {
@@ -756,6 +874,7 @@ export default function MatBoardTab({
       ids.forEach(id => next.add(id));
       return next;
     });
+    lastLockAnchorRef.current = null;
     setDirty(true);
     dirtyRef.current = true;
   }
@@ -769,6 +888,7 @@ export default function MatBoardTab({
       ids.forEach(id => next.delete(id));
       return next;
     });
+    lastLockAnchorRef.current = null;
     setDirty(true);
     dirtyRef.current = true;
   }
@@ -1297,9 +1417,14 @@ export default function MatBoardTab({
           cursor: pointer;
         }
         .bout-lock-btn.locked {
-          background: #1d232b;
-          border-color: #1d232b;
-          color: #fff;
+          background: #fff;
+          border-color: transparent;
+          color: #111;
+        }
+        .bout-lock-icon {
+          width: 15px;
+          height: 15px;
+          display: block;
         }
         .bout-lock-btn[disabled] {
           opacity: 0.5;
@@ -1599,17 +1724,30 @@ export default function MatBoardTab({
                             title={isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder"}
                             aria-label={isLockedBout ? "Unlock bout position" : "Lock bout position"}
                             aria-pressed={isLockedBout}
-                            onMouseDown={e => e.stopPropagation()}
+                            onMouseDown={e => {
+                              if (!canEdit) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (e.shiftKey) {
+                                toggleBoutLock(b.id, { matNum, index, shiftKey: true });
+                                return;
+                              }
+                              startLockDrag(b.id, matNum, index, !isLockedBout);
+                            }}
+                            onMouseEnter={() => applyLockDrag(b.id, matNum)}
                             onClick={e => {
                               e.preventDefault();
                               e.stopPropagation();
-                              toggleBoutLock(b.id);
                             }}
                             onKeyDown={e => {
                               if (e.key !== "Enter" && e.key !== " ") return;
                               e.preventDefault();
                               e.stopPropagation();
-                              toggleBoutLock(b.id);
+                              toggleBoutLock(b.id, {
+                                matNum,
+                                index,
+                                shiftKey: e.shiftKey,
+                              });
                             }}
                           style={{
                             backgroundColor: getMatNumberBackground(originalMatColor),
@@ -1628,14 +1766,35 @@ export default function MatBoardTab({
                           aria-pressed={isLockedBout}
                           disabled={!canEdit}
                           draggable={false}
-                          onMouseDown={e => e.stopPropagation()}
+                          onMouseDown={e => {
+                            if (!canEdit) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (e.shiftKey) {
+                              toggleBoutLock(b.id, { matNum, index, shiftKey: true });
+                              return;
+                            }
+                            startLockDrag(b.id, matNum, index, !isLockedBout);
+                          }}
+                          onMouseEnter={() => applyLockDrag(b.id, matNum)}
                           onClick={e => {
                             e.preventDefault();
                             e.stopPropagation();
-                            toggleBoutLock(b.id);
                           }}
                         >
-                          {isLockedBout ? "L" : "-"}
+                          {isLockedBout ? (
+                            <svg
+                              className="bout-lock-icon"
+                              viewBox="0 0 16 16"
+                              aria-hidden="true"
+                              focusable="false"
+                            >
+                              <path
+                                d="M5 7V5.5a3 3 0 1 1 6 0V7h1a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h1Zm1.5 0h3V5.5a1.5 1.5 0 1 0-3 0V7Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          ) : "-"}
                         </button>
                         {ordered.map(entry => (
                           <span
