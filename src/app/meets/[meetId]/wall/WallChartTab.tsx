@@ -40,9 +40,11 @@ type WallChartPayload = {
 export default function WallChartTab({
   meetId,
   refreshIndex,
+  chartType = "both",
 }: {
   meetId: string;
   refreshIndex?: number;
+  chartType?: "mat" | "team" | "both";
 }) {
   const [payload, setPayload] = useState<WallChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,12 +165,12 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
           }
           .wall-chart-root .mat-table {
             border-collapse: collapse;
-            font-size: 14px;
+            font-size: 11px;
           }
           .wall-chart-root .mat-table th,
           .wall-chart-root .mat-table td {
             border: 1px solid #eee;
-            padding: 4px 6px;
+            padding: 2px 4px;
             text-align: left;
           }
           .wall-chart-root .mat-table th {
@@ -176,7 +178,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
           }
           .wall-chart-root .mat-empty {
             margin: 0;
-            font-size: 14px;
+            font-size: 11px;
             color: #555;
           }
           .wall-chart-root .per-team {
@@ -295,12 +297,12 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
           }
           .wall-chart-root .team-table {
             border-collapse: collapse;
-            font-size: 14px;
+            font-size: 11px;
           }
           .wall-chart-root .team-table th,
           .wall-chart-root .team-table td {
             border: 1px solid #eee;
-            padding: 4px 6px;
+            padding: 2px 4px;
             text-align: left;
           }
           .wall-chart-root .match-line {
@@ -308,7 +310,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
             flex-wrap: wrap;
             align-items: baseline;
             gap: 18px;
-            font-size: 14px;
+            font-size: 11px;
           }
           .wall-chart-root .match-chip {
             display: inline-flex;
@@ -323,7 +325,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
             font-weight: 400;
           }
           .wall-chart-root .team-empty {
-            font-size: 14px;
+            font-size: 11px;
             color: #555;
             margin: 0 0 12px 0;
           }
@@ -483,97 +485,101 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
       <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
       <div>
-        <section className="chart-page per-mat">
-          <div className="mat-grid">
-            {mats.map(mat => (
-              <article key={mat} className="mat-block">
-                <div className="mat-header">
-                  <span>Mat {mat}</span>
+        {(chartType === "both" || chartType === "mat") && (
+          <section className="chart-page per-mat">
+            <div className="mat-grid">
+              {mats.map(mat => (
+                <article key={mat} className="mat-block">
+                  <div className="mat-header">
+                    <span>Mat {mat}</span>
+                    <span className="card-meet-label">{cardLabel}</span>
+                  </div>
+                  {perMat.get(mat)?.length ? (
+                    <table className="mat-table">
+                      <thead>
+                        <tr>
+                          <th>Bout #</th>
+                          <th>Wrestler 1</th>
+                          <th>Wrestler 2</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perMat.get(mat)?.map((bout, idx) => {
+                          const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
+                          const boutNumber = String(mat * 100 + displayOrder).padStart(3, "0");
+                          const t = cellText(bout);
+                          return (
+                            <tr key={bout.id}>
+                              <td>{boutNumber}</td>
+                              <td style={{ color: t.redColor }}>{t.red}</td>
+                              <td style={{ color: t.greenColor }}>{t.green}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="mat-empty">No bouts scheduled for this mat.</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(chartType === "both" || chartType === "team") && (
+          <section className="chart-page per-team">
+            {teamCharts.map(team => (
+              <article key={team.id} className="team-block">
+                <div className="team-header">
+                  <div className="team-name">{team.label}</div>
                   <span className="card-meet-label">{cardLabel}</span>
                 </div>
-                {perMat.get(mat)?.length ? (
-                  <table className="mat-table">
+                {team.members.length === 0 ? (
+                  <p className="team-empty">No wrestlers recorded.</p>
+                ) : (
+                  <table className="team-table">
                     <thead>
                       <tr>
-                        <th>Bout #</th>
-                        <th>Wrestler 1</th>
-                        <th>Wrestler 2</th>
+                        <th>Name</th>
+                        <th>Matches</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {perMat.get(mat)?.map((bout, idx) => {
-                        const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
-                        const boutNumber = String(mat * 100 + displayOrder).padStart(3, "0");
-                        const t = cellText(bout);
-                        return (
-                          <tr key={bout.id}>
-                            <td>{boutNumber}</td>
-                            <td style={{ color: t.redColor }}>{t.red}</td>
-                            <td style={{ color: t.greenColor }}>{t.green}</td>
-                          </tr>
-                        );
-                      })}
+                      {team.members.map(member => (
+                        <tr key={member.id}>
+                          <td>
+                            <span className="wrestler-name" style={{ color: "#000" }}>{member.name}</span>
+                          </td>
+                          <td>
+                            {member.matches.length === 0 ? (
+                              <span className="team-empty">No matches scheduled.</span>
+                            ) : (
+                              <div className="match-line">
+                            {member.matches.map(match => (
+                              <span key={`${member.id}-${match.boutNumber}`} className="match-chip">
+                                <span className="match-bout">#{match.boutNumber}</span>
+                                <span
+                                  className="match-opponent"
+                                  style={{ color: match.opponentColor }}
+                                >
+                                  {match.opponentName}
+                                  {match.opponentTeamLabel ? ` (${match.opponentTeamLabel})` : ""}
+                                </span>
+                              </span>
+                            ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
-                ) : (
-                  <p className="mat-empty">No bouts scheduled for this mat.</p>
                 )}
               </article>
             ))}
-          </div>
-        </section>
-
-        <section className="chart-page per-team">
-          {teamCharts.map(team => (
-            <article key={team.id} className="team-block">
-              <div className="team-header">
-                <div className="team-name">{team.label}</div>
-                <span className="card-meet-label">{cardLabel}</span>
-              </div>
-              {team.members.length === 0 ? (
-                <p className="team-empty">No wrestlers recorded.</p>
-              ) : (
-                <table className="team-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Matches</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {team.members.map(member => (
-                      <tr key={member.id}>
-                        <td>
-                          <span className="wrestler-name" style={{ color: "#000" }}>{member.name}</span>
-                        </td>
-                        <td>
-                          {member.matches.length === 0 ? (
-                            <span className="team-empty">No matches scheduled.</span>
-                          ) : (
-                            <div className="match-line">
-                          {member.matches.map(match => (
-                            <span key={`${member.id}-${match.boutNumber}`} className="match-chip">
-                              <span className="match-bout">#{match.boutNumber}</span>
-                              <span
-                                className="match-opponent"
-                                style={{ color: match.opponentColor }}
-                              >
-                                {match.opponentName}
-                                {match.opponentTeamLabel ? ` (${match.opponentTeamLabel})` : ""}
-                              </span>
-                            </span>
-                          ))}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </article>
-          ))}
-        </section>
+          </section>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
+import ScratchSheetTab from "./wall/ScratchSheetTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
@@ -463,7 +464,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerWeight, setNewWrestlerWeight] = useState("");
   const [newWrestlerExp, setNewWrestlerExp] = useState("0");
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
-  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wall">("pairings");
+  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wallMat" | "wallTeam" | "scratch">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [matRefreshIndex, setMatRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
@@ -3494,14 +3495,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           {[
             { key: "pairings", label: "Pairings" },
           { key: "matboard", label: "Mat Assignments" },
-          { key: "wall", label: "Wall Charts" },
+          { key: "wallMat", label: "Mat Sheets" },
+          { key: "wallTeam", label: "Team Sheets" },
+          { key: "scratch", label: "Scratch Sheet" },
         ].map(tab => (
           <button
             key={tab.key}
             className={`tab-button${activeTab === tab.key ? " active" : ""}`}
             onClick={() => {
               setActiveTab(tab.key as typeof activeTab);
-              if (tab.key === "wall") {
+              if (tab.key === "wallMat" || tab.key === "wallTeam" || tab.key === "scratch") {
                 setWallRefreshIndex(idx => idx + 1);
               }
             }}
@@ -5166,9 +5169,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </section>
         )}
 
-        {activeTab === "wall" && (
+        {activeTab === "wallMat" && (
           <section className="wall-chart-section">
-            <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} />
+            <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} chartType="mat" />
+          </section>
+        )}
+
+        {activeTab === "wallTeam" && (
+          <section className="wall-chart-section">
+            <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} chartType="team" />
+          </section>
+        )}
+
+        {activeTab === "scratch" && (
+          <section className="wall-chart-section">
+            <ScratchSheetTab meetId={meetId} refreshIndex={wallRefreshIndex} />
           </section>
         )}
       </div>
