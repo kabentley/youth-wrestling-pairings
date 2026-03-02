@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
 
@@ -44,7 +44,7 @@ type MeetGroup = {
   matches: Match[];
 };
 
-type SearchResult = {
+type TeamWrestler = {
   id: string;
   guid: string;
   first: string;
@@ -53,7 +53,8 @@ type SearchResult = {
   teamName: string;
   teamSymbol?: string;
   teamColor?: string;
-  birthdate: string;
+  weight?: number;
+  experienceYears?: number;
 };
 
 type Profile = {
@@ -63,90 +64,178 @@ type Profile = {
   team: string | null;
 };
 
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+const LAST_NAME_MATCH_THRESHOLD = 0.82;
+
+const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+
+const extractLastNameCandidates = (fullName?: string | null) => {
+  if (!fullName) return [] as string[];
+  const rawTokens = fullName
+    .trim()
+    .split(/\s+/)
+    .map(normalizeNameToken)
+    .filter(Boolean);
+  if (rawTokens.length === 0) return [] as string[];
+  const tokens = [...rawTokens];
+  if (tokens.length > 1 && NAME_SUFFIXES.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  if (tokens.length === 0) return [] as string[];
+  const last = tokens[tokens.length - 1];
+  const candidates = [last];
+  if (tokens.length >= 2) {
+    candidates.push(`${tokens[tokens.length - 2]}${last}`);
+  }
+  return Array.from(new Set(candidates));
+};
+
+const levenshteinDistance = (a: string, b: string) => {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+};
+
+const lastNameSimilarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) {
+    return 0.92;
+  }
+  const dist = levenshteinDistance(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 0;
+  const ratio = 1 - dist / maxLen;
+  if (dist <= 1 && maxLen >= 5) return Math.max(ratio, 0.88);
+  if (dist === 2 && maxLen >= 7) return Math.max(ratio, 0.8);
+  return ratio;
+};
+
 export default function ParentPage() {
   const [children, setChildren] = useState<Child[]>([]);
   const [meetGroups, setMeetGroups] = useState<MeetGroup[]>([]);
+  const [teamWrestlers, setTeamWrestlers] = useState<TeamWrestler[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [search, setSearch] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSelection, setPickerSelection] = useState<string[]>([]);
+  const [pickerSaving, setPickerSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const searchTimerRef = useRef<number | null>(null);
 
   async function load() {
-    const [profileRes, matchesRes] = await Promise.all([
+    const [profileRes, matchesRes, teamWrestlersRes] = await Promise.all([
       fetch("/api/parent/profile"),
       fetch("/api/parent/matches"),
+      fetch("/api/parent/children/candidates"),
     ]);
     const profileJson = await profileRes.json().catch(() => null);
     const matchesJson = await matchesRes.json().catch(() => null);
+    const teamWrestlersJson = await teamWrestlersRes.json().catch(() => []);
     setProfile(profileRes.ok ? profileJson : null);
     setChildren(matchesJson?.children ?? []);
     setMeetGroups(matchesJson?.meets ?? []);
+    setTeamWrestlers(teamWrestlersRes.ok && Array.isArray(teamWrestlersJson) ? teamWrestlersJson : []);
   }
 
-  async function findWrestlers(query?: string) {
+  function getLikelyWrestlerIds() {
+    const candidates = extractLastNameCandidates(profile?.name ?? null);
+    if (candidates.length === 0) return [] as string[];
+    return teamWrestlers
+      .filter((wrestler) => {
+        const wrestlerLast = normalizeNameToken(wrestler.last);
+        if (!wrestlerLast) return false;
+        const score = candidates.reduce((best, candidate) => {
+          const next = lastNameSimilarity(candidate, wrestlerLast);
+          return next > best ? next : best;
+        }, 0);
+        return score >= LAST_NAME_MATCH_THRESHOLD;
+      })
+      .map((wrestler) => wrestler.id);
+  }
+
+  function openPicker() {
+    const existing = children.map((child) => child.id);
+    const suggested = existing.length > 0 ? existing : getLikelyWrestlerIds();
+    setPickerSelection(Array.from(new Set(suggested)));
+    setPickerOpen(true);
     setMsg("");
-    const term = (query ?? search).trim();
-    if (!term) {
-      setResults([]);
-      return;
-    }
-    const res = await fetch(`/api/wrestlers/search?q=${encodeURIComponent(term)}`, {
-      credentials: "include",
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "Unable to search wrestlers.");
-      setResults([]);
-      return;
-    }
-    const json = await res.json();
-    setResults(Array.isArray(json) ? json : []);
   }
 
-  async function addChild(wrestlerId: string) {
-    const res = await fetch("/api/parent/children", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wrestlerId }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setMsg(json?.error ?? "Unable to add child.");
-      return;
-    }
-    setMsg("Added.");
-    setSearch("");
-    setResults([]);
-    await load();
+  function togglePickerWrestler(wrestlerId: string) {
+    setPickerSelection((prev) => (
+      prev.includes(wrestlerId)
+        ? prev.filter((id) => id !== wrestlerId)
+        : [...prev, wrestlerId]
+    ));
   }
 
-  async function removeChild(wrestlerId: string) {
-    await fetch("/api/parent/children", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wrestlerId }),
-    });
-    await load();
+  async function savePickerSelection(nextIdsInput?: string[]) {
+    const nextIds = Array.from(new Set(nextIdsInput ?? pickerSelection));
+    const currentIds = children.map((child) => child.id);
+    const currentSet = new Set(currentIds);
+    const nextSet = new Set(nextIds);
+    const toAdd = nextIds.filter((id) => !currentSet.has(id));
+    const toRemove = currentIds.filter((id) => !nextSet.has(id));
+    if (toAdd.length === 0 && toRemove.length === 0) {
+      setPickerOpen(false);
+      return;
+    }
+
+    setPickerSaving(true);
+    setMsg("");
+    try {
+      for (const wrestlerId of toAdd) {
+        const res = await fetch("/api/parent/children", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wrestlerId }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json?.error ?? "Unable to add wrestler.");
+        }
+      }
+      for (const wrestlerId of toRemove) {
+        const res = await fetch("/api/parent/children", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wrestlerId }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json?.error ?? "Unable to remove wrestler.");
+        }
+      }
+      setPickerOpen(false);
+      await load();
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Unable to update wrestlers.");
+    } finally {
+      setPickerSaving(false);
+    }
+  }
+
+  function applySuggestedSelection() {
+    if (pickerSuggestedWrestlerIds.length === 0 || pickerSaving) return;
+    void savePickerSelection(pickerSuggestedWrestlerIds);
   }
 
   useEffect(() => { void load(); }, []);
-
-  useEffect(() => {
-    if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
-    if (!search.trim()) {
-      setResults([]);
-      setMsg("");
-      return;
-    }
-    searchTimerRef.current = window.setTimeout(() => {
-      void findWrestlers(search);
-    }, 250);
-    return () => {
-      if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
-    };
-  }, [search]);
 
   const childMap = useMemo(() => new Map(children.map(c => [c.id, c])), [children]);
   const today = useMemo(() => {
@@ -188,6 +277,12 @@ export default function ParentPage() {
   }, [children, meetGroups, today]);
 
   const dashboardTitle = profile?.name ? `${profile.name}'s Wrestlers` : "My Wrestlers";
+  const pickerSuggestedWrestlerIds = useMemo(() => getLikelyWrestlerIds(), [teamWrestlers, profile?.name]);
+  const pickerSuggestedNames = useMemo(() => {
+    const byId = new Map(teamWrestlers.map((w) => [w.id, `${w.first} ${w.last}`.trim()]));
+    return pickerSuggestedWrestlerIds.map((id) => byId.get(id)).filter((value): value is string => Boolean(value));
+  }, [pickerSuggestedWrestlerIds, teamWrestlers]);
+  const pickerOwnerLabel = (profile?.name ?? profile?.username ?? "my account").trim();
 
 
   function nameChip(label: string, team: string | undefined, color?: string) {
@@ -350,36 +445,100 @@ export default function ParentPage() {
           border-radius: 6px;
           padding: 6px 8px;
         }
+        .coach-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(17, 24, 39, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          z-index: 1200;
+        }
+        .coach-modal {
+          width: min(560px, 100%);
+          max-height: calc(100vh - 32px);
+          overflow: hidden;
+          border-radius: 10px;
+          border: 1px solid var(--line);
+          background: #fff;
+          display: flex;
+          flex-direction: column;
+        }
+        .coach-modal h4 {
+          margin: 0;
+          padding: 14px 16px;
+          border-bottom: 1px solid var(--line);
+          font-size: 18px;
+        }
+        .coach-modal-roster {
+          padding: 10px 16px;
+          overflow: auto;
+          display: grid;
+          gap: 8px;
+          max-height: 50vh;
+        }
+        .coach-modal-option {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 14px;
+        }
+        .coach-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          border-top: 1px solid var(--line);
+          padding: 12px 16px;
+        }
+        .picker-btn {
+          border: 1px solid #cfd8e3;
+          border-radius: 6px;
+          background: #fff;
+          padding: 7px 12px;
+          font-weight: 700;
+        }
+        .picker-btn.primary {
+          background: #1e88e5;
+          border-color: #1e88e5;
+          color: #fff;
+        }
+        .coach-btn,
+        .coach-btn-secondary {
+          border: 0;
+          border-radius: 6px;
+          font-weight: 600;
+          padding: 10px 14px;
+          cursor: pointer;
+        }
+        .coach-btn {
+          background: var(--accent);
+          color: #fff;
+        }
+        .coach-btn-secondary {
+          background: #f2f5f8;
+          color: var(--ink);
+          border: 1px solid var(--line);
+        }
+        .coach-btn:disabled,
+        .coach-btn-secondary:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
+        }
+        .suggestion-line {
+          font-size: 16px;
+          color: var(--ink);
+        }
+        .suggestion-label {
+          font-weight: 600;
+        }
+        .suggestion-names {
+          font-weight: 800;
+        }
       `}</style>
       <AppHeader links={headerLinks} />
 
       <h2>{dashboardTitle}</h2>
-
-      <div style={{ display: "grid", gap: 8, maxWidth: 720 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            placeholder="Search by name (example: Sam Smith)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ flex: 1 }}
-          />
-          <button onClick={() => findWrestlers(search)}>Search</button>
-        </div>
-        {msg && <div style={{ color: "crimson" }}>{msg}</div>}
-        {results.length > 0 && (
-          <div className="panel">
-            {results.map(r => (
-              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "4px 0" }}>
-                <div>
-                  {nameChip(`${r.first} ${r.last}`, r.teamSymbol ?? r.teamName, r.teamColor ?? "#000000")}{" "}
-                  — {new Date(r.birthdate).toISOString().slice(0, 10)}
-                </div>
-                <button onClick={() => addChild(r.id)}>Add</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {children.length === 0 && <div>No wrestlers linked yet.</div>}
       {children.length > 0 && (
@@ -390,7 +549,6 @@ export default function ParentPage() {
               <th align="right">Age</th>
               <th align="right">Wt</th>
               <th align="right">Exp</th>
-              <th align="left">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -400,14 +558,39 @@ export default function ParentPage() {
                 <td align="right">{ageYears(c.birthdate)?.toFixed(1) ?? ""}</td>
                 <td align="right">{c.weight ?? ""}</td>
                 <td align="right">{c.experienceYears ?? ""}</td>
-                <td>
-                  <button onClick={() => removeChild(c.id)}>Remove</button>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      <div style={{ display: "grid", gap: 4, maxWidth: 720, marginTop: 10 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {children.length > 0 ? (
+            <span className="muted">Pick from your team roster.</span>
+          ) : pickerSuggestedNames.length > 0 ? (
+            <span className="suggestion-line">
+              <span className="suggestion-label">Suggested:</span>{" "}
+              <span className="suggestion-names">{pickerSuggestedNames.join(", ")}</span>
+            </span>
+          ) : (
+            <span className="muted">Pick from your team roster. Suggested names use fuzzy last-name matching.</span>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {children.length === 0 && pickerSuggestedNames.length > 0 && (
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={applySuggestedSelection}
+                disabled={pickerSaving}
+              >
+                That's right
+              </button>
+            )}
+            <button className="picker-btn primary" onClick={openPicker}>Select Wrestlers</button>
+          </div>
+        </div>
+        {msg && <div style={{ color: "crimson" }}>{msg}</div>}
+      </div>
 
       <h2 style={{ marginTop: 24 }}>Upcoming Meets</h2>
       {upcomingMeets.length === 0 && <div>No upcoming meets yet.</div>}
@@ -506,8 +689,70 @@ export default function ParentPage() {
         );
         })}
       </div>
+      {pickerOpen && (
+        <div className="coach-modal-backdrop" onClick={() => setPickerOpen(false)}>
+          <div className="coach-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Select My Wrestlers">
+            <h4>Select wrestlers for {pickerOwnerLabel}</h4>
+            <div className="coach-modal-roster">
+              {teamWrestlers.length === 0 ? (
+                <div className="muted">No active wrestlers found.</div>
+              ) : (
+                teamWrestlers.map((wrestler) => {
+                  const checked = pickerSelection.includes(wrestler.id);
+                  return (
+                    <label key={wrestler.id} className="coach-modal-option">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => togglePickerWrestler(wrestler.id)}
+                      />
+                      <span>{wrestler.first} {wrestler.last}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setPickerSelection([...pickerSuggestedWrestlerIds])}
+                disabled={pickerSaving || pickerSuggestedWrestlerIds.length === 0}
+              >
+                Match Last Name
+              </button>
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setPickerSelection([])}
+                disabled={pickerSaving}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setPickerOpen(false)}
+                disabled={pickerSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="coach-btn"
+                onClick={() => { void savePickerSelection(); }}
+                disabled={pickerSaving}
+              >
+                {pickerSaving ? "Applying..." : "Apply"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </main>
   );
 }
+
+
 

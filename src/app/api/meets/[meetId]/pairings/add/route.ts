@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MIN_MATS, getEligibleMatIndexes } from "@/lib/assignMats";
+import { MIN_MATS, getEligibleMatIndexes, loadPeopleRuleMatMap, pickPeopleRuleMatIndex } from "@/lib/assignMats";
 import type { MatWrestler } from "@/lib/assignMats";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
@@ -32,6 +32,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   if (!meet) {
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
+  }
+  if (!meet.homeTeamId) {
+    return NextResponse.json({ error: "Meet must have a home team before adding bouts." }, { status: 400 });
   }
   const absent = await db.meetWrestlerStatus.findMany({
     where: { meetId, status: { in: ["NOT_COMING"] }, wrestlerId: { in: [body.redId, body.greenId] } },
@@ -82,7 +85,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
   const teamOrder = (() => {
     const order = new Map<string, number>();
-    const homeId = meet.homeTeamId ?? null;
+    const homeId = meet.homeTeamId;
     const allTeams = meet.meetTeams.map(mt => mt.team);
     const label = (team: (typeof allTeams)[number]) =>
       (team.symbol || team.name || team.id).toLowerCase();
@@ -225,7 +228,7 @@ async function assignMatToBout(meetId: string, boutId: string) {
 
   const bouts = await db.bout.findMany({
     where: { meetId },
-    select: { id: true, mat: true, originalMat: true, redId: true, greenId: true },
+    select: { id: true, mat: true, originalMat: true, redId: true, greenId: true, pairingScore: true },
   });
 
   const matCounts = new Array(numMats).fill(0);
@@ -234,6 +237,8 @@ async function assignMatToBout(meetId: string, boutId: string) {
     const matIdx = Math.max(1, Math.min(numMats, b.mat)) - 1;
     matCounts[matIdx] += 1;
   }
+  const peopleRuleTeamIds = homeTeamId ? [homeTeamId] : [];
+  const peopleRuleMats = await loadPeopleRuleMatMap(peopleRuleTeamIds, numMats);
 
   let homeTeamMatIdx: number | null = null;
   const homeWrestlerMat = new Map<string, number>();
@@ -266,17 +271,12 @@ async function assignMatToBout(meetId: string, boutId: string) {
   }
 
   const meetDate = new Date(meet.date);
-  const { indexes: eligibleMats } = getEligibleMatIndexes(
-    bout,
-    mats,
-    wMap,
-    meetDate,
-    homeTeamId,
-    homeWrestlerMat,
-    Boolean(homeTeamPrefs?.homeTeamPreferSameMat),
-  );
+  const peopleRulePick = pickPeopleRuleMatIndex(bout, peopleRuleMats, numMats);
   const red = getWrestler(bout.redId);
   const green = getWrestler(bout.greenId);
+  let redId = bout.redId;
+  let greenId = bout.greenId;
+  let pairingScore = bout.pairingScore;
 
   function matPenalty(matIdx: number) {
     const rule = rules[matIdx];
@@ -311,17 +311,39 @@ async function assignMatToBout(meetId: string, boutId: string) {
     return p;
   }
 
-  let bestMat = eligibleMats.length > 0
-    ? eligibleMats[0]
-    : matCounts.reduce((bestIdx, count, idx) => (count < matCounts[bestIdx] ? idx : bestIdx), 0);
-  if (eligibleMats.length > 0) {
-    let bestScore = Number.POSITIVE_INFINITY;
-    for (const m of eligibleMats) {
-      const penalty = matPenalty(m);
-      if (penalty < bestScore) {
-        bestScore = penalty;
-        bestMat = m;
+  let bestMat = peopleRulePick?.matIdx ?? 0;
+  let assignedByPeopleRule = peopleRulePick !== null;
+  let peopleRuleUserId: string | null = peopleRulePick?.userId ?? null;
+  if (peopleRulePick === null) {
+    const { indexes: eligibleMats } = getEligibleMatIndexes(
+      bout,
+      mats,
+      wMap,
+      meetDate,
+      homeTeamId,
+      homeWrestlerMat,
+      Boolean(homeTeamPrefs?.homeTeamPreferSameMat),
+    );
+    bestMat = eligibleMats.length > 0
+      ? eligibleMats[0]
+      : matCounts.reduce((bestIdx, count, idx) => (count < matCounts[bestIdx] ? idx : bestIdx), 0);
+    if (eligibleMats.length > 0) {
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (const m of eligibleMats) {
+        const penalty = matPenalty(m);
+        if (penalty < bestScore) {
+          bestScore = penalty;
+          bestMat = m;
+        }
       }
+    }
+    peopleRuleUserId = null;
+  } else if (homeTeamId) {
+    const bothHome = red?.teamId === homeTeamId && green?.teamId === homeTeamId;
+    if (bothHome && peopleRulePick.wrestlerId === bout.greenId) {
+      redId = bout.greenId;
+      greenId = bout.redId;
+      pairingScore = -bout.pairingScore;
     }
   }
 
@@ -338,6 +360,11 @@ async function assignMatToBout(meetId: string, boutId: string) {
       mat: bestMat + 1,
       order,
       originalMat: bout.originalMat ?? (bestMat + 1),
+      redId,
+      greenId,
+      pairingScore,
+      assignedByPeopleRule,
+      peopleRuleUserId,
     },
   });
 }

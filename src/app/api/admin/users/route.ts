@@ -9,7 +9,7 @@ const CreateSchema = z.object({
   username: z.string().trim().min(6),
   email: z.string().trim().email(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
-  name: z.string().optional(),
+  name: z.string().trim().min(1).max(120),
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).default("COACH"),
   teamId: z.string().nullable().optional(),
   password: z.string().min(1),

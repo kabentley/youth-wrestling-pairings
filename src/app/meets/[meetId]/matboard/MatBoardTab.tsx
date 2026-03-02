@@ -25,6 +25,14 @@ type Bout = {
   order?: number | null;
   originalMat?: number | null;
   locked?: boolean;
+  assignedByPeopleRule?: boolean;
+  peopleRuleUserId?: string | null;
+  peopleRuleUser?: {
+    id: string;
+    role?: string | null;
+    name?: string | null;
+    username?: string | null;
+  } | null;
 };
 const keyMat = (m: number) => String(m);
 const MAX_MATS = 6;
@@ -51,6 +59,12 @@ type MatboardStatusContext = {
   x: number;
   y: number;
   wrestlerId: string;
+};
+type MatboardPeopleRuleTooltip = {
+  x: number;
+  y: number;
+  detail: string;
+  accent: string;
 };
 
 function MatBoardWrestlerLabel({
@@ -117,13 +131,6 @@ function MatBoardWrestlerLabel({
   );
 }
 
-function MatBoardWrestlerStatus({ status }: { status?: "EARLY" | "LATE" | null }) {
-  if (status !== "EARLY" && status !== "LATE") return null;
-  return (
-    <span className={`wrestler-status ${status === "EARLY" ? "early" : "late"}`}>{status}</span>
-  );
-}
-
 export default function MatBoardTab({
   meetId,
   onMatAssignmentsChange,
@@ -148,6 +155,7 @@ export default function MatBoardTab({
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [lockedBoutIds, setLockedBoutIds] = useState<Set<string>>(new Set());
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
+  const [peopleRuleTooltip, setPeopleRuleTooltip] = useState<MatboardPeopleRuleTooltip | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -165,6 +173,7 @@ export default function MatBoardTab({
     height: number;
     numberBg: string;
     numberBorder: string;
+    numberPeopleRuleOutline?: string | null;
     number: string;
     entries: WrestlerEntry[];
   } | null>(null);
@@ -185,6 +194,17 @@ export default function MatBoardTab({
     img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
     dragImageRef.current = img;
   }, []);
+
+  useEffect(() => {
+    if (!peopleRuleTooltip) return;
+    const hide = () => setPeopleRuleTooltip(null);
+    document.addEventListener("pointerdown", hide);
+    document.addEventListener("touchstart", hide);
+    return () => {
+      document.removeEventListener("pointerdown", hide);
+      document.removeEventListener("touchstart", hide);
+    };
+  }, [peopleRuleTooltip]);
 
   const handleDragPreviewMove = (event: React.DragEvent<HTMLElement>) => {
     if (!draggingRef.current) return;
@@ -1033,6 +1053,30 @@ export default function MatBoardTab({
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
   }
 
+  function peopleRuleNumberOutlineColor(b: Bout): string | null {
+    if (!b.assignedByPeopleRule || !b.peopleRuleUserId) return null;
+    const role = b.peopleRuleUser?.role ?? null;
+    if (role === "COACH") return "#e17c00";
+    if (role === "TABLE_WORKER") return "#0f6fb6";
+    return "#556274";
+  }
+  function peopleRuleTooltipContent(b: Bout): { detail: string; accent: string } | null {
+    if (!b.assignedByPeopleRule || !b.peopleRuleUserId) return null;
+    const accent = peopleRuleNumberOutlineColor(b) ?? "#556274";
+    const role = b.peopleRuleUser?.role === "COACH"
+      ? "coach"
+      : b.peopleRuleUser?.role === "TABLE_WORKER"
+        ? "table worker"
+        : "staff";
+    const name = (b.peopleRuleUser?.name ?? "").trim();
+    const username = (b.peopleRuleUser?.username ?? "").trim();
+    const who = name || username || b.peopleRuleUserId;
+    return {
+      detail: `Mat assignment for ${role}: ${who}`,
+      accent,
+    };
+  }
+
   function buildPreviewEntries(b: Bout, targetMat: number, targetIndex: number) {
     const matLists = Array.from({ length: numMats }, (_, idx) => {
       const matNum = idx + 1;
@@ -1146,6 +1190,19 @@ export default function MatBoardTab({
     }
     return color;
   };
+  const statusEdgeColor = (status?: "EARLY" | "LATE" | null) => {
+    if (status === "EARLY") return "#c59b63";
+    if (status === "LATE") return "#6aaedb";
+    return "transparent";
+  };
+  const statusFillColor = (status?: "EARLY" | "LATE" | null) => {
+    if (status === "EARLY") return "#f3eadf";
+    if (status === "LATE") return "#dff1ff";
+    return null;
+  };
+  const matColumnCount = Math.max(1, numMats);
+  const matColumnMinWidth = 360;
+  const matGridMinWidth = matColumnCount * matColumnMinWidth + Math.max(0, matColumnCount - 1) * 10;
 
   return (
     <section
@@ -1160,10 +1217,12 @@ export default function MatBoardTab({
           box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 4px;
           position: relative;
           z-index: 0;
           font-size: 13px;
+          height: calc(100dvh);
+          overflow: hidden;
         }
         .matboard-tab.readonly {
           user-select: none;
@@ -1180,6 +1239,11 @@ export default function MatBoardTab({
           justify-content: space-between;
           gap: 12px;
           flex-wrap: wrap;
+          position: sticky;
+          top: 0;
+          z-index: 30;
+          background: #fff;
+          padding-bottom: 4px;
         }
         .matboard-header-left {
           display: flex;
@@ -1240,19 +1304,25 @@ export default function MatBoardTab({
           border-radius: 8px;
           color: #b00020;
         }
+        .mat-grid-scroll {
+          width: 100%;
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow: auto;
+          padding-right: 2px;
+        }
         .mat-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-          gap: 10px;
+          gap: 8px;
         }
         .mat-card {
           border: 1px solid #dfe3e8;
           border-radius: 10px;
-          padding: 4px;
+          padding: 3px;
           min-height: 140px;
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 1px;
           background: #fdfefe;
         }
         .mat-card h4 {
@@ -1261,6 +1331,13 @@ export default function MatBoardTab({
           justify-content: space-between;
           align-items: baseline;
           font-size: 16px;
+          font-weight: 600;
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          background: #fdfefe;
+          padding: 1px 0;
+          border-bottom: 1px solid #edf1f5;
         }
         .mat-number {
           display: inline-flex;
@@ -1323,24 +1400,25 @@ export default function MatBoardTab({
         }
         .bout-row span.number {
           font-size: 12px;
-          font-weight: 700;
+          font-weight: 600;
           color: #1d232b;
           text-align: center;
           border: 2px solid transparent;
           border-radius: 6px;
-          padding: 1px 0;
-          margin-right: 6px;
-          min-width: 34px;
+          padding: 0;
+          margin-right: 4px;
+          min-width: 30px;
         }
         .bout-row span {
           display: block;
         }
         .bout-row span[data-role="wrestler"] {
-          font-weight: 600;
+          font-weight: 500;
           font-size: 14px;
           cursor: pointer;
-          border-radius: 4px;
-          padding: 1px 3px;
+          border-radius: 3px;
+          padding: 0 2px;
+          line-height: 1.15;
           position: relative;
           flex: 1 1 auto;
           min-width: 0;
@@ -1351,35 +1429,15 @@ export default function MatBoardTab({
         .bout-row span.wrestler-cell {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 6px;
+          justify-content: flex-start;
+          gap: 4px;
           width: 100%;
           min-width: 0;
           border-radius: 4px;
-          padding: 1px 2px;
+          border: 2px solid transparent;
+          padding: 0;
           box-sizing: border-box;
           background: #fff;
-        }
-        .bout-row span.wrestler-status {
-          flex: 0 0 auto;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          align-self: stretch;
-          font-size: 10px;
-          font-weight: 700;
-          line-height: 1;
-          letter-spacing: 0.03em;
-          border-radius: 4px;
-          padding: 0 7px;
-          color: #1f2933;
-          white-space: nowrap;
-        }
-        .bout-row span.wrestler-status.early {
-          background: #f3eadf;
-        }
-        .bout-row span.wrestler-status.late {
-          background: #dff1ff;
         }
         .bout-row span[data-role="wrestler"].tight {
           font-size: 12px;
@@ -1390,7 +1448,7 @@ export default function MatBoardTab({
           top: 0;
           white-space: nowrap;
           font-size: 14px;
-          font-weight: 600;
+          font-weight: 500;
           visibility: hidden;
           pointer-events: none;
         }
@@ -1409,16 +1467,18 @@ export default function MatBoardTab({
           background: #fff;
           color: #384656;
           border-radius: 4px;
-          padding: 0 5px;
-          margin-right: 4px;
+          padding: 1 3px;
+          margin-right: 0px;
           font-size: 10px;
           font-weight: 700;
-          line-height: 1.5;
+          line-height: 1.3;
           cursor: pointer;
         }
         .bout-lock-btn.locked {
           background: #fff;
           border-color: transparent;
+          padding: 0 0px;
+          margin-right: 0px;
           color: #111;
         }
         .bout-lock-icon {
@@ -1496,8 +1556,8 @@ export default function MatBoardTab({
           background: #ffd6df;
         }
         @media (max-width: 700px) {
-        .mat-grid {
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        .matboard-tab {
+          height: calc(100dvh - 120px);
         }
         .mat-card {
           min-height: 120px;
@@ -1537,7 +1597,14 @@ export default function MatBoardTab({
         {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
       </div>
       {authMsg && <div className="notice">{authMsg}</div>}
-      <div className="mat-grid">
+      <div className="mat-grid-scroll">
+      <div
+        className="mat-grid"
+        style={{
+          gridTemplateColumns: `repeat(${matColumnCount}, minmax(${matColumnMinWidth}px, 1fr))`,
+          minWidth: `${matGridMinWidth}px`,
+        }}
+      >
         {Array.from({ length: numMats }, (_, idx) => idx + 1).map(matNum => {
           const list = mats[keyMat(matNum)] ?? [];
           const matColor = getMatColor(matNum);
@@ -1659,6 +1726,9 @@ export default function MatBoardTab({
       const previewNumberBg = getMatNumberBackground(originalMatColor);
       const previewNumberBorder =
         b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent";
+      const previewNumberPeopleRuleOutline = peopleRuleNumberOutlineColor(b);
+      const peopleRuleTip = peopleRuleTooltipContent(b);
+      const lockHint = isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder";
       return (
         <div
           key={b.id}
@@ -1689,6 +1759,7 @@ export default function MatBoardTab({
                   height: rect.height,
                   numberBg: previewNumberBg,
                   numberBorder: previewNumberBorder,
+                  numberPeopleRuleOutline: previewNumberPeopleRuleOutline,
                   number: previewNumber,
                   entries: previewEntries,
                 });
@@ -1721,10 +1792,11 @@ export default function MatBoardTab({
                             className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
                             role="button"
                             tabIndex={canEdit ? 0 : -1}
-                            title={isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder"}
+                            title={peopleRuleTip ? undefined : lockHint}
                             aria-label={isLockedBout ? "Unlock bout position" : "Lock bout position"}
                             aria-pressed={isLockedBout}
                             onMouseDown={e => {
+                              setPeopleRuleTooltip(null);
                               if (!canEdit) return;
                               e.preventDefault();
                               e.stopPropagation();
@@ -1734,7 +1806,34 @@ export default function MatBoardTab({
                               }
                               startLockDrag(b.id, matNum, index, !isLockedBout);
                             }}
-                            onMouseEnter={() => applyLockDrag(b.id, matNum)}
+                            onMouseEnter={e => {
+                              applyLockDrag(b.id, matNum);
+                              if (!peopleRuleTip) return;
+                              setPeopleRuleTooltip({
+                                ...peopleRuleTip,
+                                x: e.clientX,
+                                y: e.clientY,
+                              });
+                            }}
+                            onMouseMove={e => {
+                              if (!peopleRuleTip) return;
+                              setPeopleRuleTooltip(prev =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                    }
+                                  : {
+                                      ...peopleRuleTip,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                    },
+                              );
+                            }}
+                            onMouseLeave={() => {
+                              setPeopleRuleTooltip(null);
+                            }}
                             onClick={e => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -1753,6 +1852,9 @@ export default function MatBoardTab({
                             backgroundColor: getMatNumberBackground(originalMatColor),
                             borderColor:
                               b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent",
+                            boxShadow: previewNumberPeopleRuleOutline
+                              ? `0 0 0 2px ${previewNumberPeopleRuleOutline}`
+                              : undefined,
                             cursor: canEdit ? "pointer" : undefined,
                           }}
                         >
@@ -1800,7 +1902,10 @@ export default function MatBoardTab({
                           <span
                             key={entry.id}
                             className="wrestler-cell"
-                            style={{ background: entry.conflictBg ?? "#fff" }}
+                            style={{
+                              background: entry.conflictBg ?? statusFillColor(entry.status) ?? "#fff",
+                              borderColor: entry.conflictBg ? statusEdgeColor(entry.status) : "transparent",
+                            }}
                             onContextMenu={event => {
                               event.preventDefault();
                               event.stopPropagation();
@@ -1816,7 +1921,6 @@ export default function MatBoardTab({
                               onMouseEnter={() => setHighlightWrestlerId(entry.id)}
                               onMouseLeave={() => setHighlightWrestlerId(null)}
                             />
-                            <MatBoardWrestlerStatus status={entry.status} />
                           </span>
                         ))}
                       </div>
@@ -1828,6 +1932,7 @@ export default function MatBoardTab({
             </div>
           );
         })}
+      </div>
       </div>
       {dragPreview && (
         <div
@@ -1844,6 +1949,9 @@ export default function MatBoardTab({
                 style={{
                   backgroundColor: dragPreview.numberBg,
                   borderColor: dragPreview.numberBorder,
+                  boxShadow: dragPreview.numberPeopleRuleOutline
+                    ? `0 0 0 2px ${dragPreview.numberPeopleRuleOutline}`
+                    : undefined,
                 }}
               >
                 {dragPreview.number}
@@ -1852,7 +1960,10 @@ export default function MatBoardTab({
                 <span
                   key={entry.id}
                   className="wrestler-cell"
-                  style={{ background: entry.conflictBg ?? "#fff" }}
+                  style={{
+                    background: entry.conflictBg ?? statusFillColor(entry.status) ?? "#fff",
+                    borderColor: entry.conflictBg ? statusEdgeColor(entry.status) : "transparent",
+                  }}
                 >
                   <span
                     data-role="wrestler"
@@ -1861,13 +1972,46 @@ export default function MatBoardTab({
                   >
                     {entry.label}
                   </span>
-                  <MatBoardWrestlerStatus status={entry.status} />
                 </span>
               ))}
             </div>
           </div>
         </div>
       )}
+      {peopleRuleTooltip && (() => {
+        const tooltipWidth = 300;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth
+          ? Math.min(peopleRuleTooltip.x + 14, viewportWidth - tooltipWidth - 8)
+          : peopleRuleTooltip.x;
+        const top = viewportHeight
+          ? Math.min(peopleRuleTooltip.y + 14, viewportHeight - 120)
+          : peopleRuleTooltip.y;
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left,
+              top,
+              width: tooltipWidth,
+              zIndex: 1000,
+              background: "#fff",
+              border: "1px solid rgba(0,0,0,0.15)",
+              borderRadius: 10,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+              padding: "10px 12px",
+              pointerEvents: "none",
+              fontSize: 13,
+            }}
+            aria-hidden="true"
+          >
+            <div style={{ color: peopleRuleTooltip.accent, fontWeight: 700 }}>
+              {peopleRuleTooltip.detail}
+            </div>
+          </div>
+        );
+      })()}
       {statusContext && (() => {
         const wrestler = wMap[statusContext.wrestlerId];
         const label = wrestler ? `${wrestler.first} ${wrestler.last}` : statusContext.wrestlerId;

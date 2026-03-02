@@ -33,6 +33,11 @@ export default function UsersSection() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRow["role"]>("COACH");
   const [teamId, setTeamId] = useState<string>("");
+  const [usernameEdits, setUsernameEdits] = useState<Record<string, string>>({});
+  const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
+  const [nameEdits, setNameEdits] = useState<Record<string, string>>({});
+  const [savingIdentity, setSavingIdentity] = useState<Record<string, boolean>>({});
+  const [savingName, setSavingName] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,6 +61,15 @@ export default function UsersSection() {
       }
       const data = await uRes.json();
       setUsers(data.items ?? []);
+      setUsernameEdits(
+        Object.fromEntries((data.items ?? []).map((u: UserRow) => [u.id, u.username])),
+      );
+      setEmailEdits(
+        Object.fromEntries((data.items ?? []).map((u: UserRow) => [u.id, u.email])),
+      );
+      setNameEdits(
+        Object.fromEntries((data.items ?? []).map((u: UserRow) => [u.id, u.name ?? ""])),
+      );
       setTotal(Number(data.total ?? 0));
       setAdminCount(Number(data.adminCount ?? 0));
       if (tRes.ok) setTeams(await tRes.json());
@@ -88,7 +102,15 @@ export default function UsersSection() {
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, name, role, teamId: teamId || null, password: password || null }),
+      body: JSON.stringify({
+        username,
+        email,
+        phone,
+        name: name.trim(),
+        role,
+        teamId: teamId || null,
+        password: password || null,
+      }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -140,6 +162,99 @@ export default function UsersSection() {
     await load();
   }
 
+  async function setUserName(id: string, nextName: string) {
+    const current = users.find((user) => user.id === id);
+    if (!current) return;
+    const normalized = nextName.trim();
+    const currentNormalized = (current.name ?? "").trim();
+    if (normalized === currentNormalized) return;
+    setSavingName((prev) => ({ ...prev, [id]: true }));
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: normalized.length > 0 ? normalized : null }),
+    });
+    const data = await res.json().catch(() => null);
+    setSavingName((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to update name.");
+      await load();
+      return;
+    }
+    setUsers((prev) => prev.map((user) => (
+      user.id === id
+        ? { ...user, name: data?.name ?? null }
+        : user
+    )));
+    setNameEdits((prev) => ({ ...prev, [id]: data?.name ?? "" }));
+  }
+
+  async function setUserUsername(id: string, nextUsername: string) {
+    const current = users.find((user) => user.id === id);
+    if (!current) return;
+    const normalized = nextUsername.trim().toLowerCase();
+    const currentNormalized = current.username.trim().toLowerCase();
+    if (normalized === currentNormalized) return;
+    setSavingIdentity((prev) => ({ ...prev, [id]: true }));
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: normalized }),
+    });
+    const data = await res.json().catch(() => null);
+    setSavingIdentity((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to update username.");
+      await load();
+      return;
+    }
+    setUsers((prev) => prev.map((user) => (
+      user.id === id
+        ? { ...user, username: data?.username ?? normalized }
+        : user
+    )));
+    setUsernameEdits((prev) => ({ ...prev, [id]: data?.username ?? normalized }));
+  }
+
+  async function setUserEmail(id: string, nextEmail: string) {
+    const current = users.find((user) => user.id === id);
+    if (!current) return;
+    const normalized = nextEmail.trim().toLowerCase();
+    const currentNormalized = current.email.trim().toLowerCase();
+    if (normalized === currentNormalized) return;
+    setSavingIdentity((prev) => ({ ...prev, [id]: true }));
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalized }),
+    });
+    const data = await res.json().catch(() => null);
+    setSavingIdentity((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (!res.ok) {
+      setMsg(formatError(data?.error) ?? "Unable to update email.");
+      await load();
+      return;
+    }
+    setUsers((prev) => prev.map((user) => (
+      user.id === id
+        ? { ...user, email: data?.email ?? normalized }
+        : user
+    )));
+    setEmailEdits((prev) => ({ ...prev, [id]: data?.email ?? normalized }));
+  }
+
   async function resetPassword(id: string) {
     setMsg("");
     const newPass = prompt("Enter new password:");
@@ -185,6 +300,7 @@ export default function UsersSection() {
   const canCreateUser = Boolean(
     username.trim() &&
     email.trim() &&
+    name.trim() &&
     password.trim() &&
     (role === "ADMIN" || teamId.trim())
   );
@@ -260,7 +376,7 @@ export default function UsersSection() {
           <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
           <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+          <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <div className="admin-password-row">
             <input
               placeholder="Password"
@@ -321,10 +437,56 @@ export default function UsersSection() {
               <>
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td>{u.username}</td>
-                    <td>{u.email}</td>
+                    <td>
+                      <input
+                        value={usernameEdits[u.id] ?? ""}
+                        onChange={(e) => setUsernameEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                        onBlur={() => void setUserUsername(u.id, usernameEdits[u.id] ?? "")}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void setUserUsername(u.id, usernameEdits[u.id] ?? "");
+                          }
+                        }}
+                        placeholder="Username"
+                        disabled={Boolean(savingIdentity[u.id])}
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        value={emailEdits[u.id] ?? ""}
+                        onChange={(e) => setEmailEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                        onBlur={() => void setUserEmail(u.id, emailEdits[u.id] ?? "")}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void setUserEmail(u.id, emailEdits[u.id] ?? "");
+                          }
+                        }}
+                        placeholder="Email"
+                        disabled={Boolean(savingIdentity[u.id])}
+                        autoCapitalize="none"
+                        spellCheck={false}
+                      />
+                    </td>
                     <td>{u.phone ?? ""}</td>
-                    <td>{u.name}</td>
+                    <td>
+                      <input
+                        value={nameEdits[u.id] ?? ""}
+                        onChange={(e) => setNameEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                        onBlur={() => void setUserName(u.id, nameEdits[u.id] ?? "")}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void setUserName(u.id, nameEdits[u.id] ?? "");
+                          }
+                        }}
+                        placeholder="Name"
+                        disabled={Boolean(savingName[u.id])}
+                      />
+                    </td>
                     <td>
                       <select
                         value={u.role}

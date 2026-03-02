@@ -21,6 +21,8 @@ export type MeetCheckpointPayload = {
     order?: number | null;
     originalMat?: number | null;
     locked?: boolean;
+    assignedByPeopleRule?: boolean;
+    peopleRuleUserId?: string | null;
     source?: BoutSource;
     createdAt?: string;
   }[];
@@ -68,6 +70,8 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
         order: true,
         originalMat: true,
         locked: true,
+        assignedByPeopleRule: true,
+        peopleRuleUserId: true,
         source: true,
         createdAt: true,
       },
@@ -103,6 +107,8 @@ export async function buildMeetCheckpointPayload(meetId: string, name: string): 
       order: b.order ?? null,
       originalMat: b.originalMat ?? null,
       locked: b.locked,
+      assignedByPeopleRule: b.assignedByPeopleRule,
+      peopleRuleUserId: b.peopleRuleUserId ?? null,
       source: b.source ?? null,
       createdAt: b.createdAt.toISOString(),
     })),

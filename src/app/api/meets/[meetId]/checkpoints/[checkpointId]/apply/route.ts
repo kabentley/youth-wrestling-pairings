@@ -20,6 +20,8 @@ const BoutSchema = z.object({
   order: z.number().int().nullable().optional(),
   originalMat: z.number().int().nullable().optional(),
   locked: z.boolean().optional(),
+  assignedByPeopleRule: z.boolean().optional(),
+  peopleRuleUserId: z.string().nullable().optional(),
   source: z.string().nullable().optional(),
   createdAt: z.string().optional(),
 });
@@ -175,6 +177,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
           order: b.order ?? null,
           originalMat: b.originalMat ?? null,
           locked: b.locked ?? false,
+          assignedByPeopleRule: b.assignedByPeopleRule ?? false,
+          peopleRuleUserId: b.peopleRuleUserId ?? null,
           source: b.source ?? null,
           ...(b.createdAt ? { createdAt: new Date(b.createdAt) } : {}),
         })),

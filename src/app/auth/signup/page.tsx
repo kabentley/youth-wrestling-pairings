@@ -17,7 +17,8 @@ export default function SignUpPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [teamId, setTeamId] = useState("");
   const [teamMenuOpen, setTeamMenuOpen] = useState(false);
   const [teamTypeahead, setTeamTypeahead] = useState("");
@@ -171,8 +172,13 @@ export default function SignUpPage() {
       setMsgTone("error");
       return;
     }
-    if (!name.trim()) {
-      setMsg("Name is required.");
+    if (!firstName.trim()) {
+      setMsg("First Name is required.");
+      setMsgTone("error");
+      return;
+    }
+    if (!lastName.trim()) {
+      setMsg("Last Name is required.");
       setMsgTone("error");
       return;
     }
@@ -195,7 +201,15 @@ export default function SignUpPage() {
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, name, teamId, password }),
+      body: JSON.stringify({
+        username,
+        email,
+        phone,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        teamId,
+        password,
+      }),
     });
 
     if (!res.ok) {
@@ -224,6 +238,12 @@ export default function SignUpPage() {
 
   const selectedTeam = teams.find((team) => team.id === teamId) ?? null;
   const selectedTeamInitial = (selectedTeam?.symbol ?? selectedTeam?.name ?? "T").slice(0, 1).toUpperCase();
+  const welcomeFullName = `${firstName.trim()} ${lastName.trim()}`.trim();
+  const welcomeUsername = username.trim();
+  const welcomeTitleText =
+    welcomeFullName && welcomeUsername
+      ? `Welcome ${welcomeFullName} (@${welcomeUsername})`
+      : "Welcome";
 
   function openTeamMenu() {
     setTeamMenuOpen(true);
@@ -527,12 +547,11 @@ export default function SignUpPage() {
         }
         .welcome-title {
           margin: 0 0 12px;
-          font-size: 34px;
+          font-size: 30px;
           font-weight: 800;
           letter-spacing: 0.6px;
           line-height: 1.1;
           color: #0d3b66;
-          text-transform: uppercase;
         }
         .welcome-actions {
           display: flex;
@@ -612,12 +631,22 @@ export default function SignUpPage() {
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="name">Your name</label>
+                <label htmlFor="firstName">First Name</label>
                 <input
-                  id="name"
+                  id="firstName"
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="lastName">Last Name</label>
+                <input
+                  id="lastName"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
                   required
                 />
               </div>
@@ -780,7 +809,7 @@ export default function SignUpPage() {
         <div className="welcome-modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to your new account">
           <div className="welcome-modal">
             <p className="welcome-title">
-              <strong>Welcome</strong>
+              <strong>{welcomeTitleText}</strong>
             </p>
             {createdTeam && (
               <div className="welcome-team">
@@ -800,9 +829,14 @@ export default function SignUpPage() {
                   <div className="welcome-team-coach">
                     <div>
                       <strong>Head coach:</strong>{" "}
-                      {createdTeam.headCoach?.username
-                        ? `${createdTeam.headCoach.username} (${(createdTeam.headCoach.name ?? "").trim() || "Not provided"})`
-                        : "Not assigned"}
+                      {(() => {
+                        const coachName = (createdTeam.headCoach?.name ?? "").trim();
+                        const coachUsername = (createdTeam.headCoach?.username ?? "").trim();
+                        if (coachName && coachUsername) return `${coachName} (@${coachUsername})`;
+                        if (coachName) return coachName;
+                        if (coachUsername) return `@${coachUsername}`;
+                        return "Not assigned";
+                      })()}
                     </div>
                   </div>
                 </div>

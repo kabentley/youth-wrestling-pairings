@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -8,6 +8,10 @@ import { requireAdmin } from "@/lib/rbac";
 const PatchSchema = z.object({
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).optional(),
   teamId: z.string().nullable().optional(),
+  username: z.string().trim().min(6).refine((value) => !value.includes("@"), {
+    message: "Username must not include @",
+  }).optional(),
+  name: z.string().trim().max(120).nullable().optional(),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
 });
@@ -39,8 +43,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.email) {
     data.email = body.email.trim().toLowerCase();
   }
+  if (body.username !== undefined) {
+    data.username = body.username.trim().toLowerCase();
+  }
   if (body.phone) {
     data.phone = body.phone.trim();
+  }
+  if (body.name !== undefined) {
+    const trimmed = body.name?.trim();
+    data.name = trimmed && trimmed.length > 0 ? trimmed : null;
   }
   if (body.role) {
     data.role = body.role;
@@ -59,44 +70,58 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  const user = await db.$transaction(async (tx) => {
-    const updatedUser = await tx.user.update({
-      where: { id },
-      data,
-      select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
-    });
-    const currentHeadTeamRecord = await tx.team.findFirst({
-      where: { headCoachId: id },
-      select: { id: true },
-    });
-    if (finalRole === "COACH" && finalTeamId) {
-      if (currentHeadTeamRecord && currentHeadTeamRecord.id !== finalTeamId) {
+  let user;
+  try {
+    user = await db.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id },
+        data,
+        select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
+      });
+      const currentHeadTeamRecord = await tx.team.findFirst({
+        where: { headCoachId: id },
+        select: { id: true },
+      });
+      if (finalRole === "COACH" && finalTeamId) {
+        if (currentHeadTeamRecord && currentHeadTeamRecord.id !== finalTeamId) {
+          await tx.team.update({
+            where: { id: currentHeadTeamRecord.id },
+            data: { headCoachId: null },
+          });
+        }
+        const targetTeam = await tx.team.findUnique({
+          where: { id: finalTeamId },
+          select: { headCoachId: true },
+        });
+        if (!targetTeam?.headCoachId || targetTeam.headCoachId === id) {
+          await tx.team.update({
+            where: { id: finalTeamId },
+            data: { headCoachId: id },
+          });
+        }
+        return updatedUser;
+      }
+
+      if (currentHeadTeamRecord) {
         await tx.team.update({
           where: { id: currentHeadTeamRecord.id },
           data: { headCoachId: null },
         });
       }
-      const targetTeam = await tx.team.findUnique({
-        where: { id: finalTeamId },
-        select: { headCoachId: true },
-      });
-      if (!targetTeam?.headCoachId || targetTeam.headCoachId === id) {
-        await tx.team.update({
-          where: { id: finalTeamId },
-          data: { headCoachId: id },
-        });
-      }
       return updatedUser;
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "Username or email is already in use." },
+        { status: 409 },
+      );
     }
-
-    if (currentHeadTeamRecord) {
-      await tx.team.update({
-        where: { id: currentHeadTeamRecord.id },
-        data: { headCoachId: null },
-      });
-    }
-    return updatedUser;
-  });
+    throw error;
+  }
   return NextResponse.json(user);
 }
 

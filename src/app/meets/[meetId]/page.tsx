@@ -54,10 +54,20 @@ type Bout = {
   pairingScore: number;
   mat?: number | null;
   order?: number | null;
+  assignedByPeopleRule?: boolean;
+  peopleRuleUserId?: string | null;
   source?: string | null;
   createdAt?: string;
   sourceUser?: {
     id: string;
+    name?: string | null;
+    username?: string | null;
+    teamId?: string | null;
+    teamColor?: string | null;
+  } | null;
+  peopleRuleUser?: {
+    id: string;
+    role?: string | null;
     name?: string | null;
     username?: string | null;
     teamId?: string | null;
@@ -145,6 +155,8 @@ type CheckpointPayload = {
     mat?: number | null;
     order?: number | null;
     originalMat?: number | null;
+    assignedByPeopleRule?: boolean;
+    peopleRuleUserId?: string | null;
     source?: string | null;
     createdAt?: string;
   }[];

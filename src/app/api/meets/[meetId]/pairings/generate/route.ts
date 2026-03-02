@@ -42,6 +42,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
+  if (!meet.homeTeamId) {
+    return NextResponse.json({ error: "Meet must have a home team before generating pairings." }, { status: 400 });
+  }
   const maxAgeGapDays = Math.round((league?.maxAgeGapYears ?? 1) * 365);
   const maxWeightDiffPct = league?.maxWeightDiffPct ?? 10;
   const result = await generatePairingsForMeet(meetId, {
@@ -49,7 +52,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     maxAgeGapDays,
     maxWeightDiffPct,
     maxMatchesPerWrestler: settings.maxMatchesPerWrestler ?? meet.maxMatchesPerWrestler,
-    homeTeamId: meet.homeTeamId ?? null,
+    homeTeamId: meet.homeTeamId,
   });
   const createdCount = result.created;
   const targetMatches = settings.matchesPerWrestler;

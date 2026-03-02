@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -61,9 +61,76 @@ type TeamMember = {
   phone?: string | null;
   name?: string | null;
   role: "PARENT" | "COACH" | "TABLE_WORKER";
+  matNumber: number | null;
+  wrestlerIds: string[];
 };
 
 type UserRole = "PARENT" | "COACH" | "TABLE_WORKER" | "ADMIN";
+type TeamWrestler = { id: string; first: string; last: string };
+
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+const LAST_NAME_MATCH_THRESHOLD = 0.82;
+
+const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+
+const extractLastNameCandidates = (fullName?: string | null) => {
+  if (!fullName) return [] as string[];
+  const rawTokens = fullName
+    .trim()
+    .split(/\s+/)
+    .map(normalizeNameToken)
+    .filter(Boolean);
+  if (rawTokens.length === 0) return [] as string[];
+  const tokens = [...rawTokens];
+  if (tokens.length > 1 && NAME_SUFFIXES.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  if (tokens.length === 0) return [] as string[];
+
+  const last = tokens[tokens.length - 1];
+  const candidates = [last];
+  if (tokens.length >= 2) {
+    candidates.push(`${tokens[tokens.length - 2]}${last}`);
+  }
+  return Array.from(new Set(candidates));
+};
+
+const levenshteinDistance = (a: string, b: string) => {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+};
+
+const lastNameSimilarity = (a: string, b: string) => {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) {
+    return 0.92;
+  }
+  const dist = levenshteinDistance(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 0;
+  const ratio = 1 - dist / maxLen;
+  if (dist <= 1 && maxLen >= 5) return Math.max(ratio, 0.88);
+  if (dist === 2 && maxLen >= 7) return Math.max(ratio, 0.8);
+  return ratio;
+};
 
 const headerLinks = [
   { href: "/", label: "Home" },
@@ -91,10 +158,12 @@ export default function CoachMyTeamPage() {
   const [restGapInput, setRestGapInput] = useState("4");
   const [parents, setParents] = useState<TeamMember[]>([]);
   const [staff, setStaff] = useState<TeamMember[]>([]);
+  const [teamWrestlers, setTeamWrestlers] = useState<TeamWrestler[]>([]);
   const [headCoachId, setHeadCoachId] = useState<string | null>(null);
   const [savingTeam, setSavingTeam] = useState(false);
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
+  const [savingAssignments, setSavingAssignments] = useState<Record<string, boolean>>({});
   const [logoLoading, setLogoLoading] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string; symbol?: string | null }[]>([]);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
@@ -105,13 +174,19 @@ export default function CoachMyTeamPage() {
   const [messageStatus, setMessageStatus] = useState<"success" | "error" | null>(null);
   const [meetDefaultsMessage, setMeetDefaultsMessage] = useState<string | null>(null);
   const [meetDefaultsStatus, setMeetDefaultsStatus] = useState<"success" | "error" | null>(null);
+  const [rolesMessage, setRolesMessage] = useState<string | null>(null);
+  const [rolesMessageStatus, setRolesMessageStatus] = useState<"success" | "error" | null>(null);
   const [savingMeetDefaults, setSavingMeetDefaults] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "roles">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "roles" | "parents">("info");
+  const [wrestlerPickerMemberId, setWrestlerPickerMemberId] = useState<string | null>(null);
+  const [wrestlerPickerSelection, setWrestlerPickerSelection] = useState<string[]>([]);
+  const [matListboxMemberId, setMatListboxMemberId] = useState<string | null>(null);
   const tabs = [
     { key: "info", label: "Team Info" },
     { key: "meet", label: "Meet Setup" },
     { key: "mat", label: "Mat Setup" },
-    { key: "roles", label: "Team Roles" },
+    { key: "roles", label: "Staff" },
+    { key: "parents", label: "Parents" },
   ] as const;
 
   const sortStaff = (members: TeamMember[], headId: string | null) =>
@@ -219,6 +294,29 @@ export default function CoachMyTeamPage() {
     setRestGapInput(String(defaultRestGap));
   }, [defaultRestGap]);
 
+  useEffect(() => {
+    if (!wrestlerPickerMemberId && !matListboxMemberId) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeWrestlerPicker();
+        setMatListboxMemberId(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [wrestlerPickerMemberId, matListboxMemberId]);
+
+  useEffect(() => {
+    if (!matListboxMemberId) return;
+    const onPointerDown = (event: globalThis.MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".coach-mat-picker-cell")) return;
+      setMatListboxMemberId(null);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [matListboxMemberId]);
+
 
   const loadMatRules = async (id: string) => {
     const res = await fetch(`/api/teams/${id}/mat-rules`);
@@ -250,20 +348,49 @@ export default function CoachMyTeamPage() {
     if (!res.ok) {
       setParents([]);
       setStaff([]);
+      setTeamWrestlers([]);
       setHeadCoachId(null);
       return;
     }
     const payload = await res.json().catch(() => null);
     const resolvedHead = payload?.team?.headCoachId ?? null;
+    setSavingAssignments({});
+    const normalizeMember = (
+      item: Partial<TeamMember> & {
+        id: string;
+        username: string;
+      },
+      nextRole: TeamMember["role"],
+    ): TeamMember => ({
+      id: item.id,
+      username: item.username,
+      email: item.email ?? "",
+      name: item.name ?? null,
+      phone: item.phone ?? null,
+      role: nextRole,
+      matNumber: typeof item.matNumber === "number" ? item.matNumber : null,
+      wrestlerIds: Array.isArray(item.wrestlerIds)
+        ? item.wrestlerIds.filter((value): value is string => typeof value === "string")
+        : [],
+    });
     setHeadCoachId(resolvedHead);
-    setParents((payload?.parents ?? []).map((item: Omit<TeamMember, "role">) => ({ ...item, role: "PARENT" })));
+    setParents((payload?.parents ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "PARENT")));
     setStaff(sortStaff(
       [
-        ...(payload?.coaches ?? []).map((item: Omit<TeamMember, "role">) => ({ ...item, role: "COACH" })),
-        ...(payload?.tableWorkers ?? []).map((item: Omit<TeamMember, "role">) => ({ ...item, role: "TABLE_WORKER" })),
+        ...(payload?.coaches ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "COACH")),
+        ...(payload?.tableWorkers ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "TABLE_WORKER")),
       ],
       resolvedHead,
     ));
+    setTeamWrestlers(
+      Array.isArray(payload?.teamWrestlers)
+        ? payload.teamWrestlers
+          .filter((item: Partial<TeamWrestler>) => Boolean(item.id && item.first && item.last))
+          .map((item: TeamWrestler) => ({ id: item.id, first: item.first, last: item.last }))
+        : [],
+    );
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
   };
 
   const loadTeamDetails = async (id: string) => {
@@ -526,9 +653,158 @@ export default function CoachMyTeamPage() {
     setRules(prev => padRulesToCount(prev, CONFIGURED_MATS));
   };
 
+  const getLikelyWrestlerIds = (member: TeamMember) => {
+    const candidates = extractLastNameCandidates(member.name);
+    if (candidates.length === 0) return [] as string[];
+    return teamWrestlers
+      .filter((wrestler) => {
+        const wrestlerLast = normalizeNameToken(wrestler.last);
+        if (!wrestlerLast) return false;
+        const score = candidates.reduce((best, candidate) => {
+          const next = lastNameSimilarity(candidate, wrestlerLast);
+          return next > best ? next : best;
+        }, 0);
+        return score >= LAST_NAME_MATCH_THRESHOLD;
+      })
+      .map((wrestler) => wrestler.id);
+  };
+
+  const updateStaffMember = (memberId: string, updater: (member: TeamMember) => TeamMember) => {
+    setStaff((prev) =>
+      sortStaff(
+        prev.map((member) => (member.id === memberId ? updater(member) : member)),
+        headCoachId,
+      ),
+    );
+  };
+
+  const openMatPicker = (member: TeamMember) => {
+    setMatListboxMemberId((current) => (current === member.id ? null : member.id));
+  };
+
+  const closeMatPicker = () => {
+    setMatListboxMemberId(null);
+  };
+
+  const assignMatToMember = (memberId: string, matNumber: number | null) => {
+    const member = staff.find((item) => item.id === memberId);
+    if (!member) {
+      closeMatPicker();
+      return;
+    }
+    void saveStaffAssignments(memberId, matNumber, member.wrestlerIds);
+    closeMatPicker();
+  };
+
+  const getMatColor = (matNumber: number) => {
+    const matchedRule = rules.find((rule) => rule.matIndex === matNumber) ?? rules[matNumber - 1];
+    const trimmedColor = matchedRule.color?.trim();
+    return trimmedColor && trimmedColor.length > 0 ? trimmedColor : "#ffffff";
+  };
+
+  const openWrestlerPicker = (member: TeamMember) => {
+    setWrestlerPickerMemberId(member.id);
+    const suggested = member.wrestlerIds.length > 0 ? member.wrestlerIds : getLikelyWrestlerIds(member);
+    setWrestlerPickerSelection([...suggested]);
+  };
+
+  const closeWrestlerPicker = () => {
+    setWrestlerPickerMemberId(null);
+    setWrestlerPickerSelection([]);
+  };
+
+  const toggleWrestlerInPicker = (wrestlerId: string) => {
+    setWrestlerPickerSelection((prev) => {
+      if (prev.includes(wrestlerId)) {
+        return prev.filter((id) => id !== wrestlerId);
+      }
+      return [...prev, wrestlerId];
+    });
+  };
+
+  const applyWrestlerPicker = () => {
+    if (!wrestlerPickerMemberId) return;
+    const uniqueIds = Array.from(new Set(wrestlerPickerSelection));
+    const member =
+      staff.find((item) => item.id === wrestlerPickerMemberId)
+      ?? parents.find((item) => item.id === wrestlerPickerMemberId);
+    if (!member) {
+      closeWrestlerPicker();
+      return;
+    }
+    void saveStaffAssignments(member.id, member.matNumber, uniqueIds);
+    closeWrestlerPicker();
+  };
+
+  const saveStaffAssignments = async (
+    memberId: string,
+    matNumber: number | null,
+    wrestlerIds: string[],
+  ) => {
+    if (!teamId) return;
+    setSavingAssignments((prev) => ({ ...prev, [memberId]: true }));
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    try {
+      const res = await fetch(`/api/coach/parents/${memberId}/assignments${query}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matNumber,
+          wrestlerIds,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        setRolesMessage(err?.error ?? "Unable to save staff assignments.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      const payload = await res.json().catch(() => null);
+      const updated = payload?.updated;
+      if (!updated) {
+        setRolesMessage("Unable to save staff assignments.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      const nextMat = typeof updated.matNumber === "number" ? updated.matNumber : null;
+      const nextIds = Array.isArray(updated.wrestlerIds)
+        ? updated.wrestlerIds.filter((value: unknown): value is string => typeof value === "string")
+        : [];
+      if (staff.some((member) => member.id === memberId)) {
+        updateStaffMember(memberId, (current) => ({
+          ...current,
+          matNumber: nextMat,
+          wrestlerIds: nextIds,
+        }));
+      } else {
+        setParents((prev) =>
+          prev.map((member) => (
+            member.id === memberId
+              ? { ...member, matNumber: nextMat, wrestlerIds: nextIds }
+              : member
+          )),
+        );
+      }
+    } catch (error) {
+      console.error("Staff assignment save failed", error);
+      setRolesMessage("Unable to save staff assignments.");
+      setRolesMessageStatus("error");
+    } finally {
+      setSavingAssignments((prev) => {
+        const next = { ...prev };
+        delete next[memberId];
+        return next;
+      });
+    }
+  };
+
   const updateRole = async (member: TeamMember, nextRole: TeamMember["role"]) => {
     if (!teamId || member.role === nextRole) return;
     setSavingParent((prev) => ({ ...prev, [member.id]: true }));
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
     const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
     const res = await fetch(`/api/coach/parents/${member.id}/role${query}`, {
       method: "PATCH",
@@ -548,13 +824,16 @@ export default function CoachMyTeamPage() {
     const payload = await res.json().catch(() => null);
     const updated = payload?.updated;
     if (!updated) return;
+    const existing = [...parents, ...staff].find((item) => item.id === member.id);
     const normalized: TeamMember = {
       id: updated.id,
       username: updated.username,
       email: updated.email ?? "",
-      name: updated.name ?? "",
-      phone: updated.phone ?? "",
+      name: updated.name ?? null,
+      phone: updated.phone ?? null,
       role: updated.role,
+      matNumber: existing?.matNumber ?? null,
+      wrestlerIds: existing?.wrestlerIds ?? [],
     };
     setHeadCoachId((prev) => {
       if (normalized.role !== "COACH" || !normalized.id) return prev;
@@ -568,62 +847,42 @@ export default function CoachMyTeamPage() {
       const filtered = prev.filter(s => s.id !== normalized.id);
       return sortStaff(normalized.role === "PARENT" ? filtered : [...filtered, normalized], headCoachId);
     });
+    if (normalized.role === "PARENT") {
+      setSavingAssignments((prev) => {
+        const next = { ...prev };
+        delete next[normalized.id];
+        return next;
+      });
+    }
   };
 
-  const renderStaffActions = (member: TeamMember) => {
-    if (member.role === "COACH") {
-      const isHead = headCoachId && member.id === headCoachId;
-      if (isHead) return null;
-      return (
-        <div className="coach-staff-actions">
-          <button
-            type="button"
-            className="coach-btn-secondary"
-            disabled={Boolean(savingParent[member.id])}
-            onClick={() => void updateRole(member, "TABLE_WORKER")}
-          >
-            Change to Table Worker
-          </button>
-          <button
-            type="button"
-            className="coach-btn-secondary"
-            disabled={Boolean(savingParent[member.id])}
-            onClick={() => void updateRole(member, "PARENT")}
-          >
-            Change to Parent
-          </button>
-        </div>
-      );
-    }
-    if (member.role === "TABLE_WORKER") {
-      return (
-        <div className="coach-staff-actions">
-          <button
-            type="button"
-            disabled={Boolean(savingParent[member.id])}
-            onClick={() => void updateRole(member, "COACH")}
-          >
-            Promote to Assistant Coach
-          </button>
-          <button
-            type="button"
-            className="coach-btn-secondary"
-            disabled={Boolean(savingParent[member.id])}
-            onClick={() => void updateRole(member, "PARENT")}
-          >
-            Change to Parent
-          </button>
-        </div>
-      );
-    }
-    return null;
-  };
+  const isHeadCoach = (member: TeamMember) => member.role === "COACH" && member.id === headCoachId;
 
-  const getRoleLabel = (member: TeamMember) => {
-    if (member.role === "COACH") {
-      return member.id === headCoachId ? "Head Coach" : "Assistant Coach";
-    }
-    return "Table Worker";
+  const wrestlerById = new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler]));
+  const pickerMember = wrestlerPickerMemberId
+    ? staff.find((member) => member.id === wrestlerPickerMemberId)
+      ?? parents.find((member) => member.id === wrestlerPickerMemberId)
+      ?? null
+    : null;
+  const pickerSuggestedWrestlerIds = pickerMember ? getLikelyWrestlerIds(pickerMember) : [];
+  const rolesMessageIsError = rolesMessageStatus === "error";
+  const formatAssignedWrestlers = (member: TeamMember, wrestlerIds: string[]) => {
+    if (wrestlerIds.length === 0) return "None";
+    const memberLastNameCandidates = extractLastNameCandidates(member.name);
+    const names = wrestlerIds
+      .map((id) => wrestlerById.get(id))
+      .filter((wrestler): wrestler is TeamWrestler => Boolean(wrestler))
+      .map((wrestler) => {
+        if (memberLastNameCandidates.length === 0) return wrestler.first;
+        const wrestlerLast = normalizeNameToken(wrestler.last);
+        const score = memberLastNameCandidates.reduce((best, candidate) => {
+          const next = lastNameSimilarity(candidate, wrestlerLast);
+          return next > best ? next : best;
+        }, 0);
+        return score >= LAST_NAME_MATCH_THRESHOLD ? wrestler.first : `${wrestler.first} ${wrestler.last}`;
+      });
+    if (names.length === 0) return `${wrestlerIds.length} selected`;
+    return names.join(", ");
   };
 
   return (
@@ -642,7 +901,7 @@ export default function CoachMyTeamPage() {
               ) : null}
             </h1>
             <p className="coach-intro">
-              Configure your team’s public details, mat rules, and helper roles.
+              Configure your team's public details, mat rules, and helper roles.
             </p>
           </div>
           {role === "ADMIN" && (
@@ -677,7 +936,7 @@ export default function CoachMyTeamPage() {
             </button>
           ))}
         </div>
-        <div className="tab-body">
+        <div className={`tab-body${activeTab === "roles" ? " tab-body-roles" : ""}`}>
           {activeTab === "info" && (
           <section className="coach-card">
           <div className="coach-card-header">
@@ -893,7 +1152,7 @@ export default function CoachMyTeamPage() {
             disabled={savingMat || rules.length === 0 || !matDirty}
             style={{ marginTop: 12 }}
           >
-            {savingMat ? "Saving…" : "Save Mat Setup"}
+            {savingMat ? "Saving..." : "Save Mat Setup"}
           </button>
           </section>
           )}
@@ -985,73 +1244,289 @@ export default function CoachMyTeamPage() {
           )}
 
           {activeTab === "roles" && (
-        <section className="coach-card">
+        <section className="coach-card coach-roles-card">
           <div className="coach-card-header">
-            <h3>Team Roles</h3>
+            <h3>Staff</h3>
           </div>
-          {staff.length > 0 && (
-            <div className="coach-staff">
-              <ul>
-                {staff.map((member) => (
-                  <li key={member.id}>
-                    <div className="coach-staff-headline">
-                      <span className="coach-staff-username">{member.username}</span>
-                      <span className="coach-staff-role">{getRoleLabel(member)}</span>
-                    </div>
-                    <div className="coach-staff-contact">
-                      {member.name ? `${member.name} - ${member.email}` : member.email}
-                      {member.phone ? ` · ${member.phone}` : ""}
-                    </div>
-                    {renderStaffActions(member)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="coach-table">
+          <p
+            className={`info-message ${rolesMessageIsError ? "error" : "success"}${rolesMessage ? "" : " empty"}`}
+            role={rolesMessage ? "status" : undefined}
+          >
+            {rolesMessage ?? "\u00A0"}
+          </p>
+          <div className="coach-table coach-staff-table">
+            <div className="coach-staff-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Username</th>
                   <th>Name</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Actions</th>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Mat #</th>
+                  <th>Wrestlers</th>
                 </tr>
               </thead>
               <tbody>
-                {parents.map((parent) => (
-                  <tr key={parent.id}>
-                    <td>{parent.username}</td>
-                    <td>{parent.name ?? "—"}</td>
-                    <td>{parent.email}</td>
-                    <td>{parent.phone ?? "—"}</td>
+                {staff.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="coach-empty-cell">No coaches or table workers assigned yet.</td>
+                  </tr>
+                )}
+                {staff.map((member) => {
+                  const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
+                  return (
+                  <tr key={member.id}>
+                    <td>{member.name ?? "-"}</td>
+                    <td>{member.username}</td>
                     <td>
-                      <div className="coach-actions">
+                      <select
+                        className="coach-role-select"
+                        value={member.role}
+                        disabled={isHeadCoach(member) || Boolean(savingParent[member.id])}
+                        onChange={(event) => void updateRole(member, event.currentTarget.value as TeamMember["role"])}
+                      >
+                        {isHeadCoach(member) ? (
+                          <option value="COACH">Head Coach</option>
+                        ) : (
+                          <>
+                            <option value="COACH">Assistant Coach</option>
+                            <option value="TABLE_WORKER">Table Worker</option>
+                            <option value="PARENT">Parent</option>
+                          </>
+                        )}
+                      </select>
+                    </td>
+                    <td>
+                      <div className="coach-mat-picker-cell">
                         <button
-                          disabled={Boolean(savingParent[parent.id])}
-                          onClick={() => void updateRole(parent, "COACH")}
+                          type="button"
+                          className="coach-btn-secondary coach-mat-picker-btn"
+                          onClick={() => openMatPicker(member)}
+                          disabled={Boolean(savingAssignments[member.id])}
                         >
-                          Promote to Assistant Coach
+                          {member.matNumber ? (
+                            <>
+                              <span
+                                className="coach-mat-swatch"
+                                style={{ backgroundColor: getMatColor(member.matNumber) }}
+                                aria-hidden
+                              />
+                              <span>Mat {member.matNumber}</span>
+                            </>
+                          ) : (
+                            <span>No Mat</span>
+                          )}
+                          <span className="coach-mat-caret" aria-hidden>v</span>
                         </button>
-                        <button
-                          disabled={Boolean(savingParent[parent.id])}
-                          onClick={() => void updateRole(parent, "TABLE_WORKER")}
-                          className="coach-btn-secondary"
-                        >
-                          Make Table Worker
-                        </button>
+                        {matListboxMemberId === member.id && !savingAssignments[member.id] && (
+                          <div className="coach-mat-listbox" role="listbox" aria-label={`Select mat for ${member.name ?? member.username}`}>
+                            <button
+                              type="button"
+                              className={`coach-mat-option${member.matNumber === null ? " selected" : ""}`}
+                              onClick={() => assignMatToMember(member.id, null)}
+                            >
+                              <span>No Mat</span>
+                            </button>
+                            {Array.from({ length: numMats }, (_, idx) => idx + 1).map((matNumber) => (
+                              <button
+                                key={matNumber}
+                                type="button"
+                                className={`coach-mat-option${member.matNumber === matNumber ? " selected" : ""}`}
+                                onClick={() => assignMatToMember(member.id, matNumber)}
+                              >
+                                <span className="coach-mat-swatch" style={{ backgroundColor: getMatColor(matNumber) }} aria-hidden />
+                                <span>Mat {matNumber}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="coach-staff-wrestlers-row">
+                        <div className="coach-staff-assigned">
+                          {member.wrestlerIds.length > 0
+                            ? formatAssignedWrestlers(member, member.wrestlerIds)
+                            : suggestedWrestlerIds.length > 0
+                              ? `Suggested: ${formatAssignedWrestlers(member, suggestedWrestlerIds)}`
+                              : "None"}
+                        </div>
+                        <div className="coach-staff-wrestler-actions">
+                          {member.wrestlerIds.length === 0 && suggestedWrestlerIds.length > 0 && (
+                            <button
+                              type="button"
+                              className="coach-btn-secondary coach-picker-btn"
+                              disabled={Boolean(savingAssignments[member.id])}
+                              onClick={() => void saveStaffAssignments(member.id, member.matNumber, suggestedWrestlerIds)}
+                            >
+                              Use Last Name Match
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="coach-btn-secondary coach-picker-btn"
+                            disabled={Boolean(savingAssignments[member.id]) || teamWrestlers.length === 0}
+                            onClick={() => openWrestlerPicker(member)}
+                          >
+                            Select Wrestlers
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+            </div>
+          </div>
+        </section>
+          )}
+
+          {activeTab === "parents" && (
+        <section className="coach-card">
+          <div className="coach-card-header">
+            <h3>Parents</h3>
+          </div>
+          <p
+            className={`info-message ${rolesMessageIsError ? "error" : "success"}${rolesMessage ? "" : " empty"}`}
+            role={rolesMessage ? "status" : undefined}
+          >
+            {rolesMessage ?? "\u00A0"}
+          </p>
+          <div className="coach-table coach-staff-table">
+            <div className="coach-staff-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Wrestlers</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parents.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="coach-empty-cell">No parent accounts found.</td>
+                  </tr>
+                )}
+                {parents.map((parent) => {
+                  const suggestedWrestlerIds = parent.wrestlerIds.length === 0 ? getLikelyWrestlerIds(parent) : [];
+                  return (
+                  <tr key={parent.id}>
+                    <td>
+                      {parent.name ?? "-"}
+                    </td>
+                    <td>{parent.username}</td>
+                    <td>
+                      <select
+                        className="coach-role-select"
+                        value={parent.role}
+                        disabled={Boolean(savingParent[parent.id])}
+                        onChange={(event) => void updateRole(parent, event.currentTarget.value as TeamMember["role"])}
+                      >
+                        <option value="PARENT">Parent</option>
+                        <option value="COACH">Assistant Coach</option>
+                        <option value="TABLE_WORKER">Table Worker</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div className="coach-staff-wrestlers-row">
+                        <div className="coach-staff-assigned">
+                          {parent.wrestlerIds.length > 0
+                            ? formatAssignedWrestlers(parent, parent.wrestlerIds)
+                            : suggestedWrestlerIds.length > 0
+                              ? `Suggested: ${formatAssignedWrestlers(parent, suggestedWrestlerIds)}`
+                              : "None"}
+                        </div>
+                        <div className="coach-staff-wrestler-actions">
+                          {parent.wrestlerIds.length === 0 && suggestedWrestlerIds.length > 0 && (
+                            <button
+                              type="button"
+                              className="coach-btn-secondary coach-picker-btn"
+                              disabled={Boolean(savingAssignments[parent.id])}
+                              onClick={() => void saveStaffAssignments(parent.id, parent.matNumber, suggestedWrestlerIds)}
+                            >
+                              Use Last Name Match
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="coach-btn-secondary coach-picker-btn"
+                            disabled={Boolean(savingAssignments[parent.id]) || teamWrestlers.length === 0}
+                            onClick={() => openWrestlerPicker(parent)}
+                          >
+                            Select Wrestlers
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
           </div>
         </section>
           )}
         </div>
       </div>
+      {wrestlerPickerMemberId && pickerMember && (
+        <div className="coach-modal-backdrop" onClick={closeWrestlerPicker}>
+          <div className="coach-modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Select Wrestlers for: {pickerMember.name ?? pickerMember.username}</h4>
+            <div className="coach-modal-roster">
+              {teamWrestlers.map((wrestler) => {
+                const checked = wrestlerPickerSelection.includes(wrestler.id);
+                return (
+                  <label key={wrestler.id} className="coach-modal-option">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleWrestlerInPicker(wrestler.id)}
+                    />
+                    <span>{wrestler.first} {wrestler.last}</span>
+                  </label>
+                );
+              })}
+              {teamWrestlers.length === 0 && <div className="coach-empty-cell">No active wrestlers found.</div>}
+            </div>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setWrestlerPickerSelection([...pickerSuggestedWrestlerIds])}
+                disabled={pickerSuggestedWrestlerIds.length === 0}
+              >
+                Match Last Name
+              </button>
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setWrestlerPickerSelection([])}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={closeWrestlerPicker}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="coach-btn"
+                onClick={applyWrestlerPicker}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1180,8 +1655,29 @@ const coachStyles = `
     border-radius: 0 0 16px 16px;
     background: #fff;
   }
+  .tab-body.tab-body-roles {
+    min-height: calc(100dvh - 220px);
+    display: flex;
+    flex-direction: column;
+  }
   .tab-body > *:first-child {
     margin-top: 0;
+  }
+  .coach-roles-card {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .coach-roles-card .coach-staff-table {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .coach-roles-card .coach-staff-scroll {
+    flex: 1 1 auto;
+  }
+  .coach-roles-card .coach-staff-scroll table {
+    min-height: 100%;
   }
   .setup-grid {
     display: grid;
@@ -1486,7 +1982,7 @@ const coachStyles = `
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
-    overflow: hidden;
+    overflow: visible;
   }
   .coach-table table {
     width: 100%;
@@ -1501,6 +1997,162 @@ const coachStyles = `
   .coach-table th {
     background: #f7f9fb;
     font-weight: 600;
+  }
+  .coach-empty-cell {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .coach-staff-table {
+    overflow: visible;
+  }
+  .coach-staff-scroll {
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+  .coach-staff-scroll table {
+    min-width: 920px;
+  }
+  .coach-staff-table th,
+  .coach-staff-table td {
+    padding: 6px 8px;
+  }
+  .coach-role-select {
+    min-width: 150px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 14px;
+    background: #fff;
+  }
+  .coach-mat-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 88px;
+    justify-content: flex-start;
+  }
+  .coach-mat-picker-cell {
+    position: relative;
+    min-width: 92px;
+  }
+  .coach-mat-caret {
+    margin-left: auto;
+    font-size: 11px;
+    color: #444;
+  }
+  .coach-mat-swatch {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #111;
+    border-radius: 2px;
+    flex: 0 0 16px;
+  }
+  .coach-mat-listbox {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 112px;
+    max-height: 240px;
+    overflow: auto;
+    display: grid;
+    gap: 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 6px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+    z-index: 40;
+  }
+  .coach-staff-wrestlers-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .coach-staff-assigned {
+    margin-top: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    line-height: 1.35;
+    word-break: break-word;
+    flex: 1 1 auto;
+    min-width: 180px;
+  }
+  .coach-staff-wrestler-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+  .coach-picker-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .coach-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1200;
+  }
+  .coach-modal {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .coach-modal h4 {
+    margin: 0;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 18px;
+  }
+  .coach-modal-roster {
+    padding: 10px 16px;
+    overflow: auto;
+    display: grid;
+    gap: 8px;
+    max-height: 50vh;
+  }
+  .coach-modal-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .coach-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-top: 1px solid var(--line);
+    padding: 12px 16px;
+  }
+  .coach-mat-option {
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+  }
+  .coach-mat-option.selected {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .coach-actions {
     display: flex;
@@ -1558,8 +2210,19 @@ const coachStyles = `
     .coach-toolbar {
       flex-direction: column;
     }
+    .coach-modal {
+      width: 100%;
+    }
+    .coach-modal-roster {
+      max-height: 44vh;
+    }
+    .tab-body.tab-body-roles {
+      min-height: calc(100dvh - 170px);
+    }
   }
 `;
+
+
 
 
 

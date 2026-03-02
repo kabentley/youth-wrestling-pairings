@@ -263,11 +263,14 @@ model Bout {
   order     Int?
   originalMat Int?
   locked    Boolean  @default(false)
+  assignedByPeopleRule Boolean @default(false)
+  peopleRuleUserId String?
 
   source    String?
   createdAt DateTime @default(now())
 
   @@index([meetId])
+  @@index([peopleRuleUserId])
 // --- Results ---
 resultWinnerId String?
 resultWinner   Wrestler? @relation("BoutWinner", fields: [resultWinnerId], references: [id])
@@ -290,6 +293,7 @@ model User {
   username      String   @unique
   email         String
   phone         String
+  staffMatNumber Int?
   emailVerified DateTime?
   image         String?
   teamId        String?

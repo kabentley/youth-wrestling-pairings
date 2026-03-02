@@ -18,14 +18,31 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     orderBy: [{ mat: "asc" }, { order: "asc" }, { pairingScore: "asc" }],
   });
   const sourceIds = [...new Set(bouts.map(b => b.source).filter((id): id is string => Boolean(id)))];
+  const peopleRuleUserIds = [
+    ...new Set(bouts.map(b => b.peopleRuleUserId).filter((id): id is string => Boolean(id))),
+  ];
   const sourceUsers = sourceIds.length > 0
     ? await db.user.findMany({
       where: { id: { in: sourceIds } },
       select: { id: true, name: true, username: true, teamId: true, team: { select: { color: true } } },
     })
     : [];
+  const peopleRuleUsers = peopleRuleUserIds.length > 0
+    ? await db.user.findMany({
+      where: { id: { in: peopleRuleUserIds } },
+      select: { id: true, role: true, name: true, username: true, teamId: true, team: { select: { color: true } } },
+    })
+    : [];
   const sourceMap = new Map(sourceUsers.map(user => [user.id, {
     id: user.id,
+    name: user.name,
+    username: user.username,
+    teamId: user.teamId,
+    teamColor: user.team?.color ?? null,
+  }]));
+  const peopleRuleMap = new Map(peopleRuleUsers.map(user => [user.id, {
+    id: user.id,
+    role: user.role,
     name: user.name,
     username: user.username,
     teamId: user.teamId,
@@ -40,6 +57,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
   const enriched = filtered.map(b => ({
     ...b,
     sourceUser: b.source ? sourceMap.get(b.source) ?? null : null,
+    peopleRuleUser: b.peopleRuleUserId ? peopleRuleMap.get(b.peopleRuleUserId) ?? null : null,
   }));
   return NextResponse.json(enriched);
 }

@@ -50,7 +50,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const updated = await db.user.update({
     where: { id },
-    data: { role: parsed.data.role, teamId },
+    data: {
+      role: parsed.data.role,
+      teamId,
+      staffMatNumber: parsed.data.role === "PARENT" ? null : undefined,
+    },
     select: { id: true, username: true, role: true, email: true, name: true, phone: true },
   });
   if (parsed.data.role === "COACH" && !team.headCoachId) {

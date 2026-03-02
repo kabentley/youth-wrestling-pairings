@@ -11,7 +11,8 @@ const BodySchema = z.object({
   email: z.string().trim().email(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   teamId: z.string().trim().min(1),
-  name: z.string().trim().max(100).optional(),
+  firstName: z.string().trim().min(1).max(50),
+  lastName: z.string().trim().min(1).max(50),
   password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
 });
 
@@ -46,12 +47,6 @@ export async function GET(req: Request) {
   return NextResponse.json({ available: !existing });
 }
 
-function normalizeNullableString(value?: string | null) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed;
-}
-
 export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -62,7 +57,7 @@ export async function POST(req: Request) {
   const email = body.email.trim().toLowerCase();
   const phone = body.phone ? body.phone.trim() : "";
   const teamId = body.teamId.trim();
-  const normalizedName = normalizeNullableString(body.name);
+  const normalizedName = `${body.firstName.trim()} ${body.lastName.trim()}`;
 
   const existing = await db.user.findUnique({
     where: { username },
