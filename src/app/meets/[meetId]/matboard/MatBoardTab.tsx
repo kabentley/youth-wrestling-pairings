@@ -157,6 +157,7 @@ export default function MatBoardTab({
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
   const [peopleRuleTooltip, setPeopleRuleTooltip] = useState<MatboardPeopleRuleTooltip | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [syncingStaffMats, setSyncingStaffMats] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -177,11 +178,9 @@ export default function MatBoardTab({
     number: string;
     entries: WrestlerEntry[];
   } | null>(null);
-  const [compactMatColumns, setCompactMatColumns] = useState(false);
   const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
   const dropIndexRef = useRef<{ mat: number; index: number } | null>(null);
   const dragImageRef = useRef<HTMLImageElement | null>(null);
-  const matGridRef = useRef<HTMLDivElement | null>(null);
   const dragPreviewFrameRef = useRef<number | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
@@ -362,40 +361,6 @@ export default function MatBoardTab({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [statusContext]);
-
-  useEffect(() => {
-    const gridEl = matGridRef.current;
-    if (!gridEl) return;
-
-    const evaluate = () => {
-      const firstCard = gridEl.querySelector<HTMLElement>(".mat-card");
-      const cardWidth = firstCard?.getBoundingClientRect().width ?? 0;
-      const isCompact = cardWidth > 0 && cardWidth <= 390;
-      setCompactMatColumns(prev => (prev === isCompact ? prev : isCompact));
-    };
-
-    evaluate();
-    let frame = window.requestAnimationFrame(evaluate);
-    const onResize = () => evaluate();
-    window.addEventListener("resize", onResize);
-
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => evaluate());
-      observer.observe(gridEl);
-      const firstCard = gridEl.querySelector<HTMLElement>(".mat-card");
-      if (firstCard) observer.observe(firstCard);
-      return () => {
-        window.removeEventListener("resize", onResize);
-        window.cancelAnimationFrame(frame);
-        observer.disconnect();
-      };
-    }
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.cancelAnimationFrame(frame);
-    };
-  }, [numMats, bouts.length]);
 
   /**
    * Load the meet pairings and associated wrestlers, then stash them in state.
@@ -1032,17 +997,44 @@ export default function MatBoardTab({
     onMatAssignmentsChange?.();
   }
 
+  async function syncStaffDrivenMats() {
+    if (!canEdit || syncingStaffMats) return;
+    setSyncingStaffMats(true);
+    setMsg("Syncing staff mats...");
+    try {
+      if (dirtyRef.current) {
+        await saveOrder({ silent: true });
+      }
+      const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
+        method: "POST",
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMsg(payload?.error ?? "Unable to sync staff-driven mat assignments.");
+        return;
+      }
+      const moved = typeof payload?.moved === "number" ? payload.moved : 0;
+      const newlyAssigned = typeof payload?.newlyAssigned === "number" ? payload.newlyAssigned : 0;
+      const cleared = typeof payload?.cleared === "number" ? payload.cleared : 0;
+      const updated = typeof payload?.updated === "number" ? payload.updated : 0;
+      if (updated === 0) {
+        setMsg("No staff-driven mat changes found.");
+      } else {
+        setMsg(`Staff sync applied: moved ${moved}, assigned ${newlyAssigned}, cleared ${cleared}.`);
+      }
+      await load();
+      onMatAssignmentsChange?.();
+      setTimeout(() => setMsg(""), 1800);
+    } catch {
+      setMsg("Unable to sync staff-driven mat assignments.");
+    } finally {
+      setSyncingStaffMats(false);
+    }
+  }
+
   useEffect(() => {
     saveOrderRef.current = saveOrder;
   });
-
-  /**
-   * Render a team label that prefers the symbol and falls back to the name or ID.
-   */
-  function teamName(teamId: string) {
-    const team = teams.find(t => t.id === teamId);
-    return team?.symbol ?? teamId;
-  }
 
   /**
    * Return the stored color for a team, or a default fallback.
@@ -1082,8 +1074,8 @@ export default function MatBoardTab({
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
-    const rTxt = r ? `${r.first} ${r.last}${compactMatColumns ? "" : ` (${teamName(r.teamId)})`}` : b.redId;
-    const gTxt = g ? `${g.first} ${g.last}${compactMatColumns ? "" : ` (${teamName(g.teamId)})`}` : b.greenId;
+    const rTxt = r ? `${r.first} ${r.last}` : b.redId;
+    const gTxt = g ? `${g.first} ${g.last}` : b.greenId;
     const rColor = r ? teamTextColor(r.teamId) : "";
     const gColor = g ? teamTextColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
@@ -1237,7 +1229,7 @@ export default function MatBoardTab({
     return null;
   };
   const matColumnCount = Math.max(1, numMats);
-  const matColumnMinWidth = 300;
+  const matColumnMinWidth = 280;
   const matGridMinWidth = matColumnCount * matColumnMinWidth + Math.max(0, matColumnCount - 1) * 10;
 
   return (
@@ -1360,6 +1352,22 @@ export default function MatBoardTab({
           flex-direction: column;
           gap: 1px;
           background: #fdfefe;
+          container-type: inline-size;
+        }
+        .mat-card-actions {
+          display: inline-flex;
+          gap: 4px;
+          align-items: center;
+        }
+        .mat-lock-toggle-btn {
+          font-size: 12px;
+          padding: 0 8px;
+        }
+        @container (max-width: 360px) {
+          .mat-lock-toggle-btn {
+            font-size: 10px;
+            padding: 0 5px;
+          }
         }
         .mat-card h4 {
           margin: 0;
@@ -1623,6 +1631,15 @@ export default function MatBoardTab({
                 Show wrestlers with only one match in <em>italics</em>
               </span>
             </label>
+            <button
+              type="button"
+              className="nav-btn reorder-inline-btn"
+              onClick={() => void syncStaffDrivenMats()}
+              disabled={!canEdit || syncingStaffMats}
+              style={{ fontSize: 12, padding: "2px 10px" }}
+            >
+              {syncingStaffMats ? "Syncing Staff..." : "Sync Staff Mats"}
+            </button>
           </div>
           <div className="matboard-legend">
           <span style={{ fontWeight: 600 }}>Legend:</span>
@@ -1636,7 +1653,6 @@ export default function MatBoardTab({
       <div className="mat-grid-scroll">
       <div
         className="mat-grid"
-        ref={matGridRef}
         style={{
           gridTemplateColumns: `repeat(${matColumnCount}, minmax(${matColumnMinWidth}px, 1fr))`,
           minWidth: `${matGridMinWidth}px`,
@@ -1677,20 +1693,18 @@ export default function MatBoardTab({
                     aria-hidden="true"
                   />
                 </span>
-                <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                <div className="mat-card-actions">
                   <button
-                    className="nav-btn reorder-inline-btn"
+                    className="nav-btn reorder-inline-btn mat-lock-toggle-btn"
                     onClick={() => lockAllOnMat(matNum)}
                     disabled={!canEdit || list.length === 0 || allLocked}
-                    style={{ fontSize: 12, padding: "0px 8px" }}
                   >
                     Lock All
                   </button>
                   <button
-                    className="nav-btn reorder-inline-btn"
+                    className="nav-btn reorder-inline-btn mat-lock-toggle-btn"
                     onClick={() => unlockAllOnMat(matNum)}
                     disabled={!canEdit || !anyLocked}
-                    style={{ fontSize: 12, padding: "0px 8px" }}
                   >
                     Unlock All
                   </button>

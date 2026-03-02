@@ -167,21 +167,21 @@ export async function loadPeopleRuleMatMap(teamIds: string[], numMats: number): 
   return out;
 }
 
-export function pickPeopleRuleMatIndex(
+function collectPeopleRuleCandidates(
   bout: { redId: string; greenId: string },
   peopleRuleMats: PeopleRuleMatMap,
   numMats: number,
-): PeopleRuleCandidate | null {
+): PeopleRuleCandidate[] {
   const redEntries = peopleRuleMats.get(bout.redId) ?? [];
   const greenEntries = peopleRuleMats.get(bout.greenId) ?? [];
-  if (redEntries.length === 0 && greenEntries.length === 0) return null;
+  if (redEntries.length === 0 && greenEntries.length === 0) return [];
 
   let candidates: PeopleRuleCandidate[] = [];
   if (redEntries.length > 0 && greenEntries.length > 0) {
     const greenMats = new Set(greenEntries.map((entry) => entry.matIdx));
     const redMats = new Set(redEntries.map((entry) => entry.matIdx));
     const sharedMats = Array.from(redMats).filter((matIdx) => greenMats.has(matIdx));
-    if (sharedMats.length === 0) return null;
+    if (sharedMats.length === 0) return [];
     for (const matIdx of sharedMats) {
       redEntries.forEach((entry) => {
         if (entry.matIdx === matIdx) candidates.push(entry);
@@ -195,15 +195,198 @@ export function pickPeopleRuleMatIndex(
   }
 
   const seen = new Set<string>();
+  const out: PeopleRuleCandidate[] = [];
   for (const entry of candidates) {
     if (entry.matIdx < 0 || entry.matIdx >= numMats) continue;
     const key = `${entry.matIdx}:${entry.userId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    // People rule precedence: first candidate in deterministic list always wins.
-    return entry;
+    out.push(entry);
   }
-  return null;
+  return out;
+}
+
+export function pickPeopleRuleMatIndex(
+  bout: { redId: string; greenId: string },
+  peopleRuleMats: PeopleRuleMatMap,
+  numMats: number,
+): PeopleRuleCandidate | null {
+  const candidates = collectPeopleRuleCandidates(bout, peopleRuleMats, numMats);
+  if (candidates.length === 0) return null;
+  // People rule precedence: first candidate in deterministic list always wins.
+  return candidates[0] ?? null;
+}
+
+export type SyncPeopleRuleAssignmentsResult = {
+  processed: number;
+  updated: number;
+  moved: number;
+  newlyAssigned: number;
+  cleared: number;
+  affectedMats: number[];
+};
+
+export async function syncPeopleRuleAssignmentsForMeet(meetId: string): Promise<SyncPeopleRuleAssignmentsResult> {
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { homeTeamId: true, numMats: true, deletedAt: true },
+  });
+  if (!meet || meet.deletedAt || !meet.homeTeamId) {
+    return { processed: 0, updated: 0, moved: 0, newlyAssigned: 0, cleared: 0, affectedMats: [] };
+  }
+
+  const numMats = Math.max(MIN_MATS, meet.numMats);
+  const peopleRuleMats = await loadPeopleRuleMatMap([meet.homeTeamId], numMats);
+
+  const bouts = await db.bout.findMany({
+    where: { meetId },
+    select: {
+      id: true,
+      redId: true,
+      greenId: true,
+      mat: true,
+      order: true,
+      assignedByPeopleRule: true,
+      peopleRuleUserId: true,
+    },
+    orderBy: [
+      { mat: "asc" },
+      { order: "asc" },
+      { id: "asc" },
+    ],
+  });
+  if (bouts.length === 0) {
+    return { processed: 0, updated: 0, moved: 0, newlyAssigned: 0, cleared: 0, affectedMats: [] };
+  }
+
+  type AssignmentUpdate = {
+    assignedByPeopleRule: boolean;
+    peopleRuleUserId: string | null;
+  };
+  const assignmentUpdates = new Map<string, AssignmentUpdate>();
+  const movedBoutIds = new Set<string>();
+  const targetMatByBoutId = new Map<string, number>();
+
+  let newlyAssigned = 0;
+  let cleared = 0;
+
+  for (const bout of bouts) {
+    const currentAssigned = bout.assignedByPeopleRule && Boolean(bout.peopleRuleUserId);
+    const currentUserId = currentAssigned ? bout.peopleRuleUserId : null;
+    const candidates = collectPeopleRuleCandidates(bout, peopleRuleMats, numMats);
+
+    // Preserve current owner when still eligible; otherwise clear. For unowned bouts, assign deterministic top candidate.
+    const nextPick = currentUserId
+      ? candidates.find((candidate) => candidate.userId === currentUserId) ?? null
+      : (candidates[0] ?? null);
+    const nextAssigned = nextPick !== null;
+    const nextUserId = nextPick?.userId ?? null;
+
+    if (!currentUserId && nextUserId) newlyAssigned += 1;
+    if (currentUserId && !nextUserId) cleared += 1;
+
+    if (bout.assignedByPeopleRule !== nextAssigned || (bout.peopleRuleUserId ?? null) !== nextUserId) {
+      assignmentUpdates.set(bout.id, {
+        assignedByPeopleRule: nextAssigned,
+        peopleRuleUserId: nextUserId,
+      });
+    }
+
+    if (!nextPick) continue;
+    const targetMat = nextPick.matIdx + 1;
+    if (bout.mat === targetMat) continue;
+    movedBoutIds.add(bout.id);
+    targetMatByBoutId.set(bout.id, targetMat);
+  }
+
+  const mats = new Map<number, string[]>();
+  for (let mat = 1; mat <= numMats; mat += 1) mats.set(mat, []);
+  for (const bout of bouts) {
+    if (!bout.mat || bout.mat < 1 || bout.mat > numMats) continue;
+    mats.get(bout.mat)?.push(bout.id);
+  }
+
+  for (const mat of mats.keys()) {
+    const kept = (mats.get(mat) ?? []).filter((id) => !movedBoutIds.has(id));
+    mats.set(mat, kept);
+  }
+
+  const movedByTarget = new Map<number, string[]>();
+  const movedSorted = bouts
+    .filter((bout) => movedBoutIds.has(bout.id))
+    .sort((a, b) => {
+      const matA = a.mat ?? Number.MAX_SAFE_INTEGER;
+      const matB = b.mat ?? Number.MAX_SAFE_INTEGER;
+      if (matA !== matB) return matA - matB;
+      const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.id.localeCompare(b.id);
+    });
+  for (const bout of movedSorted) {
+    const targetMat = targetMatByBoutId.get(bout.id);
+    if (!targetMat) continue;
+    const queue = movedByTarget.get(targetMat) ?? [];
+    queue.push(bout.id);
+    movedByTarget.set(targetMat, queue);
+  }
+  for (const [targetMat, ids] of movedByTarget.entries()) {
+    const next = [...(mats.get(targetMat) ?? []), ...ids];
+    mats.set(targetMat, next);
+  }
+
+  const orderUpdates = new Map<string, { mat: number; order: number }>();
+  const affectedMats = new Set<number>();
+  const byId = new Map(bouts.map((bout) => [bout.id, bout]));
+  for (const [mat, ids] of mats.entries()) {
+    ids.forEach((id, index) => {
+      const bout = byId.get(id);
+      if (!bout) return;
+      const nextOrder = index + 1;
+      if (bout.mat !== mat || bout.order !== nextOrder) {
+        orderUpdates.set(id, { mat, order: nextOrder });
+        affectedMats.add(mat);
+        if (bout.mat && bout.mat >= 1 && bout.mat <= numMats) affectedMats.add(bout.mat);
+      }
+    });
+  }
+
+  const updateIds = new Set<string>([...assignmentUpdates.keys(), ...orderUpdates.keys()]);
+  if (updateIds.size === 0) {
+    return {
+      processed: bouts.length,
+      updated: 0,
+      moved: 0,
+      newlyAssigned,
+      cleared,
+      affectedMats: [],
+    };
+  }
+
+  await db.$transaction(async (tx) => {
+    for (const boutId of updateIds) {
+      const assignment = assignmentUpdates.get(boutId);
+      const order = orderUpdates.get(boutId);
+      const movedTargetMat = targetMatByBoutId.get(boutId);
+      await tx.bout.update({
+        where: { id: boutId },
+        data: {
+          ...(assignment ?? {}),
+          ...(order ?? {}),
+          ...(movedTargetMat ? { originalMat: movedTargetMat } : {}),
+        },
+      });
+    }
+  });
+
+  return {
+    processed: bouts.length,
+    updated: updateIds.size,
+    moved: movedBoutIds.size,
+    newlyAssigned,
+    cleared,
+    affectedMats: Array.from(affectedMats).sort((a, b) => a - b),
+  };
 }
 
 /**
