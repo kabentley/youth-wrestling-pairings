@@ -10,10 +10,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ teamId:
   const { userId } = await requireSession();
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { role: true, teamId: true },
+    select: { id: true, role: true, teamId: true },
   });
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(user.role === "ADMIN" || (user.role === "COACH" && user.teamId === teamId))) {
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, headCoachId: true },
+  });
+  if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  const canEdit = user.role === "ADMIN" || (user.role === "COACH" && user.teamId === teamId && team.headCoachId === user.id);
+  if (!canEdit) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const form = await req.formData();
@@ -43,14 +49,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ team
   const { userId } = await requireSession();
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { role: true, teamId: true },
+    select: { id: true, role: true, teamId: true },
   });
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(user.role === "ADMIN" || (user.role === "COACH" && user.teamId === teamId))) {
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, headCoachId: true },
+  });
+  if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  const canEdit = user.role === "ADMIN" || (user.role === "COACH" && user.teamId === teamId && team.headCoachId === user.id);
+  if (!canEdit) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const team = await db.team.findUnique({ where: { id: teamId }, select: { id: true } });
-  if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
 
   await db.team.update({ where: { id: teamId }, data: { logoData: null, logoType: null } });
   return NextResponse.json({ ok: true });

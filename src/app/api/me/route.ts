@@ -17,17 +17,18 @@ export async function GET() {
       username: true,
       role: true,
       teamId: true,
-      team: { select: { name: true, symbol: true, logoData: true, color: true } },
+      team: { select: { name: true, symbol: true, logoData: true, color: true, headCoachId: true } },
     },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
   const teamLogoUrl = user.teamId && user.team?.logoData ? `/api/teams/${user.teamId}/logo/file` : null;
   const teamInfo = user.team
     ? {
-        name: user.team.name,
-        symbol: user.team.symbol,
-        color: user.team.color,
-      }
+      name: user.team.name,
+      symbol: user.team.symbol,
+      color: user.team.color,
+      headCoachId: user.team.headCoachId ?? null,
+    }
     : null;
   return NextResponse.json({
     id: user.id,

@@ -2242,11 +2242,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           --warn: #b00020;
         }
         .meet-detail {
+          --meet-side-pad: 22px;
+          --tab-side-gap: 4px;
           font-family: "Source Sans 3", Arial, sans-serif;
           color: var(--ink);
           background: var(--bg);
           min-height: 100vh;
-          padding: 28px 22px 40px;
+          padding: 28px var(--meet-side-pad) 40px;
         }
         .meet-detail a {
           color: var(--ink);
@@ -2340,6 +2342,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           justify-content: flex-start;
           gap: 4px;
           margin-bottom: 0;
+          margin-left: calc(var(--tab-side-gap) - var(--meet-side-pad));
+          margin-right: calc(var(--tab-side-gap) - var(--meet-side-pad));
           padding: 0 8px;
           background: #f1f3f7;
           border: 1px solid #d0d5df;
@@ -2383,6 +2387,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .tab-body {
           margin-top: -1px;
+          margin-left: calc(var(--tab-side-gap) - var(--meet-side-pad));
+          margin-right: calc(var(--tab-side-gap) - var(--meet-side-pad));
           padding-top: 0;
           border: 1px solid #d0d5df;
           border-top: none;
@@ -5144,7 +5150,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         )}
 
         {activeTab === "matboard" && (
-          <section className="matboard-tab">
+          <section>
             {meetStatus === "PUBLISHED" && (
               <div className="notice">
                 Meet has been published, so matches may not be changed. Reopen as Draft to make changes.

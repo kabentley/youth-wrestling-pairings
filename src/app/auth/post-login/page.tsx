@@ -15,7 +15,7 @@ export default async function PostLoginPage({
 
   const params = await searchParams;
   const role = (session.user as any)?.role as string | undefined;
-  const defaultPath = "/rosters";
+  const defaultPath = "/";
   const raw = typeof params?.callbackUrl === "string" ? params.callbackUrl : defaultPath;
   const safe = raw.startsWith("/") ? raw : defaultPath;
 
@@ -23,8 +23,8 @@ export default async function PostLoginPage({
     redirect("/");
   }
 
-  if (role === "PARENT") {
-    redirect("/parent");
+  if (role === "PARENT" || role === "TABLE_WORKER") {
+    redirect("/");
   }
 
   redirect(safe);

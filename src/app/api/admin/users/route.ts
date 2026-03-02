@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/rbac";
 
 const CreateSchema = z.object({
   username: z.string().trim().min(6),
-  email: z.string().trim().email(),
+  email: z.string().trim().email().optional().or(z.literal("")),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   name: z.string().trim().min(1).max(120),
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).default("COACH"),
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
   const body = parsed.data;
-  const email = body.email.trim().toLowerCase();
+  const email = body.email ? body.email.trim().toLowerCase() : "";
   const phone = body.phone ? body.phone.trim() : "";
   if (body.role === "COACH" && !body.teamId) {
     return NextResponse.json({ error: "Coaches must be assigned a team" }, { status: 400 });
@@ -99,19 +99,21 @@ export async function POST(req: Request) {
     },
     select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
   });
-  try {
-    const team = body.teamId
-      ? await db.team.findUnique({ where: { id: body.teamId }, select: { name: true, symbol: true } })
-      : null;
-    await sendWelcomeEmail(req, {
-      email,
-      username: user.username,
-      tempPassword,
-      teamLabel: team ? `${team.name} (${team.symbol})`.trim() : null,
-    });
-  } catch {
-    if (process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "User created, but the welcome email could not be sent." }, { status: 201 });
+  if (email) {
+    try {
+      const team = body.teamId
+        ? await db.team.findUnique({ where: { id: body.teamId }, select: { name: true, symbol: true } })
+        : null;
+      await sendWelcomeEmail(req, {
+        email,
+        username: user.username,
+        tempPassword,
+        teamLabel: team ? `${team.name} (${team.symbol})`.trim() : null,
+      });
+    } catch {
+      if (process.env.NODE_ENV === "production") {
+        return NextResponse.json({ error: "User created, but the welcome email could not be sent." }, { status: 201 });
+      }
     }
   }
   return NextResponse.json(user);

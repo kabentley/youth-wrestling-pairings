@@ -299,7 +299,6 @@ export default function UsersSection() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canCreateUser = Boolean(
     username.trim() &&
-    email.trim() &&
     name.trim() &&
     password.trim() &&
     (role === "ADMIN" || teamId.trim())
@@ -374,7 +373,7 @@ export default function UsersSection() {
         <h3>Create New User</h3>
         <div className="admin-grid">
           <input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
           <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <div className="admin-password-row">

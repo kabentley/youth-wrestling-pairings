@@ -38,10 +38,11 @@ export default function AppHeader({
   disableCoachShortcut = false,
 }: Props) {
   const [user, setUser] = useState<{
+    id?: string;
     username: string;
     role: Role;
     teamId?: string | null;
-    team?: { name?: string | null; symbol?: string | null; color?: string | null } | null;
+    team?: { name?: string | null; symbol?: string | null; color?: string | null; headCoachId?: string | null } | null;
     teamLogoUrl?: string | null;
   } | null>(null);
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string; symbol?: string | null; color?: string | null }[]>([]);
@@ -55,6 +56,7 @@ export default function AppHeader({
       const json = res.ok ? await res.json() : null;
       if (!active || !json?.username || !json?.role) return;
         setUser({
+          id: json.id,
           username: json.username,
           role: json.role,
           teamId: json.teamId ?? null,
@@ -148,6 +150,8 @@ export default function AppHeader({
   const visibleLinks = user
     ? allLinks.filter(link => {
         if (link.roles && !link.roles.includes(user.role)) return false;
+        if (link.href === "/rosters" && (user.role === "TABLE_WORKER" || user.role === "PARENT")) return false;
+        if (link.href === "/meets" && user.role === "TABLE_WORKER") return true;
         if (!link.minRole) return true;
         return roleOrder[user.role] >= roleOrder[link.minRole];
       })
@@ -159,6 +163,9 @@ export default function AppHeader({
           link.href !== "/account" &&
           link.href !== "/parent",
       );
+  const roleLabel = user?.role === "COACH" && user.team?.headCoachId && user.id === user.team.headCoachId
+    ? "HEAD COACH"
+    : user?.role;
   const accountLink = user ? visibleLinks.find(link => link.href === "/account") : null;
   const myWrestlersLink = user ? visibleLinks.find(link => link.href === "/parent") : null;
   const mainLinks = (
@@ -337,7 +344,7 @@ export default function AppHeader({
           <>
             <div className="app-header-user-info">
               <span>
-                User: {user.username}, Role: {user.role}
+                User: {user.username}, Role: {roleLabel}
               </span>
               {user.team ? (
                 <span className="app-header-team-chip">

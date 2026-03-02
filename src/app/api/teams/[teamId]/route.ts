@@ -68,17 +68,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
 
     const user = await db.user.findUnique({
       where: { id: userId },
-      select: { role: true, teamId: true },
+      select: { id: true, role: true, teamId: true },
     });
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const isAdmin = user.role === "ADMIN";
-    const isTeamCoach = user.role === "COACH" && user.teamId === teamId;
-    if (!isAdmin && !isTeamCoach) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const teamForAccess = await db.team.findUnique({
+      where: { id: teamId },
+      select: { headCoachId: true },
+    });
+    if (!teamForAccess) {
+      return NextResponse.json({ error: "Team not found." }, { status: 404 });
     }
-    if (!isAdmin && (body.name || body.symbol || body.headCoachId !== undefined)) {
-      return NextResponse.json({ error: "Only admins can update name, symbol, address, or head coach" }, { status: 403 });
+    const isAdmin = user.role === "ADMIN";
+    const isHeadCoach = user.role === "COACH" && user.teamId === teamId && teamForAccess.headCoachId === user.id;
+    if (!isAdmin && !isHeadCoach) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const data: {

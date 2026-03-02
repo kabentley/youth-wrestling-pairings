@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 export default function ChooseUsernameClient() {
   const router = useRouter();
   const sp = useSearchParams();
-  const rawCallbackUrl = sp.get("callbackUrl") ?? "/rosters";
+  const rawCallbackUrl = sp.get("callbackUrl") ?? "/";
   const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
     ? rawCallbackUrl
     : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireTeamCoach } from "@/lib/rbac";
+import { requireRole, requireTeamCoach } from "@/lib/rbac";
 
 const MIN_MATS = 1;
 const MAX_MATS = 6;
@@ -67,7 +67,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
 
 export async function PUT(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
-  await requireTeamCoach(teamId);
+  const { user } = await requireRole("COACH");
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { headCoachId: true },
+  });
+  if (!team) {
+    return NextResponse.json({ error: "Team not found." }, { status: 404 });
+  }
+  const canEdit = user.role === "ADMIN" || (user.role === "COACH" && user.teamId === teamId && team.headCoachId === user.id);
+  if (!canEdit) {
+    return NextResponse.json({ error: "Only the head coach or an admin can update mat setup." }, { status: 403 });
+  }
   const body = BodySchema.parse(await req.json());
 
   const desiredNumMats = Math.max(

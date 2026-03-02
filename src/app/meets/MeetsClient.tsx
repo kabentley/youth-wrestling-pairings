@@ -493,15 +493,24 @@ export default function MeetsPage() {
     });
   }, [teamIds, teams]);
   const canManageMeets = role === "COACH" || role === "ADMIN";
+  const isTableWorker = role === "TABLE_WORKER";
   const isAdmin = role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
   const headerTeamName = selectedTeam?.name ?? "Your Team";
   const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Meet For ${headerTeamName}`;
   const submitLabel = isEditing ? "Save Changes" : "Create Meet";
   const visibleMeets = useMemo(() => {
-    if (role !== "COACH") return meets;
-    if (!currentTeamId) return meets;
-    return meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId));
+    if (role === "COACH") {
+      if (!currentTeamId) return meets;
+      return meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId));
+    }
+    if (role === "TABLE_WORKER") {
+      const teamFiltered = currentTeamId
+        ? meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId))
+        : meets;
+      return teamFiltered.filter(m => m.status === "PUBLISHED");
+    }
+    return meets;
   }, [meets, role, currentTeamId]);
   useEffect(() => {
     if (!homeTeamId || hasRestartDefaults) return;
@@ -1085,7 +1094,11 @@ export default function MeetsPage() {
                   <div className="meet-item-header">
                   <div>
                     <div className="meet-title-row">
-                      <a href={`/meets/${m.id}`}>{m.name}</a>
+                      {isTableWorker ? (
+                        <span>{m.name}</span>
+                      ) : (
+                        <a href={`/meets/${m.id}`}>{m.name}</a>
+                      )}
                       <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
                         {m.status === "PUBLISHED" ? "Published" : "Draft"}
                       </span>
@@ -1096,11 +1109,11 @@ export default function MeetsPage() {
                       {m.location ? ` - ${m.location}` : ""}
                     </div>
                   </div>
-                {canManageMeets && (
+                {(canManageMeets || isTableWorker) && (
                   <div className="meet-item-actions">
                     <span
                       className="meet-action-results-wrap meet-action-results"
-                      title={m.status !== "PUBLISHED" ? "Meet is still in Draft status" : undefined}
+                      title={!isTableWorker && m.status !== "PUBLISHED" ? "Meet is still in Draft status" : undefined}
                     >
                       <button
                         className="nav-btn primary"
@@ -1110,25 +1123,29 @@ export default function MeetsPage() {
                         Results
                       </button>
                     </span>
-                    <button
-                      className="nav-btn meet-action-view"
-                      onClick={() => router.push(`/meets/${m.id}`)}
-                    >
-                      View
-                    </button>
-                    <button
-                      className="nav-btn meet-action-edit"
-                      onClick={() => router.push(`/meets/${m.id}?edit=1`)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="nav-btn delete-btn meet-action-delete"
-                      onClick={() => openDeleteDialog(m)}
-                      disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
-                    >
-                      Delete
-                    </button>
+                    {canManageMeets && (
+                      <>
+                        <button
+                          className="nav-btn meet-action-view"
+                          onClick={() => router.push(`/meets/${m.id}`)}
+                        >
+                          View
+                        </button>
+                        <button
+                          className="nav-btn meet-action-edit"
+                          onClick={() => router.push(`/meets/${m.id}?edit=1`)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="nav-btn delete-btn meet-action-delete"
+                          onClick={() => openDeleteDialog(m)}
+                          disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
                 </div>

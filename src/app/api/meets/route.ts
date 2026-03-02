@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
-import { requireRole } from "@/lib/rbac";
+import { requireRole, requireSession } from "@/lib/rbac";
 
 const MeetSchema = z.object({
   name: z.string().optional().default(""),
@@ -80,8 +80,24 @@ function buildUniqueMeetName(baseName: string, existingNames: Set<string>) {
 }
 
 export async function GET() {
+  const { user } = await requireSession();
+  const role = user.role as string;
+  const where: {
+    deletedAt: null;
+    status?: "PUBLISHED";
+    meetTeams?: { some: { teamId: string } };
+  } = { deletedAt: null };
+  if (role === "COACH" || role === "TABLE_WORKER" || role === "PARENT") {
+    if (!user.teamId) {
+      return NextResponse.json([]);
+    }
+    where.meetTeams = { some: { teamId: user.teamId } };
+    if (role === "TABLE_WORKER" || role === "PARENT") {
+      where.status = "PUBLISHED";
+    }
+  }
   const meets = await db.meet.findMany({
-    where: { deletedAt: null },
+    where,
     orderBy: { date: "desc" },
     include: {
       meetTeams: { include: { team: true } },

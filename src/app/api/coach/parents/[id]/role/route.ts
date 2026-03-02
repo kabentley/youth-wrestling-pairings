@@ -44,6 +44,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!team) {
     return NextResponse.json({ error: "Team not found." }, { status: 404 });
   }
+  if (user.role !== "ADMIN" && user.id !== team.headCoachId) {
+    return NextResponse.json({ error: "Only the head coach or an admin can change team roles." }, { status: 403 });
+  }
   if (team.headCoachId === id && parsed.data.role !== "COACH" && user.role !== "ADMIN") {
     return NextResponse.json({ error: "Only admins can remove the head coach role." }, { status: 403 });
   }

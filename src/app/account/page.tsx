@@ -5,27 +5,20 @@ import { useEffect, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
 
-type TeamRow = { id: string; name: string; symbol: string };
-
 export default function AccountPage() {
   const { data: session, status } = useSession();
-  const role = (session?.user as any)?.role as string | undefined;
-  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [teamId, setTeamId] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [nameMsg, setNameMsg] = useState("");
   const [emailMsg, setEmailMsg] = useState("");
-  const [teamMsg, setTeamMsg] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
   const [passwordErr, setPasswordErr] = useState("");
   const [accountErr, setAccountErr] = useState("");
-  const canChangeTeam = role === "PARENT";
   const headerLinks = [
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
@@ -45,24 +38,11 @@ export default function AccountPage() {
         setUsername(String(json.username ?? ""));
         setName(String(json.name ?? ""));
         setEmail(String(json.email ?? ""));
-        setTeamId(String(json.teamId ?? ""));
       })
       .catch(() => {
         if (!active) return;
         setAccountErr("Please sign in to manage your account.");
       });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/teams")
-      .then((res) => res.ok ? res.json() : [])
-      .then((json) => {
-        if (!active) return;
-        setTeams(Array.isArray(json) ? json : []);
-      })
-      .catch(() => {});
     return () => { active = false; };
   }, []);
 
@@ -94,22 +74,6 @@ export default function AccountPage() {
       return;
     }
     setNameMsg("Name updated.");
-  }
-
-  async function saveTeam() {
-    setTeamMsg("");
-    const res = await fetch("/api/account", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setTeamMsg(json?.error ?? "Unable to update team.");
-      return;
-    }
-    setTeamMsg("Team updated.");
-    window.dispatchEvent(new Event("user:refresh"));
   }
 
   async function updatePassword() {
@@ -195,32 +159,6 @@ export default function AccountPage() {
             <button className="account-btn" onClick={saveEmail}>Save Email</button>
           </div>
           {emailMsg && <div className="account-muted">{emailMsg}</div>}
-        </div>
-
-        <div className="account-card">
-          <h3>Team</h3>
-          <div className="account-row">
-            <select
-              value={teamId}
-              onChange={(e) => setTeamId(e.target.value)}
-              disabled={!canChangeTeam}
-            >
-              <option value="">Select a team</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name} ({t.symbol})</option>
-              ))}
-            </select>
-            <button className="account-btn" onClick={saveTeam} disabled={!canChangeTeam}>
-              Save Team
-            </button>
-          </div>
-          {role === "ADMIN" && (
-            <div className="account-muted">Admins cannot be assigned a team.</div>
-          )}
-          {role !== "PARENT" && role !== "ADMIN" && (
-            <div className="account-muted">Only parents can change their team assignment.</div>
-          )}
-          {teamMsg && <div className="account-muted">{teamMsg}</div>}
         </div>
 
         <div className="account-card">
