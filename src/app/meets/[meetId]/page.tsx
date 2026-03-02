@@ -5,6 +5,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
+import VolunteersTab from "./volunteers/VolunteersTab";
 import ScoringSheetTab from "./wall/ScoringSheetTab";
 import ScratchSheetTab from "./wall/ScratchSheetTab";
 import WallChartTab from "./wall/WallChartTab";
@@ -460,7 +461,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wallMat" | "wallTeam" | "scratch" | "scoring">("pairings");
+  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "volunteers" | "wallMat" | "wallTeam" | "scratch" | "scoring">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [matRefreshIndex, setMatRefreshIndex] = useState(0);
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
@@ -3445,6 +3446,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           {[
             { key: "pairings", label: "Pairings" },
           { key: "matboard", label: "Mat Assignments" },
+          { key: "volunteers", label: "Volunteers" },
           { key: "wallMat", label: "Mat Sheets" },
           { key: "wallTeam", label: "Team Sheets" },
           { key: "scratch", label: "Check-in Sheets" },
@@ -5087,6 +5089,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         {activeTab === "wallMat" && (
           <section className="wall-chart-section">
             <WallChartTab meetId={meetId} refreshIndex={wallRefreshIndex} chartType="mat" />
+          </section>
+        )}
+
+        {activeTab === "volunteers" && (
+          <section>
+            {meetStatus === "PUBLISHED" && (
+              <div className="notice">
+                Meet has been published, so volunteer mat assignments may not be changed.
+              </div>
+            )}
+            <VolunteersTab
+              meetId={meetId}
+              canEdit={canEdit}
+              onSaved={refreshAfterMatAssignments}
+            />
           </section>
         )}
 

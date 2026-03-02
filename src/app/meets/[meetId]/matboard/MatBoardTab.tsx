@@ -157,7 +157,6 @@ export default function MatBoardTab({
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
   const [peopleRuleTooltip, setPeopleRuleTooltip] = useState<MatboardPeopleRuleTooltip | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
-  const [syncingStaffMats, setSyncingStaffMats] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -997,41 +996,6 @@ export default function MatBoardTab({
     onMatAssignmentsChange?.();
   }
 
-  async function syncStaffDrivenMats() {
-    if (!canEdit || syncingStaffMats) return;
-    setSyncingStaffMats(true);
-    setMsg("Syncing staff mats...");
-    try {
-      if (dirtyRef.current) {
-        await saveOrder({ silent: true });
-      }
-      const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
-        method: "POST",
-      });
-      const payload = await res.json().catch(() => null);
-      if (!res.ok) {
-        setMsg(payload?.error ?? "Unable to sync staff-driven mat assignments.");
-        return;
-      }
-      const moved = typeof payload?.moved === "number" ? payload.moved : 0;
-      const newlyAssigned = typeof payload?.newlyAssigned === "number" ? payload.newlyAssigned : 0;
-      const cleared = typeof payload?.cleared === "number" ? payload.cleared : 0;
-      const updated = typeof payload?.updated === "number" ? payload.updated : 0;
-      if (updated === 0) {
-        setMsg("No staff-driven mat changes found.");
-      } else {
-        setMsg(`Staff sync applied: moved ${moved}, assigned ${newlyAssigned}, cleared ${cleared}.`);
-      }
-      await load();
-      onMatAssignmentsChange?.();
-      setTimeout(() => setMsg(""), 1800);
-    } catch {
-      setMsg("Unable to sync staff-driven mat assignments.");
-    } finally {
-      setSyncingStaffMats(false);
-    }
-  }
-
   useEffect(() => {
     saveOrderRef.current = saveOrder;
   });
@@ -1631,15 +1595,6 @@ export default function MatBoardTab({
                 Show wrestlers with only one match in <em>italics</em>
               </span>
             </label>
-            <button
-              type="button"
-              className="nav-btn reorder-inline-btn"
-              onClick={() => void syncStaffDrivenMats()}
-              disabled={!canEdit || syncingStaffMats}
-              style={{ fontSize: 12, padding: "2px 10px" }}
-            >
-              {syncingStaffMats ? "Syncing Staff..." : "Sync Staff Mats"}
-            </button>
           </div>
           <div className="matboard-legend">
           <span style={{ fontWeight: 600 }}>Legend:</span>

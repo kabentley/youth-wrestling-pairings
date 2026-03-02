@@ -216,14 +216,13 @@ export default function CoachMyTeamPage() {
   const [newUserUsernameEdited, setNewUserUsernameEdited] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
   const [savingMeetDefaults, setSavingMeetDefaults] = useState(false);
-  const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "roles" | "parents">("roles");
+  const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "parents">("parents");
   const [wrestlerPickerMemberId, setWrestlerPickerMemberId] = useState<string | null>(null);
   const [wrestlerPickerSelection, setWrestlerPickerSelection] = useState<string[]>([]);
   const [matListboxMemberId, setMatListboxMemberId] = useState<string | null>(null);
   const [matListboxDirection, setMatListboxDirection] = useState<"down" | "up">("down");
   const [matListboxPosition, setMatListboxPosition] = useState({ top: 0, left: 0, width: 112 });
   const tabs = [
-    { key: "roles", label: "Staff" },
     { key: "parents", label: "Parents" },
     { key: "mat", label: "Mat Setup" },
     { key: "meet", label: "Meet Setup" },
@@ -1189,7 +1188,7 @@ export default function CoachMyTeamPage() {
             </button>
           ))}
         </div>
-        <div className={`tab-body${activeTab === "roles" ? " tab-body-roles" : ""}`}>
+        <div className={`tab-body${activeTab === "parents" ? " tab-body-roles" : ""}`}>
           {activeTab === "info" && (
           <section className="coach-card">
           <div className="coach-card-header">
@@ -1539,10 +1538,10 @@ export default function CoachMyTeamPage() {
           </section>
           )}
 
-          {activeTab === "roles" && (
+          {activeTab === "parents" && (
         <section className="coach-card coach-roles-card">
           <div className="coach-card-header">
-            <h3>Staff</h3>
+            <h3>Parents</h3>
             {canEditRoles && (
               <button
                 type="button"
@@ -1574,16 +1573,18 @@ export default function CoachMyTeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {staff.length === 0 && (
+                {[...staff, ...parents].length === 0 && (
                   <tr>
-                    <td colSpan={4} className="coach-empty-cell">No coaches or table workers assigned yet.</td>
+                    <td colSpan={4} className="coach-empty-cell">No parent or staff accounts found.</td>
                   </tr>
                 )}
-                {staff.map((member) => {
+                {sortStaff([...staff, ...parents], headCoachId).map((member) => {
                   const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
                   return (
                   <tr key={member.id}>
-                    <td>{member.name ? `${member.name} (@${member.username})` : `@${member.username}`}</td>
+                    <td>
+                      {member.name ? `${member.name} (@${member.username})` : `@${member.username}`}
+                    </td>
                     <td>
                       <select
                         className="coach-role-select"
@@ -1595,9 +1596,9 @@ export default function CoachMyTeamPage() {
                           <option value="COACH">Head Coach</option>
                         ) : (
                           <>
+                            <option value="PARENT">Parent</option>
                             <option value="COACH">Assistant Coach</option>
                             <option value="TABLE_WORKER">Table Worker</option>
-                            <option value="PARENT">Parent</option>
                           </>
                         )}
                       </select>
@@ -1682,93 +1683,6 @@ export default function CoachMyTeamPage() {
                             className="coach-btn-secondary coach-picker-btn"
                             disabled={Boolean(savingAssignments[member.id]) || teamWrestlers.length === 0}
                             onClick={() => openWrestlerPicker(member)}
-                          >
-                            Select Wrestlers
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        </section>
-          )}
-
-          {activeTab === "parents" && (
-        <section className="coach-card">
-          <div className="coach-card-header">
-            <h3>Parents</h3>
-          </div>
-          <p
-            className={`info-message ${rolesMessageIsError ? "error" : "success"}${rolesMessage ? "" : " empty"}`}
-            role={rolesMessage ? "status" : undefined}
-          >
-            {rolesMessage ?? "\u00A0"}
-          </p>
-          <div className="coach-table coach-staff-table">
-            <div className="coach-staff-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>Wrestlers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parents.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="coach-empty-cell">No parent accounts found.</td>
-                  </tr>
-                )}
-                {parents.map((parent) => {
-                  const suggestedWrestlerIds = parent.wrestlerIds.length === 0 ? getLikelyWrestlerIds(parent) : [];
-                  return (
-                  <tr key={parent.id}>
-                    <td>
-                      {parent.name ? `${parent.name} (@${parent.username})` : `@${parent.username}`}
-                    </td>
-                    <td>
-                      <select
-                        className="coach-role-select"
-                        value={parent.role}
-                        disabled={!canEditRoles || Boolean(savingParent[parent.id])}
-                        onChange={(event) => void updateRole(parent, event.currentTarget.value as TeamMember["role"])}
-                      >
-                        <option value="PARENT">Parent</option>
-                        <option value="COACH">Assistant Coach</option>
-                        <option value="TABLE_WORKER">Table Worker</option>
-                      </select>
-                    </td>
-                    <td>
-                      <div className="coach-staff-wrestlers-row">
-                        <div className="coach-staff-assigned">
-                          {parent.wrestlerIds.length > 0
-                            ? formatAssignedWrestlers(parent, parent.wrestlerIds)
-                            : suggestedWrestlerIds.length > 0
-                              ? `Suggested: ${formatAssignedWrestlers(parent, suggestedWrestlerIds)}`
-                              : <span className="coach-none-assigned">None</span>}
-                        </div>
-                        <div className="coach-staff-wrestler-actions">
-                          {parent.wrestlerIds.length === 0 && suggestedWrestlerIds.length > 0 && (
-                            <button
-                              type="button"
-                              className="coach-btn-secondary coach-picker-btn"
-                              disabled={Boolean(savingAssignments[parent.id])}
-                              onClick={() => void saveStaffAssignments(parent.id, parent.matNumber, suggestedWrestlerIds)}
-                            >
-                              Use Last Name Match
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="coach-btn-secondary coach-picker-btn"
-                            disabled={Boolean(savingAssignments[parent.id]) || teamWrestlers.length === 0}
-                            onClick={() => openWrestlerPicker(parent)}
                           >
                             Select Wrestlers
                           </button>
