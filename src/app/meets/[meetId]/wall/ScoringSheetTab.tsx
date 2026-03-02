@@ -232,13 +232,13 @@ export default function ScoringSheetTab({
       background: #fff;
     }
     .scoring-sheet-root .c-bout { width: 3.6%; text-align: center; font-weight: 700; }
-    .scoring-sheet-root .c-team { width: 3.2%; text-align: center; }
+    .scoring-sheet-root .c-team { width: 3.6%; text-align: center; }
     .scoring-sheet-root .c-name { width: 16%; text-align: left; }
     .scoring-sheet-root .c-corner { width: 2.4%; text-align: center; font-weight: 700; }
     .scoring-sheet-root .c-period { width: 20%; text-align: center; }
     .scoring-sheet-root .c-small { width: 2.4%; text-align: center; }
     .scoring-sheet-root .c-ot { width: 2.8%; text-align: center; }
-    .scoring-sheet-root .c-scr { width: 4.4%; text-align: center; font-weight: 700; }
+    .scoring-sheet-root .c-scr { width: 6.0%; text-align: center; font-weight: 700; }
     .scoring-sheet-root .home-cell {
       background: #ececec;
       font-weight: 700;
@@ -247,6 +247,21 @@ export default function ScoringSheetTab({
       font-size: 13px;
       color: #666;
       padding: 8px;
+    }
+    .scoring-sheet-root tbody tr.wrestler-divider td:not(.match-divider-cell) {
+      border-bottom: 0.75px solid #d6dae1;
+    }
+    .scoring-sheet-root tbody tr:first-child td {
+      border-top: 1px solid #1f232b;
+    }
+    .scoring-sheet-root tbody tr.match-end td {
+      border-bottom: 1px solid #1f232b;
+    }
+    .scoring-sheet-root tbody tr.match-end td:not(.match-divider-cell) {
+      border-top: 0.75px solid #d6dae1;
+    }
+    .scoring-sheet-root .match-divider-cell {
+      border-bottom: 1px solid #1f232b;
     }
     @media print {
       .black-and-white .scoring-sheet-root .home-cell {
@@ -357,8 +372,8 @@ export default function ScoringSheetTab({
                     if (!entry) {
                       return (
                         <Fragment key={`${page.key}-blank-${slotIndex}`}>
-                          <tr>
-                            <td className="c-bout" />
+                          <tr className="wrestler-divider">
+                            <td className="c-bout match-divider-cell" rowSpan={2} />
                             <td className="c-team" />
                             <td className="c-name" />
                             <td className="c-corner">R</td>
@@ -371,8 +386,7 @@ export default function ScoringSheetTab({
                             <td className="c-ot" />
                             <td className="c-scr" />
                           </tr>
-                          <tr>
-                            <td className="c-bout" />
+                          <tr className="match-end">
                             <td className="c-team" />
                             <td className="c-name" />
                             <td className="c-corner">G</td>
@@ -398,8 +412,8 @@ export default function ScoringSheetTab({
 
                     return (
                       <Fragment key={bout.id}>
-                        <tr>
-                          <td className="c-bout">{boutNumber}</td>
+                        <tr className="wrestler-divider">
+                          <td className="c-bout match-divider-cell" rowSpan={2}>{boutNumber}</td>
                           <td className={`c-team${redIsHome ? " home-cell" : ""}`}>{redTeam}</td>
                           <td className={`c-name${redIsHome ? " home-cell" : ""}`}>{displayName(red)}</td>
                           <td className="c-corner">R</td>
@@ -412,8 +426,7 @@ export default function ScoringSheetTab({
                           <td className="c-ot" />
                           <td className="c-scr" />
                         </tr>
-                        <tr>
-                          <td className="c-bout" />
+                        <tr className="match-end">
                           <td className={`c-team${greenIsHome ? " home-cell" : ""}`}>{greenTeam}</td>
                           <td className={`c-name${greenIsHome ? " home-cell" : ""}`}>{displayName(green)}</td>
                           <td className="c-corner">G</td>
