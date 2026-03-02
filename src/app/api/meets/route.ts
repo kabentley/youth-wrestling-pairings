@@ -81,7 +81,7 @@ function buildUniqueMeetName(baseName: string, existingNames: Set<string>) {
 
 export async function GET() {
   const { user } = await requireSession();
-  const role = user.role as string;
+  const role = user.role;
   const where: {
     deletedAt: null;
     status?: "PUBLISHED";

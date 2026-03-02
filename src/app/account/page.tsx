@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 
 export default function AccountPage() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");

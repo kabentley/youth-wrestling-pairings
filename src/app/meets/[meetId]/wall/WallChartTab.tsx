@@ -37,6 +37,9 @@ type WallChartPayload = {
   wrestlers: Wrestler[];
 };
 
+const TEAM_MEMBERS_PER_PAGE = 35;
+const MAT_BOUTS_PER_PAGE = 40;
+
 export default function WallChartTab({
   meetId,
   refreshIndex,
@@ -66,6 +69,16 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
   if (first && last) return `${first} ${last}`;
   const single = first || last;
   return single || null;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) return [items];
+  if (items.length === 0) return [[]];
+  const parts: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    parts.push(items.slice(i, i + size));
+  }
+  return parts;
 }
 
   useEffect(() => {
@@ -388,6 +401,23 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
     perMat.get(mat)!.push(bout);
   }
   for (const mat of mats) perMat.get(mat)!.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
+  const matPages = mats.flatMap((mat) => {
+    const entries = (perMat.get(mat) ?? []).map((bout, idx) => {
+      const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
+      return {
+        bout,
+        boutNumber: String(mat * 100 + displayOrder).padStart(3, "0"),
+      };
+    });
+    const pages = chunkArray(entries, MAT_BOUTS_PER_PAGE);
+    return pages.map((pageEntries, pageIndex) => ({
+      mat,
+      entries: pageEntries,
+      pageIndex,
+      pageCount: pages.length,
+      pageKey: `${mat}-${pageIndex}`,
+    }));
+  });
 
   type MatchInfo = {
     boutNumber: string;
@@ -457,6 +487,16 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
       members,
     };
   });
+  const teamPages = teamCharts.flatMap((team) => {
+    const memberPages = chunkArray(team.members, TEAM_MEMBERS_PER_PAGE);
+    return memberPages.map((members, index) => ({
+      ...team,
+      members,
+      pageIndex: index,
+      pageCount: memberPages.length,
+      pageKey: `${team.id}-${index}`,
+    }));
+  });
 
   const headerLabel =
     meet.name
@@ -488,13 +528,15 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
         {(chartType === "both" || chartType === "mat") && (
           <section className="chart-page per-mat">
             <div className="mat-grid">
-              {mats.map(mat => (
-                <article key={mat} className="mat-block">
+              {matPages.map((matPage) => (
+                <article key={matPage.pageKey} className="mat-block">
                   <div className="mat-header">
-                    <span>Mat {mat}</span>
+                    <span>
+                      <strong>Mat {matPage.mat}</strong> (Page {matPage.pageIndex + 1}/{matPage.pageCount})
+                    </span>
                     <span className="card-meet-label">{cardLabel}</span>
                   </div>
-                  {perMat.get(mat)?.length ? (
+                  {matPage.entries.length ? (
                     <table className="mat-table">
                       <thead>
                         <tr>
@@ -504,9 +546,7 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
                         </tr>
                       </thead>
                       <tbody>
-                        {perMat.get(mat)?.map((bout, idx) => {
-                          const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
-                          const boutNumber = String(mat * 100 + displayOrder).padStart(3, "0");
+                        {matPage.entries.map(({ bout, boutNumber }) => {
                           const t = cellText(bout);
                           return (
                             <tr key={bout.id}>
@@ -529,10 +569,12 @@ function formatWrestlerFirstLast(w?: Wrestler | null) {
 
         {(chartType === "both" || chartType === "team") && (
           <section className="chart-page per-team">
-            {teamCharts.map(team => (
-              <article key={team.id} className="team-block">
+            {teamPages.map(team => (
+              <article key={team.pageKey} className="team-block">
                 <div className="team-header">
-                  <div className="team-name">{team.label}</div>
+                  <div className="team-name">
+                    {team.label} (Page {team.pageIndex + 1}/{team.pageCount})
+                  </div>
                   <span className="card-meet-label">{cardLabel}</span>
                 </div>
                 {team.members.length === 0 ? (

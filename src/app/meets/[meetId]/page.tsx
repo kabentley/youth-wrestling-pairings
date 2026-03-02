@@ -5,8 +5,8 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
-import ScratchSheetTab from "./wall/ScratchSheetTab";
 import ScoringSheetTab from "./wall/ScoringSheetTab";
+import ScratchSheetTab from "./wall/ScratchSheetTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
@@ -458,17 +458,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-  const [showAddWrestler, setShowAddWrestler] = useState(false);
-  const [newWrestlerFirst, setNewWrestlerFirst] = useState("");
-  const [newWrestlerLast, setNewWrestlerLast] = useState("");
-  const [newWrestlerBirthdate, setNewWrestlerBirthdate] = useState("");
-  const [newWrestlerWeight, setNewWrestlerWeight] = useState("");
-  const [newWrestlerExp, setNewWrestlerExp] = useState("0");
-  const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
   const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wallMat" | "wallTeam" | "scratch" | "scoring">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [matRefreshIndex, setMatRefreshIndex] = useState(0);
-  const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
   // Keep the home team first in the pairings tab order.
@@ -1841,9 +1833,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     homeLocationDisplay = trimmedHomeAddress;
   }
   const hasHomeInfo = Boolean(homeTeam ?? homeLocationDisplay);
-  const attendanceTeam = attendanceTeamId ? teams.find(t => t.id === attendanceTeamId) : undefined;
   const modalAttendanceTeam = modalAttendanceTeamId ? teams.find(t => t.id === modalAttendanceTeamId) : undefined;
-  const addWrestlerTeamLabel = attendanceTeam?.name ?? "Selected Team";
 
   // Current matches for the selected wrestler.
   const currentMatches = target
@@ -2183,52 +2173,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setModalAttendanceOverrides(new Map());
     return true;
   }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, wMap, wrestlers]);
-
-  // Create a new wrestler in the current team roster.
-  async function submitAddWrestler() {
-    if (!attendanceTeamId) return;
-    setAddWrestlerMsg("");
-    const weightValue = Number(newWrestlerWeight);
-    const expValue = Number(newWrestlerExp);
-    const skillValue = Number(newWrestlerSkill);
-    if (!newWrestlerFirst.trim() || !newWrestlerLast.trim()) {
-      setAddWrestlerMsg("First and last name are required.");
-      return;
-    }
-    if (!newWrestlerBirthdate) {
-      setAddWrestlerMsg("Birthdate is required.");
-      return;
-    }
-    if (!Number.isFinite(weightValue) || weightValue <= 0) {
-      setAddWrestlerMsg("Weight must be a positive number.");
-      return;
-    }
-    const res = await fetch(`/api/teams/${attendanceTeamId}/wrestlers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        first: newWrestlerFirst.trim(),
-        last: newWrestlerLast.trim(),
-        weight: weightValue,
-        birthdate: newWrestlerBirthdate,
-        experienceYears: Number.isFinite(expValue) ? expValue : 0,
-        skill: Number.isFinite(skillValue) ? skillValue : 0,
-      }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setAddWrestlerMsg(json?.error ?? "Unable to add wrestler.");
-      return;
-    }
-    setNewWrestlerFirst("");
-    setNewWrestlerLast("");
-    setNewWrestlerBirthdate("");
-    setNewWrestlerWeight("");
-    setNewWrestlerExp("0");
-    setNewWrestlerSkill("0");
-    setShowAddWrestler(false);
-    await load();
-  }
 
   return (
     <main className="meet-detail">
@@ -4352,44 +4296,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         )}
       </div>
 
-      {showAddWrestler && (
-        <div className="modal-backdrop" onClick={() => setShowAddWrestler(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0 }}>Add Wrestler - {addWrestlerTeamLabel}</h3>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>First name</label>
-              <input value={newWrestlerFirst} onChange={(e) => setNewWrestlerFirst(e.target.value)} />
-            </div>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>Last name</label>
-              <input value={newWrestlerLast} onChange={(e) => setNewWrestlerLast(e.target.value)} />
-            </div>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>Birthdate</label>
-              <input type="date" value={newWrestlerBirthdate} onChange={(e) => setNewWrestlerBirthdate(e.target.value)} />
-            </div>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>Weight</label>
-              <input type="number" min={1} value={newWrestlerWeight} onChange={(e) => setNewWrestlerWeight(e.target.value)} />
-            </div>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>Experience years</label>
-              <input type="number" min={0} value={newWrestlerExp} onChange={(e) => setNewWrestlerExp(e.target.value)} />
-            </div>
-            <div className="modal-row">
-              <label style={{ fontSize: 12 }}>Skill (0-5)</label>
-              <input type="number" min={0} max={5} value={newWrestlerSkill} onChange={(e) => setNewWrestlerSkill(e.target.value)} />
-            </div>
-            {addWrestlerMsg && <div style={{ color: "#b00020", fontSize: 12 }}>{addWrestlerMsg}</div>}
-            <div className="modal-actions">
-              <button className="nav-btn" onClick={() => setShowAddWrestler(false)}>Cancel</button>
-              <button className="nav-btn" onClick={submitAddWrestler} disabled={!canEdit || !attendanceTeamId}>
-                Add Wrestler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {showRestartModal && (
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setShowRestartModal(false)}>

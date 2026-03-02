@@ -203,7 +203,7 @@ export default function ScoringSheetTab({
       justify-content: space-between;
       padding: 3px 8px;
       border-bottom: 1px solid #30343c;
-      font-size: 13px;
+      font-size: 16px;
       font-weight: 700;
     }
     .scoring-sheet-root .sheet-header-right {
@@ -350,7 +350,10 @@ export default function ScoringSheetTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from({ length: BOUTS_PER_PAGE }, (_, slotIndex) => page.entries[slotIndex] ?? null).map((entry, slotIndex) => {
+                  {Array.from(
+                    { length: BOUTS_PER_PAGE },
+                    (_, slotIndex) => (slotIndex < page.entries.length ? page.entries[slotIndex] : null)
+                  ).map((entry, slotIndex) => {
                     if (!entry) {
                       return (
                         <Fragment key={`${page.key}-blank-${slotIndex}`}>
