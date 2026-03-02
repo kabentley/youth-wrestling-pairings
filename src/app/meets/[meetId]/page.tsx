@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import MatBoardTab from "./matboard/MatBoardTab";
 import ScratchSheetTab from "./wall/ScratchSheetTab";
+import ScoringSheetTab from "./wall/ScoringSheetTab";
 import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
@@ -464,7 +465,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [newWrestlerWeight, setNewWrestlerWeight] = useState("");
   const [newWrestlerExp, setNewWrestlerExp] = useState("0");
   const [newWrestlerSkill, setNewWrestlerSkill] = useState("0");
-  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wallMat" | "wallTeam" | "scratch">("pairings");
+  const [activeTab, setActiveTab] = useState<"pairings" | "matboard" | "wallMat" | "wallTeam" | "scratch" | "scoring">("pairings");
   const [wallRefreshIndex, setWallRefreshIndex] = useState(0);
   const [matRefreshIndex, setMatRefreshIndex] = useState(0);
   const [addWrestlerMsg, setAddWrestlerMsg] = useState("");
@@ -3497,14 +3498,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           { key: "matboard", label: "Mat Assignments" },
           { key: "wallMat", label: "Mat Sheets" },
           { key: "wallTeam", label: "Team Sheets" },
-          { key: "scratch", label: "Scratch Sheet" },
+          { key: "scratch", label: "Check-in Sheets" },
+          { key: "scoring", label: "Scoring Sheets" },
         ].map(tab => (
           <button
             key={tab.key}
             className={`tab-button${activeTab === tab.key ? " active" : ""}`}
             onClick={() => {
               setActiveTab(tab.key as typeof activeTab);
-              if (tab.key === "wallMat" || tab.key === "wallTeam" || tab.key === "scratch") {
+              if (tab.key === "wallMat" || tab.key === "wallTeam" || tab.key === "scratch" || tab.key === "scoring") {
                 setWallRefreshIndex(idx => idx + 1);
               }
             }}
@@ -5184,6 +5186,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         {activeTab === "scratch" && (
           <section className="wall-chart-section">
             <ScratchSheetTab meetId={meetId} refreshIndex={wallRefreshIndex} />
+          </section>
+        )}
+
+        {activeTab === "scoring" && (
+          <section className="wall-chart-section">
+            <ScoringSheetTab meetId={meetId} refreshIndex={wallRefreshIndex} />
           </section>
         )}
       </div>
