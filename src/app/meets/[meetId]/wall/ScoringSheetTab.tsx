@@ -353,7 +353,7 @@ export default function ScoringSheetTab({
                     <th className="c-bout">#</th>
                     <th className="c-team">T</th>
                     <th className="c-name">NAME</th>
-                    <th className="c-corner">C</th>
+                    <th className="c-corner" />
                     <th className="c-period">PERIOD 1</th>
                     <th className="c-small">C</th>
                     <th className="c-period">PERIOD 2</th>

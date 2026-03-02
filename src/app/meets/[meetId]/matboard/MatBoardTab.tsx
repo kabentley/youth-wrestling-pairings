@@ -177,9 +177,11 @@ export default function MatBoardTab({
     number: string;
     entries: WrestlerEntry[];
   } | null>(null);
+  const [compactMatColumns, setCompactMatColumns] = useState(false);
   const draggingRef = useRef<{ boutId: string; fromMat: number } | null>(null);
   const dropIndexRef = useRef<{ mat: number; index: number } | null>(null);
   const dragImageRef = useRef<HTMLImageElement | null>(null);
+  const matGridRef = useRef<HTMLDivElement | null>(null);
   const dragPreviewFrameRef = useRef<number | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
@@ -360,6 +362,40 @@ export default function MatBoardTab({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [statusContext]);
+
+  useEffect(() => {
+    const gridEl = matGridRef.current;
+    if (!gridEl) return;
+
+    const evaluate = () => {
+      const firstCard = gridEl.querySelector<HTMLElement>(".mat-card");
+      const cardWidth = firstCard?.getBoundingClientRect().width ?? 0;
+      const isCompact = cardWidth > 0 && cardWidth <= 390;
+      setCompactMatColumns(prev => (prev === isCompact ? prev : isCompact));
+    };
+
+    evaluate();
+    let frame = window.requestAnimationFrame(evaluate);
+    const onResize = () => evaluate();
+    window.addEventListener("resize", onResize);
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => evaluate());
+      observer.observe(gridEl);
+      const firstCard = gridEl.querySelector<HTMLElement>(".mat-card");
+      if (firstCard) observer.observe(firstCard);
+      return () => {
+        window.removeEventListener("resize", onResize);
+        window.cancelAnimationFrame(frame);
+        observer.disconnect();
+      };
+    }
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [numMats, bouts.length]);
 
   /**
    * Load the meet pairings and associated wrestlers, then stash them in state.
@@ -1046,8 +1082,8 @@ export default function MatBoardTab({
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
-    const rTxt = r ? `${r.first} ${r.last} (${teamName(r.teamId)})` : b.redId;
-    const gTxt = g ? `${g.first} ${g.last} (${teamName(g.teamId)})` : b.greenId;
+    const rTxt = r ? `${r.first} ${r.last}${compactMatColumns ? "" : ` (${teamName(r.teamId)})`}` : b.redId;
+    const gTxt = g ? `${g.first} ${g.last}${compactMatColumns ? "" : ` (${teamName(g.teamId)})`}` : b.greenId;
     const rColor = r ? teamTextColor(r.teamId) : "";
     const gColor = g ? teamTextColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
@@ -1201,7 +1237,7 @@ export default function MatBoardTab({
     return null;
   };
   const matColumnCount = Math.max(1, numMats);
-  const matColumnMinWidth = 360;
+  const matColumnMinWidth = 300;
   const matGridMinWidth = matColumnCount * matColumnMinWidth + Math.max(0, matColumnCount - 1) * 10;
 
   return (
@@ -1403,7 +1439,7 @@ export default function MatBoardTab({
           font-weight: 600;
           color: #1d232b;
           text-align: center;
-          border: 2px solid transparent;
+          border: 0.5px solid transparent;
           border-radius: 6px;
           padding: 0;
           margin-right: 4px;
@@ -1600,6 +1636,7 @@ export default function MatBoardTab({
       <div className="mat-grid-scroll">
       <div
         className="mat-grid"
+        ref={matGridRef}
         style={{
           gridTemplateColumns: `repeat(${matColumnCount}, minmax(${matColumnMinWidth}px, 1fr))`,
           minWidth: `${matGridMinWidth}px`,
@@ -1725,8 +1762,20 @@ export default function MatBoardTab({
       const previewNumber = formatBoutNumber(matNum, b.order, index + 1);
       const previewNumberBg = getMatNumberBackground(originalMatColor);
       const previewNumberBorder =
-        b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent";
+        b.originalMat != null && b.originalMat !== matNum ? darkenHex(originalMatColor, 0.45) : "transparent";
       const previewNumberPeopleRuleOutline = peopleRuleNumberOutlineColor(b);
+      const previewNumberMovedInset =
+        previewNumberBorder !== "transparent"
+          ? `inset 0 0 0 2px ${previewNumberBg}, inset 0 0 0 2.5px ${previewNumberBorder}`
+          : null;
+      const previewNumberShadows = [
+        previewNumberMovedInset,
+        previewNumberPeopleRuleOutline
+          ? `0 0 0 2px ${previewNumberPeopleRuleOutline}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
       const peopleRuleTip = peopleRuleTooltipContent(b);
       const lockHint = isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder";
       return (
@@ -1850,11 +1899,8 @@ export default function MatBoardTab({
                             }}
                           style={{
                             backgroundColor: getMatNumberBackground(originalMatColor),
-                            borderColor:
-                              b.originalMat != null && b.originalMat !== matNum ? originalMatColor : "transparent",
-                            boxShadow: previewNumberPeopleRuleOutline
-                              ? `0 0 0 2px ${previewNumberPeopleRuleOutline}`
-                              : undefined,
+                            borderColor: "transparent",
+                            boxShadow: previewNumberShadows || undefined,
                             cursor: canEdit ? "pointer" : undefined,
                           }}
                         >
@@ -1948,10 +1994,19 @@ export default function MatBoardTab({
                 className="number"
                 style={{
                   backgroundColor: dragPreview.numberBg,
-                  borderColor: dragPreview.numberBorder,
-                  boxShadow: dragPreview.numberPeopleRuleOutline
-                    ? `0 0 0 2px ${dragPreview.numberPeopleRuleOutline}`
-                    : undefined,
+                  borderColor: "transparent",
+                  boxShadow: (
+                    [
+                      dragPreview.numberBorder !== "transparent"
+                        ? `inset 0 0 0 2px ${dragPreview.numberBg}, inset 0 0 0 2.5px ${dragPreview.numberBorder}`
+                        : null,
+                      dragPreview.numberPeopleRuleOutline
+                        ? `0 0 0 2px ${dragPreview.numberPeopleRuleOutline}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")
+                  ) || undefined,
                 }}
               >
                 {dragPreview.number}

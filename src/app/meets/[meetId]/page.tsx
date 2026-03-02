@@ -279,6 +279,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
+  const [currentBoutColWidth, setCurrentBoutColWidth] = useState(66);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(70);
   const [currentSourceColWidth, setCurrentSourceColWidth] = useState(80);
   const [availableTeamColWidth, setAvailableTeamColWidth] = useState(70);
@@ -306,6 +307,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     sharedColumnWidths.skill,
     sharedColumnWidths.score,
     sharedColumnWidths.matches,
+    currentBoutColWidth,
     currentSourceColWidth,
   ];
 
@@ -1258,6 +1260,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           const nextWidth = Math.max(60, startWidth + delta);
           setCurrentTeamColWidth(nextWidth);
         } else if (index === 10) {
+          const nextWidth = Math.max(55, startWidth + delta);
+          setCurrentBoutColWidth(nextWidth);
+        } else if (index === 11) {
           const nextWidth = Math.max(60, startWidth + delta);
           setCurrentSourceColWidth(nextWidth);
         }
@@ -3789,6 +3794,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             { label: "Skill", key: "skill" },
                             { label: "Δ", key: "score" },
                             { label: "Matches", key: "matches" },
+                            { label: "Bout #", key: "bout" },
                             { label: "Added By", key: "source" },
                             ].map((col, index) => (
                           <th
@@ -3898,6 +3904,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                               <td align="left">
                                 {getMatchCount(opponentId)}
                               </td>
+                              <td align="left">{boutNumber(bout.mat, bout.order)}</td>
                               <td
                                 align="left"
                                 data-no-row-hover="true"
