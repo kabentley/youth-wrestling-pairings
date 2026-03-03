@@ -3,12 +3,26 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 
 
-// enums are not supported by the sqlite connector; use string fields instead.
+enum Role {
+  ADMIN
+  COACH
+  PARENT
+  TABLE_WORKER
+}
+
+enum MeetWrestlerStatusType {
+  COMING
+  NOT_COMING
+  LATE
+  EARLY
+  ABSENT
+}
+
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -27,6 +41,7 @@ model Team {
   homeTeamPreferSameMat Boolean @default(true)
   defaultMaxMatchesPerWrestler Int @default(5)
   defaultRestGap Int @default(6)
+  printBoutSheetsInColor Boolean @default(false)
   defaultMaxAgeGapDays Int @default(365)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)
@@ -132,7 +147,7 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     String
+  status     MeetWrestlerStatusType
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -272,7 +287,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          String   @default("PARENT")
+  role          Role     @default(PARENT)
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -284,7 +299,6 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
-  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -301,6 +315,7 @@ model User {
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   children      UserChild[]
+  headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
 

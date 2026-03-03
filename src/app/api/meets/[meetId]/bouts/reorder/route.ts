@@ -9,6 +9,7 @@ import { requireRole } from "@/lib/rbac";
 const BodySchema = z.object({
   mats: z.record(z.string(), z.array(z.string().min(1))),
   lockedBoutIds: z.array(z.string().min(1)).optional(),
+  originalMatByBoutId: z.record(z.string(), z.number().int().nullable()).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -26,7 +27,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const allIds = Object.values(body.mats).flat();
   const found = await db.bout.findMany({
     where: { id: { in: allIds }, meetId },
-    select: { id: true, mat: true, order: true, locked: true },
+    select: { id: true, mat: true, order: true, locked: true, originalMat: true },
   });
   const foundSet = new Set(found.map(b => b.id));
   const currentById = new Map(found.map(b => [b.id, { mat: b.mat, order: b.order }]));
@@ -36,6 +37,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const requestedLocked = new Set(body.lockedBoutIds ?? []);
   for (const id of requestedLocked) {
     if (!foundSet.has(id)) return NextResponse.json({ error: `Invalid locked bout id for meet: ${id}` }, { status: 400 });
+  }
+
+  const requestedOriginalEntries = Object.entries(body.originalMatByBoutId ?? {});
+  for (const [id, originalMat] of requestedOriginalEntries) {
+    if (!foundSet.has(id)) return NextResponse.json({ error: `Invalid original mat bout id for meet: ${id}` }, { status: 400 });
+    if (originalMat !== null && (originalMat < 1 || originalMat > 6)) {
+      return NextResponse.json({ error: `Invalid original mat for bout ${id}: ${originalMat}` }, { status: 400 });
+    }
   }
 
   const matsChanged = new Set<number>();
@@ -67,8 +76,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     });
   }
 
+  const originalMatById = new Map(found.map(b => [b.id, b.originalMat ?? null]));
+  const originalMatUpdates = requestedOriginalEntries.filter(([id, originalMat]) => originalMatById.get(id) !== originalMat);
+  if (originalMatUpdates.length > 0) {
+    for (const [id, originalMat] of originalMatUpdates) {
+      await db.bout.update({
+        where: { id },
+        data: { originalMat },
+      });
+    }
+  }
+
   const locksChanged = toLock.length + toUnlock.length;
-  if (matsChanged.size > 0 || locksChanged > 0) {
+  const startingMatsChanged = originalMatUpdates.length;
+  if (matsChanged.size > 0 || locksChanged > 0 || startingMatsChanged > 0) {
     const mats = [...matsChanged].sort((a, b) => a - b);
     const messages: string[] = [];
     if (matsChanged.size > 0) {
@@ -79,6 +100,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     }
     if (locksChanged > 0) {
       messages.push(`Updated ${locksChanged} bout lock${locksChanged === 1 ? "" : "s"}.`);
+    }
+    if (startingMatsChanged > 0) {
+      messages.push(`Updated starting mat on ${startingMatsChanged} bout${startingMatsChanged === 1 ? "" : "s"}.`);
     }
     await logMeetChange(meetId, user.id, messages.join(" "));
   }

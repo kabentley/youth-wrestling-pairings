@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import PrintButton from "./PrintButton";
 
@@ -12,6 +12,29 @@ type ControlBarProps = {
 
 export default function ControlBar({ meetId, printTargetRef, printStyles }: ControlBarProps) {
   const [scheme, setScheme] = useState<"color" | "black-and-white">("color");
+  const userSetSchemeRef = useRef(false);
+
+  useEffect(() => {
+    if (!meetId) return;
+    let cancelled = false;
+    const loadPrintDefault = async () => {
+      const meetRes = await fetch(`/api/meets/${meetId}`, { cache: "no-store" });
+      if (!meetRes.ok) return;
+      const meet = await meetRes.json().catch(() => null);
+      const homeTeamId = typeof meet?.homeTeamId === "string" ? meet.homeTeamId : null;
+      if (!homeTeamId) return;
+      const teamRes = await fetch(`/api/teams/${homeTeamId}`, { cache: "no-store" });
+      if (!teamRes.ok) return;
+      const team = await teamRes.json().catch(() => null);
+      if (cancelled || userSetSchemeRef.current) return;
+      const printInColor = typeof team?.printBoutSheetsInColor === "boolean" ? team.printBoutSheetsInColor : false;
+      setScheme(printInColor ? "color" : "black-and-white");
+    };
+    void loadPrintDefault();
+    return () => {
+      cancelled = true;
+    };
+  }, [meetId]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -44,7 +67,10 @@ export default function ControlBar({ meetId, printTargetRef, printStyles }: Cont
         <select
           id="color-scheme"
           value={scheme}
-          onChange={event => setScheme(event.target.value as "color" | "black-and-white")}
+          onChange={event => {
+            userSetSchemeRef.current = true;
+            setScheme(event.target.value as "color" | "black-and-white");
+          }}
         >
           <option value="color">Color</option>
           <option value="black-and-white">Black and white</option>

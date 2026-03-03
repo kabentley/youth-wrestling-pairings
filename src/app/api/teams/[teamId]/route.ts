@@ -15,6 +15,7 @@ const PatchSchema = z.object({
   homeTeamPreferSameMat: z.boolean().optional(),
   defaultMaxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   defaultRestGap: z.number().int().min(0).max(20).optional(),
+  printBoutSheetsInColor: z.boolean().optional(),
   defaultMaxAgeGapDays: z.number().int().min(0).max(3650).optional(),
 });
 
@@ -32,6 +33,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
       homeTeamPreferSameMat: true,
       defaultMaxMatchesPerWrestler: true,
       defaultRestGap: true,
+      printBoutSheetsInColor: true,
       defaultMaxAgeGapDays: true,
       logoData: true,
       headCoachId: true,
@@ -49,6 +51,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ teamId:
     homeTeamPreferSameMat: team.homeTeamPreferSameMat,
     defaultMaxMatchesPerWrestler: team.defaultMaxMatchesPerWrestler,
     defaultRestGap: team.defaultRestGap,
+    printBoutSheetsInColor: team.printBoutSheetsInColor,
     defaultMaxAgeGapDays: team.defaultMaxAgeGapDays,
     hasLogo: Boolean(team.logoData),
   });
@@ -95,6 +98,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
       homeTeamPreferSameMat?: boolean;
       defaultMaxMatchesPerWrestler?: number;
       defaultRestGap?: number;
+      printBoutSheetsInColor?: boolean;
       defaultMaxAgeGapDays?: number;
     } = {};
     if (body.color) data.color = body.color;
@@ -109,6 +113,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
     if (body.homeTeamPreferSameMat !== undefined) data.homeTeamPreferSameMat = body.homeTeamPreferSameMat;
     if (body.defaultMaxMatchesPerWrestler !== undefined) data.defaultMaxMatchesPerWrestler = body.defaultMaxMatchesPerWrestler;
     if (body.defaultRestGap !== undefined) data.defaultRestGap = body.defaultRestGap;
+    if (body.printBoutSheetsInColor !== undefined) data.printBoutSheetsInColor = body.printBoutSheetsInColor;
     if (body.defaultMaxAgeGapDays !== undefined) data.defaultMaxAgeGapDays = body.defaultMaxAgeGapDays;
 
     const team = await db.team.update({
@@ -126,6 +131,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
         homeTeamPreferSameMat: true,
         defaultMaxMatchesPerWrestler: true,
         defaultRestGap: true,
+        printBoutSheetsInColor: true,
         defaultMaxAgeGapDays: true,
         headCoach: { select: { id: true, username: true } },
       },
@@ -143,6 +149,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
       homeTeamPreferSameMat: team.homeTeamPreferSameMat,
       defaultMaxMatchesPerWrestler: team.defaultMaxMatchesPerWrestler,
       defaultRestGap: team.defaultRestGap,
+      printBoutSheetsInColor: team.printBoutSheetsInColor,
       defaultMaxAgeGapDays: team.defaultMaxAgeGapDays,
     });
   } catch (err) {

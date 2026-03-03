@@ -141,6 +141,11 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             .wall-chart-root .mat-block:last-of-type { page-break-after: auto; }
             .wall-chart-root .team-block { page-break-after: always; break-after: page; }
             .wall-chart-root .team-block:last-of-type { page-break-after: auto; break-after: auto; }
+            .wall-chart-root .mat-block,
+            .wall-chart-root .team-block {
+              border: none !important;
+              border-radius: 0 !important;
+            }
           }
           .wall-chart-root {
             font-family: system-ui;

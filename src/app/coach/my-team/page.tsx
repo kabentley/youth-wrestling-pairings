@@ -189,6 +189,7 @@ export default function CoachMyTeamPage() {
   const [homeTeamPreferSameMat, setHomeTeamPreferSameMat] = useState(true);
   const [defaultMaxMatchesPerWrestler, setDefaultMaxMatchesPerWrestler] = useState(5);
   const [defaultRestGap, setDefaultRestGap] = useState(4);
+  const [printBoutSheetsInColor, setPrintBoutSheetsInColor] = useState(false);
   const [maxMatchesInput, setMaxMatchesInput] = useState("5");
   const [restGapInput, setRestGapInput] = useState("4");
   const [parents, setParents] = useState<TeamMember[]>([]);
@@ -304,10 +305,12 @@ export default function CoachMyTeamPage() {
     maxMatches: number,
     restGap: number,
     preferSameMat: boolean,
+    printInColor: boolean,
   ) => JSON.stringify({
     defaultMaxMatchesPerWrestler: maxMatches,
     defaultRestGap: restGap,
     homeTeamPreferSameMat: preferSameMat,
+    printBoutSheetsInColor: printInColor,
   });
 
   const buildSnapshot = (incomingRules: MatRule[], mats: number) => {
@@ -469,8 +472,10 @@ export default function CoachMyTeamPage() {
     setHomeTeamPreferSameMat(preferSameMat);
     const maxMatches = typeof team.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : 5;
     const restGap = typeof team.defaultRestGap === "number" ? team.defaultRestGap : 4;
+    const printInColor = typeof team.printBoutSheetsInColor === "boolean" ? team.printBoutSheetsInColor : false;
     setDefaultMaxMatchesPerWrestler(maxMatches);
     setDefaultRestGap(restGap);
+    setPrintBoutSheetsInColor(printInColor);
     setTeamHasLogo(Boolean(team.hasLogo));
     setInitialInfo({ website: websiteVal, location: locationVal });
     setInfoDirty(false);
@@ -478,6 +483,7 @@ export default function CoachMyTeamPage() {
       maxMatches,
       restGap,
       preferSameMat,
+      printInColor,
     );
   };
 
@@ -594,6 +600,7 @@ export default function CoachMyTeamPage() {
     defaultMaxMatchesPerWrestler,
     defaultRestGap,
     homeTeamPreferSameMat,
+    printBoutSheetsInColor,
   );
   const meetDefaultsDirty = Boolean(meetDefaultsSnapshot) && meetDefaultsSnapshot !== currentMeetDefaultsSnapshot;
   const messageIsError = messageStatus === "error";
@@ -666,6 +673,7 @@ export default function CoachMyTeamPage() {
           homeTeamPreferSameMat,
           defaultMaxMatchesPerWrestler,
           defaultRestGap,
+          printBoutSheetsInColor,
         }),
       });
       if (!res.ok) {
@@ -678,13 +686,16 @@ export default function CoachMyTeamPage() {
       const maxMatches = typeof team?.defaultMaxMatchesPerWrestler === "number" ? team.defaultMaxMatchesPerWrestler : defaultMaxMatchesPerWrestler;
       const restGap = typeof team?.defaultRestGap === "number" ? team.defaultRestGap : defaultRestGap;
       const preferSameMat = typeof team?.homeTeamPreferSameMat === "boolean" ? team.homeTeamPreferSameMat : homeTeamPreferSameMat;
+      const printInColor = typeof team?.printBoutSheetsInColor === "boolean" ? team.printBoutSheetsInColor : printBoutSheetsInColor;
       setDefaultMaxMatchesPerWrestler(maxMatches);
       setDefaultRestGap(restGap);
       setHomeTeamPreferSameMat(preferSameMat);
+      setPrintBoutSheetsInColor(printInColor);
       meetDefaultsSnapshotRef.current = buildMeetDefaultsSnapshot(
         maxMatches,
         restGap,
         preferSameMat,
+        printInColor,
       );
       setMeetDefaultsMessage("Meet setup saved.");
       setMeetDefaultsStatus("success");
@@ -1468,6 +1479,15 @@ export default function CoachMyTeamPage() {
               onChange={(e) => setHomeTeamPreferSameMat(e.target.checked)}
             />
             Assign home team wrestlers' bouts so they are all on the same mat
+          </label>
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={printBoutSheetsInColor}
+              disabled={!canEditTeamSettings}
+              onChange={(e) => setPrintBoutSheetsInColor(e.target.checked)}
+            />
+            Print bout sheets in color
           </label>
           <div className="meet-setup-grid">
             <label className="meet-setup-row">

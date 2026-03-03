@@ -118,6 +118,10 @@ export default function ScratchSheetTab({
         page-break-after: auto;
         break-after: auto;
       }
+      .scratch-sheet-root .page-card {
+        border: none !important;
+        border-radius: 0 !important;
+      }
     }
     .scratch-sheet-root {
       font-family: Calibri, "Segoe UI", Arial, sans-serif;

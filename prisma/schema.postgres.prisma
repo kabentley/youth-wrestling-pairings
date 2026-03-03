@@ -41,6 +41,7 @@ model Team {
   homeTeamPreferSameMat Boolean @default(true)
   defaultMaxMatchesPerWrestler Int @default(5)
   defaultRestGap Int @default(6)
+  printBoutSheetsInColor Boolean @default(false)
   defaultMaxAgeGapDays Int @default(365)
   headCoachId String?   @unique
   headCoach   User?     @relation("TeamHeadCoach", fields: [headCoachId], references: [id], onDelete: SetNull)

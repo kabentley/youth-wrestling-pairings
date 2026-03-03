@@ -125,6 +125,10 @@ export default function ScoringSheetTab({
         page-break-after: auto;
         break-after: auto;
       }
+      .scoring-sheet-root .sheet-card {
+        border: none !important;
+        border-radius: 0 !important;
+      }
     }
     .scoring-sheet-root {
       font-family: Calibri, "Segoe UI", Arial, sans-serif;

@@ -34,6 +34,13 @@ type Bout = {
     username?: string | null;
   } | null;
 };
+
+type MatRuleRange = {
+  minExperience: number;
+  maxExperience: number;
+  minAge: number;
+  maxAge: number;
+};
 const keyMat = (m: number) => String(m);
 const MAX_MATS = 6;
 
@@ -146,12 +153,15 @@ export default function MatBoardTab({
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
+  const [matRulesByMat, setMatRulesByMat] = useState<Record<number, MatRuleRange>>({});
   const [meetSettings, setMeetSettings] = useState<{
     numMats: number;
     restGap: number;
     homeTeamId?: string | null;
+    date?: string | null;
   } | null>(null);
   const [italicizeSingles, setItalicizeSingles] = useState(true);
+  const [showTeamSymbols, setShowTeamSymbols] = useState(false);
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [lockedBoutIds, setLockedBoutIds] = useState<Set<string>>(new Set());
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
@@ -251,6 +261,7 @@ export default function MatBoardTab({
       if (!meetRes.ok) {
         if (!cancelled) {
           setMatRuleColors({});
+          setMatRulesByMat({});
           setMeetSettings(null);
         }
         return;
@@ -261,30 +272,46 @@ export default function MatBoardTab({
           numMats: Math.max(1, Math.min(MAX_MATS, typeof meet?.numMats === "number" ? meet.numMats : 4)),
           restGap: typeof meet?.restGap === "number" ? meet.restGap : 4,
           homeTeamId: meet?.homeTeamId ?? null,
+          date: typeof meet?.date === "string" ? meet.date : null,
         });
       }
       const homeTeamId = meet?.homeTeamId;
       if (!homeTeamId) {
-        if (!cancelled) setMatRuleColors({});
+        if (!cancelled) {
+          setMatRuleColors({});
+          setMatRulesByMat({});
+        }
         return;
       }
       const rulesRes = await fetch(`/api/meets/${meetId}/mat-rules`);
       if (!rulesRes.ok) {
-        if (!cancelled) setMatRuleColors({});
+        if (!cancelled) {
+          setMatRuleColors({});
+          setMatRulesByMat({});
+        }
         return;
       }
       const payload = await rulesRes.json().catch(() => null);
       if (cancelled) return;
-    const colors: Record<number, string | null> = {};
-    const rules = Array.isArray(payload?.rules) ? payload.rules : [];
-    for (const rule of rules) {
-      if (typeof rule.matIndex === "number") {
+      const colors: Record<number, string | null> = {};
+      const ranges: Record<number, MatRuleRange> = {};
+      const rules = Array.isArray(payload?.rules) ? payload.rules : [];
+      for (const rule of rules) {
+        if (typeof rule.matIndex !== "number") continue;
+        const matIndex = rule.matIndex;
+        const fallback = DEFAULT_MAT_RULES[(matIndex - 1) % DEFAULT_MAT_RULES.length];
         const trimmedColor =
           typeof rule.color === "string" ? rule.color.trim() : "";
-        colors[rule.matIndex] = trimmedColor.length > 0 ? trimmedColor : null;
+        colors[matIndex] = trimmedColor.length > 0 ? trimmedColor : null;
+        ranges[matIndex] = {
+          minExperience: typeof rule.minExperience === "number" ? rule.minExperience : fallback.minExperience,
+          maxExperience: typeof rule.maxExperience === "number" ? rule.maxExperience : fallback.maxExperience,
+          minAge: typeof rule.minAge === "number" ? rule.minAge : fallback.minAge,
+          maxAge: typeof rule.maxAge === "number" ? rule.maxAge : fallback.maxAge,
+        };
       }
-    }
       setMatRuleColors(colors);
+      setMatRulesByMat(ranges);
     };
     void fetchMatColors();
     return () => {
@@ -489,6 +516,56 @@ export default function MatBoardTab({
    * while preserving their computed ordering.
    */
   function moveBout(boutId: string, toMat: number, toIndex: number) {
+    const getMeetDate = () => {
+      const raw = meetSettings?.date;
+      if (raw) {
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+      }
+      return new Date();
+    };
+    const ageInYears = (birthdate?: string | null) => {
+      if (!birthdate) return null;
+      const born = new Date(birthdate);
+      if (Number.isNaN(born.getTime())) return null;
+      const onDate = getMeetDate();
+      const ms = onDate.getTime() - born.getTime();
+      return ms / (365.25 * 24 * 60 * 60 * 1000);
+    };
+    const matRuleFor = (matNumber: number): MatRuleRange => {
+      const fromMeet = matRulesByMat[matNumber];
+      if (fromMeet) return fromMeet;
+      const fallback = DEFAULT_MAT_RULES[(matNumber - 1) % DEFAULT_MAT_RULES.length];
+      return {
+        minExperience: fallback.minExperience,
+        maxExperience: fallback.maxExperience,
+        minAge: fallback.minAge,
+        maxAge: fallback.maxAge,
+      };
+    };
+    const isAllowedOnTargetMat = (bout: Bout, matNumber: number) => {
+      const red = wMap[bout.redId];
+      const green = wMap[bout.greenId];
+      if (!red || !green) return false;
+      const redAge = ageInYears(red.birthdate);
+      const greenAge = ageInYears(green.birthdate);
+      if (redAge === null || greenAge === null) return false;
+      const redExp = red.experienceYears ?? 0;
+      const greenExp = green.experienceYears ?? 0;
+      const rule = matRuleFor(matNumber);
+      const expOk =
+        redExp >= rule.minExperience &&
+        redExp <= rule.maxExperience &&
+        greenExp >= rule.minExperience &&
+        greenExp <= rule.maxExperience;
+      const ageOk =
+        redAge >= rule.minAge &&
+        redAge <= rule.maxAge &&
+        greenAge >= rule.minAge &&
+        greenAge <= rule.maxAge;
+      return expOk && ageOk;
+    };
+
     setBouts(prev => {
       const next = prev.map(x => ({ ...x }));
       const b = next.find(x => x.id === boutId);
@@ -496,6 +573,9 @@ export default function MatBoardTab({
 
       const fromMat = b.mat ?? 1;
       b.originalMat ??= fromMat;
+      const shouldPromoteOriginalMat = fromMat !== toMat && isAllowedOnTargetMat(b, toMat);
+      const nextOriginalMat = shouldPromoteOriginalMat ? toMat : (b.originalMat ?? fromMat);
+      b.originalMat = nextOriginalMat;
 
       const fromList = next
         .filter(x => (x.mat ?? 1) === fromMat && x.id !== boutId)
@@ -505,7 +585,11 @@ export default function MatBoardTab({
         .filter(x => (x.mat ?? 1) === toMat && x.id !== boutId)
         .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
 
-      toList.splice(Math.max(0, Math.min(toIndex, toList.length)), 0, { ...b, mat: toMat });
+      toList.splice(
+        Math.max(0, Math.min(toIndex, toList.length)),
+        0,
+        { ...b, mat: toMat, originalMat: nextOriginalMat },
+      );
 
       const updated = new Map<string, { mat: number; order: number }>();
       fromList.forEach((x, i) => updated.set(x.id, { mat: fromMat, order: i + 1 }));
@@ -966,7 +1050,11 @@ export default function MatBoardTab({
     const silent = Boolean(opts?.silent);
     if (!silent) setMsg("Saving...");
     const payload: Record<string, string[]> = {};
+    const originalMatByBoutId: Record<string, number | null> = {};
     for (let m = 1; m <= numMats; m++) payload[keyMat(m)] = [];
+    for (const bout of bouts) {
+      originalMatByBoutId[bout.id] = bout.originalMat ?? null;
+    }
 
     const grouped: Record<string, Bout[]> = {};
     for (const b of bouts) {
@@ -986,6 +1074,7 @@ export default function MatBoardTab({
       body: JSON.stringify({
         mats: payload,
         lockedBoutIds: [...lockedBoutIds],
+        originalMatByBoutId,
       }),
       keepalive: Boolean(opts?.keepalive),
     });
@@ -1048,8 +1137,13 @@ export default function MatBoardTab({
   function boutLabel(b: Bout) {
     const r = wMap[b.redId];
     const g = wMap[b.greenId];
-    const rTxt = r ? `${r.first} ${r.last}` : b.redId;
-    const gTxt = g ? `${g.first} ${g.last}` : b.greenId;
+    const withTeamSymbol = (label: string, wrestler?: Wrestler) => {
+      if (!showTeamSymbols || !wrestler) return label;
+      const symbol = (teams.find(team => team.id === wrestler.teamId)?.symbol ?? "").trim();
+      return symbol ? `${label} (${symbol})` : label;
+    };
+    const rTxt = withTeamSymbol(r ? `${r.first} ${r.last}` : b.redId, r);
+    const gTxt = withTeamSymbol(g ? `${g.first} ${g.last}` : b.greenId, g);
     const rColor = r ? teamTextColor(r.teamId) : "";
     const gColor = g ? teamTextColor(g.teamId) : "";
     return { rTxt, gTxt, rColor, gColor, rStatus: r?.status ?? null, gStatus: g?.status ?? null };
@@ -1604,6 +1698,14 @@ export default function MatBoardTab({
               <span>
                 Show wrestlers with only one match in <em>italics</em>
               </span>
+            </label>
+            <label className="matboard-italic-control">
+              <input
+                type="checkbox"
+                checked={showTeamSymbols}
+                onChange={e => setShowTeamSymbols(e.target.checked)}
+              />
+              <span>Show team</span>
             </label>
           </div>
           <div className="matboard-legend">
