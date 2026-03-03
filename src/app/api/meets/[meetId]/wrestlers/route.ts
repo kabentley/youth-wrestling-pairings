@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+};
+
 export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const meet = await db.meet.findUnique({
@@ -9,7 +13,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     select: { deletedAt: true },
   });
   if (!meet || meet.deletedAt) {
-    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    return NextResponse.json({ error: "Meet not found" }, { status: 404, headers: NO_STORE_HEADERS });
   }
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
@@ -53,5 +57,5 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     }))
   ).filter(w => (w.active ? true : boutWrestlerIds.has(w.id)));
 
-  return NextResponse.json({ teams, wrestlers });
+  return NextResponse.json({ teams, wrestlers }, { headers: NO_STORE_HEADERS });
 }

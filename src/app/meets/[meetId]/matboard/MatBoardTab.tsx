@@ -367,8 +367,8 @@ export default function MatBoardTab({
    */
   async function load() {
     const [bRes, wRes] = await Promise.all([
-      fetch(`/api/meets/${meetId}/pairings`),
-      fetch(`/api/meets/${meetId}/wrestlers`),
+      fetch(`/api/meets/${meetId}/pairings`, { cache: "no-store" }),
+      fetch(`/api/meets/${meetId}/wrestlers`, { cache: "no-store" }),
     ]);
     if ([bRes, wRes].some(r => r.status === 401)) {
       setAuthMsg("Please sign in to view this meet.");

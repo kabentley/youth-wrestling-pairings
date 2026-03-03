@@ -87,7 +87,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}`)
+    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -487,7 +487,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
   const teamCharts = meet.meetTeams.map(mt => {
     const members = payload.wrestlers
-      .filter(w => w.teamId === mt.team.id)
+      .filter(w => w.teamId === mt.team.id && !absentIds.has(w.id))
       .map(w => ({
         id: w.id,
         name: formatWrestlerName(w),

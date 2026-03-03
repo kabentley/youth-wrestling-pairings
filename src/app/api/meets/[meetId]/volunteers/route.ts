@@ -6,8 +6,8 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
-const AllowedRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
-const AllowedRolesForQuery = [...AllowedRoles];
+const StaffRoles = ["COACH", "TABLE_WORKER"] as const;
+const StaffRolesForQuery = [...StaffRoles];
 
 const BodySchema = z.object({
   assignments: z.array(z.object({
@@ -23,10 +23,16 @@ function roleRank(role: string) {
   return 3;
 }
 
-function canAccessMeetTeam(user: { role: string; teamId?: string | null }, teamIds: string[]) {
-  if (user.role === "ADMIN") return true;
-  if (!user.teamId) return false;
-  return teamIds.includes(user.teamId);
+function isHomeTeamCoach(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
+  return user.role === "COACH" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
+}
+
+function isHomeTeamAdmin(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
+  return user.role === "ADMIN" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
+}
+
+function canManageVolunteers(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
+  return isHomeTeamCoach(user, homeTeamId) || isHomeTeamAdmin(user, homeTeamId);
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -58,14 +64,25 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   }
 
   const teamIds = meet.meetTeams.map((entry) => entry.team.id);
-  if (!canAccessMeetTeam(user, teamIds)) {
-    return NextResponse.json({ error: "You are not authorized to manage volunteers for this meet." }, { status: 403 });
+  if (!meet.homeTeamId) {
+    return NextResponse.json({ error: "Meet must have a home team before managing volunteers." }, { status: 400 });
+  }
+  if (!canManageVolunteers(user, meet.homeTeamId)) {
+    return NextResponse.json({ error: "Only home team coaches or admins assigned to the home team can manage volunteers for this meet." }, { status: 403 });
   }
 
   const volunteers = await db.user.findMany({
     where: {
-      teamId: { in: teamIds },
-      role: { in: AllowedRolesForQuery },
+      OR: [
+        {
+          teamId: { in: teamIds },
+          role: { in: StaffRolesForQuery },
+        },
+        {
+          teamId: meet.homeTeamId,
+          role: "PARENT",
+        },
+      ],
     },
     select: {
       id: true,
@@ -129,7 +146,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     meet: {
       id: meet.id,
       numMats: maxMat,
-      homeTeamId: meet.homeTeamId ?? null,
+      homeTeamId: meet.homeTeamId,
       teams: meet.meetTeams.map((entry) => entry.team),
     },
     volunteers: mapped,
@@ -177,8 +194,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
 
   const teamIds = meet.meetTeams.map((entry) => entry.teamId);
-  if (!canAccessMeetTeam(user, teamIds)) {
-    return NextResponse.json({ error: "You are not authorized to manage volunteers for this meet." }, { status: 403 });
+  if (!canManageVolunteers(user, meet.homeTeamId)) {
+    return NextResponse.json({ error: "Only home team coaches or admins assigned to the home team can manage volunteers for this meet." }, { status: 403 });
   }
 
   const maxMat = Math.max(1, Math.min(6, meet.numMats));
@@ -192,8 +209,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const volunteers = await db.user.findMany({
     where: {
       id: { in: userIds },
-      teamId: { in: teamIds },
-      role: { in: AllowedRolesForQuery },
+      OR: [
+        {
+          teamId: { in: teamIds },
+          role: { in: StaffRolesForQuery },
+        },
+        {
+          teamId: meet.homeTeamId,
+          role: "PARENT",
+        },
+      ],
     },
     select: { id: true },
   });

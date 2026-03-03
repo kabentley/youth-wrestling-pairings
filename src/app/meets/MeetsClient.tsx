@@ -256,7 +256,7 @@ export default function MeetsPage() {
       const has = prev.includes(id);
       if (has) return prev.filter(x => x !== id);
       const otherCount = prev.filter(x => x !== currentTeamId).length;
-      if (otherCount >= 3) return prev;
+      if (otherCount >= 4) return prev;
       return [...prev, id];
     });
   }
@@ -1266,7 +1266,7 @@ export default function MeetsPage() {
                 ))}
               </div>
                 <div className="muted" style={{ marginTop: 6 }}>
-                  Selected other teams: {otherTeamIds.length} (max 3)
+                  Selected other teams: {otherTeamIds.length} (max 4)
                 </div>
               </div>
 
@@ -1299,7 +1299,7 @@ export default function MeetsPage() {
                   className="btn"
                   type="button"
                   onClick={handleModalSubmit}
-                  disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 3 || displayMeetName.trim().length < 2}
+                  disabled={!canManageMeets || otherTeamIds.length < 1 || otherTeamIds.length > 4 || displayMeetName.trim().length < 2}
                 >
                   {submitLabel}
                 </button>

@@ -6,13 +6,17 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0",
+};
+
 export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: { deletedAt: true },
   });
-  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404, headers: NO_STORE_HEADERS });
   const bouts = await db.bout.findMany({
     where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { pairingScore: "asc" }],
@@ -59,7 +63,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     sourceUser: b.source ? sourceMap.get(b.source) ?? null : null,
     peopleRuleUser: b.peopleRuleUserId ? peopleRuleMap.get(b.peopleRuleUserId) ?? null : null,
   }));
-  return NextResponse.json(enriched);
+  return NextResponse.json(enriched, { headers: NO_STORE_HEADERS });
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ meetId: string }> }) {

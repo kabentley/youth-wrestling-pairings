@@ -71,7 +71,7 @@ export default function ScoringSheetTab({
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}`)
+    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));

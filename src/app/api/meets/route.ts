@@ -10,7 +10,7 @@ const MeetSchema = z.object({
   name: z.string().optional().default(""),
   date: z.string(),
   location: z.string().optional(),
-  teamIds: z.array(z.string()).min(2).max(4),
+  teamIds: z.array(z.string()).min(2).max(5),
   homeTeamId: z.string().optional(),
   numMats: z.number().int().min(1).max(6).default(4),
   allowSameTeamMatches: z.boolean().default(false),

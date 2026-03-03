@@ -394,6 +394,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const initialCheckpointFlowRef = useRef(false);
   const initialCheckpointSavedRef = useRef(false);
   const pairingsInitRef = useRef(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -1002,11 +1004,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   // Load primary meet data (bouts, wrestlers, meet metadata, current user).
   const load = useCallback(async () => {
     const [bRes, wRes, mRes, meRes, rRes] = await Promise.all([
-      fetch(`/api/meets/${meetId}/pairings`),
-      fetch(`/api/meets/${meetId}/wrestlers`),
-      fetch(`/api/meets/${meetId}`),
-      fetch("/api/me"),
-      fetch(`/api/meets/${meetId}/rejected-pairs`),
+      fetch(`/api/meets/${meetId}/pairings`, { cache: "no-store" }),
+      fetch(`/api/meets/${meetId}/wrestlers`, { cache: "no-store" }),
+      fetch(`/api/meets/${meetId}`, { cache: "no-store" }),
+      fetch("/api/me", { cache: "no-store" }),
+      fetch(`/api/meets/${meetId}/rejected-pairs`, { cache: "no-store" }),
     ]);
     if ([bRes, wRes, mRes].some(r => r.status === 401)) {
       setAuthMsg("Please sign in to view this meet.");
@@ -1075,6 +1077,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
       setCurrentUsername(meJson?.username ?? null);
+      setCurrentUserRole(typeof meJson?.role === "string" ? meJson.role : null);
+      setCurrentUserTeamId(typeof meJson?.teamId === "string" ? meJson.teamId : null);
+    } else {
+      setCurrentUsername(null);
+      setCurrentUserRole(null);
+      setCurrentUserTeamId(null);
     }
     if (rRes.ok) {
       const rejectedJson = await rRes.json().catch(() => ({}));
@@ -1180,6 +1188,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isPublished = meetStatus === "PUBLISHED";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
   const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
+  const canViewVolunteers = Boolean(
+    homeTeamId &&
+    currentUserTeamId &&
+    currentUserTeamId === homeTeamId &&
+    ["ADMIN", "COACH"].includes(currentUserRole ?? ""),
+  );
 
   useEffect(() => { void load(); void loadActivity(); void loadCheckpoints(); }, [load, loadActivity, loadCheckpoints]);
   useEffect(() => {
@@ -1222,6 +1236,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingsTeamId(homeTeamId);
     pairingsInitRef.current = true;
   }, [meetLoaded, homeTeamId, orderedPairingsTeams]);
+  useEffect(() => {
+    if (activeTab !== "volunteers") return;
+    if (canViewVolunteers) return;
+    setActiveTab("pairings");
+  }, [activeTab, canViewVolunteers]);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -2015,11 +2034,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   // Update attendance status and refresh dependent views.
   async function updateWrestlerStatus(wrestlerId: string, status: AttendanceStatus | null) {
-    await fetch(`/api/meets/${meetId}/wrestlers/status`, {
+    const res = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wrestlerId, status }),
     });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error(payload?.error ?? `Unable to update attendance (${res.status}).`);
+    }
     await load();
     await loadActivity();
     refreshAfterPairingsChange();
@@ -2042,7 +2065,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return;
     }
     if (!pairingContext) return;
-    await updateWrestlerStatus(pairingContext.wrestler.id, status);
+    try {
+      await updateWrestlerStatus(pairingContext.wrestler.id, status);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to update attendance.";
+      window.alert(message);
+    }
     setPairingContext(null);
   }
 
@@ -3460,13 +3488,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       <div className="tab-bar">
           {[
             { key: "pairings", label: "Pairings" },
-          { key: "matboard", label: "Mat Assignments" },
-          { key: "volunteers", label: "Volunteers" },
-          { key: "wallMat", label: "Mat Sheets" },
-          { key: "wallTeam", label: "Team Sheets" },
-          { key: "scratch", label: "Check-in Sheets" },
-          { key: "scoring", label: "Scoring Sheets" },
-        ].map(tab => (
+            { key: "matboard", label: "Mat Assignments" },
+            ...(canViewVolunteers ? [{ key: "volunteers", label: "Volunteers" } as const] : []),
+            { key: "wallMat", label: "Mat Sheets" },
+            { key: "wallTeam", label: "Team Sheets" },
+            { key: "scratch", label: "Check-in Sheets" },
+            { key: "scoring", label: "Scoring Sheets" },
+          ].map(tab => (
           <button
             key={tab.key}
             className={`tab-button${activeTab === tab.key ? " active" : ""}`}
@@ -5112,7 +5140,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </section>
         )}
 
-        {activeTab === "volunteers" && (
+        {activeTab === "volunteers" && canViewVolunteers && (
           <section>
             {meetStatus === "PUBLISHED" && (
               <div className="notice">
