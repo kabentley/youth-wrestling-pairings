@@ -52,6 +52,12 @@ function roleRank(role: VolunteerRole) {
   return 2;
 }
 
+function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) {
+  const isHomeTeam = homeTeamId ? volunteer.teamId === homeTeamId : true;
+  if (!isHomeTeam) return false;
+  return true;
+}
+
 export default function VolunteersTab({
   meetId,
   canEdit,
@@ -140,12 +146,12 @@ export default function VolunteersTab({
 
   const sortedPool = useMemo(() => {
     return volunteers
-      .filter((volunteer) => (volunteer.matNumber ?? null) === null)
+      .filter((volunteer) => {
+        if ((volunteer.matNumber ?? null) !== null) return false;
+        return canBeInUnassignedPool(volunteer, homeTeamId);
+      })
       .slice()
       .sort((a, b) => {
-        const aIsOtherOrParent = (a.teamId && homeTeamId ? a.teamId !== homeTeamId : false) || a.role === "PARENT";
-        const bIsOtherOrParent = (b.teamId && homeTeamId ? b.teamId !== homeTeamId : false) || b.role === "PARENT";
-        if (aIsOtherOrParent !== bIsOtherOrParent) return aIsOtherOrParent ? -1 : 1;
         const roleCmp = roleRank(a.role) - roleRank(b.role);
         if (roleCmp !== 0) return roleCmp;
         return a.displayName.localeCompare(b.displayName);
@@ -182,6 +188,11 @@ export default function VolunteersTab({
 
   const onDropToPool = () => {
     if (!canEdit || !dragVolunteerId || saving) return;
+    const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
+    if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) {
+      setDragVolunteerId(null);
+      return;
+    }
     setVolunteerMat(dragVolunteerId, null);
     setDragVolunteerId(null);
   };
@@ -330,7 +341,7 @@ export default function VolunteersTab({
       <style>{styles}</style>
       <div className="volunteers-toolbar">
         <div style={{ fontSize: 13, color: "#4a586a" }}>
-          Drag coaches, table workers, and parents between mats and the unassigned panel. Changes save automatically.
+          Drag volunteers between mats. Home-team coaches, table workers, and parents can be moved to the Unassigned parents panel. Changes save automatically.
         </div>
       </div>
       {!canEdit && (
@@ -400,7 +411,9 @@ export default function VolunteersTab({
         <div
           className="volunteers-pool"
           onDragOver={(event) => {
-            if (!canEdit || saving) return;
+            if (!canEdit || saving || !dragVolunteerId) return;
+            const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
+            if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) return;
             event.preventDefault();
           }}
           onDrop={(event) => {

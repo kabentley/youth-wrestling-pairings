@@ -6,8 +6,8 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
-const StaffRoles = ["COACH", "TABLE_WORKER"] as const;
-const StaffRolesForQuery = [...StaffRoles];
+const HomeVolunteerRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
+const HomeVolunteerRolesForQuery = [...HomeVolunteerRoles];
 
 const BodySchema = z.object({
   assignments: z.array(z.object({
@@ -63,7 +63,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
   }
 
-  const teamIds = meet.meetTeams.map((entry) => entry.team.id);
   if (!meet.homeTeamId) {
     return NextResponse.json({ error: "Meet must have a home team before managing volunteers." }, { status: 400 });
   }
@@ -73,16 +72,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
   const volunteers = await db.user.findMany({
     where: {
-      OR: [
-        {
-          teamId: { in: teamIds },
-          role: { in: StaffRolesForQuery },
-        },
-        {
-          teamId: meet.homeTeamId,
-          role: "PARENT",
-        },
-      ],
+      teamId: meet.homeTeamId,
+      role: { in: HomeVolunteerRolesForQuery },
     },
     select: {
       id: true,
@@ -124,7 +115,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
         matNumber,
         kids: entry.children
           .map((link) => link.wrestler)
-          .filter((wrestler) => teamIds.includes(wrestler.teamId))
+          .filter((wrestler) => wrestler.teamId === meet.homeTeamId)
           .sort((a, b) => {
             const lastCmp = a.last.localeCompare(b.last);
             if (lastCmp !== 0) return lastCmp;
@@ -193,7 +184,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ error: "Cannot change volunteer mats after results have been entered." }, { status: 400 });
   }
 
-  const teamIds = meet.meetTeams.map((entry) => entry.teamId);
   if (!canManageVolunteers(user, meet.homeTeamId)) {
     return NextResponse.json({ error: "Only home team coaches or admins assigned to the home team can manage volunteers for this meet." }, { status: 403 });
   }
@@ -209,16 +199,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const volunteers = await db.user.findMany({
     where: {
       id: { in: userIds },
-      OR: [
-        {
-          teamId: { in: teamIds },
-          role: { in: StaffRolesForQuery },
-        },
-        {
-          teamId: meet.homeTeamId,
-          role: "PARENT",
-        },
-      ],
+      teamId: meet.homeTeamId,
+      role: { in: HomeVolunteerRolesForQuery },
     },
     select: { id: true },
   });
