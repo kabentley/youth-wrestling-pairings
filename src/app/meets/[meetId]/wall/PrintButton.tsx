@@ -30,7 +30,9 @@ export default function PrintButton({ meetId, targetRef, styles }: PrintButtonPr
       return;
     }
 
-    printWindow.document.write(`<!DOCTYPE html><html><head><title>Wall Chart</title><style>${styles ?? ""}</style></head><body>`);
+    const isBlackAndWhite = document.documentElement.classList.contains("black-and-white");
+    const htmlClass = isBlackAndWhite ? ' class="black-and-white"' : "";
+    printWindow.document.write(`<!DOCTYPE html><html${htmlClass}><head><title>Wall Chart</title><style>${styles ?? ""}</style></head><body>`);
     printWindow.document.write(targetRef.current.outerHTML);
     printWindow.document.write("</body></html>");
     printWindow.document.close();

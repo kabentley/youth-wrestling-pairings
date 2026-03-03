@@ -68,6 +68,12 @@ const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 const LAST_NAME_MATCH_THRESHOLD = 0.82;
 
 const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
+const formatLastFirstName = (first?: string | null, last?: string | null) => {
+  const firstName = (first ?? "").trim();
+  const lastName = (last ?? "").trim();
+  if (lastName && firstName) return `${lastName}, ${firstName}`;
+  return lastName || firstName;
+};
 
 const extractLastNameCandidates = (fullName?: string | null) => {
   if (!fullName) return [] as string[];
@@ -475,14 +481,15 @@ export default function ParentPage() {
           padding: 10px 16px;
           overflow: auto;
           display: grid;
-          gap: 8px;
+          gap: 4px;
           max-height: 50vh;
         }
         .coach-modal-option {
           display: flex;
-          align-items: center;
-          gap: 8px;
+          align-items: flex-start;
+          gap: 6px;
           font-size: 14px;
+          line-height: 1.15;
         }
         .coach-modal-actions {
           display: flex;
@@ -706,7 +713,7 @@ export default function ParentPage() {
                         checked={checked}
                         onChange={() => togglePickerWrestler(wrestler.id)}
                       />
-                      <span>{wrestler.first} {wrestler.last}</span>
+                      <span>{formatLastFirstName(wrestler.first, wrestler.last)}</span>
                     </label>
                   );
                 })

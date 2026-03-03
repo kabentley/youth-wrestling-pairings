@@ -377,6 +377,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [clearAutoPairingsBeforeRun, setClearAutoPairingsBeforeRun] = useState(false);
   const [pruneTargetMatches, setPruneTargetMatches] = useState<number | null>(null);
   const [allowRejectedMatchups, setAllowRejectedMatchups] = useState(false);
+  const [autoMatchesPerWrestler, setAutoMatchesPerWrestler] = useState<number | null>(null);
+  const [autoMaxMatchesPerWrestler, setAutoMaxMatchesPerWrestler] = useState<number | null>(null);
   const [autoPairingsConfirmAutoRun, setAutoPairingsConfirmAutoRun] = useState(false);
   const [showAutoPairingsModal, setShowAutoPairingsModal] = useState(false);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
@@ -407,7 +409,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           throw new Error(errorText || "Unable to clear existing bouts.");
         }
       }
-        const targetMatchesValue = matchesPerWrestler ?? savedMatchesPerWrestler ?? undefined;
+        const targetMatchesValue = autoMatchesPerWrestler ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? undefined;
         const pruneTargetValue = pruneTargetMatches ?? targetMatchesValue ?? undefined;
         const effectivePruneTarget = targetMatchesValue !== undefined && pruneTargetValue !== undefined
           ? Math.max(pruneTargetValue, targetMatchesValue)
@@ -416,9 +418,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           firstYearOnlyWithFirstYear: settings.firstYearOnlyWithFirstYear,
           allowSameTeamMatches: settings.allowSameTeamMatches,
           girlsWrestleGirls: settings.girlsWrestleGirls,
-          matchesPerWrestler: matchesPerWrestler ?? undefined,
+          matchesPerWrestler: autoMatchesPerWrestler ?? matchesPerWrestler ?? undefined,
           pruneTargetMatches: effectivePruneTarget,
-          maxMatchesPerWrestler: maxMatchesPerWrestler ?? undefined,
+          maxMatchesPerWrestler: autoMaxMatchesPerWrestler ?? maxMatchesPerWrestler ?? undefined,
           preserveMats: !clearExisting,
           allowRejectedMatchups: allowRejectedMatchups && rejectedPairs.size > 0,
         };
@@ -479,8 +481,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
   const [matchesTooltip, setMatchesTooltip] = useState<MatchesTooltip | null>(null);
   const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
-  const pruneTargetMin = matchesPerWrestler ?? savedMatchesPerWrestler ?? 1;
-  const pruneTargetDisplay = pruneTargetMatches ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? "";
+  const autoTargetMatches = autoMatchesPerWrestler ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? null;
+  const pruneTargetMin = autoTargetMatches ?? 1;
+  const pruneTargetDisplay = pruneTargetMatches ?? autoTargetMatches ?? "";
   const attendanceStatusStyles: Record<AttendanceStatus, { background: string; borderColor: string }> = {
     COMING: { background: "#eaf6e6", borderColor: "#c6e2ba" },
     NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
@@ -1518,6 +1521,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
   }, [matchesPerWrestler]);
   useEffect(() => {
+    if (!showAutoPairingsConfirm) return;
+    setAutoMatchesPerWrestler(matchesPerWrestler);
+    setAutoMaxMatchesPerWrestler(maxMatchesPerWrestler);
+  }, [showAutoPairingsConfirm, matchesPerWrestler, maxMatchesPerWrestler]);
+  useEffect(() => {
     const wrapper = pairingsTableWrapperRef.current;
     if (!wrapper) return;
     const observer = new ResizeObserver(entries => {
@@ -1737,6 +1745,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   function refreshAfterMatAssignments() {
     void load();
     void loadActivity();
+    setWallRefreshIndex(idx => idx + 1);
+  }
+
+  function refreshAfterPairingsChange() {
+    setMatRefreshIndex(idx => idx + 1);
     setWallRefreshIndex(idx => idx + 1);
   }
 
@@ -2009,6 +2022,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
     await load();
     await loadActivity();
+    refreshAfterPairingsChange();
     if (isNotAttending(status)) {
       setTarget(null);
       setCandidates([]);
@@ -2175,6 +2189,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     await load();
     await loadActivity();
+    refreshAfterPairingsChange();
     setSelectedPairingId(null);
     setModalAttendanceOverrides(new Map());
     return true;
@@ -4630,16 +4645,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       type="number"
                       min={1}
                       max={5}
-                      value={matchesPerWrestler ?? ""}
+                      value={autoMatchesPerWrestler ?? ""}
                       onChange={(e) => {
                         const value = e.target.value;
                         if (value === "") {
-                          setMatchesPerWrestler(null);
+                          setAutoMatchesPerWrestler(null);
                           return;
                         }
                         const parsed = Number.parseInt(value, 10);
                         if (Number.isNaN(parsed)) return;
-                        setMatchesPerWrestler(Math.min(5, Math.max(1, parsed)));
+                        const next = Math.min(5, Math.max(1, parsed));
+                        setAutoMatchesPerWrestler(next);
+                        setPruneTargetMatches((prev) => {
+                          if (prev === null || prev < next) return next;
+                          return prev;
+                        });
                       }}
                     />
                   </label>
@@ -4649,16 +4669,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       type="number"
                       min={1}
                       max={5}
-                      value={maxMatchesPerWrestler ?? ""}
+                      value={autoMaxMatchesPerWrestler ?? ""}
                       onChange={(e) => {
                         const value = e.target.value;
                         if (value === "") {
-                          setMaxMatchesPerWrestler(null);
+                          setAutoMaxMatchesPerWrestler(null);
                           return;
                         }
                         const parsed = Number.parseInt(value, 10);
                         if (Number.isNaN(parsed)) return;
-                        setMaxMatchesPerWrestler(Math.min(5, Math.max(1, parsed)));
+                        setAutoMaxMatchesPerWrestler(Math.min(5, Math.max(1, parsed)));
                       }}
                     />
                   </label>

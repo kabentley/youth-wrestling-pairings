@@ -586,6 +586,16 @@ export default function MatBoardTab({
 
   function buildOrderConstraints(list: Bout[]) {
     const constraints = new Map<string, OrderConstraint>();
+    const wrestlerMatchCounts = new Map<string, number>();
+    for (const bout of bouts) {
+      wrestlerMatchCounts.set(bout.redId, (wrestlerMatchCounts.get(bout.redId) ?? 0) + 1);
+      wrestlerMatchCounts.set(bout.greenId, (wrestlerMatchCounts.get(bout.greenId) ?? 0) + 1);
+    }
+    const effectiveOrderingStatus = (wrestlerId: string) => {
+      const explicit = wMap[wrestlerId]?.status;
+      if (explicit === "EARLY" || explicit === "LATE") return explicit;
+      return (wrestlerMatchCounts.get(wrestlerId) ?? 0) === 1 ? "EARLY" : null;
+    };
     const listSize = Math.max(1, list.length);
     const earlyMaxOrder = Math.max(1, Math.ceil(listSize / 3));
     const lateMinOrder = Math.max(1, Math.floor((2 * listSize) / 3) + 1);
@@ -595,8 +605,8 @@ export default function MatBoardTab({
     const fallbackMiddleMax = Math.ceil((listSize + 1) / 2);
     for (let idx = 0; idx < list.length; idx++) {
       const bout = list[idx];
-      const redStatus = wMap[bout.redId]?.status;
-      const greenStatus = wMap[bout.greenId]?.status;
+      const redStatus = effectiveOrderingStatus(bout.redId);
+      const greenStatus = effectiveOrderingStatus(bout.greenId);
       let minOrder = 1;
       let maxOrder = listSize;
       const hasEarly = redStatus === "EARLY" || greenStatus === "EARLY";

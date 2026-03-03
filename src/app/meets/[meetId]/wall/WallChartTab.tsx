@@ -37,7 +37,7 @@ type WallChartPayload = {
   wrestlers: Wrestler[];
 };
 
-const TEAM_MEMBERS_PER_PAGE = 35;
+const TEAM_MEMBERS_PER_PAGE = 33;
 const MAT_BOUTS_PER_PAGE = 40;
 
 export default function WallChartTab({
@@ -111,6 +111,12 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   }, [meetId, refreshIndex]);
 
   const styles = `
+          ${chartType === "team" ? `
+          @page {
+            size: landscape;
+            margin: 0.4in;
+          }
+          ` : ""}
           @media print {
             .wall-chart-root .print-meet-header {
               display: block;
@@ -185,6 +191,9 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             border: 1px solid #eee;
             padding: 2px 4px;
             text-align: left;
+          }
+          .wall-chart-root .mat-table td.mat-wrestler-name {
+            font-size: 13px;
           }
           .wall-chart-root .mat-table th {
             background: #f7f9fb;
@@ -315,7 +324,8 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           .wall-chart-root .team-table th,
           .wall-chart-root .team-table td {
             border: 1px solid #eee;
-            padding: 2px 4px;
+            padding: 1px 3px;
+            line-height: 1.1;
             text-align: left;
           }
           .wall-chart-root .match-line {
@@ -336,6 +346,10 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           }
           .wall-chart-root .match-opponent {
             font-weight: 400;
+          }
+          .wall-chart-root .wrestler-name,
+          .wall-chart-root .match-opponent {
+            font-size: 13px;
           }
           .wall-chart-root .team-empty {
             font-size: 11px;
@@ -551,8 +565,8 @@ function chunkArray<T>(items: T[], size: number): T[][] {
                           return (
                             <tr key={bout.id}>
                               <td>{boutNumber}</td>
-                              <td style={{ color: t.redColor }}>{t.red}</td>
-                              <td style={{ color: t.greenColor }}>{t.green}</td>
+                              <td className="mat-wrestler-name" style={{ color: t.redColor }}>{t.red}</td>
+                              <td className="mat-wrestler-name" style={{ color: t.greenColor }}>{t.green}</td>
                             </tr>
                           );
                         })}

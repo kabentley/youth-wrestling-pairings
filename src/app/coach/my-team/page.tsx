@@ -75,6 +75,12 @@ const MAX_USERNAME_LEN = 32;
 
 const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
 const normalizeUsernameToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const formatLastFirstName = (first?: string | null, last?: string | null) => {
+  const firstName = (first ?? "").trim();
+  const lastName = (last ?? "").trim();
+  if (lastName && firstName) return `${lastName}, ${firstName}`;
+  return lastName || firstName;
+};
 
 const buildGeneratedUsernameBase = (firstName: string, lastName: string) => {
   const first = normalizeUsernameToken(firstName);
@@ -1714,7 +1720,7 @@ export default function CoachMyTeamPage() {
                       checked={checked}
                       onChange={() => toggleWrestlerInPicker(wrestler.id)}
                     />
-                    <span>{wrestler.first} {wrestler.last}</span>
+                    <span>{formatLastFirstName(wrestler.first, wrestler.last)}</span>
                   </label>
                 );
               })}
@@ -2531,14 +2537,15 @@ const coachStyles = `
     padding: 10px 16px;
     overflow: auto;
     display: grid;
-    gap: 8px;
+    gap: 4px;
     max-height: 50vh;
   }
   .coach-modal-option {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    align-items: flex-start;
+    gap: 6px;
     font-size: 14px;
+    line-height: 1.15;
   }
   .coach-modal-actions {
     display: flex;

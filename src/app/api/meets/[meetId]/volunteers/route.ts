@@ -1,4 +1,3 @@
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -7,7 +6,8 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
-const AllowedRoles: Role[] = [Role.COACH, Role.TABLE_WORKER, Role.PARENT];
+const AllowedRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
+const AllowedRolesForQuery = [...AllowedRoles];
 
 const BodySchema = z.object({
   assignments: z.array(z.object({
@@ -65,7 +65,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const volunteers = await db.user.findMany({
     where: {
       teamId: { in: teamIds },
-      role: { in: AllowedRoles },
+      role: { in: AllowedRolesForQuery },
     },
     select: {
       id: true,
@@ -193,7 +193,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     where: {
       id: { in: userIds },
       teamId: { in: teamIds },
-      role: { in: AllowedRoles },
+      role: { in: AllowedRolesForQuery },
     },
     select: { id: true },
   });

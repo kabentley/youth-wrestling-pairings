@@ -219,12 +219,18 @@ export default function ScoringSheetTab({
     .scoring-sheet-root th,
     .scoring-sheet-root td {
       border: 1px solid #30343c;
-      padding: 1px 4px;
-      line-height: 1.4;
       vertical-align: middle;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .scoring-sheet-root th {
+      padding: 1px 4px;
+      line-height: 1.2;
+    }
+    .scoring-sheet-root td {
+      padding: 1px 4px;
+      line-height: 1.24;
     }
     .scoring-sheet-root thead th {
       text-align: center;
@@ -233,7 +239,7 @@ export default function ScoringSheetTab({
     }
     .scoring-sheet-root .c-bout { width: 3.6%; text-align: center; font-weight: 700; }
     .scoring-sheet-root .c-team { width: 3.6%; text-align: center; }
-    .scoring-sheet-root .c-name { width: 16%; text-align: left; }
+    .scoring-sheet-root .c-name { width: 16%; text-align: left; font-size: 14px; }
     .scoring-sheet-root .c-corner { width: 2.4%; text-align: center; font-weight: 700; }
     .scoring-sheet-root .c-period { width: 20%; text-align: center; }
     .scoring-sheet-root .c-small { width: 2.4%; text-align: center; }
