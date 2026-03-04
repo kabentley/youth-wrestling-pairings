@@ -403,6 +403,7 @@ function reorderBoutsSequential(
   numMats: number,
   conflictGap = 4,
   statusByWrestler?: WrestlerStatusMap,
+  matsToReorder?: Set<number>,
 ) {
   const effectiveStatusByWrestler = buildEffectiveStatusMap(bouts, statusByWrestler);
   const matLists: BoutLite[][] = Array.from({ length: numMats }, () => []);
@@ -415,6 +416,7 @@ function reorderBoutsSequential(
   }
 
   for (let matIndex = 0; matIndex < matLists.length; matIndex++) {
+    if (matsToReorder && !matsToReorder.has(matIndex + 1)) continue;
     const list = matLists[matIndex];
     const constraints = buildOrderConstraints(list, effectiveStatusByWrestler);
     const lockedPositions = buildLockedPositions(list);
@@ -489,7 +491,7 @@ function reorderBoutsSequential(
  */
 export async function reorderBoutsForMeet(
   meetId: string,
-  options: { numMats?: number; conflictGap?: number; timeBudgetMs?: number } = {},
+  options: { numMats?: number; conflictGap?: number; timeBudgetMs?: number; mats?: number[] } = {},
 ) {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
@@ -509,15 +511,31 @@ export async function reorderBoutsForMeet(
   const statusByWrestler = new Map(statuses.map(s => [s.wrestlerId, s.status]));
   const numMats = Math.max(MIN_MATS, options.numMats ?? meet.numMats);
   const conflictGap = options.conflictGap ?? meet.restGap;
+  const matsToReorder = Array.from(
+    new Set(
+      (options.mats ?? []).filter(
+        (mat): mat is number =>
+          Number.isInteger(mat) && mat >= 1 && mat <= numMats,
+      ),
+    ),
+  );
+  const matsFilter = matsToReorder.length > 0 ? new Set(matsToReorder) : undefined;
   const updates = reorderBoutsSequential(
     bouts,
     numMats,
     conflictGap,
     statusByWrestler,
+    matsFilter,
   );
-  if (updates.length) {
+  const currentById = new Map(bouts.map((bout) => [bout.id, bout]));
+  const changedUpdates = updates.filter((update) => {
+    const current = currentById.get(update.id);
+    if (!current) return false;
+    return current.mat !== update.mat || current.order !== update.order;
+  });
+  if (changedUpdates.length) {
     await db.$transaction(
-      updates.map(u =>
+      changedUpdates.map(u =>
         db.bout.update({
           where: { id: u.id },
           data: { mat: u.mat, order: u.order },
@@ -525,5 +543,5 @@ export async function reorderBoutsForMeet(
       ),
     );
   }
-  return { reordered: updates.length, numMats };
+  return { reordered: changedUpdates.length, numMats };
 }

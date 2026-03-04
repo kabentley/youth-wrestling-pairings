@@ -1,24 +1,39 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
-export async function POST(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
+const BodySchema = z.object({
+  matsToReorder: z.array(z.number().int().min(1).max(6)).max(6).optional(),
+  dryRun: z.boolean().optional(),
+});
+
+export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
+  const bodyResult = BodySchema.safeParse(await req.json().catch(() => ({})));
+  if (!bodyResult.success) {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+  const requestedMats = bodyResult.data.matsToReorder ?? [];
+  const dryRun = bodyResult.data.dryRun === true;
+  if (!dryRun) {
+    try {
+      await requireMeetLock(meetId, user.id);
+    } catch (err) {
+      const lockError = getMeetLockError(err);
+      if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+      throw err;
+    }
   }
 
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { id: true, deletedAt: true, homeTeamId: true, status: true },
+    select: { id: true, deletedAt: true, homeTeamId: true, status: true, numMats: true },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
@@ -50,16 +65,39 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     );
   }
 
-  const result = await syncPeopleRuleAssignmentsForMeet(meetId);
+  const result = await syncPeopleRuleAssignmentsForMeet(meetId, { dryRun });
+  if (dryRun) {
+    return NextResponse.json({
+      ...result,
+      reordered: 0,
+      reorderedMats: [],
+    });
+  }
+  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const matsToReorder = Array.from(
+    new Set([...requestedMats, ...result.affectedMats]),
+  )
+    .filter((mat) => mat >= 1 && mat <= maxMat)
+    .sort((a, b) => a - b);
+  const reorderResult =
+    matsToReorder.length > 0
+      ? await reorderBoutsForMeet(meetId, { numMats: maxMat, mats: matsToReorder })
+      : { reordered: 0, numMats: maxMat };
 
-  if (result.updated > 0) {
+  if (result.updated > 0 || reorderResult.reordered > 0) {
     const details = [
       `moved ${result.moved} bout${result.moved === 1 ? "" : "s"}`,
       `newly assigned ${result.newlyAssigned}`,
       `cleared ${result.cleared}`,
+      `reordered ${reorderResult.reordered} bout${reorderResult.reordered === 1 ? "" : "s"}`,
     ].join(", ");
-    await logMeetChange(meetId, user.id, `Synced staff-driven mat assignments (${details}).`);
+    const matsLabel = matsToReorder.length > 0 ? ` on mats ${matsToReorder.join(", ")}` : "";
+    await logMeetChange(meetId, user.id, `Synced staff-driven mat assignments${matsLabel} (${details}).`);
   }
 
-  return NextResponse.json(result);
+  return NextResponse.json({
+    ...result,
+    reordered: reorderResult.reordered,
+    reorderedMats: matsToReorder,
+  });
 }

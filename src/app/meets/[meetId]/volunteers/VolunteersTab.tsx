@@ -52,6 +52,23 @@ function roleRank(role: VolunteerRole) {
   return 2;
 }
 
+function normalizeFuzzyText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function fuzzyMatch(value: string, query: string) {
+  const needle = normalizeFuzzyText(query);
+  if (!needle) return true;
+  const haystack = normalizeFuzzyText(value);
+  if (!haystack) return false;
+  if (haystack.includes(needle)) return true;
+  let needleIndex = 0;
+  for (let i = 0; i < haystack.length && needleIndex < needle.length; i += 1) {
+    if (haystack[i] === needle[needleIndex]) needleIndex += 1;
+  }
+  return needleIndex === needle.length;
+}
+
 function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) {
   const isHomeTeam = homeTeamId ? volunteer.teamId === homeTeamId : true;
   if (!isHomeTeam) return false;
@@ -72,14 +89,16 @@ export default function VolunteersTab({
   const [error, setError] = useState<string | null>(null);
   const [dragVolunteerId, setDragVolunteerId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string>("");
+  const [updatingBouts, setUpdatingBouts] = useState(false);
+  const [dirtyMats, setDirtyMats] = useState<number[]>([]);
+  const [poolSearch, setPoolSearch] = useState("");
   const [matColors, setMatColors] = useState<Record<number, string>>({});
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
     setError(null);
-    setMsg("");
+    setDirtyMats([]);
     Promise.all([
       fetch(`/api/meets/${meetId}/volunteers`),
       fetch(`/api/meets/${meetId}/mat-rules`).catch(() => null),
@@ -96,6 +115,9 @@ export default function VolunteersTab({
         }
         if (!mounted) return;
         setPayload(volunteersJson);
+        if (canEdit) {
+          void refreshDirtyMats();
+        }
         const colorMap: Record<number, string> = {};
         for (const rule of matRulesJson?.rules ?? []) {
           const matIndex = rule.matIndex;
@@ -116,7 +138,7 @@ export default function VolunteersTab({
     return () => {
       mounted = false;
     };
-  }, [meetId]);
+  }, [meetId, canEdit]);
 
   const volunteers = payload?.volunteers ?? [];
   const meet = payload?.meet ?? null;
@@ -128,6 +150,33 @@ export default function VolunteersTab({
     const preset = DEFAULT_MAT_RULES[(matNumber - 1) % DEFAULT_MAT_RULES.length];
     return preset.color ?? "#f2f2f2";
   };
+
+  async function refreshDirtyMats() {
+    if (!canEdit) {
+      setDirtyMats([]);
+      return;
+    }
+    const fallbackDirty = Array.from({ length: numMats }, (_, idx) => idx + 1);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        setDirtyMats(fallbackDirty);
+        return;
+      }
+      const affectedMats = (json as { affectedMats?: unknown } | null)?.affectedMats;
+      const nextDirty: number[] = Array.isArray(affectedMats)
+        ? affectedMats.filter((mat): mat is number => typeof mat === "number")
+        : [];
+      setDirtyMats(nextDirty.sort((a, b) => a - b));
+    } catch {
+      setDirtyMats(fallbackDirty);
+    }
+  }
 
   const setVolunteerMat = (volunteerId: string, matNumber: number | null) => {
     if (!payload) return;
@@ -141,7 +190,7 @@ export default function VolunteersTab({
     const changed = next.some((volunteer, index) => volunteer !== payload.volunteers[index]);
     if (!changed) return;
     setPayload({ ...payload, volunteers: next });
-    void saveAndSync(next);
+    void saveAssignments(next);
   };
 
   const sortedPool = useMemo(() => {
@@ -157,6 +206,19 @@ export default function VolunteersTab({
         return a.displayName.localeCompare(b.displayName);
       });
   }, [volunteers, homeTeamId]);
+
+  const filteredPool = useMemo(() => {
+    const query = poolSearch.trim();
+    if (!query) return sortedPool;
+    return sortedPool.filter((volunteer) => {
+      const searchable = [
+        volunteer.displayName,
+        roleLabel(volunteer.role),
+        volunteer.kids.join(" "),
+      ].join(" ");
+      return fuzzyMatch(searchable, query);
+    });
+  }, [sortedPool, poolSearch]);
 
   const volunteersByMat = useMemo(() => {
     const map = new Map<number, Volunteer[]>();
@@ -179,15 +241,21 @@ export default function VolunteersTab({
     }
     return map;
   }, [volunteers, numMats, homeTeamId]);
+  const noMatUpdatesNeeded = dirtyMats.length === 0;
+  const updateButtonDisabled = saving || updatingBouts || noMatUpdatesNeeded;
+  const updateButtonTooltip =
+    !saving && !updatingBouts && noMatUpdatesNeeded
+      ? "All matches are on the correct mat"
+      : undefined;
 
   const onDropToMat = (matNumber: number) => {
-    if (!canEdit || !dragVolunteerId || saving) return;
+    if (!canEdit || !dragVolunteerId || saving || updatingBouts) return;
     setVolunteerMat(dragVolunteerId, matNumber);
     setDragVolunteerId(null);
   };
 
   const onDropToPool = () => {
-    if (!canEdit || !dragVolunteerId || saving) return;
+    if (!canEdit || !dragVolunteerId || saving || updatingBouts) return;
     const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
     if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) {
       setDragVolunteerId(null);
@@ -197,12 +265,11 @@ export default function VolunteersTab({
     setDragVolunteerId(null);
   };
 
-  async function saveAndSync(volunteersToSave?: Volunteer[]) {
+  async function saveAssignments(volunteersToSave?: Volunteer[]) {
     if (!canEdit || saving) return;
     const sourceVolunteers = volunteersToSave ?? payload?.volunteers;
     if (!sourceVolunteers) return;
     setSaving(true);
-    setMsg("Saving and syncing...");
     try {
       const assignments = sourceVolunteers.map((volunteer) => ({
         userId: volunteer.id,
@@ -215,19 +282,41 @@ export default function VolunteersTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setMsg(json?.error ?? "Unable to save volunteer assignments.");
+        void json;
         return;
       }
-      const moved = typeof json?.sync?.moved === "number" ? json.sync.moved : 0;
-      const assigned = typeof json?.sync?.newlyAssigned === "number" ? json.sync.newlyAssigned : 0;
-      const cleared = typeof json?.sync?.cleared === "number" ? json.sync.cleared : 0;
-      setMsg(`Saved. Synced staff mats: moved ${moved}, assigned ${assigned}, cleared ${cleared}.`);
-      onSaved?.();
-      setTimeout(() => setMsg(""), 1800);
+      void refreshDirtyMats();
     } catch {
-      setMsg("Unable to save volunteer assignments.");
+      // Silent failure by request.
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function updateBoutMats() {
+    if (!canEdit || saving || updatingBouts || !payload) return;
+    if (dirtyMats.length === 0) {
+      return;
+    }
+    setUpdatingBouts(true);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matsToReorder: dirtyMats }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        void json;
+        return;
+      }
+      void json;
+      void refreshDirtyMats();
+      onSaved?.();
+    } catch {
+      // Silent failure by request.
+    } finally {
+      setUpdatingBouts(false);
     }
   }
 
@@ -240,9 +329,36 @@ export default function VolunteersTab({
     .volunteers-toolbar {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 10px;
       flex-wrap: wrap;
+      margin-top: 8px;
+      padding-left: 8px;
+    }
+    .volunteers-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .volunteers-btn-wrap {
+      display: inline-flex;
+    }
+    .volunteers-btn {
+      border: 1px solid #0b5ecf;
+      border-radius: 6px;
+      background: #1f78ff;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .volunteers-btn:disabled {
+      border-color: #cfdae7;
+      background: #fff;
+      color: #8a97a8;
+      opacity: 1;
+      cursor: not-allowed;
     }
     .volunteers-grid {
       display: grid;
@@ -267,6 +383,10 @@ export default function VolunteersTab({
       gap: 8px;
       min-height: 240px;
     }
+    .volunteers-pool {
+      max-height: calc(100vh - 220px);
+      overflow: hidden;
+    }
     .volunteers-mat-title,
     .volunteers-pool-title {
       font-weight: 700;
@@ -290,6 +410,22 @@ export default function VolunteersTab({
       display: flex;
       flex-direction: column;
       gap: 6px;
+    }
+    .volunteers-pool .volunteers-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+      max-width: 100vw;
+    }
+    .volunteers-pool-search {
+      width: 100%;
+      border: 1px solid #cfd8e3;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      color: #243444;
+      background: #fff;
     }
     .volunteer-chip {
       border: 1px solid #d5dbe2;
@@ -340,17 +476,23 @@ export default function VolunteersTab({
     <div className="volunteers-tab">
       <style>{styles}</style>
       <div className="volunteers-toolbar">
-        <div style={{ fontSize: 13, color: "#4a586a" }}>
-          Drag volunteers between mats. Home-team coaches, table workers, and parents can be moved to the Unassigned parents panel. Changes save automatically.
-        </div>
+        {canEdit && (
+          <div className="volunteers-actions">
+            <span className="volunteers-btn-wrap" title={updateButtonTooltip}>
+              <button
+                type="button"
+                className="volunteers-btn"
+                onClick={() => void updateBoutMats()}
+                disabled={updateButtonDisabled}
+              >
+                {updatingBouts ? "Updating..." : "Move all volunteers' kids matches to their mat"}
+              </button>
+            </span>
+          </div>
+        )}
       </div>
       {!canEdit && (
         <div className="notice">Read-only mode. Start editing to update volunteer mat assignments.</div>
-      )}
-      {msg && (
-        <div style={{ fontSize: 13, fontWeight: 600, color: msg.startsWith("Unable") ? "#b00020" : "#355a2b" }}>
-          {msg}
-        </div>
       )}
 
       <div className="volunteers-grid">
@@ -362,7 +504,7 @@ export default function VolunteersTab({
                 key={`volunteer-mat-${matNumber}`}
                 className="volunteers-mat-card"
                 onDragOver={(event) => {
-                  if (!canEdit || saving) return;
+                  if (!canEdit || saving || updatingBouts) return;
                   event.preventDefault();
                 }}
                 onDrop={(event) => {
@@ -383,7 +525,7 @@ export default function VolunteersTab({
                     <div
                       key={volunteer.id}
                       className="volunteer-chip"
-                      draggable={canEdit && !saving}
+                      draggable={canEdit && !saving && !updatingBouts}
                       onDragStart={(event) => {
                         if (!canEdit) return;
                         event.dataTransfer.effectAllowed = "move";
@@ -411,7 +553,7 @@ export default function VolunteersTab({
         <div
           className="volunteers-pool"
           onDragOver={(event) => {
-            if (!canEdit || saving || !dragVolunteerId) return;
+            if (!canEdit || saving || updatingBouts || !dragVolunteerId) return;
             const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
             if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) return;
             event.preventDefault();
@@ -421,16 +563,26 @@ export default function VolunteersTab({
             onDropToPool();
           }}
         >
-          <div className="volunteers-pool-title">Unassigned parents</div>
+          <div className="volunteers-pool-title">Unassigned</div>
+          <input
+            type="text"
+            className="volunteers-pool-search"
+            value={poolSearch}
+            onChange={(event) => setPoolSearch(event.target.value)}
+            placeholder="Search (fuzzy)"
+          />
           <div className="volunteers-list">
             {sortedPool.length === 0 && (
               <div style={{ color: "#748396", fontSize: 12 }}>No unassigned volunteers.</div>
             )}
-            {sortedPool.map((volunteer) => (
+            {sortedPool.length > 0 && filteredPool.length === 0 && (
+              <div style={{ color: "#748396", fontSize: 12 }}>No matches.</div>
+            )}
+            {filteredPool.map((volunteer) => (
               <div
                 key={`pool-${volunteer.id}`}
                 className="volunteer-chip"
-                draggable={canEdit && !saving}
+                draggable={canEdit && !saving && !updatingBouts}
                 onDragStart={(event) => {
                   if (!canEdit) return;
                   event.dataTransfer.effectAllowed = "move";

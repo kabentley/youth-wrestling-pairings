@@ -153,7 +153,7 @@ export default function MatBoardTab({
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
-  const [matRulesByMat, setMatRulesByMat] = useState<Record<number, MatRuleRange>>({});
+  const [matRulesByMat, setMatRulesByMat] = useState<Partial<Record<number, MatRuleRange>>>({});
   const [meetSettings, setMeetSettings] = useState<{
     numMats: number;
     restGap: number;

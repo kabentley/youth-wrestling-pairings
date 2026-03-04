@@ -218,7 +218,7 @@ export default function CoachMyTeamPage() {
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPhone, setNewUserPhone] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"COACH" | "TABLE_WORKER" | "PARENT">("TABLE_WORKER");
+  const [newUserRole, setNewUserRole] = useState<"COACH" | "TABLE_WORKER" | "PARENT">("PARENT");
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
   const [newUserUsernameEdited, setNewUserUsernameEdited] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
@@ -819,6 +819,7 @@ export default function CoachMyTeamPage() {
   const closeCreateUserModal = () => {
     if (creatingUser) return;
     usernameSuggestReqRef.current += 1;
+    setNewUserRole("PARENT");
     setCreateUserModalOpen(false);
   };
 
@@ -1080,6 +1081,7 @@ export default function CoachMyTeamPage() {
       setNewUserUsernameEdited(false);
       setNewUserEmail("");
       setNewUserPhone("");
+      setNewUserRole("PARENT");
       const created = data?.created;
       if (created && typeof created.id === "string") {
         const createdMember: TeamMember = {
@@ -1574,6 +1576,7 @@ export default function CoachMyTeamPage() {
                 className="coach-btn coach-btn-primary coach-create-user-open"
                 onClick={() => {
                   setNewUserUsernameEdited(false);
+                  setNewUserRole("PARENT");
                   setCreateUserModalOpen(true);
                 }}
               >
@@ -1594,14 +1597,14 @@ export default function CoachMyTeamPage() {
                 <tr>
                   <th>Name</th>
                   <th>Role</th>
-                  <th>Mat #</th>
+                  <th className="coach-hidden-mat-column">Mat #</th>
                   <th>Wrestlers</th>
                 </tr>
               </thead>
               <tbody>
                 {[...staff, ...parents].length === 0 && (
                   <tr>
-                    <td colSpan={4} className="coach-empty-cell">No parent or staff accounts found.</td>
+                    <td colSpan={3} className="coach-empty-cell">No parent or staff accounts found.</td>
                   </tr>
                 )}
                 {sortStaff([...staff, ...parents], headCoachId).map((member) => {
@@ -1629,7 +1632,7 @@ export default function CoachMyTeamPage() {
                         )}
                       </select>
                     </td>
-                    <td>
+                    <td className="coach-hidden-mat-column">
                       <div className="coach-mat-picker-cell">
                         <button
                           type="button"
@@ -2449,6 +2452,9 @@ const coachStyles = `
     padding: 2px 4px;
     line-height: 1.1;
   }
+  .coach-hidden-mat-column {
+    display: none;
+  }
   .coach-role-select {
     min-width: 132px;
     border: 1px solid var(--line);
@@ -2508,10 +2514,10 @@ const coachStyles = `
   }
   .coach-staff-assigned {
     margin-top: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #1f2937;
-    line-height: 1.15;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    line-height: 1.1;
     word-break: break-word;
     flex: 1 1 auto;
     min-width: 150px;

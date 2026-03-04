@@ -171,7 +171,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
   }
   if (!meet.homeTeamId) {
-    return NextResponse.json({ error: "Meet must have a home team before syncing staff mats." }, { status: 400 });
+    return NextResponse.json({ error: "Meet must have a home team before managing volunteers." }, { status: 400 });
   }
   if (meet.status !== "DRAFT") {
     return NextResponse.json({ error: "Volunteer mat changes are only available before the meet starts." }, { status: 400 });
@@ -202,7 +202,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       teamId: meet.homeTeamId,
       role: { in: HomeVolunteerRolesForQuery },
     },
-    select: { id: true },
+    select: { id: true, staffMatNumber: true },
   });
   const validIds = new Set(volunteers.map((entry) => entry.id));
   const invalid = userIds.find((id) => !validIds.has(id));
@@ -215,38 +215,43 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     byUser.set(assignment.userId, assignment.matNumber);
   }
 
+  const assignmentsToUpdate: Array<{ userId: string; matNumber: number | null }> = [];
+  const affectedMats = new Set<number>();
+  for (const volunteer of volunteers) {
+    const nextMat = byUser.get(volunteer.id);
+    if (nextMat === undefined) continue;
+    const rawCurrent = volunteer.staffMatNumber;
+    const currentMat =
+      typeof rawCurrent === "number" && rawCurrent >= 1 && rawCurrent <= maxMat
+        ? rawCurrent
+        : null;
+    if (currentMat === nextMat) continue;
+    assignmentsToUpdate.push({ userId: volunteer.id, matNumber: nextMat });
+    if (currentMat !== null) affectedMats.add(currentMat);
+    if (nextMat !== null) affectedMats.add(nextMat);
+  }
+
   await db.$transaction(async (tx) => {
-    for (const [targetUserId, matNumber] of byUser.entries()) {
+    for (const assignment of assignmentsToUpdate) {
       await tx.user.update({
-        where: { id: targetUserId },
-        data: { staffMatNumber: matNumber },
+        where: { id: assignment.userId },
+        data: { staffMatNumber: assignment.matNumber },
       });
     }
   });
 
-  const assignMatsModule = await import("@/lib/assignMats");
-  const syncPeopleRuleAssignmentsForMeet = assignMatsModule.syncPeopleRuleAssignmentsForMeet;
-  if (typeof syncPeopleRuleAssignmentsForMeet !== "function") {
-    return NextResponse.json(
-      {
-        error:
-          "Staff mat sync function is unavailable in the current server process. Restart the dev server and try again.",
-      },
-      { status: 500 },
+  const updatedCount = assignmentsToUpdate.length;
+  if (updatedCount > 0) {
+    await logMeetChange(
+      meetId,
+      user.id,
+      `Updated ${updatedCount} volunteer mat assignment${updatedCount === 1 ? "" : "s"}.`,
     );
   }
-  const syncResult = await syncPeopleRuleAssignmentsForMeet(meetId);
-
-  const updatedCount = byUser.size;
-  await logMeetChange(
-    meetId,
-    user.id,
-    `Updated ${updatedCount} volunteer mat assignment${updatedCount === 1 ? "" : "s"} and synced staff-driven bouts.`,
-  );
 
   return NextResponse.json({
     ok: true,
     updatedAssignments: updatedCount,
-    sync: syncResult,
+    affectedMats: Array.from(affectedMats).sort((a, b) => a - b),
   });
 }

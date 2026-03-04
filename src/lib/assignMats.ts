@@ -136,7 +136,7 @@ export async function loadPeopleRuleMatMap(teamIds: string[], numMats: number): 
     where: {
       user: {
         teamId: { in: teamIds },
-        role: { in: ["COACH", "TABLE_WORKER"] },
+        role: { in: ["COACH", "TABLE_WORKER", "PARENT"] },
         staffMatNumber: { not: null },
       },
     },
@@ -226,7 +226,10 @@ export type SyncPeopleRuleAssignmentsResult = {
   affectedMats: number[];
 };
 
-export async function syncPeopleRuleAssignmentsForMeet(meetId: string): Promise<SyncPeopleRuleAssignmentsResult> {
+export async function syncPeopleRuleAssignmentsForMeet(
+  meetId: string,
+  options: { dryRun?: boolean } = {},
+): Promise<SyncPeopleRuleAssignmentsResult> {
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: { homeTeamId: true, numMats: true, deletedAt: true },
@@ -363,21 +366,23 @@ export async function syncPeopleRuleAssignmentsForMeet(meetId: string): Promise<
     };
   }
 
-  await db.$transaction(async (tx) => {
-    for (const boutId of updateIds) {
-      const assignment = assignmentUpdates.get(boutId);
-      const order = orderUpdates.get(boutId);
-      const movedTargetMat = targetMatByBoutId.get(boutId);
-      await tx.bout.update({
-        where: { id: boutId },
-        data: {
-          ...(assignment ?? {}),
-          ...(order ?? {}),
-          ...(movedTargetMat ? { originalMat: movedTargetMat } : {}),
-        },
-      });
-    }
-  });
+  if (!options.dryRun) {
+    await db.$transaction(async (tx) => {
+      for (const boutId of updateIds) {
+        const assignment = assignmentUpdates.get(boutId);
+        const order = orderUpdates.get(boutId);
+        const movedTargetMat = targetMatByBoutId.get(boutId);
+        await tx.bout.update({
+          where: { id: boutId },
+          data: {
+            ...(assignment ?? {}),
+            ...(order ?? {}),
+            ...(movedTargetMat ? { originalMat: movedTargetMat } : {}),
+          },
+        });
+      }
+    });
+  }
 
   return {
     processed: bouts.length,
