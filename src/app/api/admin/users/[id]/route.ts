@@ -12,8 +12,8 @@ const PatchSchema = z.object({
     message: "Username must not include @",
   }).optional(),
   name: z.string().trim().max(120).nullable().optional(),
-  email: z.string().trim().email().optional(),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
+  email: z.union([z.string().trim().email(), z.literal("")]).optional(),
+  phone: z.union([z.string().trim().regex(/^\+?[1-9]\d{7,14}$/), z.literal("")]).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,14 +40,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { status: 400 },
     );
   }
-  if (body.email) {
-    data.email = body.email.trim().toLowerCase();
+  if (body.email !== undefined) {
+    const trimmedEmail = body.email.trim();
+    data.email = trimmedEmail.length > 0 ? trimmedEmail.toLowerCase() : "";
   }
   if (body.username !== undefined) {
     data.username = body.username.trim().toLowerCase();
   }
-  if (body.phone) {
-    data.phone = body.phone.trim();
+  if (body.phone !== undefined) {
+    const trimmedPhone = body.phone.trim();
+    data.phone = trimmedPhone.length > 0 ? trimmedPhone : "";
   }
   if (body.name !== undefined) {
     const trimmed = body.name?.trim();

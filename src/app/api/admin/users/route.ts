@@ -5,15 +5,83 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 
+const UserRoleSchema = z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]);
+
 const CreateSchema = z.object({
   username: z.string().trim().min(6),
   email: z.string().trim().email().optional().or(z.literal("")),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   name: z.string().trim().min(1).max(120),
-  role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).default("COACH"),
+  role: UserRoleSchema.default("COACH"),
   teamId: z.string().nullable().optional(),
   password: z.string().min(1),
 });
+
+type SearchUserRow = {
+  id: string;
+  username: string;
+  email: string;
+  phone: string | null;
+  name: string | null;
+  role: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
+  teamId: string | null;
+  lastLoginAt: Date | null;
+};
+
+function normalizeFuzzyText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function fuzzyMatch(haystackRaw: string, queryRaw: string) {
+  const haystack = normalizeFuzzyText(haystackRaw);
+  const query = normalizeFuzzyText(queryRaw);
+  if (!query) return true;
+  if (!haystack) return false;
+  if (haystack.includes(query)) return true;
+  let queryIndex = 0;
+  for (let i = 0; i < haystack.length && queryIndex < query.length; i += 1) {
+    if (haystack[i] === query[queryIndex]) queryIndex += 1;
+  }
+  return queryIndex === query.length;
+}
+
+function fuzzyFieldScore(fieldRaw: string | null | undefined, tokenRaw: string) {
+  const field = normalizeFuzzyText(fieldRaw ?? "");
+  const token = normalizeFuzzyText(tokenRaw);
+  if (!field || !token) return 0;
+  if (field === token) return 120;
+  if (field.startsWith(token)) return 90;
+  if (field.includes(token)) return 65;
+  if (fuzzyMatch(field, token)) return 35;
+  return 0;
+}
+
+function fuzzyUserScore(user: SearchUserRow, queryRaw: string) {
+  const query = queryRaw.trim();
+  if (!query) return 1;
+  const tokens = query.split(/\s+/).map(normalizeFuzzyText).filter(Boolean);
+  if (tokens.length === 0) return 1;
+
+  const fields = [user.username, user.email, user.name ?? "", user.phone ?? ""];
+  let score = 0;
+  for (const token of tokens) {
+    let bestForToken = 0;
+    for (const field of fields) {
+      const fieldScore = fuzzyFieldScore(field, token);
+      if (fieldScore > bestForToken) {
+        bestForToken = fieldScore;
+      }
+    }
+    if (bestForToken === 0) return 0;
+    score += bestForToken;
+  }
+
+  const combined = `${user.username} ${user.email} ${user.name ?? ""} ${user.phone ?? ""}`.trim();
+  if (fuzzyMatch(combined, query)) {
+    score += 20;
+  }
+  return score;
+}
 
 export async function GET(req: Request) {
   await requireAdmin();
@@ -21,50 +89,49 @@ export async function GET(req: Request) {
   const querySchema = z.object({
     q: z.string().trim().optional().default(""),
     teamId: z.string().trim().optional().default(""),
+    role: z.union([z.literal(""), UserRoleSchema]).optional().default(""),
     page: z.coerce.number().int().min(1).default(1),
-    pageSize: z.coerce.number().int().min(10).max(200).default(50),
+    pageSize: z.coerce.number().int().min(10).max(200).default(25),
   });
   const parsed = querySchema.safeParse({
     q: searchParams.get("q") ?? "",
     teamId: searchParams.get("teamId") ?? "",
+    role: searchParams.get("role") ?? "",
     page: searchParams.get("page") ?? "1",
-    pageSize: searchParams.get("pageSize") ?? "50",
+    pageSize: searchParams.get("pageSize") ?? "25",
   });
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid query parameters." }, { status: 400 });
   }
-  const { q, page, pageSize, teamId } = parsed.data;
-  const rawDbUrl = process.env.DATABASE_URL ?? "";
-  const dbUrl = rawDbUrl.trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
-  const isSqlite = dbUrl.startsWith("file:");
-  const contains = (value: string) =>
-    isSqlite
-      ? ({ contains: value })
-      : ({ contains: value, mode: "insensitive" as const });
+  const { q, page, pageSize, teamId, role } = parsed.data;
   const where = {
     ...(teamId ? { teamId } : {}),
-    ...(q
-      ? {
-          OR: [
-            { username: contains(q) },
-            { email: contains(q) },
-            { name: contains(q) },
-          ],
-        }
-      : {}),
+    ...(role ? { role } : {}),
   };
 
-  const [items, total, adminCount] = await Promise.all([
+  const [allUsers, adminCount] = await Promise.all([
     db.user.findMany({
       where,
       select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true, lastLoginAt: true },
       orderBy: { username: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    db.user.count({ where }),
+    }) as Promise<SearchUserRow[]>,
     db.user.count({ where: { role: "ADMIN" } }),
   ]);
+
+  const filtered = q.trim().length === 0
+    ? allUsers
+    : allUsers
+      .map((user) => ({ user, score: fuzzyUserScore(user, q) }))
+      .filter((row) => row.score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.user.username.localeCompare(b.user.username);
+      })
+      .map((row) => row.user);
+
+  const total = filtered.length;
+  const pageStart = (page - 1) * pageSize;
+  const items = filtered.slice(pageStart, pageStart + pageSize);
 
   return NextResponse.json({ items, total, page, pageSize, adminCount });
 }

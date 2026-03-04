@@ -32,6 +32,12 @@ export const adminStyles = `
     margin-bottom: 16px;
     flex-wrap: wrap;
   }
+  .admin-users-header {
+    justify-content: flex-start;
+  }
+  .admin-create-user-trigger {
+    margin-left: 8px;
+  }
   .admin-nav {
     display: flex;
     align-items: center;
@@ -100,16 +106,6 @@ export const adminStyles = `
     gap: 8px;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
-  .admin-create-user input,
-  .admin-create-user select {
-    height: 40px;
-    padding: 6px 10px;
-  }
-  .admin-create-user .admin-password-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
   .admin input,
   .admin select {
     width: 100%;
@@ -143,6 +139,10 @@ export const adminStyles = `
     border-radius: 4px;
     cursor: pointer;
   }
+  .admin-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .admin-btn-ghost {
     background: #f2f5f8;
     color: var(--ink);
@@ -166,6 +166,81 @@ export const adminStyles = `
   .admin-info {
     margin-top: 8px;
     color: var(--muted);
+  }
+  .admin-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1200;
+  }
+  .admin-modal {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  .admin-modal h4 {
+    margin: 0;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 18px;
+  }
+  .admin-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    border-top: 1px solid var(--line);
+    padding: 12px 16px;
+  }
+  .admin-create-user-modal {
+    width: min(520px, 100%);
+  }
+  .admin-create-user-modal-grid {
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+    gap: 8px;
+    align-items: start;
+  }
+  .admin-edit-user-modal-grid {
+    padding: 10px 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+    gap: 8px;
+    align-items: start;
+  }
+  .admin-create-user-modal-grid input,
+  .admin-create-user-modal-grid select,
+  .admin-edit-user-modal-grid input,
+  .admin-edit-user-modal-grid select {
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-width: 0;
+    height: 40px;
+  }
+  .admin-create-user-role-team {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-column: 1 / -1;
+  }
+  .admin-create-user-password {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .admin-create-user-password input {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .admin-table {
     border: 1px solid var(--line);
@@ -196,17 +271,123 @@ export const adminStyles = `
     gap: 8px;
     flex-wrap: wrap;
   }
+  .admin-users-table th,
+  .admin-users-table td {
+    padding: 5px 8px;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .admin-users-table {
+    width: min(1500px, 100%);
+    overflow-x: auto;
+  }
+  .admin-users-controls {
+    width: min(1500px, 100%);
+    margin-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .admin-users-controls + .admin-users-table {
+    margin-top: 0;
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .admin-users-table table {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 1200px;
+  }
+  .admin-users-table th:nth-child(1),
+  .admin-users-table td:nth-child(1) {
+    width: 9%;
+  }
+  .admin-users-table th:nth-child(2),
+  .admin-users-table td:nth-child(2) {
+    width: 14%;
+  }
+  .admin-users-table th:nth-child(3),
+  .admin-users-table td:nth-child(3) {
+    width: 14%;
+  }
+  .admin-users-table th:nth-child(4),
+  .admin-users-table td:nth-child(4) {
+    width: 8%;
+  }
+  .admin-users-table th:nth-child(5),
+  .admin-users-table td:nth-child(5) {
+    width: 20%;
+  }
+  .admin-users-table th:nth-child(6),
+  .admin-users-table td:nth-child(6) {
+    width: 10%;
+  }
+  .admin-users-table th:nth-child(7),
+  .admin-users-table td:nth-child(7) {
+    width: 22%;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .admin-users-table .admin-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-width: max-content;
+  }
+  .admin-btn-compact {
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.1;
+  }
   .admin-search {
-    display: grid;
-    gap: 10px;
-    grid-template-columns: minmax(220px, 1fr) auto auto 1fr;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .admin-search-filters {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .admin-search-filters > input {
+    width: 320px;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+  .admin-search-filters > select,
+  .admin-search-filters > button {
+    width: auto;
+    flex: 0 0 auto;
+  }
+  .admin-search-submit {
+    margin-left: 0;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    min-width: 96px;
+    justify-content: center;
+  }
+  .admin-search-summary {
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
   .admin-pager {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-top: 12px;
+  }
+  .admin-pager-status {
+    margin-left: 6px;
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: inherit;
   }
   .color-cell {
     position: relative;
@@ -344,6 +525,20 @@ export const adminStyles = `
       align-items: flex-start;
     }
     .admin-search {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .admin-search-summary {
+      white-space: normal;
+    }
+    .admin-create-user-modal-grid {
+      grid-template-columns: 1fr;
+    }
+    .admin-edit-user-modal-grid {
+      grid-template-columns: 1fr;
+    }
+    .admin-create-user-role-team {
+      grid-column: auto;
       grid-template-columns: 1fr;
     }
   }
