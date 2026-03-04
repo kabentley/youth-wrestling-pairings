@@ -302,30 +302,34 @@ export const adminStyles = `
   }
   .admin-users-table th:nth-child(1),
   .admin-users-table td:nth-child(1) {
-    width: 9%;
+    width: 10%;
   }
   .admin-users-table th:nth-child(2),
   .admin-users-table td:nth-child(2) {
-    width: 14%;
+    width: 13%;
   }
   .admin-users-table th:nth-child(3),
   .admin-users-table td:nth-child(3) {
-    width: 14%;
+    width: 17%;
   }
   .admin-users-table th:nth-child(4),
   .admin-users-table td:nth-child(4) {
-    width: 8%;
+    width: 10%;
   }
   .admin-users-table th:nth-child(5),
   .admin-users-table td:nth-child(5) {
-    width: 20%;
+    width: 8%;
   }
   .admin-users-table th:nth-child(6),
   .admin-users-table td:nth-child(6) {
-    width: 10%;
+    width: 6%;
   }
   .admin-users-table th:nth-child(7),
   .admin-users-table td:nth-child(7) {
+    width: 14%;
+  }
+  .admin-users-table th:nth-child(8),
+  .admin-users-table td:nth-child(8) {
     width: 22%;
     overflow: visible;
     text-overflow: clip;

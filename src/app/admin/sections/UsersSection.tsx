@@ -485,7 +485,7 @@ export default function UsersSection() {
   const getTeamLabel = (currentTeamId: string | null) => {
     if (!currentTeamId) return "None";
     const team = teams.find((item) => item.id === currentTeamId);
-    return team ? formatTeamName(team) : "Unknown";
+    return team ? team.symbol : "Unknown";
   };
 
   return (
@@ -743,6 +743,7 @@ export default function UsersSection() {
               <th>Name</th>
               <th>Email</th>
               <th>Phone</th>
+              <th>Role</th>
               <th>Team</th>
               <th>Last Login</th>
               <th>Actions</th>
@@ -751,7 +752,7 @@ export default function UsersSection() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7}>Loading...</td>
+                <td colSpan={8}>Loading...</td>
               </tr>
             ) : (
               <>
@@ -761,6 +762,7 @@ export default function UsersSection() {
                     <td>{u.name ?? ""}</td>
                     <td>{u.email || ""}</td>
                     <td>{u.phone ?? ""}</td>
+                    <td>{formatRole(u.role)}</td>
                     <td>{getTeamLabel(u.teamId)}</td>
                     <td>{formatLastLogin(u.lastLoginAt)}</td>
                     <td className="admin-actions">
@@ -780,7 +782,7 @@ export default function UsersSection() {
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={7}>No users found.</td>
+                    <td colSpan={8}>No users found.</td>
                   </tr>
                 )}
               </>
@@ -797,6 +799,11 @@ function formatLastLogin(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Unknown";
   return date.toLocaleString();
+}
+
+function formatRole(role: UserRow["role"]) {
+  if (role === "TABLE_WORKER") return "Table Worker";
+  return role.charAt(0) + role.slice(1).toLowerCase();
 }
 
 function formatError(error: unknown) {
