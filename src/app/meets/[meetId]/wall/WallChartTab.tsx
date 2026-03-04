@@ -53,6 +53,7 @@ export default function WallChartTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const wallChartRef = useRef<HTMLDivElement | null>(null);
+  const fetchRequestIdRef = useRef(0);
 
 function formatWrestlerName(w?: Wrestler | null) {
   if (!w) return "";
@@ -84,10 +85,12 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   useEffect(() => {
     const signal = refreshIndex ?? 0;
     void signal;
+    const requestId = fetchRequestIdRef.current + 1;
+    fetchRequestIdRef.current = requestId;
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
+    fetch(`/api/wall-chart/${meetId}?r=${encodeURIComponent(String(refreshIndex ?? 0))}&req=${requestId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -96,14 +99,16 @@ function chunkArray<T>(items: T[], size: number): T[][] {
         return res.json();
       })
       .then((data: WallChartPayload) => {
-        if (!isMounted) return;
+        if (!isMounted || requestId !== fetchRequestIdRef.current) return;
         setPayload(data);
       })
       .catch(err => {
-        if (isMounted) setError(err instanceof Error ? err.message : "Failed to load wall chart");
+        if (isMounted && requestId === fetchRequestIdRef.current) {
+          setError(err instanceof Error ? err.message : "Failed to load wall chart");
+        }
       })
       .finally(() => {
-        if (isMounted) setLoading(false);
+        if (isMounted && requestId === fetchRequestIdRef.current) setLoading(false);
       });
     return () => {
       isMounted = false;
