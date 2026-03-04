@@ -165,6 +165,45 @@ const lastNameSimilarity = (a: string, b: string) => {
   if (dist === 2 && maxLen >= 7) return Math.max(ratio, 0.8);
   return ratio;
 };
+const fuzzyTokenMatch = (queryToken: string, candidateToken: string) => {
+  if (!queryToken || !candidateToken) return false;
+  if (candidateToken.includes(queryToken)) return true;
+  if (queryToken.length >= 4 && queryToken.includes(candidateToken)) return true;
+  const similarity = lastNameSimilarity(queryToken, candidateToken);
+  const threshold = queryToken.length <= 4 ? 0.74 : queryToken.length <= 7 ? 0.8 : 0.84;
+  return similarity >= threshold;
+};
+const memberMatchesFuzzyQuery = (member: TeamMember, rawQuery: string) => {
+  const query = normalizeUsernameToken(rawQuery);
+  if (!query) return true;
+  const queryTokens = rawQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .map(normalizeUsernameToken)
+    .filter(Boolean);
+  const collapsed = normalizeUsernameToken(`${member.name ?? ""} ${member.username}`);
+  if (collapsed.includes(query)) return true;
+
+  const candidateTokens = new Set<string>();
+  const usernameFull = normalizeUsernameToken(member.username);
+  if (usernameFull) candidateTokens.add(usernameFull);
+  for (const token of member.username.toLowerCase().split(/[^a-z0-9]+/)) {
+    const normalized = normalizeUsernameToken(token);
+    if (normalized) candidateTokens.add(normalized);
+  }
+  for (const token of (member.name ?? "").toLowerCase().split(/\s+/)) {
+    const normalized = normalizeUsernameToken(token);
+    if (normalized) candidateTokens.add(normalized);
+  }
+
+  const activeQueryTokens = queryTokens.length > 0 ? queryTokens : [query];
+  return activeQueryTokens.every((queryToken) => {
+    for (const candidate of candidateTokens) {
+      if (fuzzyTokenMatch(queryToken, candidate)) return true;
+    }
+    return false;
+  });
+};
 
 const headerLinks = [
   { href: "/", label: "Home" },
@@ -212,6 +251,9 @@ export default function CoachMyTeamPage() {
   const [meetDefaultsStatus, setMeetDefaultsStatus] = useState<"success" | "error" | null>(null);
   const [rolesMessage, setRolesMessage] = useState<string | null>(null);
   const [rolesMessageStatus, setRolesMessageStatus] = useState<"success" | "error" | null>(null);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesLoaded, setRolesLoaded] = useState(false);
+  const [rolesFilter, setRolesFilter] = useState("");
   const [newUserFirstName, setNewUserFirstName] = useState("");
   const [newUserLastName, setNewUserLastName] = useState("");
   const [newUserUsername, setNewUserUsername] = useState("");
@@ -406,54 +448,61 @@ export default function CoachMyTeamPage() {
   };
 
   const loadTeamRoles = async (id: string) => {
-    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(id)}` : "";
-    const res = await fetch(`/api/coach/parents${query}`);
-    if (!res.ok) {
-      setParents([]);
-      setStaff([]);
-      setTeamWrestlers([]);
-      setHeadCoachId(null);
-      return;
+    setRolesLoading(true);
+    setRolesLoaded(false);
+    try {
+      const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(id)}` : "";
+      const res = await fetch(`/api/coach/parents${query}`);
+      if (!res.ok) {
+        setParents([]);
+        setStaff([]);
+        setTeamWrestlers([]);
+        setHeadCoachId(null);
+        return;
+      }
+      const payload = await res.json().catch(() => null);
+      const resolvedHead = payload?.team?.headCoachId ?? null;
+      setSavingAssignments({});
+      const normalizeMember = (
+        item: Partial<TeamMember> & {
+          id: string;
+          username: string;
+        },
+        nextRole: TeamMember["role"],
+      ): TeamMember => ({
+        id: item.id,
+        username: item.username,
+        email: item.email ?? "",
+        name: item.name ?? null,
+        phone: item.phone ?? null,
+        role: nextRole,
+        matNumber: typeof item.matNumber === "number" ? item.matNumber : null,
+        wrestlerIds: Array.isArray(item.wrestlerIds)
+          ? item.wrestlerIds.filter((value): value is string => typeof value === "string")
+          : [],
+      });
+      setHeadCoachId(resolvedHead);
+      setParents((payload?.parents ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "PARENT")));
+      setStaff(sortStaff(
+        [
+          ...(payload?.coaches ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "COACH")),
+          ...(payload?.tableWorkers ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "TABLE_WORKER")),
+        ],
+        resolvedHead,
+      ));
+      setTeamWrestlers(
+        Array.isArray(payload?.teamWrestlers)
+          ? payload.teamWrestlers
+            .filter((item: Partial<TeamWrestler>) => Boolean(item.id && item.first && item.last))
+            .map((item: TeamWrestler) => ({ id: item.id, first: item.first, last: item.last }))
+          : [],
+      );
+      setRolesMessage(null);
+      setRolesMessageStatus(null);
+    } finally {
+      setRolesLoading(false);
+      setRolesLoaded(true);
     }
-    const payload = await res.json().catch(() => null);
-    const resolvedHead = payload?.team?.headCoachId ?? null;
-    setSavingAssignments({});
-    const normalizeMember = (
-      item: Partial<TeamMember> & {
-        id: string;
-        username: string;
-      },
-      nextRole: TeamMember["role"],
-    ): TeamMember => ({
-      id: item.id,
-      username: item.username,
-      email: item.email ?? "",
-      name: item.name ?? null,
-      phone: item.phone ?? null,
-      role: nextRole,
-      matNumber: typeof item.matNumber === "number" ? item.matNumber : null,
-      wrestlerIds: Array.isArray(item.wrestlerIds)
-        ? item.wrestlerIds.filter((value): value is string => typeof value === "string")
-        : [],
-    });
-    setHeadCoachId(resolvedHead);
-    setParents((payload?.parents ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "PARENT")));
-    setStaff(sortStaff(
-      [
-        ...(payload?.coaches ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "COACH")),
-        ...(payload?.tableWorkers ?? []).map((item: { id: string; username: string }) => normalizeMember(item, "TABLE_WORKER")),
-      ],
-      resolvedHead,
-    ));
-    setTeamWrestlers(
-      Array.isArray(payload?.teamWrestlers)
-        ? payload.teamWrestlers
-          .filter((item: Partial<TeamWrestler>) => Boolean(item.id && item.first && item.last))
-          .map((item: TeamWrestler) => ({ id: item.id, first: item.first, last: item.last }))
-        : [],
-    );
-    setRolesMessage(null);
-    setRolesMessageStatus(null);
   };
 
   const loadTeamDetails = async (id: string) => {
@@ -537,7 +586,9 @@ export default function CoachMyTeamPage() {
     void loadMatRules(teamId);
     if (role === "COACH" || role === "ADMIN") {
       void loadTeamRoles(teamId);
+      return;
     }
+    setRolesLoaded(true);
   }, [teamId, role]);
 
   const updateTeam = async () => {
@@ -1130,6 +1181,12 @@ export default function CoachMyTeamPage() {
   );
 
   const wrestlerById = new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler]));
+  const showRolesLoading = !rolesLoaded || rolesLoading;
+  const rolesFilterQuery = rolesFilter.trim();
+  const sortedRolesMembers = sortStaff([...staff, ...parents], headCoachId);
+  const filteredRolesMembers = rolesFilterQuery.length > 0
+    ? sortedRolesMembers.filter((member) => memberMatchesFuzzyQuery(member, rolesFilterQuery))
+    : sortedRolesMembers;
   const pickerMember = wrestlerPickerMemberId
     ? staff.find((member) => member.id === wrestlerPickerMemberId)
       ?? parents.find((member) => member.id === wrestlerPickerMemberId)
@@ -1568,22 +1625,6 @@ export default function CoachMyTeamPage() {
 
           {activeTab === "parents" && (
         <section className="coach-card coach-roles-card">
-          <div className="coach-card-header">
-            <h3>Parents</h3>
-            {canEditRoles && (
-              <button
-                type="button"
-                className="coach-btn coach-btn-primary coach-create-user-open"
-                onClick={() => {
-                  setNewUserUsernameEdited(false);
-                  setNewUserRole("PARENT");
-                  setCreateUserModalOpen(true);
-                }}
-              >
-                Create New User
-              </button>
-            )}
-          </div>
           <p
             className={`info-message ${rolesMessageIsError ? "error" : "success"}${rolesMessage ? "" : " empty"}`}
             role={rolesMessage ? "status" : undefined}
@@ -1591,6 +1632,33 @@ export default function CoachMyTeamPage() {
             {rolesMessage ?? "\u00A0"}
           </p>
           <div className="coach-table coach-staff-table">
+            <div className="coach-roles-table-toolbar">
+              <div className="coach-roles-header-left">
+                <h3>Parents</h3>
+                <input
+                  id="coach-roles-filter"
+                  type="search"
+                  className="coach-roles-filter-input"
+                  value={rolesFilter}
+                  onChange={(event) => setRolesFilter(event.currentTarget.value)}
+                  placeholder="Search name or username"
+                  autoComplete="off"
+                />
+              </div>
+              {canEditRoles && (
+                <button
+                  type="button"
+                  className="coach-btn coach-btn-primary coach-create-user-open"
+                  onClick={() => {
+                    setNewUserUsernameEdited(false);
+                    setNewUserRole("PARENT");
+                    setCreateUserModalOpen(true);
+                  }}
+                >
+                  Create New User
+                </button>
+              )}
+            </div>
             <div className="coach-staff-scroll">
             <table>
               <thead>
@@ -1602,12 +1670,22 @@ export default function CoachMyTeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...staff, ...parents].length === 0 && (
+                {showRolesLoading && (
                   <tr>
-                    <td colSpan={3} className="coach-empty-cell">No parent or staff accounts found.</td>
+                    <td colSpan={4} className="coach-empty-cell">Loading</td>
                   </tr>
                 )}
-                {sortStaff([...staff, ...parents], headCoachId).map((member) => {
+                {!showRolesLoading && sortedRolesMembers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="coach-empty-cell">No parent or staff accounts found.</td>
+                  </tr>
+                )}
+                {!showRolesLoading && sortedRolesMembers.length > 0 && filteredRolesMembers.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="coach-empty-cell">No matches found.</td>
+                  </tr>
+                )}
+                {!showRolesLoading && filteredRolesMembers.map((member) => {
                   const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
                   return (
                   <tr key={member.id}>
@@ -2027,15 +2105,30 @@ const coachStyles = `
     flex: 1 1 auto;
     min-height: 0;
     margin-top: 0;
+    align-self: flex-start;
+    width: fit-content;
+    max-width: 100%;
   }
   .coach-roles-card .coach-staff-scroll {
     display: block;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    width: fit-content;
+    max-width: 100%;
   }
   .coach-roles-card .coach-staff-scroll table {
     min-height: 100%;
+    width: max-content;
+  }
+  .coach-roles-table-toolbar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px 6px;
+    border-bottom: 1px solid var(--line);
   }
   .coach-roles-card > .info-message {
     min-height: 16px;
@@ -2043,6 +2136,41 @@ const coachStyles = `
   }
   .coach-roles-card > .info-message.empty {
     display: none;
+  }
+  .coach-roles-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .coach-roles-header-left h3 {
+    margin: 0;
+    white-space: nowrap;
+  }
+  .coach-roles-filter-input {
+    width: 280px;
+    max-width: 100%;
+    flex: 0 1 280px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 13px;
+    background: #fff;
+  }
+  .coach-roles-filter-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  @media (max-width: 900px) {
+    .coach-roles-header-left {
+      flex-wrap: wrap;
+    }
+    .coach-roles-filter-input {
+      width: min(280px, 100%);
+      flex: 1 1 240px;
+    }
   }
   .setup-grid {
     display: grid;
@@ -2366,7 +2494,7 @@ const coachStyles = `
     overflow: visible;
   }
   .coach-roles-card .coach-table {
-    margin-top: 0;
+    margin-top: 6px;
   }
   .coach-table table {
     width: 100%;

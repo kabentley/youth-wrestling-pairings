@@ -125,6 +125,7 @@ model Meet {
   rejectedPairs MeetRejectedPair[]
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
   checkpoints MeetCheckpoint[]
+  lockAccesses MeetLockAccess[]
 }
 
 model MeetCheckpoint {
@@ -251,6 +252,18 @@ model MeetTeam {
   @@id([meetId, teamId])
 }
 
+model MeetLockAccess {
+  meetId    String
+  userId    String
+  grantedAt DateTime @default(now())
+
+  meet Meet @relation(fields: [meetId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetId, userId])
+  @@index([userId])
+}
+
 model Bout {
   id        String   @id @default(cuid())
   meetId    String
@@ -307,6 +320,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   meetLocks     Meet[]   @relation("MeetLock")
+  meetLockAccesses MeetLockAccess[]
   updatedMeets  Meet[]   @relation("MeetUpdatedBy")
   deletedMeets  Meet[]   @relation("MeetDeletedBy")
   meetChanges   MeetChange[] @relation("MeetChangeActor")

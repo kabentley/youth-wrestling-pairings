@@ -12,6 +12,7 @@ import WallChartTab from "./wall/WallChartTab";
 
 import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR } from "@/lib/constants";
+import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { pairKey } from "@/lib/pairKey";
 
@@ -142,6 +143,23 @@ type MeetCheckpoint = {
   createdAt: string;
   createdBy?: { username?: string | null } | null;
 };
+type LockAccessCoach = {
+  id: string;
+  username: string;
+  name?: string | null;
+  teamId?: string | null;
+  teamName?: string | null;
+  teamSymbol?: string | null;
+  teamColor?: string | null;
+  isHeadCoach?: boolean;
+  canAcquireLock: boolean;
+};
+type LockAccessTeamGroup = {
+  key: string;
+  title: string;
+  color: string | null;
+  coaches: LockAccessCoach[];
+};
 type CheckpointPayload = {
   version: 1;
   name: string;
@@ -266,6 +284,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [checkpoints, setCheckpoints] = useState<MeetCheckpoint[]>([]);
   const [checkpointsLoaded, setCheckpointsLoaded] = useState(false);
   const [showCheckpointModal, setShowCheckpointModal] = useState(false);
+  const [showEditAccessModal, setShowEditAccessModal] = useState(false);
   const [checkpointError, setCheckpointError] = useState<string | null>(null);
   const [checkpointApplyingId, setCheckpointApplyingId] = useState<string | null>(null);
   const [checkpointDeletingId, setCheckpointDeletingId] = useState<string | null>(null);
@@ -396,6 +415,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const pairingsInitRef = useRef(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
+  const [lockAccessLoaded, setLockAccessLoaded] = useState(false);
+  const [canManageLockAccess, setCanManageLockAccess] = useState(false);
+  const [canAcquireMeetLock, setCanAcquireMeetLock] = useState(true);
+  const [coordinatorName, setCoordinatorName] = useState<string | null>(null);
+  const [coordinatorUsername, setCoordinatorUsername] = useState<string | null>(null);
+  const [coordinatorAssigned, setCoordinatorAssigned] = useState(true);
+  const [lockAccessCoaches, setLockAccessCoaches] = useState<LockAccessCoach[]>([]);
+  const [lockAccessDraftIds, setLockAccessDraftIds] = useState<Set<string>>(new Set());
+  const [lockAccessSaving, setLockAccessSaving] = useState(false);
+  const [lockAccessError, setLockAccessError] = useState<string | null>(null);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -627,6 +656,24 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     if (res.status === 403) {
       const json = await res.json().catch(() => ({}));
+      if (json?.code === "LOCK_ACCESS_DENIED") {
+        const coordinatorHintName = typeof json?.coordinatorName === "string" ? json.coordinatorName.trim() : "";
+        const coordinatorHintUsername = typeof json?.coordinatorUsername === "string" ? json.coordinatorUsername : "";
+        let coordinatorHintDisplayName = coordinatorHintUsername;
+        if (coordinatorHintName) {
+          coordinatorHintDisplayName = coordinatorHintName;
+        }
+        const coordinatorHintLabel = coordinatorHintUsername
+          ? `${coordinatorHintDisplayName} (@${coordinatorHintUsername})`
+          : "";
+        const coordinatorHint = coordinatorHintLabel
+          ? ` Ask Meet Coordinator ${coordinatorHintLabel} for access.`
+          : "";
+        setLockActionError(`You do not have edit access for this meet.${coordinatorHint}`);
+        updateLockState({ status: "locked", lockedByUsername: null });
+        await refreshLockStatus();
+        return false;
+      }
       setAuthMsg(json?.error ?? "You are not authorized to edit this meet.");
       setEditAllowed(false);
       return false;
@@ -1001,6 +1048,59 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return <span style={{ fontSize: 10, marginLeft: 4 }}>{sort.dir === "asc" ? "▲" : "▼"}</span>;
   }
 
+  const loadLockAccess = useCallback(async () => {
+    const res = await fetch(`/api/meets/${meetId}/lock/access`, { cache: "no-store" });
+    if (res.status === 401) {
+      setLockAccessLoaded(true);
+      return;
+    }
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      setLockAccessError(typeof payload?.error === "string" ? payload.error : "Unable to load edit access settings.");
+      setLockAccessLoaded(true);
+      return;
+    }
+    const payload = await res.json().catch(() => ({}));
+    const coaches: unknown[] = Array.isArray(payload?.coaches) ? payload.coaches : [];
+    const mapped: LockAccessCoach[] = coaches
+      .filter((row): row is {
+        id: string;
+        username: string;
+        name?: unknown;
+        teamId?: unknown;
+        teamName?: unknown;
+        teamSymbol?: unknown;
+        teamColor?: unknown;
+        isHeadCoach?: unknown;
+        canAcquireLock?: unknown;
+      } => {
+        if (typeof row !== "object" || row === null) return false;
+        const candidate = row as Record<string, unknown>;
+        return typeof candidate.id === "string" && typeof candidate.username === "string";
+      })
+      .map((row) => ({
+        id: row.id,
+        username: row.username,
+        name: typeof row.name === "string" ? row.name : null,
+        teamId: typeof row.teamId === "string" ? row.teamId : null,
+        teamName: typeof row.teamName === "string" ? row.teamName : null,
+        teamSymbol: typeof row.teamSymbol === "string" ? row.teamSymbol : null,
+        teamColor: typeof row.teamColor === "string" ? row.teamColor : null,
+        isHeadCoach: Boolean(row.isHeadCoach),
+        canAcquireLock: Boolean(row.canAcquireLock),
+      }));
+    const granted = new Set(mapped.filter((coach) => coach.canAcquireLock).map((coach) => coach.id));
+    setCanManageLockAccess(Boolean(payload?.canManageLockAccess));
+    setCanAcquireMeetLock(Boolean(payload?.canAcquireLock));
+    setCoordinatorName(payload?.coordinator?.name ?? null);
+    setCoordinatorUsername(payload?.coordinator?.username ?? null);
+    setCoordinatorAssigned(Boolean(payload?.coordinatorAssigned));
+    setLockAccessCoaches(mapped);
+    setLockAccessDraftIds(granted);
+    setLockAccessError(null);
+    setLockAccessLoaded(true);
+  }, [meetId]);
+
   // Load primary meet data (bouts, wrestlers, meet metadata, current user).
   const load = useCallback(async () => {
     const [bRes, wRes, mRes, meRes, rRes] = await Promise.all([
@@ -1145,6 +1245,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setCheckpointsLoaded(true);
   }, [meetId]);
 
+  const saveLockAccess = useCallback(async (nextIds: Set<string>) => {
+    if (!canManageLockAccess) return false;
+    setLockAccessSaving(true);
+    setLockAccessError(null);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/lock/access`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedCoachIds: [...nextIds] }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload?.error ?? `Unable to save edit access (${res.status}).`);
+      }
+      await Promise.all([
+        loadLockAccess(),
+        refreshLockStatus(),
+      ]);
+      triggerNoticeFlash();
+      return true;
+    } catch (err) {
+      setLockAccessError(err instanceof Error ? err.message : "Unable to save edit access.");
+      return false;
+    } finally {
+      setLockAccessSaving(false);
+    }
+  }, [canManageLockAccess, loadLockAccess, meetId, refreshLockStatus, triggerNoticeFlash]);
+
   // Save a checkpoint with a validated, trimmed name.
   const saveCheckpointByName = useCallback(async (rawName: string) => {
     const name = rawName.trim().slice(0, 80);
@@ -1186,6 +1314,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
+  const lockAccessDenied = lockAccessLoaded && !canManageLockAccess && !canAcquireMeetLock;
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
   const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
   const canViewVolunteers = Boolean(
@@ -1194,8 +1323,98 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId === homeTeamId &&
     ["ADMIN", "COACH"].includes(currentUserRole ?? ""),
   );
+  const grantedCoachIds = useMemo(
+    () => new Set(lockAccessCoaches.filter((coach) => coach.canAcquireLock).map((coach) => coach.id)),
+    [lockAccessCoaches],
+  );
+  const lockAccessDirty = useMemo(() => {
+    if (grantedCoachIds.size !== lockAccessDraftIds.size) return true;
+    for (const id of grantedCoachIds) {
+      if (!lockAccessDraftIds.has(id)) return true;
+    }
+    return false;
+  }, [grantedCoachIds, lockAccessDraftIds]);
+  const coordinatorDisplay = useMemo(() => {
+    if (!coordinatorUsername) return null;
+    const trimmedName = coordinatorName?.trim();
+    let displayName = coordinatorUsername;
+    if (trimmedName) {
+      displayName = trimmedName;
+    }
+    return `${displayName} (@${coordinatorUsername})`;
+  }, [coordinatorName, coordinatorUsername]);
+  const lockAccessByTeam = useMemo<LockAccessTeamGroup[]>(() => {
+    const grouped = new Map<string, LockAccessTeamGroup>();
+    for (const coach of lockAccessCoaches) {
+      const teamName = coach.teamName?.trim() ?? "";
+      const teamSymbol = coach.teamSymbol?.trim() ?? "";
+      const teamTitle = teamName && teamSymbol
+        ? `${teamName} (${teamSymbol})`
+        : (teamName ? teamName : teamSymbol ? teamSymbol : "Team");
+      const key = coach.teamId ?? `unknown:${teamTitle}`;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, {
+          key,
+          title: teamTitle,
+          color: coach.teamColor ?? null,
+          coaches: [coach],
+        });
+        continue;
+      }
+      if (!existing.color && coach.teamColor) {
+        existing.color = coach.teamColor;
+      }
+      existing.coaches.push(coach);
+    }
+    const rows = Array.from(grouped.values());
+    for (const row of rows) {
+      row.coaches.sort((a, b) => {
+        const aHead = Boolean(a.isHeadCoach);
+        const bHead = Boolean(b.isHeadCoach);
+        if (aHead !== bHead) return aHead ? -1 : 1;
+        const aTrimmedName = a.name?.trim();
+        const bTrimmedName = b.name?.trim();
+        let aName = a.username;
+        if (aTrimmedName) {
+          aName = aTrimmedName;
+        }
+        let bName = b.username;
+        if (bTrimmedName) {
+          bName = bTrimmedName;
+        }
+        return aName.localeCompare(bName);
+      });
+    }
+    rows.sort((a, b) => {
+      const aHome = Boolean(homeTeamId) && a.key === homeTeamId;
+      const bHome = Boolean(homeTeamId) && b.key === homeTeamId;
+      if (aHome !== bHome) return aHome ? -1 : 1;
+      return a.title.localeCompare(b.title);
+    });
+    return rows;
+  }, [homeTeamId, lockAccessCoaches]);
+  const allEligibleSelected = useMemo(
+    () => lockAccessCoaches.length > 0 && lockAccessCoaches.every((coach) => lockAccessDraftIds.has(coach.id)),
+    [lockAccessCoaches, lockAccessDraftIds],
+  );
+  const handleEditAccessDone = useCallback(() => {
+    if (lockAccessSaving) return;
+    void (async () => {
+      if (coordinatorAssigned && lockAccessDirty) {
+        const saved = await saveLockAccess(lockAccessDraftIds);
+        if (!saved) return;
+      }
+      setShowEditAccessModal(false);
+    })();
+  }, [coordinatorAssigned, lockAccessDirty, lockAccessDraftIds, lockAccessSaving, saveLockAccess]);
 
   useEffect(() => { void load(); void loadActivity(); void loadCheckpoints(); }, [load, loadActivity, loadCheckpoints]);
+  useEffect(() => { void loadLockAccess(); }, [loadLockAccess]);
+  useEffect(() => {
+    if (canManageLockAccess && lockAccessLoaded) return;
+    setShowEditAccessModal(false);
+  }, [canManageLockAccess, lockAccessLoaded]);
   useEffect(() => {
     if (!editRequested) {
       suppressEditRequestedRef.current = false;
@@ -1862,15 +2081,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [autoPairingsRequested, autoPairingsPending]);
   const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
-  const trimmedMeetLocation = meetLocation?.trim();
-  const trimmedHomeAddress = homeTeam?.address?.trim();
-  let homeLocationDisplay: string | null = null;
-  if (trimmedMeetLocation) {
-    homeLocationDisplay = trimmedMeetLocation;
-  } else if (trimmedHomeAddress) {
-    homeLocationDisplay = trimmedHomeAddress;
-  }
-  const hasHomeInfo = Boolean(homeTeam ?? homeLocationDisplay);
+  const topMeetCoordinatorDisplay =
+    coordinatorDisplay ?? (lockAccessLoaded && !coordinatorAssigned ? "Not assigned" : null);
+  const hasHomeInfo = Boolean(homeTeam ?? topMeetCoordinatorDisplay);
   const modalAttendanceTeam = modalAttendanceTeamId ? teams.find(t => t.id === modalAttendanceTeamId) : undefined;
 
   // Current matches for the selected wrestler.
@@ -2432,12 +2645,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           align-items: center;
         }
         .meet-home-info .home-team-name {
-          font-weight: 600;
+          font-weight: 700;
+          font-size: 15px;
           color: var(--ink);
         }
-        .meet-home-info .home-location {
-          font-size: 13px;
-          color: var(--muted);
+        .meet-home-info .home-coordinator {
+          font-weight: 700;
+          font-size: 15px;
+          color: var(--ink);
+        }
+        .meet-home-info .home-coordinator-btn {
+          padding: 4px 8px;
+          font-size: 12px;
+          letter-spacing: 0.2px;
+          text-transform: none;
         }
         .meet-heading-actions {
           display: flex;
@@ -2871,6 +3092,135 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .modal-card.checkpoint-modal {
           width: min(760px, 94vw);
+        }
+        .modal-card.edit-access-modal {
+          width: min(1080px, 96vw);
+          max-height: 86vh;
+          overflow-y: auto;
+          gap: 12px;
+        }
+        .edit-access-intro {
+          font-size: 15px;
+          color: var(--ink);
+        }
+        .edit-access-warning {
+          font-size: 13px;
+          color: #7d5a00;
+          background: #fff8e6;
+          border: 1px solid #f0d9a6;
+          border-radius: 8px;
+          padding: 8px 10px;
+        }
+        .edit-access-error {
+          color: #b00020;
+          font-size: 13px;
+        }
+        .edit-access-empty {
+          font-size: 14px;
+          color: var(--muted);
+        }
+        .edit-access-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 12px;
+          align-items: start;
+        }
+        .edit-access-team-card {
+          border: 1px solid #d8d8d8;
+          border-radius: 10px;
+          padding: 10px;
+          background: #fff;
+          display: grid;
+          gap: 8px;
+          min-width: 0;
+        }
+        .edit-access-team-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .edit-access-team-title {
+          font-weight: 700;
+          line-height: 1.25;
+          overflow-wrap: anywhere;
+        }
+        .edit-access-team-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: nowrap;
+          justify-content: flex-end;
+          flex: 0 0 auto;
+        }
+        .edit-access-team-actions .nav-btn {
+          padding: 5px 10px;
+          font-size: 12px;
+          letter-spacing: 0.2px;
+          text-transform: none;
+        }
+        .edit-access-coach-list {
+          display: grid;
+          gap: 6px;
+        }
+        .edit-access-coach-list.scrollable {
+          max-height: 148px;
+          overflow-y: auto;
+          padding-right: 4px;
+          scrollbar-gutter: stable;
+          align-content: start;
+        }
+        .edit-access-coach-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+        .edit-access-coach-meta {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
+        .edit-access-coach-name {
+          overflow-wrap: anywhere;
+        }
+        .edit-access-head-chip {
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.2px;
+          border-width: 1px;
+          border-style: solid;
+          border-radius: 999px;
+          padding: 1px 6px;
+          line-height: 1.2;
+          white-space: nowrap;
+          text-transform: none;
+        }
+        .edit-access-footer {
+          border-top: 1px solid var(--line);
+          padding-top: 10px;
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+        @media (max-width: 720px) {
+          .edit-access-grid {
+            grid-template-columns: 1fr;
+          }
+          .edit-access-team-actions .nav-btn {
+            padding: 5px 8px;
+          }
+          .edit-access-footer {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .edit-access-footer > .nav-btn {
+            width: 100%;
+          }
         }
         .checkpoint-form {
           display: flex;
@@ -3360,15 +3710,28 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
             {hasHomeInfo && (
               <div className="meet-home-info">
-                <span className="home-label">Home team:</span>
                 {homeTeam && (
-                  <span className="home-team-name">
-                    {homeTeam.name}
-                    {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
-                  </span>
+                  <>
+                    <span className="home-label">Home team:</span>
+                    <span className="home-team-name">
+                      {homeTeam.name}
+                      {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
+                    </span>
+                  </>
                 )}
-                {homeLocationDisplay && (
-                  <span className="home-location">- {homeLocationDisplay}</span>
+                <span className="home-label">Meet coordinator:</span>
+                <span className="home-coordinator">{topMeetCoordinatorDisplay ?? "Not assigned"}</span>
+                {canManageLockAccess && lockAccessLoaded && (
+                  <button
+                    type="button"
+                    className="nav-btn secondary home-coordinator-btn"
+                    onClick={() => {
+                      setLockAccessError(null);
+                      setShowEditAccessModal(true);
+                    }}
+                  >
+                    Coordinator
+                  </button>
                 )}
               </div>
             )}
@@ -3415,7 +3778,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <button
                 type="button"
                 className="nav-btn secondary"
+                disabled={lockAccessDenied}
+                title={lockAccessDenied ? "Meet Coordinator has not granted you edit access yet." : undefined}
                 onClick={() => {
+                  if (lockAccessDenied) return;
                   if (wantsEdit) {
                     void (async () => {
                       const ok = await acquireLock();
@@ -3470,9 +3836,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
-      {isDraft && lockState.status !== "acquired" && (
+      {isDraft && lockState.status !== "acquired" && !lockAccessDenied && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
-          Read-only mode. Click Start Editing to make changes.
+          {"Read-only mode. Click Start Editing to make changes."}
           {lockState.lockedByUsername ? (
             lockState.lockedByUsername === currentUsername
               ? " Currently locked by you (another tab or device may be refreshing the lock)."
@@ -3480,9 +3846,19 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           ) : ""}
         </div>
       )}
+      {isDraft && lockAccessDenied && !lockActionError && (
+        <div className="notice" style={{ marginTop: 10 }}>
+          You do not have edit access yet. Meet Coordinator {coordinatorDisplay ? `${coordinatorDisplay} ` : ""}has not granted you edit access.
+        </div>
+      )}
       {lockActionError && (
         <div className="notice" style={{ marginTop: 10 }}>
           {lockActionError}
+        </div>
+      )}
+      {lockAccessError && !showEditAccessModal && (
+        <div className="notice" style={{ marginTop: 10 }}>
+          {lockAccessError}
         </div>
       )}
       <div className="tab-bar">
@@ -5173,6 +5549,148 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </section>
         )}
       </div>
+      {showEditAccessModal && canManageLockAccess && lockAccessLoaded && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={handleEditAccessDone}>
+            <div className="modal-card edit-access-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Grant Edit Access</h3>
+              <div className="edit-access-intro">
+                Select which coaches can edit the meet. The Meet Coordinator always keeps access.
+              </div>
+              {!coordinatorAssigned && (
+                <div className="edit-access-warning">
+                  Assign a head coach to the home team before managing edit access.
+                </div>
+              )}
+              {lockAccessError && (
+                <div className="edit-access-error">
+                  {lockAccessError}
+                </div>
+              )}
+              {lockAccessByTeam.length === 0 ? (
+                <div className="edit-access-empty">No other coaches are eligible for this meet.</div>
+              ) : (
+                <div className="edit-access-grid">
+                  {lockAccessByTeam.map((teamGroup) => {
+                    const total = teamGroup.coaches.length;
+                    const selected = teamGroup.coaches.reduce(
+                      (count, coach) => count + (lockAccessDraftIds.has(coach.id) ? 1 : 0),
+                      0,
+                    );
+                    const allSelected = total > 0 && selected === total;
+                    const anySelected = selected > 0;
+                    const teamColor = adjustTeamTextColor(teamGroup.color);
+                    return (
+                      <div key={teamGroup.key} className="edit-access-team-card">
+                        <div className="edit-access-team-header">
+                          <div className="edit-access-team-title" style={{ color: teamColor }}>{teamGroup.title}</div>
+                          <div className="edit-access-team-actions">
+                            <button
+                              type="button"
+                              className="nav-btn secondary"
+                              onClick={() => {
+                                setLockAccessDraftIds((prev) => {
+                                  const next = new Set(prev);
+                                  for (const coach of teamGroup.coaches) {
+                                    next.add(coach.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              disabled={lockAccessSaving || !coordinatorAssigned || allSelected}
+                            >
+                              All
+                            </button>
+                            <button
+                              type="button"
+                              className="nav-btn secondary"
+                              onClick={() => {
+                                setLockAccessDraftIds((prev) => {
+                                  const next = new Set(prev);
+                                  for (const coach of teamGroup.coaches) {
+                                    next.delete(coach.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              disabled={lockAccessSaving || !coordinatorAssigned || !anySelected}
+                            >
+                              None
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`edit-access-coach-list${teamGroup.coaches.length > 4 ? " scrollable" : ""}`}>
+                          {teamGroup.coaches.map((coach) => {
+                            const checked = lockAccessDraftIds.has(coach.id);
+                            const nameLabel = coach.name?.trim()
+                              ? `${coach.name} (@${coach.username})`
+                              : `@${coach.username}`;
+                            return (
+                              <label key={coach.id} className="edit-access-coach-row">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const nextChecked = e.target.checked;
+                                    setLockAccessDraftIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (nextChecked) {
+                                        next.add(coach.id);
+                                      } else {
+                                        next.delete(coach.id);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                  disabled={lockAccessSaving || !coordinatorAssigned}
+                                />
+                                <span className="edit-access-coach-meta" style={{ color: teamColor }}>
+                                  <span className="edit-access-coach-name">{nameLabel}</span>
+                                  {coach.isHeadCoach && (
+                                    <span
+                                      className="edit-access-head-chip"
+                                      style={{ borderColor: teamColor, color: teamColor }}
+                                    >
+                                      Head Coach
+                                    </span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="edit-access-footer">
+                <button
+                  type="button"
+                  className="nav-btn secondary"
+                  onClick={() => {
+                    setLockAccessDraftIds(new Set(lockAccessCoaches.map((coach) => coach.id)));
+                  }}
+                  disabled={lockAccessSaving || !coordinatorAssigned || lockAccessCoaches.length === 0 || allEligibleSelected}
+                >
+                  Everyone
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn secondary"
+                  onClick={() => setLockAccessDraftIds(new Set())}
+                  disabled={lockAccessSaving || lockAccessDraftIds.size === 0 || !coordinatorAssigned}
+                >
+                  Only me
+                </button>
+                <button type="button" className="nav-btn" onClick={handleEditAccessDone}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
       {showCheckpointModal && (
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>

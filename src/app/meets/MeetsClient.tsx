@@ -131,6 +131,7 @@ export default function MeetsPage() {
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
+  const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -177,6 +178,7 @@ export default function MeetsPage() {
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
+    setAllCoachesHaveLockAccess(true);
     setEditingMeet(null);
   }, []);
 
@@ -288,6 +290,7 @@ export default function MeetsPage() {
           maxMatchesPerWrestler,
           restGap,
           autoPairings: true,
+          allCoachesHaveLockAccess,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -1246,6 +1249,17 @@ export default function MeetsPage() {
                     />
                     <span className="muted">Girls wrestle girls</span>
                   </label>
+                  {!isEditing && (
+                    <label className="row" style={{ margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={allCoachesHaveLockAccess}
+                        onChange={e => setAllCoachesHaveLockAccess(e.target.checked)}
+                        disabled={!canManageMeets}
+                      />
+                      <span className="muted">Allow all coaches to edit this meet</span>
+                    </label>
+                  )}
               </div>
 
           <div style={{ marginTop: 8 }}>

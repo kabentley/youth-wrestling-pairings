@@ -19,6 +19,7 @@ const MeetSchema = z.object({
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
   restGap: z.number().int().min(0).max(20).default(4),
   autoPairings: z.boolean().optional().default(true),
+  allCoachesHaveLockAccess: z.boolean().optional().default(true),
 });
 
 function formatMeetDate(dateStr: string) {
@@ -152,6 +153,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Home team must be part of the meet" }, { status: 400 });
   }
   const homeTeamId = parsed.homeTeamId ?? creatorTeamId;
+  const homeTeam = await db.team.findUnique({
+    where: { id: homeTeamId },
+    select: { headCoachId: true },
+  });
+  const coordinatorId = homeTeam?.headCoachId ?? null;
 
   const now = new Date();
   const meetTeams = await db.team.findMany({
@@ -191,6 +197,23 @@ export async function POST(req: Request) {
     },
     include: { meetTeams: { include: { team: true } } },
   });
+
+  const eligibleLockCoaches = await db.user.findMany({
+    where: {
+      role: "COACH",
+      teamId: { in: parsed.teamIds },
+      ...(coordinatorId ? { id: { not: coordinatorId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (parsed.allCoachesHaveLockAccess && eligibleLockCoaches.length > 0) {
+    await db.meetLockAccess.createMany({
+      data: eligibleLockCoaches.map((coach) => ({
+        meetId: meet.id,
+        userId: coach.id,
+      })),
+    });
+  }
 
   await logMeetChange(meet.id, user.id, "Meet created.");
   // Auto pairings and initial checkpoint are handled client-side after attendance.

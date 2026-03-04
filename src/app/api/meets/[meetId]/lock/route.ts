@@ -57,6 +57,68 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     }
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
+  const meetForAccess = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      deletedAt: true,
+      meetTeams: { select: { teamId: true } },
+      homeTeam: {
+        select: {
+          headCoachId: true,
+          headCoach: { select: { name: true, username: true } },
+        },
+      },
+      lockAccesses: {
+        where: { userId: user.id },
+        select: { userId: true },
+      },
+    },
+  });
+  if (!meetForAccess || meetForAccess.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+  const coordinatorId = meetForAccess.homeTeam?.headCoachId ?? null;
+  const coordinatorName = meetForAccess.homeTeam?.headCoach?.name ?? null;
+  const coordinatorUsername = meetForAccess.homeTeam?.headCoach?.username ?? null;
+  const meetTeamIds = new Set(meetForAccess.meetTeams.map((entry) => entry.teamId));
+  const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
+  const isCoachOnMeetTeam = user.role === "COACH" && Boolean(user.teamId) && meetTeamIds.has(user.teamId ?? "");
+  const hasCoordinatorGrant = meetForAccess.lockAccesses.length > 0;
+  const canAcquire = isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+
+  if (!canAcquire) {
+    if (user.role !== "COACH") {
+      return NextResponse.json(
+        {
+          code: "LOCK_ACCESS_DENIED",
+          error: "Only coaches can start editing this meet.",
+          coordinatorName,
+          coordinatorUsername,
+        },
+        { status: 403 },
+      );
+    }
+    if (!isCoachOnMeetTeam) {
+      return NextResponse.json(
+        {
+          code: "LOCK_ACCESS_DENIED",
+          error: "Only coaches assigned to teams in this meet can start editing.",
+          coordinatorName,
+          coordinatorUsername,
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      {
+        code: "LOCK_ACCESS_DENIED",
+        error: "Meet Coordinator has not granted you edit access for this meet.",
+        coordinatorName,
+        coordinatorUsername,
+      },
+      { status: 403 },
+    );
+  }
   const now = new Date();
   const lockExpiresAt = new Date(now.getTime() + MEET_LOCK_TTL_MS);
 
