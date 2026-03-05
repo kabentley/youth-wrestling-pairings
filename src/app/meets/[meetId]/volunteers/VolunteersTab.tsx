@@ -91,7 +91,7 @@ function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) 
 export default function VolunteersTab({
   meetId,
   canEdit,
-  onSaved: _onSaved,
+  onSaved,
 }: {
   meetId: string;
   canEdit: boolean;
@@ -399,6 +399,7 @@ export default function VolunteersTab({
       }
       void refreshDirtyMats();
       await refreshVolunteersPayload();
+      onSaved?.();
     } catch {
       setStatusError("Unable to move matches to volunteer mats.");
     } finally {
@@ -441,6 +442,7 @@ export default function VolunteersTab({
       }
       await refreshVolunteersPayload();
       void refreshDirtyMats();
+      onSaved?.();
     } catch {
       setStatusError("Unable to move this volunteer's kids matches.");
     } finally {

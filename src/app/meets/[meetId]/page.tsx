@@ -1981,15 +1981,30 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   // Refresh meet + activity after mat changes.
   function refreshAfterMatAssignments() {
-    void load();
-    void loadActivity();
-    setWallRefreshIndex(idx => idx + 1);
+    void (async () => {
+      try {
+        const pairingsRes = await fetch(`/api/meets/${meetId}/pairings`, { cache: "no-store" });
+        if (pairingsRes.ok) {
+          const pairingsJson = await pairingsRes.json().catch(() => []);
+          setBouts(Array.isArray(pairingsJson) ? pairingsJson : []);
+        }
+      } catch {
+        // Keep current view if lightweight refresh fails.
+      }
+      await loadActivity();
+      setMatRefreshIndex((idx) => idx + 1);
+      setWallRefreshIndex((idx) => idx + 1);
+    })();
   }
 
-  function refreshAfterPairingsChange() {
+  const refreshAfterAttendanceChange = useCallback(async () => {
+    await Promise.all([
+      load(),
+      loadActivity(),
+    ]);
     setMatRefreshIndex(idx => idx + 1);
     setWallRefreshIndex(idx => idx + 1);
-  }
+  }, [load, loadActivity]);
 
   useEffect(() => {
     if (attendingByTeam.length === 0) {
@@ -2256,9 +2271,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const payload = await res.json().catch(() => null);
       throw new Error(payload?.error ?? `Unable to update attendance (${res.status}).`);
     }
-    await load();
-    await loadActivity();
-    refreshAfterPairingsChange();
+    await refreshAfterAttendanceChange();
     if (isNotAttending(status)) {
       setTarget(null);
       setCandidates([]);
@@ -2428,13 +2441,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setAutoPairingsError(json?.error ?? "Unable to save attendance changes.");
       return false;
     }
-    await load();
-    await loadActivity();
-    refreshAfterPairingsChange();
+    await refreshAfterAttendanceChange();
     setSelectedPairingId(null);
     setModalAttendanceOverrides(new Map());
     return true;
-  }, [canEdit, load, loadActivity, meetId, modalAttendanceOverrides, wMap, wrestlers]);
+  }, [canEdit, meetId, modalAttendanceOverrides, refreshAfterAttendanceChange, wMap, wrestlers]);
 
   return (
     <main className="meet-detail">

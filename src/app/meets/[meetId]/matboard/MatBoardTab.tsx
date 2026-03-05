@@ -1034,6 +1034,7 @@ export default function MatBoardTab({
         };
       });
       setStatusContext(null);
+      onMatAssignmentsChange?.();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to update wrestler status.";
       setMsg(message);

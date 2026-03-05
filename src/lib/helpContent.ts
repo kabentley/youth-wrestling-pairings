@@ -153,8 +153,10 @@ export const HELP_PAGES: HelpPage[] = [
           "Use Volunteers to assign home-team staff to mats so families and helpers can follow their wrestlers more easily [Meet > Volunteers].",
           "The tab is available only to home-team coaches. It lists home-team coaches, table workers, and parents, including linked kids, and lets you drag each person to a mat or back to Unassigned [Meet > Volunteers, Team Settings > Team Roles].",
           "Volunteer mat assignments can be changed only in Draft while you hold edit lock. If the meet is published, results have already been entered, or you are read-only, assignments are view-only [Meet > Start Editing, Meet > Reopen as Draft].",
-          "After changing assignments, use Move all volunteers' kids matches to their mat to sync bout placement with staff assignments and reorder affected mats automatically [Meet > Volunteers, Meet > Mat Assignments].",
-          "Use the Unassigned search box to quickly find volunteers by name, role, or kid names when you are making fast meet-day adjustments [Meet > Volunteers].",
+          "Use the Unassigned search box to filter immediately as you type by volunteer name, role, or kid name during fast meet-day changes [Meet > Volunteers].",
+          "Each volunteer card shows each kid with bout-number badges. A normal badge means that bout is already on the volunteer's mat, red means the bout is on a different mat, and yellow means the kid has parents assigned to different mats [Meet > Volunteers].",
+          "Click a volunteer card with mismatched bouts to move that volunteer's kids to that volunteer's mat. Use Move all at the top to move all pending mismatches at once; it is enabled only when there are matches to move, and the toolbar shows the current count [Meet > Volunteers].",
+          "For multi-parent conflicts, Move all does not move a bout if it is already on one of that kid's parent mats. Yellow conflict badges mark these cases so you can choose the target by clicking the specific parent card [Meet > Volunteers].",
         ],
       },
       {
