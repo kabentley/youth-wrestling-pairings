@@ -51,6 +51,7 @@ export default function UsersSection() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -118,8 +119,15 @@ export default function UsersSection() {
   }
 
   useEffect(() => {
-    void load();
-  }, [page, pageSize, teamFilter, roleFilter]);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    void load({ query: debouncedQuery });
+  }, [page, pageSize, teamFilter, roleFilter, debouncedQuery]);
 
   useEffect(() => {
     if (!createUserModalOpen) return;
@@ -502,7 +510,11 @@ export default function UsersSection() {
             <input
               placeholder="Search username, email, or name"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setQuery(next);
+                if (page !== 1) setPage(1);
+              }}
             />
             <select
               value={teamFilter}
@@ -751,21 +763,21 @@ export default function UsersSection() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr>
-                <td colSpan={8}>Loading...</td>
+              <tr className="admin-users-table-status-row">
+                <td colSpan={8} className="admin-users-table-message">Loading...</td>
               </tr>
             ) : (
               <>
                 {users.map((u) => (
                   <tr key={u.id}>
-                    <td>{u.username}</td>
-                    <td>{u.name ?? ""}</td>
-                    <td>{u.email || ""}</td>
-                    <td>{u.phone ?? ""}</td>
-                    <td>{formatRole(u.role)}</td>
-                    <td>{getTeamLabel(u.teamId)}</td>
-                    <td>{formatLastLogin(u.lastLoginAt)}</td>
-                    <td className="admin-actions">
+                    <td data-label="Username">{u.username}</td>
+                    <td data-label="Name">{u.name ?? ""}</td>
+                    <td data-label="Email">{u.email || ""}</td>
+                    <td data-label="Phone">{u.phone ?? ""}</td>
+                    <td data-label="Role">{formatRole(u.role)}</td>
+                    <td data-label="Team">{getTeamLabel(u.teamId)}</td>
+                    <td data-label="Last Login">{formatLastLogin(u.lastLoginAt)}</td>
+                    <td data-label="Actions" className="admin-actions">
                       <button className="admin-btn admin-btn-ghost admin-btn-compact" type="button" onClick={() => openEditUserModal(u)}>Edit</button>
                       <button className="admin-btn admin-btn-ghost admin-btn-compact" type="button" onClick={() => resetPassword(u.id)}>Reset Password</button>
                       <button
@@ -781,8 +793,8 @@ export default function UsersSection() {
                   </tr>
                 ))}
                 {users.length === 0 && (
-                  <tr>
-                    <td colSpan={8}>No users found.</td>
+                  <tr className="admin-users-table-status-row">
+                    <td colSpan={8} className="admin-users-table-message">No users found.</td>
                   </tr>
                 )}
               </>

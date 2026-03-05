@@ -148,6 +148,16 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: "Volunteers tab",
+        paragraphs: [
+          "Use Volunteers to assign home-team staff to mats so families and helpers can follow their wrestlers more easily [Meet > Volunteers].",
+          "The tab is available only to home-team coaches. It lists home-team coaches, table workers, and parents, including linked kids, and lets you drag each person to a mat or back to Unassigned [Meet > Volunteers, Team Settings > Team Roles].",
+          "Volunteer mat assignments can be changed only in Draft while you hold edit lock. If the meet is published, results have already been entered, or you are read-only, assignments are view-only [Meet > Start Editing, Meet > Reopen as Draft].",
+          "After changing assignments, use Move all volunteers' kids matches to their mat to sync bout placement with staff assignments and reorder affected mats automatically [Meet > Volunteers, Meet > Mat Assignments].",
+          "Use the Unassigned search box to quickly find volunteers by name, role, or kid names when you are making fast meet-day adjustments [Meet > Volunteers].",
+        ],
+      },
+      {
         title: "Printing and sharing",
         paragraphs: [
           "Plan prints around stability. Rosters are best printed early for check-in and weigh-ins, while wall charts and mat sheets should be printed after mat order is stable [Meet > Wall Charts].",
@@ -250,6 +260,52 @@ export const HELP_PAGES: HelpPage[] = [
           "Admins should avoid routine meet editing unless asked so coaches can keep control of their workflow. Step in when there is a dispute, a technical issue, or a need for cross-team coordination [Meets].",
           "Use your access to review data quality, promote consistency across teams, and support first-time users with training or documentation [Admin > League, Admin > Teams, Admin > Users].",
           "When someone reports missing meets or missing editing access, check role, team assignment, and meet status. Draft meets are editable by coaches with the lock, while published meets are intended to be stable and may need to be reopened as draft for changes [Admin > Users, Meets].",
+        ],
+      },
+    ],
+  },
+  {
+    id: "meet-coordinators",
+    title: "Meet Coordinators",
+    sections: [
+      {
+        title: "Role overview",
+        paragraphs: [
+          "The Meet Coordinator is the head coach of the home team for that meet. This person controls who can start editing and is the default owner of editing access [Meet > Coordinator, Meet > Start Editing].",
+          "The coordinator role is assigned through the home team's head coach. If the home team head coach changes, coordinator responsibilities follow that head coach assignment [Admin > Teams, Admin > Users].",
+          "Assistant coaches can still build pairings, adjust mat order, and enter changes, but only after the coordinator grants them access for that meet [Meet > Coordinator, Meet > Start Editing].",
+        ],
+      },
+      {
+        title: "Grant edit access",
+        paragraphs: [
+          "Open a meet and use the [Coordinator] button in the header to open Grant Edit Access. Select exactly which coaches can acquire the lock for that meet [Meet > Coordinator].",
+          "Use team-level All or None to quickly grant or remove access for one team, and use Everyone or Only me for quick global changes across eligible coaches [Meet > Coordinator].",
+          "The Meet Coordinator always keeps access and is not listed as a selectable coach. Click Done to save and close after reviewing selections [Meet > Coordinator].",
+          "If a coach currently holds the lock and you remove their access, the system releases that lock so editing rights match the coordinator's latest access list [Meet > Coordinator, Meet > Release Lock].",
+        ],
+      },
+      {
+        title: "Lock workflow",
+        paragraphs: [
+          "Granting access allows a coach to click Start Editing. It does not bypass the lock itself; only one person can hold the lock at a time [Meet > Start Editing].",
+          "Use a clear handoff rhythm: one coach edits, saves, and releases lock, then the next coach starts editing. This prevents collisions during pairings and mat reordering [Meet > Release Lock, Meet > Comments].",
+          "When coaches report read-only access, confirm they were granted access and that no one else currently holds the lock [Meet > Coordinator, Meet > Start Editing].",
+        ],
+      },
+      {
+        title: "Create meet defaults",
+        paragraphs: [
+          "During meet creation, the [Allow all coaches to edit this meet] option pre-grants lock access to all eligible coaches in participating teams except the coordinator, who is always allowed [Meets > Create New Meet].",
+          "If you leave that option off, only the coordinator can start editing until access is granted manually from the meet header [Meet > Coordinator].",
+        ],
+      },
+      {
+        title: "Troubleshooting",
+        paragraphs: [
+          "If Grant Edit Access is unavailable with a warning about assignment, set a head coach for the home team first, then reopen the meet [Admin > Teams, Admin > Users, Meet > Coordinator].",
+          "If a coach gets the message that the coordinator has not granted edit access, confirm they are a coach on one of the meet teams and then add them in Grant Edit Access [Meet > Coordinator, Meet > Start Editing].",
+          "If coordination breaks down during live changes, use comments and explicit lock handoffs so all coaches and table workers know when the plan changed [Meet > Comments].",
         ],
       },
     ],

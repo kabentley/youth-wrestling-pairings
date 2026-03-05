@@ -102,6 +102,8 @@ export async function GET() {
     orderBy: { date: "desc" },
     include: {
       meetTeams: { include: { team: true } },
+      homeTeam: { select: { headCoachId: true } },
+      lockAccesses: { where: { userId: user.id }, select: { userId: true } },
       updatedBy: { select: { username: true } },
     },
   });
@@ -128,9 +130,20 @@ export async function GET() {
   }
   return NextResponse.json(
     meets.map(meet => {
+      const { homeTeam, lockAccesses, ...meetWithoutAccessMeta } = meet;
       const entry = lastChangeByMeet.get(meet.id);
+      const coordinatorId = homeTeam?.headCoachId ?? null;
+      const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
+      const isCoachOnMeetTeam =
+        user.role === "COACH" &&
+        Boolean(user.teamId) &&
+        meetWithoutAccessMeta.meetTeams.some((entry) => entry.teamId === user.teamId);
+      const hasCoordinatorGrant = lockAccesses.length > 0;
+      const canStartEditing =
+        isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
       return {
-        ...meet,
+        ...meetWithoutAccessMeta,
+        canStartEditing,
         lastChangeAt: entry ? entry.at : null,
         lastChangeBy: entry?.by ?? null,
       };

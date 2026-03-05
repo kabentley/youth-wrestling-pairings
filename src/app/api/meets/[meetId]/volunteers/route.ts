@@ -35,6 +35,12 @@ function canManageVolunteers(user: { role: string; teamId?: string | null }, hom
   return isHomeTeamCoach(user, homeTeamId) || isHomeTeamAdmin(user, homeTeamId);
 }
 
+function formatBoutNumber(mat: number | null, order: number | null) {
+  if (!mat || !order) return null;
+  const displayOrder = Math.max(0, order - 1);
+  return `${mat}${String(displayOrder).padStart(2, "0")}`;
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
@@ -98,6 +104,54 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     orderBy: [{ role: "asc" }, { username: "asc" }],
   });
 
+  const kidIds = Array.from(
+    new Set(
+      volunteers
+        .flatMap((entry) => entry.children.map((link) => link.wrestler))
+        .filter((wrestler) => wrestler.teamId === meet.homeTeamId)
+        .map((wrestler) => wrestler.id),
+    ),
+  );
+  const kidIdSet = new Set(kidIds);
+  const bouts = kidIds.length > 0
+    ? await db.bout.findMany({
+        where: {
+          meetId,
+          OR: [
+            { redId: { in: kidIds } },
+            { greenId: { in: kidIds } },
+          ],
+        },
+        select: {
+          id: true,
+          redId: true,
+          greenId: true,
+          mat: true,
+          order: true,
+        },
+        orderBy: [{ mat: "asc" }, { order: "asc" }, { id: "asc" }],
+      })
+    : [];
+  const kidBoutsMap = new Map<string, Array<{ id: string; mat: number | null; order: number | null; boutNumber: string | null }>>();
+  for (const bout of bouts) {
+    const mapped = {
+      id: bout.id,
+      mat: bout.mat ?? null,
+      order: bout.order ?? null,
+      boutNumber: formatBoutNumber(bout.mat ?? null, bout.order ?? null),
+    };
+    if (kidIdSet.has(bout.redId)) {
+      const list = kidBoutsMap.get(bout.redId) ?? [];
+      list.push(mapped);
+      kidBoutsMap.set(bout.redId, list);
+    }
+    if (kidIdSet.has(bout.greenId)) {
+      const list = kidBoutsMap.get(bout.greenId) ?? [];
+      list.push(mapped);
+      kidBoutsMap.set(bout.greenId, list);
+    }
+  }
+
   const maxMat = Math.max(1, Math.min(6, meet.numMats));
   const mapped = volunteers
     .map((entry) => {
@@ -121,7 +175,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
             if (lastCmp !== 0) return lastCmp;
             return a.first.localeCompare(b.first);
           })
-          .map((wrestler) => `${wrestler.first} ${wrestler.last}`.trim()),
+          .map((wrestler) => ({
+            id: wrestler.id,
+            name: `${wrestler.first} ${wrestler.last}`.trim(),
+            bouts: (kidBoutsMap.get(wrestler.id) ?? []).slice().sort((a, b) => {
+              const matA = a.mat ?? Number.MAX_SAFE_INTEGER;
+              const matB = b.mat ?? Number.MAX_SAFE_INTEGER;
+              if (matA !== matB) return matA - matB;
+              const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+              const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+              if (orderA !== orderB) return orderA - orderB;
+              return a.id.localeCompare(b.id);
+            }),
+          })),
       };
     })
     .sort((a, b) => {

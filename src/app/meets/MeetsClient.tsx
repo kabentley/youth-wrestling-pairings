@@ -105,6 +105,7 @@ type Meet = {
   updatedBy?: { username?: string | null } | null;
   lastChangeAt?: string | null;
   lastChangeBy?: string | null;
+  canStartEditing?: boolean;
 };
 
 type DeletedMeet = Meet & {
@@ -1086,6 +1087,8 @@ export default function MeetsPage() {
           </div>
           <div className="meet-list">
             {visibleMeets.map(m => {
+              const coachCannotEdit =
+                role === "COACH" && m.canStartEditing === false;
               const homeTeam =
                 m.homeTeamId
                   ? m.meetTeams.find(mt => mt.team.id === m.homeTeamId)?.team
@@ -1137,6 +1140,8 @@ export default function MeetsPage() {
                         <button
                           className="nav-btn meet-action-edit"
                           onClick={() => router.push(`/meets/${m.id}?edit=1`)}
+                          disabled={coachCannotEdit}
+                          title={coachCannotEdit ? "Meet Coordinator has not granted you edit access yet." : undefined}
                         >
                           Edit
                         </button>

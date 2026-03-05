@@ -6,6 +6,19 @@ import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 type VolunteerRole = "COACH" | "TABLE_WORKER" | "PARENT";
 
+type KidBout = {
+  id: string;
+  mat: number | null;
+  order: number | null;
+  boutNumber: string | null;
+};
+
+type KidAssignment = {
+  id: string;
+  name: string;
+  bouts: KidBout[];
+};
+
 type TeamSummary = {
   id: string;
   name: string;
@@ -25,7 +38,7 @@ type Volunteer = {
   role: VolunteerRole;
   teamId?: string | null;
   matNumber?: number | null;
-  kids: string[];
+  kids: KidAssignment[];
 };
 
 type VolunteersPayload = {
@@ -78,7 +91,7 @@ function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) 
 export default function VolunteersTab({
   meetId,
   canEdit,
-  onSaved,
+  onSaved: _onSaved,
 }: {
   meetId: string;
   canEdit: boolean;
@@ -93,12 +106,17 @@ export default function VolunteersTab({
   const [dirtyMats, setDirtyMats] = useState<number[]>([]);
   const [poolSearch, setPoolSearch] = useState("");
   const [matColors, setMatColors] = useState<Record<number, string>>({});
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [pendingMovedCount, setPendingMovedCount] = useState<number | null>(null);
+  const [movingVolunteerId, setMovingVolunteerId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     setLoading(true);
     setError(null);
     setDirtyMats([]);
+    setPendingMovedCount(null);
     Promise.all([
       fetch(`/api/meets/${meetId}/volunteers`),
       fetch(`/api/meets/${meetId}/mat-rules`).catch(() => null),
@@ -151,9 +169,32 @@ export default function VolunteersTab({
     return preset.color ?? "#f2f2f2";
   };
 
+  async function refreshVolunteersPayload() {
+    const volunteersRes = await fetch(`/api/meets/${meetId}/volunteers`);
+    if (!volunteersRes.ok) return false;
+    const refreshed = await volunteersRes.json() as VolunteersPayload;
+    setPayload(refreshed);
+    return true;
+  }
+
+  function countWrongBoutsForVolunteer(volunteer: Volunteer) {
+    const volunteerMat = volunteer.matNumber;
+    if (volunteerMat === null || volunteerMat === undefined) return 0;
+    let wrongCount = 0;
+    for (const kid of volunteer.kids) {
+      for (const bout of kid.bouts) {
+        if (bout.mat !== volunteerMat) {
+          wrongCount += 1;
+        }
+      }
+    }
+    return wrongCount;
+  }
+
   async function refreshDirtyMats() {
     if (!canEdit) {
       setDirtyMats([]);
+      setPendingMovedCount(null);
       return;
     }
     const fallbackDirty = Array.from({ length: numMats }, (_, idx) => idx + 1);
@@ -166,6 +207,7 @@ export default function VolunteersTab({
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         setDirtyMats(fallbackDirty);
+        setPendingMovedCount(null);
         return;
       }
       const affectedMats = (json as { affectedMats?: unknown } | null)?.affectedMats;
@@ -173,8 +215,13 @@ export default function VolunteersTab({
         ? affectedMats.filter((mat): mat is number => typeof mat === "number")
         : [];
       setDirtyMats(nextDirty.sort((a, b) => a - b));
+      const moved = typeof (json as { moved?: unknown } | null)?.moved === "number"
+        ? (json as { moved: number }).moved
+        : null;
+      setPendingMovedCount(moved);
     } catch {
       setDirtyMats(fallbackDirty);
+      setPendingMovedCount(null);
     }
   }
 
@@ -214,7 +261,7 @@ export default function VolunteersTab({
       const searchable = [
         volunteer.displayName,
         roleLabel(volunteer.role),
-        volunteer.kids.join(" "),
+        volunteer.kids.map((kid) => kid.name).join(" "),
       ].join(" ");
       return fuzzyMatch(searchable, query);
     });
@@ -241,12 +288,41 @@ export default function VolunteersTab({
     }
     return map;
   }, [volunteers, numMats, homeTeamId]);
+  const kidAssignedMatsById = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    for (const volunteer of volunteers) {
+      const volunteerMat = volunteer.matNumber ?? null;
+      if (volunteerMat === null) continue;
+      for (const kid of volunteer.kids) {
+        const mats = map.get(kid.id) ?? new Set<number>();
+        mats.add(volunteerMat);
+        map.set(kid.id, mats);
+      }
+    }
+    return map;
+  }, [volunteers]);
+  const kidParentAssignmentsById = useMemo(() => {
+    const map = new Map<string, Array<{ volunteerId: string; volunteerName: string; mat: number }>>();
+    for (const volunteer of volunteers) {
+      const volunteerMat = volunteer.matNumber ?? null;
+      if (volunteerMat === null) continue;
+      for (const kid of volunteer.kids) {
+        const rows = map.get(kid.id) ?? [];
+        rows.push({ volunteerId: volunteer.id, volunteerName: volunteer.displayName, mat: volunteerMat });
+        map.set(kid.id, rows);
+      }
+    }
+    return map;
+  }, [volunteers]);
   const noMatUpdatesNeeded = dirtyMats.length === 0;
-  const updateButtonDisabled = saving || updatingBouts || noMatUpdatesNeeded;
+  const matchesToMove = pendingMovedCount ?? 0;
+  const updateButtonDisabled = saving || updatingBouts || Boolean(movingVolunteerId) || matchesToMove <= 0;
   const updateButtonTooltip =
-    !saving && !updatingBouts && noMatUpdatesNeeded
-      ? "All matches are on the correct mat"
-      : undefined;
+    matchesToMove <= 0
+      ? "No matches to move."
+      : noMatUpdatesNeeded
+        ? "No detected mat updates yet."
+        : undefined;
 
   const onDropToMat = (matNumber: number) => {
     if (!canEdit || !dragVolunteerId || saving || updatingBouts) return;
@@ -270,6 +346,7 @@ export default function VolunteersTab({
     const sourceVolunteers = volunteersToSave ?? payload?.volunteers;
     if (!sourceVolunteers) return;
     setSaving(true);
+    setStatusError(null);
     try {
       const assignments = sourceVolunteers.map((volunteer) => ({
         userId: volunteer.id,
@@ -282,12 +359,13 @@ export default function VolunteersTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        void json;
+        setStatusError((json as { error?: string } | null)?.error ?? "Unable to save volunteer mat assignments.");
         return;
       }
+      setStatusMessage("Volunteer mat assignments saved.");
       void refreshDirtyMats();
     } catch {
-      // Silent failure by request.
+      setStatusError("Unable to save volunteer mat assignments.");
     } finally {
       setSaving(false);
     }
@@ -295,28 +373,78 @@ export default function VolunteersTab({
 
   async function updateBoutMats() {
     if (!canEdit || saving || updatingBouts || !payload) return;
-    if (dirtyMats.length === 0) {
-      return;
-    }
     setUpdatingBouts(true);
+    setStatusError(null);
     try {
       const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matsToReorder: dirtyMats }),
+        body: JSON.stringify(dirtyMats.length > 0 ? { matsToReorder: dirtyMats } : {}),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        void json;
+        setStatusError((json as { error?: string } | null)?.error ?? "Unable to move matches to volunteer mats.");
         return;
       }
-      void json;
+      const moved = typeof (json as { moved?: unknown } | null)?.moved === "number"
+        ? (json as { moved: number }).moved
+        : 0;
+      const reordered = typeof (json as { reordered?: unknown } | null)?.reordered === "number"
+        ? (json as { reordered: number }).reordered
+        : 0;
+      if (moved === 0 && reordered === 0) {
+        setStatusMessage("No matches needed to move.");
+      } else {
+        setStatusMessage(`Updated mats: moved ${moved} bout${moved === 1 ? "" : "s"}, reordered ${reordered}.`);
+      }
       void refreshDirtyMats();
-      onSaved?.();
+      await refreshVolunteersPayload();
     } catch {
-      // Silent failure by request.
+      setStatusError("Unable to move matches to volunteer mats.");
     } finally {
       setUpdatingBouts(false);
+    }
+  }
+
+  async function moveVolunteerKids(volunteer: Volunteer) {
+    if (!canEdit || saving || updatingBouts || movingVolunteerId) return;
+    if (volunteer.matNumber === null || volunteer.matNumber === undefined) return;
+    const wrongCount = countWrongBoutsForVolunteer(volunteer);
+    if (wrongCount === 0) {
+      setStatusMessage(`${volunteer.displayName}: no mismatched bouts to move.`);
+      setStatusError(null);
+      return;
+    }
+    setMovingVolunteerId(volunteer.id);
+    setStatusError(null);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/volunteers/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ volunteerId: volunteer.id }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        setStatusError((json as { error?: string } | null)?.error ?? "Unable to move this volunteer's kids matches.");
+        return;
+      }
+      const moved = typeof (json as { moved?: unknown } | null)?.moved === "number"
+        ? (json as { moved: number }).moved
+        : 0;
+      const reordered = typeof (json as { reordered?: unknown } | null)?.reordered === "number"
+        ? (json as { reordered: number }).reordered
+        : 0;
+      if (moved === 0 && reordered === 0) {
+        setStatusMessage(`${volunteer.displayName}: no matches needed to move.`);
+      } else {
+        setStatusMessage(`${volunteer.displayName}: moved ${moved} bout${moved === 1 ? "" : "s"}, reordered ${reordered}.`);
+      }
+      await refreshVolunteersPayload();
+      void refreshDirtyMats();
+    } catch {
+      setStatusError("Unable to move this volunteer's kids matches.");
+    } finally {
+      setMovingVolunteerId(null);
     }
   }
 
@@ -339,6 +467,20 @@ export default function VolunteersTab({
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+    }
+    .volunteers-pending-count {
+      font-size: 12px;
+      color: #4f6073;
+      font-weight: 600;
+    }
+    .volunteers-status-inline {
+      font-size: 12px;
+      color: #4f6073;
+      font-weight: 600;
+    }
+    .volunteers-status-inline.error {
+      color: #b00020;
     }
     .volunteers-btn-wrap {
       display: inline-flex;
@@ -435,6 +577,9 @@ export default function VolunteersTab({
       cursor: grab;
       user-select: none;
     }
+    .volunteer-chip.clickable-move {
+      cursor: pointer;
+    }
     .volunteer-chip:active {
       cursor: grabbing;
     }
@@ -457,6 +602,52 @@ export default function VolunteersTab({
       line-height: 1.25;
       white-space: normal;
       word-break: break-word;
+    }
+    .volunteer-kids-bouts {
+      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .volunteer-kid-row {
+      display: flex;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 4px;
+      font-size: 12px;
+      line-height: 1.25;
+      color: #4f6073;
+    }
+    .volunteer-kid-name {
+      font-weight: 400;
+      color: #2d3c4d;
+      margin-right: 2px;
+    }
+    .volunteer-bout-chip {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #cfd8e3;
+      border-radius: 999px;
+      padding: 1px 7px;
+      background: #ffffff;
+      color: #233446;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .volunteer-bout-chip.wrong-mat {
+      border-color: #d32f2f;
+      background: #fdecec;
+      color: #a31919;
+    }
+    .volunteer-bout-chip.conflict-mat {
+      border-color: #d7a100;
+      background: #fff6d6;
+      color: #8a6200;
+    }
+    .volunteer-bout-chip.unassigned {
+      border-color: #d8e0ea;
+      background: #f5f7fa;
+      color: #708193;
     }
     @media (max-width: 1100px) {
       .volunteers-grid {
@@ -485,10 +676,18 @@ export default function VolunteersTab({
                 onClick={() => void updateBoutMats()}
                 disabled={updateButtonDisabled}
               >
-                {updatingBouts ? "Updating..." : "Move all volunteers' kids matches to their mat"}
+                {updatingBouts ? "Updating..." : "Move all"}
               </button>
             </span>
+            <span className="volunteers-pending-count">
+              Matches to move: {matchesToMove}
+            </span>
           </div>
+        )}
+        {Boolean(statusMessage ?? statusError) && (
+          <span className={`volunteers-status-inline${statusError ? " error" : ""}`}>
+            {statusError ?? statusMessage}
+          </span>
         )}
       </div>
       {!canEdit && (
@@ -521,10 +720,19 @@ export default function VolunteersTab({
                   />
                 </div>
                 <div className="volunteers-list">
-                  {list.map((volunteer) => (
+                  {list.map((volunteer) => {
+                    const wrongCount = countWrongBoutsForVolunteer(volunteer);
+                    const canClickMove =
+                      canEdit &&
+                      !saving &&
+                      !updatingBouts &&
+                      !movingVolunteerId &&
+                      volunteer.matNumber !== null &&
+                      wrongCount > 0;
+                    return (
                     <div
                       key={volunteer.id}
-                      className="volunteer-chip"
+                      className={`volunteer-chip${canClickMove ? " clickable-move" : ""}`}
                       draggable={canEdit && !saving && !updatingBouts}
                       onDragStart={(event) => {
                         if (!canEdit) return;
@@ -532,18 +740,59 @@ export default function VolunteersTab({
                         setDragVolunteerId(volunteer.id);
                       }}
                       onDragEnd={() => setDragVolunteerId(null)}
+                      onClick={() => {
+                        if (!canClickMove) return;
+                        void moveVolunteerKids(volunteer);
+                      }}
+                      title={canClickMove ? `Move ${wrongCount} mismatched bout${wrongCount === 1 ? "" : "s"} for this volunteer's kids` : undefined}
                     >
                       <div className="volunteer-line-1">
                         <span>{volunteer.displayName}</span>
                         <span>{roleLabel(volunteer.role)}</span>
                       </div>
-                      <div className="volunteer-line-2">
-                        <span>
-                          {volunteer.kids.length > 0 ? volunteer.kids.join(", ") : "none"}
-                        </span>
-                      </div>
+                      {volunteer.kids.length > 0 && (
+                        <div className="volunteer-kids-bouts">
+                          {volunteer.kids.map((kid) => (
+                            <div key={kid.id} className="volunteer-kid-row">
+                              <span className="volunteer-kid-name">{kid.name}</span>
+                              {kid.bouts.length === 0 ? (
+                                <span className="volunteer-bout-chip unassigned">none</span>
+                              ) : (
+                                kid.bouts.map((bout) => {
+                                  const wrongMat =
+                                    volunteer.matNumber !== null &&
+                                    bout.mat !== null &&
+                                    bout.mat !== volunteer.matNumber;
+                                  const kidAssignedMats = kidAssignedMatsById.get(kid.id);
+                                  const hasMultiParentMatConflict = (kidAssignedMats?.size ?? 0) > 1;
+                                  const conflictMat = wrongMat && hasMultiParentMatConflict;
+                                  const parentAssignments = kidParentAssignmentsById.get(kid.id) ?? [];
+                                  const otherParent = parentAssignments.find(
+                                    (entry) => entry.volunteerId !== volunteer.id && entry.mat !== volunteer.matNumber,
+                                  ) ?? parentAssignments.find((entry) => entry.volunteerId !== volunteer.id);
+                                  return (
+                                    <span
+                                      key={`${kid.id}-${bout.id}`}
+                                      className={`volunteer-bout-chip${conflictMat ? " conflict-mat" : wrongMat ? " wrong-mat" : bout.mat === null ? " unassigned" : ""}`}
+                                      title={
+                                        conflictMat
+                                          ? `${kid.name} has parents on different mats. ${otherParent ? `${otherParent.volunteerName} is on mat ${otherParent.mat}.` : ""}`.trim()
+                                          : wrongMat
+                                            ? `Assigned to Mat ${bout.mat}, volunteer is on Mat ${volunteer.matNumber}.`
+                                            : undefined
+                                      }
+                                    >
+                                      {bout.boutNumber ?? "Unassigned"}
+                                    </span>
+                                  );
+                                })
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               </div>
             );
@@ -569,7 +818,7 @@ export default function VolunteersTab({
             className="volunteers-pool-search"
             value={poolSearch}
             onChange={(event) => setPoolSearch(event.target.value)}
-            placeholder="Search (fuzzy)"
+            placeholder="Search"
           />
           <div className="volunteers-list">
             {sortedPool.length === 0 && (
@@ -594,11 +843,27 @@ export default function VolunteersTab({
                   <span>{volunteer.displayName}</span>
                   <span>{roleLabel(volunteer.role)}</span>
                 </div>
-                <div className="volunteer-line-2">
-                  <span>
-                    {volunteer.kids.length > 0 ? volunteer.kids.join(", ") : "none"}
-                  </span>
-                </div>
+                {volunteer.kids.length > 0 && (
+                  <div className="volunteer-kids-bouts">
+                    {volunteer.kids.map((kid) => (
+                      <div key={kid.id} className="volunteer-kid-row">
+                        <span className="volunteer-kid-name">{kid.name}</span>
+                        {kid.bouts.length === 0 ? (
+                          <span className="volunteer-bout-chip unassigned">none</span>
+                        ) : (
+                          kid.bouts.map((bout) => (
+                            <span
+                              key={`${kid.id}-${bout.id}`}
+                              className={`volunteer-bout-chip${bout.mat === null ? " unassigned" : ""}`}
+                            >
+                              {bout.boutNumber ?? "Unassigned"}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

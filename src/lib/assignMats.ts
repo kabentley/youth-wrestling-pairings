@@ -181,14 +181,19 @@ function collectPeopleRuleCandidates(
     const greenMats = new Set(greenEntries.map((entry) => entry.matIdx));
     const redMats = new Set(redEntries.map((entry) => entry.matIdx));
     const sharedMats = Array.from(redMats).filter((matIdx) => greenMats.has(matIdx));
-    if (sharedMats.length === 0) return [];
-    for (const matIdx of sharedMats) {
-      redEntries.forEach((entry) => {
-        if (entry.matIdx === matIdx) candidates.push(entry);
-      });
-      greenEntries.forEach((entry) => {
-        if (entry.matIdx === matIdx) candidates.push(entry);
-      });
+    if (sharedMats.length > 0) {
+      for (const matIdx of sharedMats) {
+        redEntries.forEach((entry) => {
+          if (entry.matIdx === matIdx) candidates.push(entry);
+        });
+        greenEntries.forEach((entry) => {
+          if (entry.matIdx === matIdx) candidates.push(entry);
+        });
+      }
+    } else {
+      // No shared mat between red/green assignments: keep deterministic fallback
+      // instead of dropping the bout from people-rule sync entirely.
+      candidates = [...redEntries, ...greenEntries];
     }
   } else {
     candidates = redEntries.length > 0 ? redEntries : greenEntries;
@@ -276,12 +281,30 @@ export async function syncPeopleRuleAssignmentsForMeet(
   for (const bout of bouts) {
     const currentAssigned = bout.assignedByPeopleRule && Boolean(bout.peopleRuleUserId);
     const currentUserId = currentAssigned ? bout.peopleRuleUserId : null;
+    const redEntries = peopleRuleMats.get(bout.redId) ?? [];
+    const greenEntries = peopleRuleMats.get(bout.greenId) ?? [];
     const candidates = collectPeopleRuleCandidates(bout, peopleRuleMats, numMats);
+    const redMatSet = new Set(redEntries.map((entry) => entry.matIdx + 1));
+    const greenMatSet = new Set(greenEntries.map((entry) => entry.matIdx + 1));
+    const preserveCurrentMatForMultiParent =
+      typeof bout.mat === "number" && (
+        (redMatSet.size > 1 && redMatSet.has(bout.mat)) ||
+        (greenMatSet.size > 1 && greenMatSet.has(bout.mat))
+      );
 
     // Preserve current owner when still eligible; otherwise clear. For unowned bouts, assign deterministic top candidate.
-    const nextPick = currentUserId
+    const defaultPick = currentUserId
       ? candidates.find((candidate) => candidate.userId === currentUserId) ?? null
       : (candidates[0] ?? null);
+    let nextPick = defaultPick;
+    if (preserveCurrentMatForMultiParent && typeof bout.mat === "number") {
+      const currentMatIdx = bout.mat - 1;
+      const currentMatCandidate =
+        [...redEntries, ...greenEntries].find((candidate) => candidate.matIdx === currentMatIdx) ?? null;
+      if (currentMatCandidate) {
+        nextPick = currentMatCandidate;
+      }
+    }
     const nextAssigned = nextPick !== null;
     const nextUserId = nextPick?.userId ?? null;
 
