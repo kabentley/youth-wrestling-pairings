@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
-import { reorderBoutsForMeet } from "@/lib/reorderBouts";
+import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
 
 const BodySchema = z.object({
   matsToReorder: z.array(z.number().int().min(1).max(6)).max(6).optional(),
@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     .sort((a, b) => a - b);
   const reorderResult =
     matsToReorder.length > 0
-      ? await reorderBoutsForMeet(meetId, { numMats: maxMat, mats: matsToReorder })
+      ? await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: matsToReorder, maxPasses: 4 })
       : { reordered: 0, numMats: maxMat };
 
   if (result.updated > 0 || reorderResult.reordered > 0) {

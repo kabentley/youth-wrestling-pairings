@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
-import { reorderBoutsForMeet } from "@/lib/reorderBouts";
+import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
 
 const HomeVolunteerRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
 const HomeVolunteerRolesForQuery = [...HomeVolunteerRoles];
@@ -136,7 +136,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       }),
     ),
   );
-  const reordered = await reorderBoutsForMeet(meetId, { numMats: maxMat, mats: [...affectedMats] });
+  const reordered = await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: [...affectedMats], maxPasses: 4 });
 
   const volunteerLabel = volunteer.name?.trim() ? volunteer.name.trim() : `@${volunteer.username}`;
   await logMeetChange(

@@ -545,3 +545,30 @@ export async function reorderBoutsForMeet(
   }
   return { reordered: changedUpdates.length, numMats };
 }
+
+/**
+ * Runs `reorderBoutsForMeet` repeatedly until no more changes are produced
+ * (or max passes are reached), which helps converge after large batch moves.
+ */
+export async function reorderBoutsForMeetUntilStable(
+  meetId: string,
+  options: {
+    numMats?: number;
+    conflictGap?: number;
+    timeBudgetMs?: number;
+    mats?: number[];
+    maxPasses?: number;
+  } = {},
+) {
+  const maxPasses = Math.max(1, Math.min(8, options.maxPasses ?? 3));
+  const { maxPasses: _maxPasses, ...reorderOptions } = options;
+  let totalReordered = 0;
+  let numMats = options.numMats ?? DEFAULT_MAT_COUNT;
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const result = await reorderBoutsForMeet(meetId, reorderOptions);
+    totalReordered += result.reordered;
+    numMats = result.numMats;
+    if (result.reordered === 0) break;
+  }
+  return { reordered: totalReordered, numMats };
+}
