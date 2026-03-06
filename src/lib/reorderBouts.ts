@@ -560,7 +560,7 @@ export async function reorderBoutsForMeetUntilStable(
     maxPasses?: number;
   } = {},
 ) {
-  const maxPasses = Math.max(1, Math.min(8, options.maxPasses ?? 3));
+  const maxPasses = Math.max(1, Math.min(12, options.maxPasses ?? 6));
   const { maxPasses: _maxPasses, ...reorderOptions } = options;
   let totalReordered = 0;
   let numMats = options.numMats ?? DEFAULT_MAT_COUNT;
@@ -568,7 +568,6 @@ export async function reorderBoutsForMeetUntilStable(
     const result = await reorderBoutsForMeet(meetId, reorderOptions);
     totalReordered += result.reordered;
     numMats = result.numMats;
-    if (result.reordered === 0) break;
   }
   return { reordered: totalReordered, numMats };
 }

@@ -81,7 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     .sort((a, b) => a - b);
   const reorderResult =
     matsToReorder.length > 0
-      ? await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: matsToReorder, maxPasses: 4 })
+      ? await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: matsToReorder, maxPasses: 8 })
       : { reordered: 0, numMats: maxMat };
 
   if (result.updated > 0 || reorderResult.reordered > 0) {
