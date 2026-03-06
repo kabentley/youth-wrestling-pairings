@@ -136,7 +136,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       }),
     ),
   );
-  const reordered = await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: [...affectedMats], maxPasses: 8 });
+  const reordered = await reorderBoutsForMeetUntilStable(meetId, {
+    numMats: maxMat,
+    maxPasses: 8,
+  });
 
   const volunteerLabel = volunteer.name?.trim() ? volunteer.name.trim() : `@${volunteer.username}`;
   await logMeetChange(

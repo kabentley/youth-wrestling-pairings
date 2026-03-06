@@ -118,7 +118,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
   const canManageEditAccess = isCoordinator || user.role === "ADMIN";
   const isMeetCoach = user.role === "COACH" && Boolean(user.teamId) && teamIds.includes(user.teamId ?? "");
-  const canAcquireLock = isCoordinator || (isMeetCoach && (!coordinatorId || grantedSet.has(user.id)));
+  const canAcquireLock =
+    user.role === "ADMIN" || isCoordinator || (isMeetCoach && (!coordinatorId || grantedSet.has(user.id)));
 
   return NextResponse.json({
     coordinator: meet.homeTeam?.headCoach

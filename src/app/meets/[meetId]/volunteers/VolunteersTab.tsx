@@ -106,8 +106,6 @@ export default function VolunteersTab({
   const [dirtyMats, setDirtyMats] = useState<number[]>([]);
   const [poolSearch, setPoolSearch] = useState("");
   const [matColors, setMatColors] = useState<Record<number, string>>({});
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
   const [pendingMovedCount, setPendingMovedCount] = useState<number | null>(null);
   const [movingVolunteerId, setMovingVolunteerId] = useState<string | null>(null);
 
@@ -346,7 +344,6 @@ export default function VolunteersTab({
     const sourceVolunteers = volunteersToSave ?? payload?.volunteers;
     if (!sourceVolunteers) return;
     setSaving(true);
-    setStatusError(null);
     try {
       const assignments = sourceVolunteers.map((volunteer) => ({
         userId: volunteer.id,
@@ -359,13 +356,13 @@ export default function VolunteersTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setStatusError((json as { error?: string } | null)?.error ?? "Unable to save volunteer mat assignments.");
+        const message = (json as { error?: string } | null)?.error ?? "Unable to save volunteer mat assignments.";
+        window.alert(message);
         return;
       }
-      setStatusMessage("Volunteer mat assignments saved.");
       void refreshDirtyMats();
     } catch {
-      setStatusError("Unable to save volunteer mat assignments.");
+      window.alert("Unable to save volunteer mat assignments.");
     } finally {
       setSaving(false);
     }
@@ -374,7 +371,6 @@ export default function VolunteersTab({
   async function updateBoutMats() {
     if (!canEdit || saving || updatingBouts || !payload) return;
     setUpdatingBouts(true);
-    setStatusError(null);
     try {
       const res = await fetch(`/api/meets/${meetId}/mats/people-sync`, {
         method: "POST",
@@ -383,25 +379,15 @@ export default function VolunteersTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setStatusError((json as { error?: string } | null)?.error ?? "Unable to move matches to volunteer mats.");
+        const message = (json as { error?: string } | null)?.error ?? "Unable to move matches to volunteer mats.";
+        window.alert(message);
         return;
-      }
-      const moved = typeof (json as { moved?: unknown } | null)?.moved === "number"
-        ? (json as { moved: number }).moved
-        : 0;
-      const reordered = typeof (json as { reordered?: unknown } | null)?.reordered === "number"
-        ? (json as { reordered: number }).reordered
-        : 0;
-      if (moved === 0 && reordered === 0) {
-        setStatusMessage("No matches needed to move.");
-      } else {
-        setStatusMessage(`Updated mats: moved ${moved} bout${moved === 1 ? "" : "s"}, reordered ${reordered}.`);
       }
       void refreshDirtyMats();
       await refreshVolunteersPayload();
       onSaved?.();
     } catch {
-      setStatusError("Unable to move matches to volunteer mats.");
+      window.alert("Unable to move matches to volunteer mats.");
     } finally {
       setUpdatingBouts(false);
     }
@@ -412,12 +398,9 @@ export default function VolunteersTab({
     if (volunteer.matNumber === null || volunteer.matNumber === undefined) return;
     const wrongCount = countWrongBoutsForVolunteer(volunteer);
     if (wrongCount === 0) {
-      setStatusMessage(`${volunteer.displayName}: no mismatched bouts to move.`);
-      setStatusError(null);
       return;
     }
     setMovingVolunteerId(volunteer.id);
-    setStatusError(null);
     try {
       const res = await fetch(`/api/meets/${meetId}/volunteers/move`, {
         method: "POST",
@@ -426,25 +409,15 @@ export default function VolunteersTab({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        setStatusError((json as { error?: string } | null)?.error ?? "Unable to move this volunteer's kids matches.");
+        const message = (json as { error?: string } | null)?.error ?? "Unable to move this volunteer's kids matches.";
+        window.alert(message);
         return;
-      }
-      const moved = typeof (json as { moved?: unknown } | null)?.moved === "number"
-        ? (json as { moved: number }).moved
-        : 0;
-      const reordered = typeof (json as { reordered?: unknown } | null)?.reordered === "number"
-        ? (json as { reordered: number }).reordered
-        : 0;
-      if (moved === 0 && reordered === 0) {
-        setStatusMessage(`${volunteer.displayName}: no matches needed to move.`);
-      } else {
-        setStatusMessage(`${volunteer.displayName}: moved ${moved} bout${moved === 1 ? "" : "s"}, reordered ${reordered}.`);
       }
       await refreshVolunteersPayload();
       void refreshDirtyMats();
       onSaved?.();
     } catch {
-      setStatusError("Unable to move this volunteer's kids matches.");
+      window.alert("Unable to move this volunteer's kids matches.");
     } finally {
       setMovingVolunteerId(null);
     }
@@ -471,18 +444,12 @@ export default function VolunteersTab({
       gap: 8px;
       flex-wrap: wrap;
     }
-    .volunteers-pending-count {
-      font-size: 12px;
-      color: #4f6073;
+    .volunteers-help-note {
+      font-size: 14px;
       font-weight: 600;
-    }
-    .volunteers-status-inline {
-      font-size: 12px;
       color: #4f6073;
-      font-weight: 600;
-    }
-    .volunteers-status-inline.error {
-      color: #b00020;
+      flex: 1 1 320px;
+      line-height: 1.35;
     }
     .volunteers-btn-wrap {
       display: inline-flex;
@@ -681,16 +648,13 @@ export default function VolunteersTab({
                 {updatingBouts ? "Updating..." : "Move all"}
               </button>
             </span>
-            <span className="volunteers-pending-count">
-              Matches to move: {matchesToMove}
-            </span>
           </div>
         )}
-        {Boolean(statusMessage ?? statusError) && (
-          <span className={`volunteers-status-inline${statusError ? " error" : ""}`}>
-            {statusError ?? statusMessage}
-          </span>
-        )}
+        <div className="volunteers-help-note">
+          {canEdit
+            ? "Drag volunteers to assign mats. Click on cards to move their kids's bouts to their mat. Badge colors: red = wrong mat, yellow = parents on different mats."
+            : "Badge colors: red = wrong mat, yellow = parents on different mats."}
+        </div>
       </div>
       {!canEdit && (
         <div className="notice">Read-only mode. Start editing to update volunteer mat assignments.</div>

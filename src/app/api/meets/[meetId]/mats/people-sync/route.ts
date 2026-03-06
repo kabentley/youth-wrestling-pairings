@@ -74,14 +74,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     });
   }
   const maxMat = Math.max(1, Math.min(6, meet.numMats));
-  const matsToReorder = Array.from(
-    new Set([...requestedMats, ...result.affectedMats]),
-  )
-    .filter((mat) => mat >= 1 && mat <= maxMat)
-    .sort((a, b) => a - b);
+  const allMats = Array.from({ length: maxMat }, (_, idx) => idx + 1);
+  const shouldReorderAllMats = result.moved > 0 || requestedMats.length > 0;
   const reorderResult =
-    matsToReorder.length > 0
-      ? await reorderBoutsForMeetUntilStable(meetId, { numMats: maxMat, mats: matsToReorder, maxPasses: 8 })
+    shouldReorderAllMats
+      ? await reorderBoutsForMeetUntilStable(meetId, {
+        numMats: maxMat,
+        mats: allMats,
+        maxPasses: 8,
+      })
       : { reordered: 0, numMats: maxMat };
 
   if (result.updated > 0 || reorderResult.reordered > 0) {
@@ -91,13 +92,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       `cleared ${result.cleared}`,
       `reordered ${reorderResult.reordered} bout${reorderResult.reordered === 1 ? "" : "s"}`,
     ].join(", ");
-    const matsLabel = matsToReorder.length > 0 ? ` on mats ${matsToReorder.join(", ")}` : "";
+    const matsLabel = shouldReorderAllMats ? " on all mats" : "";
     await logMeetChange(meetId, user.id, `Synced staff-driven mat assignments${matsLabel} (${details}).`);
   }
 
   return NextResponse.json({
     ...result,
     reordered: reorderResult.reordered,
-    reorderedMats: matsToReorder,
+    reorderedMats: shouldReorderAllMats ? allMats : [],
   });
 }

@@ -84,7 +84,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
   const isCoachOnMeetTeam = user.role === "COACH" && Boolean(user.teamId) && meetTeamIds.has(user.teamId ?? "");
   const hasCoordinatorGrant = meetForAccess.lockAccesses.length > 0;
-  const canAcquire = isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+  const canAcquire =
+    user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
 
   if (!canAcquire) {
     if (user.role !== "COACH") {

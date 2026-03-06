@@ -284,6 +284,11 @@ export default function ScratchSheetTab({
       .filter(s => s.status === "NOT_COMING" || s.status === "ABSENT")
       .map(s => s.wrestlerId)
   );
+  const lateIds = new Set(
+    payload.statuses
+      .filter(s => s.status === "LATE")
+      .map(s => s.wrestlerId)
+  );
   const meet = payload.meet;
   const meetLabel = meet.name || "Meet";
   const headerLabel =
@@ -299,7 +304,11 @@ export default function ScratchSheetTab({
         if (lastCmp !== 0) return lastCmp;
         return a.first.localeCompare(b.first, undefined, { sensitivity: "base" });
       })
-      .map(w => formatLastFirst(w))
+      .map((w) => {
+        const displayName = formatLastFirst(w);
+        if (!displayName) return displayName;
+        return lateIds.has(w.id) ? `${displayName} (LATE)` : displayName;
+      })
       .filter(Boolean);
 
     const nameChunks = names.length > 0 ? chunk(names, NAMES_PER_PAGE) : [[]];
@@ -341,7 +350,11 @@ export default function ScratchSheetTab({
                     {leftRows.map((name, idx) => (
                       <li className="name-row" key={`${page.key}-left-${idx}`}>
                         {name ? <input className="name-check" type="checkbox" aria-label={`Mark ${name}`} /> : null}
-                        <span className="name-value">{name}</span>
+                        <span className="name-value">
+                          {name.endsWith(" (LATE)")
+                            ? <><strong>{name.slice(0, -7)}</strong><strong> (LATE)</strong></>
+                            : name}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -349,7 +362,11 @@ export default function ScratchSheetTab({
                     {rightRows.map((name, idx) => (
                       <li className="name-row" key={`${page.key}-right-${idx}`}>
                         {name ? <input className="name-check" type="checkbox" aria-label={`Mark ${name}`} /> : null}
-                        <span className="name-value">{name}</span>
+                        <span className="name-value">
+                          {name.endsWith(" (LATE)")
+                            ? <><strong>{name.slice(0, -7)}</strong><strong> (LATE)</strong></>
+                            : name}
+                        </span>
                       </li>
                     ))}
                   </ul>

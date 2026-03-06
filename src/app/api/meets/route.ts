@@ -140,7 +140,7 @@ export async function GET() {
         meetWithoutAccessMeta.meetTeams.some((entry) => entry.teamId === user.teamId);
       const hasCoordinatorGrant = lockAccesses.length > 0;
       const canStartEditing =
-        isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+        user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
       return {
         ...meetWithoutAccessMeta,
         canStartEditing,
