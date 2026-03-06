@@ -63,6 +63,7 @@ export default function ScoringSheetTab({
   const [payload, setPayload] = useState<WallChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [visibleMats, setVisibleMats] = useState<number[] | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const fetchRequestIdRef = useRef(0);
 
@@ -74,7 +75,7 @@ export default function ScoringSheetTab({
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}?r=${encodeURIComponent(String(refreshIndex ?? 0))}&req=${requestId}`, { cache: "no-store" })
+    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -117,6 +118,9 @@ export default function ScoringSheetTab({
         padding-top: 0;
       }
       .scoring-sheet-root .chart-controls {
+        display: none !important;
+      }
+      .scoring-sheet-root .mat-toggle-bar {
         display: none !important;
       }
       .scoring-sheet-root .sheet-page {
@@ -196,6 +200,53 @@ export default function ScoringSheetTab({
       cursor: not-allowed;
       box-shadow: none;
       background: #b0b5be;
+    }
+    .scoring-sheet-root .mat-toggle-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+    }
+    .scoring-sheet-root .mat-toggle-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #4b5563;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .scoring-sheet-root .mat-toggle-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .scoring-sheet-root .mat-toggle-btn {
+      border: 1px solid #c7d2df;
+      background: #fff;
+      color: #1f2937;
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .scoring-sheet-root .mat-toggle-btn.is-active {
+      background: #1e88e5;
+      border-color: #1e88e5;
+      color: #fff;
+    }
+    .scoring-sheet-root .mat-toggle-btn:hover {
+      border-color: #1e88e5;
+    }
+    .scoring-sheet-root .empty-state {
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 24px;
+      color: #475569;
+      text-align: center;
+      background: #f8fafc;
+      font-weight: 600;
     }
     .scoring-sheet-root .sheet-page {
       margin-bottom: 16px;
@@ -286,25 +337,39 @@ export default function ScoringSheetTab({
     }
   `;
 
-  if (loading) return <p>Loading scoring sheet...</p>;
-  if (error) return <div className="notice">Unable to load scoring sheet: {error}</div>;
-  if (!payload) return null;
-
-  const meet = payload.meet;
-  const homeTeamId = meet.homeTeamId ?? null;
+  const meet = payload?.meet ?? null;
+  const homeTeamId = meet?.homeTeamId ?? null;
   const absentIds = new Set(
-    payload.statuses
+    (payload?.statuses ?? [])
       .filter(s => s.status === "NOT_COMING" || s.status === "ABSENT")
       .map(s => s.wrestlerId)
   );
-  const wrestlers = new Map(payload.wrestlers.map(w => [w.id, w]));
-  const teamSymbols = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
-
-  const filteredBouts = payload.bouts.filter(
+  const wrestlers = new Map((payload?.wrestlers ?? []).map(w => [w.id, w]));
+  const teamSymbols = new Map((meet?.meetTeams ?? []).map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
+  const filteredBouts = (payload?.bouts ?? []).filter(
     b => !absentIds.has(b.redId) && !absentIds.has(b.greenId)
   );
   const mats = Array.from(new Set(filteredBouts.map(b => b.mat ?? 1))).sort((a, b) => a - b);
-  if (mats.length === 0) mats.push(1);
+  if (payload && mats.length === 0) mats.push(1);
+  const matsKey = mats.join(",");
+
+  useEffect(() => {
+    if (!payload) return;
+    setVisibleMats(current => {
+      if (current === null) return mats;
+      const next = current.filter(mat => mats.includes(mat));
+      if (next.length === current.length && next.every((mat, index) => mat === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [payload, matsKey]);
+
+  if (loading) return <p>Loading scoring sheet...</p>;
+  if (error) return <div className="notice">Unable to load scoring sheet: {error}</div>;
+  if (!payload) return null;
+  const meetData = payload.meet;
+
   const perMat = new Map<number, Bout[]>();
   for (const mat of mats) perMat.set(mat, []);
   for (const bout of filteredBouts) {
@@ -321,7 +386,8 @@ export default function ScoringSheetTab({
   }
 
   type MatBoutEntry = { bout: Bout; boutNumber: string };
-  const pages = mats.flatMap((mat) => {
+  const selectedMats = visibleMats ?? mats;
+  const pages = selectedMats.flatMap((mat) => {
     const bouts = perMat.get(mat) ?? [];
     const entries: MatBoutEntry[] = bouts.map((bout, idx) => {
       const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
@@ -340,57 +406,127 @@ export default function ScoringSheetTab({
     }));
   });
 
-  const headerLabel = meet.name || "Scoring Sheet";
+  const headerLabel = meetData.name || "Scoring Sheet";
 
   return (
     <div className="scoring-sheet-root" ref={sheetRef}>
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
       <ControlBar meetId={meetId} printTargetRef={sheetRef} printStyles={styles} />
+      <div className="mat-toggle-bar">
+        <span className="mat-toggle-label">Mats</span>
+        <div className="mat-toggle-buttons" role="group" aria-label="Visible mats">
+          {mats.map((mat) => {
+            const isActive = selectedMats.includes(mat);
+            return (
+              <button
+                key={`mat-toggle-${mat}`}
+                type="button"
+                className={`mat-toggle-btn${isActive ? " is-active" : ""}`}
+                aria-pressed={isActive}
+                onClick={() => {
+                      setVisibleMats(current => {
+                    const activeMats = current ?? mats;
+                    if (activeMats.includes(mat)) {
+                      return activeMats.filter(value => value !== mat);
+                    }
+                    return [...activeMats, mat].sort((a, b) => a - b);
+                  });
+                }}
+              >
+                Mat {mat}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      {pages.map((page) => (
-        <section className="sheet-page" key={page.key}>
-          <div className="sheet-card">
-            <div className="sheet-header">
-              <div>
-                Mat {page.mat} Scoring Sheet
-                {page.pageCount > 1 ? ` (Page ${page.pageIndex + 1}/${page.pageCount})` : ""}
+      {pages.length === 0 ? (
+        <div className="empty-state">Turn on at least one mat to show scoring sheets.</div>
+      ) : (
+        pages.map((page) => (
+          <section className="sheet-page" key={page.key}>
+            <div className="sheet-card">
+              <div className="sheet-header">
+                <div>
+                  Mat {page.mat} Scoring Sheet
+                  {page.pageCount > 1 ? ` (Page ${page.pageIndex + 1}/${page.pageCount})` : ""}
+                </div>
+                <div className="sheet-header-right">{meetData.name}</div>
               </div>
-              <div className="sheet-header-right">{meet.name}</div>
-            </div>
 
-            {page.entries.length === 0 ? (
-              <div className="blank-page">No bouts scheduled for this mat.</div>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th className="c-bout">#</th>
-                    <th className="c-team">T</th>
-                    <th className="c-name">NAME</th>
-                    <th className="c-corner" />
-                    <th className="c-period">PERIOD 1</th>
-                    <th className="c-small">C</th>
-                    <th className="c-period">PERIOD 2</th>
-                    <th className="c-small">C</th>
-                    <th className="c-period">PERIOD 3</th>
-                    <th className="c-ot">OT</th>
-                    <th className="c-ot">OT</th>
-                    <th className="c-scr">Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Array.from(
-                    { length: BOUTS_PER_PAGE },
-                    (_, slotIndex) => (slotIndex < page.entries.length ? page.entries[slotIndex] : null)
-                  ).map((entry, slotIndex) => {
-                    if (!entry) {
+              {page.entries.length === 0 ? (
+                <div className="blank-page">No bouts scheduled for this mat.</div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="c-bout">#</th>
+                      <th className="c-team">T</th>
+                      <th className="c-name">NAME</th>
+                      <th className="c-corner" />
+                      <th className="c-period">PERIOD 1</th>
+                      <th className="c-small">C</th>
+                      <th className="c-period">PERIOD 2</th>
+                      <th className="c-small">C</th>
+                      <th className="c-period">PERIOD 3</th>
+                      <th className="c-ot">OT</th>
+                      <th className="c-ot">OT</th>
+                      <th className="c-scr">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from(
+                      { length: BOUTS_PER_PAGE },
+                      (_, slotIndex) => (slotIndex < page.entries.length ? page.entries[slotIndex] : null)
+                    ).map((entry, slotIndex) => {
+                      if (!entry) {
+                        return (
+                          <Fragment key={`${page.key}-blank-${slotIndex}`}>
+                            <tr className="wrestler-divider">
+                              <td className="c-bout match-divider-cell" rowSpan={2} />
+                              <td className="c-team" />
+                              <td className="c-name" />
+                              <td className="c-corner">R</td>
+                              <td className="c-period" />
+                              <td className="c-small" />
+                              <td className="c-period" />
+                              <td className="c-small" />
+                              <td className="c-period" />
+                              <td className="c-ot" />
+                              <td className="c-ot" />
+                              <td className="c-scr" />
+                            </tr>
+                            <tr className="match-end">
+                              <td className="c-team" />
+                              <td className="c-name" />
+                              <td className="c-corner">G</td>
+                              <td className="c-period" />
+                              <td className="c-small" />
+                              <td className="c-period" />
+                              <td className="c-small" />
+                              <td className="c-period" />
+                              <td className="c-ot" />
+                              <td className="c-ot" />
+                              <td className="c-scr" />
+                            </tr>
+                          </Fragment>
+                        );
+                      }
+                      const { bout, boutNumber } = entry;
+                      const red = wrestlers.get(bout.redId);
+                      const green = wrestlers.get(bout.greenId);
+                      const redTeam = red ? (teamSymbols.get(red.teamId) ?? "") : "";
+                      const greenTeam = green ? (teamSymbols.get(green.teamId) ?? "") : "";
+                      const redIsHome = !!(red && homeTeamId && red.teamId === homeTeamId);
+                      const greenIsHome = !!(green && homeTeamId && green.teamId === homeTeamId);
+
                       return (
-                        <Fragment key={`${page.key}-blank-${slotIndex}`}>
+                        <Fragment key={bout.id}>
                           <tr className="wrestler-divider">
-                            <td className="c-bout match-divider-cell" rowSpan={2} />
-                            <td className="c-team" />
-                            <td className="c-name" />
+                            <td className="c-bout match-divider-cell" rowSpan={2}>{boutNumber}</td>
+                            <td className={`c-team${redIsHome ? " home-cell" : ""}`}>{redTeam}</td>
+                            <td className={`c-name${redIsHome ? " home-cell" : ""}`}>{displayName(red)}</td>
                             <td className="c-corner">R</td>
                             <td className="c-period" />
                             <td className="c-small" />
@@ -402,8 +538,8 @@ export default function ScoringSheetTab({
                             <td className="c-scr" />
                           </tr>
                           <tr className="match-end">
-                            <td className="c-team" />
-                            <td className="c-name" />
+                            <td className={`c-team${greenIsHome ? " home-cell" : ""}`}>{greenTeam}</td>
+                            <td className={`c-name${greenIsHome ? " home-cell" : ""}`}>{displayName(green)}</td>
                             <td className="c-corner">G</td>
                             <td className="c-period" />
                             <td className="c-small" />
@@ -416,53 +552,14 @@ export default function ScoringSheetTab({
                           </tr>
                         </Fragment>
                       );
-                    }
-                    const { bout, boutNumber } = entry;
-                    const red = wrestlers.get(bout.redId);
-                    const green = wrestlers.get(bout.greenId);
-                    const redTeam = red ? (teamSymbols.get(red.teamId) ?? "") : "";
-                    const greenTeam = green ? (teamSymbols.get(green.teamId) ?? "") : "";
-                    const redIsHome = !!(red && homeTeamId && red.teamId === homeTeamId);
-                    const greenIsHome = !!(green && homeTeamId && green.teamId === homeTeamId);
-
-                    return (
-                      <Fragment key={bout.id}>
-                        <tr className="wrestler-divider">
-                          <td className="c-bout match-divider-cell" rowSpan={2}>{boutNumber}</td>
-                          <td className={`c-team${redIsHome ? " home-cell" : ""}`}>{redTeam}</td>
-                          <td className={`c-name${redIsHome ? " home-cell" : ""}`}>{displayName(red)}</td>
-                          <td className="c-corner">R</td>
-                          <td className="c-period" />
-                          <td className="c-small" />
-                          <td className="c-period" />
-                          <td className="c-small" />
-                          <td className="c-period" />
-                          <td className="c-ot" />
-                          <td className="c-ot" />
-                          <td className="c-scr" />
-                        </tr>
-                        <tr className="match-end">
-                          <td className={`c-team${greenIsHome ? " home-cell" : ""}`}>{greenTeam}</td>
-                          <td className={`c-name${greenIsHome ? " home-cell" : ""}`}>{displayName(green)}</td>
-                          <td className="c-corner">G</td>
-                          <td className="c-period" />
-                          <td className="c-small" />
-                          <td className="c-period" />
-                          <td className="c-small" />
-                          <td className="c-period" />
-                          <td className="c-ot" />
-                          <td className="c-ot" />
-                          <td className="c-scr" />
-                        </tr>
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-      ))}
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        ))
+      )}
     </div>
   );
 }

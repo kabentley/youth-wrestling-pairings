@@ -1,3 +1,5 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
+
 import { db } from "@/lib/db";
 
 export type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
@@ -28,6 +30,8 @@ export type MeetCheckpointPayload = {
   }[];
 };
 
+type CheckpointClient = Prisma.TransactionClient | PrismaClient;
+
 export function buildTeamSignature(teamIds: string[]) {
   return teamIds.slice().sort().join("|");
 }
@@ -38,29 +42,33 @@ function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
   return "COMING";
 }
 
-export async function buildMeetCheckpointPayload(meetId: string, name: string): Promise<MeetCheckpointPayload | null> {
-  const meet = await db.meet.findUnique({
+export async function buildMeetCheckpointPayload(
+  meetId: string,
+  name: string,
+  client: CheckpointClient = db,
+): Promise<MeetCheckpointPayload | null> {
+  const meet = await client.meet.findUnique({
     where: { id: meetId },
     select: { id: true, name: true, date: true, deletedAt: true },
   });
   if (!meet || meet.deletedAt) return null;
 
-  const meetTeams = await db.meetTeam.findMany({
+  const meetTeams = await client.meetTeam.findMany({
     where: { meetId },
     select: { teamId: true },
   });
   const teamIds = meetTeams.map(mt => mt.teamId);
 
   const [wrestlers, statuses, bouts] = await Promise.all([
-    db.wrestler.findMany({
+    client.wrestler.findMany({
       where: { teamId: { in: teamIds } },
       select: { id: true, teamId: true, first: true, last: true },
     }),
-    db.meetWrestlerStatus.findMany({
+    client.meetWrestlerStatus.findMany({
       where: { meetId },
       select: { wrestlerId: true, status: true },
     }),
-    db.bout.findMany({
+    client.bout.findMany({
       where: { meetId },
       select: {
         redId: true,

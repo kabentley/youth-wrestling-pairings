@@ -50,18 +50,6 @@ export default function ControlBar({ meetId, printTargetRef, printStyles }: Cont
 
   return (
     <div className="chart-controls">
-      <span
-        style={{
-          fontSize: 16,
-          color: "#444",
-          whiteSpace: "nowrap",
-          fontWeight: 700,
-          lineHeight: 1.2,
-          fontFamily: "\"Segoe UI\", Arial, sans-serif",
-        }}
-      >
-        Tip: turn off "Headers and footers" in the print settings.
-      </span>
       <label htmlFor="color-scheme" className="select-label">
         <span className="sr-only">Color mode</span>
         <select
@@ -76,7 +64,12 @@ export default function ControlBar({ meetId, printTargetRef, printStyles }: Cont
           <option value="black-and-white">Black and white</option>
         </select>
       </label>
-      <PrintButton meetId={meetId} targetRef={printTargetRef} styles={printStyles} />
+      <PrintButton
+        meetId={meetId}
+        targetRef={printTargetRef}
+        styles={printStyles}
+        title={'Tip: turn off "Headers and footers" in the print settings.'}
+      />
     </div>
   );
 }

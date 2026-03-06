@@ -155,6 +155,10 @@ export default function EnterResultsPage() {
     }
   }
 
+  function exportResults() {
+    window.location.assign(`/api/meets/${meetId}/results/export`);
+  }
+
   useEffect(() => {
     void load();
   }, [meetId]);
@@ -510,7 +514,10 @@ export default function EnterResultsPage() {
           </h1>
         </div>
         <div>
-          <button className="btn" onClick={load}>Refresh</button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn" type="button" onClick={exportResults}>Export to .xlsx</button>
+            <button className="btn" type="button" onClick={load}>Refresh</button>
+          </div>
         </div>
       </div>
 

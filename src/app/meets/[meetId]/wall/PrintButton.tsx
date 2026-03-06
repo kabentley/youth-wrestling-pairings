@@ -6,9 +6,10 @@ type PrintButtonProps = {
   meetId?: string;
   targetRef?: RefObject<HTMLElement>;
   styles?: string;
+  title?: string;
 };
 
-export default function PrintButton({ meetId, targetRef, styles }: PrintButtonProps) {
+export default function PrintButton({ meetId, targetRef, styles, title }: PrintButtonProps) {
   const handlePrint = () => {
     if (meetId) {
       fetch(`/api/meets/${meetId}/print`, { method: "POST" }).catch(() => {});
@@ -46,7 +47,7 @@ export default function PrintButton({ meetId, targetRef, styles }: PrintButtonPr
   };
 
   return (
-    <button type="button" onClick={handlePrint}>
+    <button type="button" onClick={handlePrint} title={title} aria-label={title ?? "Print"}>
       Print
     </button>
   );

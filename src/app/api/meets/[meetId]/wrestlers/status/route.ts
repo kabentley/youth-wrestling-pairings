@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
 const BodySchema = z.object({
   wrestlerId: z.string().min(1),
@@ -58,11 +59,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
 
   const absentStatuses = new Set(["NOT_COMING"]);
   if (body.status && absentStatuses.has(body.status)) {
-    await db.bout.deleteMany({
-      where: {
-        meetId,
-        OR: [{ redId: body.wrestlerId }, { greenId: body.wrestlerId }],
-      },
+    await deleteBoutsAndRenumber(db, meetId, {
+      OR: [{ redId: body.wrestlerId }, { greenId: body.wrestlerId }],
     });
   } else {
     const statuses = await db.meetWrestlerStatus.findMany({
@@ -71,14 +69,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     });
     const absentIds = new Set(statuses.map(s => s.wrestlerId));
     if (absentIds.size > 0) {
-      await db.bout.deleteMany({
-        where: {
-          meetId,
-          OR: [
-            { redId: { in: Array.from(absentIds) } },
-            { greenId: { in: Array.from(absentIds) } },
-          ],
-        },
+      await deleteBoutsAndRenumber(db, meetId, {
+        OR: [
+          { redId: { in: Array.from(absentIds) } },
+          { greenId: { in: Array.from(absentIds) } },
+        ],
       });
     }
   }

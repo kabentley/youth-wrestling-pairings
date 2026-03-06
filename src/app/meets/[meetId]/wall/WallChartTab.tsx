@@ -52,6 +52,7 @@ export default function WallChartTab({
   const [payload, setPayload] = useState<WallChartPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [visibleMats, setVisibleMats] = useState<number[] | null>(null);
   const wallChartRef = useRef<HTMLDivElement | null>(null);
   const fetchRequestIdRef = useRef(0);
 
@@ -90,7 +91,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}?r=${encodeURIComponent(String(refreshIndex ?? 0))}&req=${requestId}`, { cache: "no-store" })
+    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -140,6 +141,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               padding-top: 54px;
             }
             .wall-chart-root .noprint { display: none; }
+            .wall-chart-root .mat-toggle-bar { display: none !important; }
             .wall-chart-root .chart-page { page-break-after: always; }
             .wall-chart-root .chart-page:last-of-type { page-break-after: auto; }
             .wall-chart-root .mat-block { page-break-after: always; }
@@ -192,9 +194,19 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           .wall-chart-root .mat-block:last-of-type {
             page-break-after: auto;
           }
+          .wall-chart-root .mat-table-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+          }
           .wall-chart-root .mat-table {
             border-collapse: collapse;
             font-size: 11px;
+          }
+          .wall-chart-root .mat-col-bout {
+            width: 56px;
+          }
+          .wall-chart-root .mat-col-name {
+            width: 180px;
           }
           .wall-chart-root .mat-table th,
           .wall-chart-root .mat-table td {
@@ -243,6 +255,22 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           }
           .wall-chart-root .print-meet-header {
             display: none;
+          }
+          .wall-chart-root .mat-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 12px;
+            margin: 0 0 12px;
+          }
+          .wall-chart-root .mat-toolbar .chart-controls,
+          .wall-chart-root .mat-toolbar .mat-toggle-bar {
+            margin: 0;
+          }
+          .wall-chart-root .mat-toolbar .chart-controls {
+            margin-left: auto;
+            justify-content: flex-start;
           }
           .wall-chart-root .chart-controls {
             display: flex;
@@ -299,6 +327,52 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             box-shadow: none;
             background: #b0b5be;
           }
+          .wall-chart-root .mat-toggle-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin: 0 0 12px;
+          }
+          .wall-chart-root .mat-toggle-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: #4b5563;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+          }
+          .wall-chart-root .mat-toggle-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .wall-chart-root .mat-toggle-btn {
+            border: 1px solid #c7d2df;
+            background: #fff;
+            color: #1f2937;
+            border-radius: 999px;
+            padding: 7px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+          }
+          .wall-chart-root .mat-toggle-btn.is-active {
+            background: #1e88e5;
+            border-color: #1e88e5;
+            color: #fff;
+          }
+          .wall-chart-root .mat-toggle-btn:hover {
+            border-color: #1e88e5;
+          }
+          .wall-chart-root .mat-empty-state {
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 24px;
+            color: #475569;
+            text-align: center;
+            background: #f8fafc;
+            font-weight: 600;
+          }
           .wall-chart-root .chart-controls .refresh-btn {
             padding: 8px 18px;
             background: #92979d;
@@ -309,6 +383,117 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             letter-spacing: 0.4px;
             text-transform: uppercase;
             cursor: pointer;
+          }
+          @media (max-width: 720px) {
+            .wall-chart-root {
+              padding: 10px;
+            }
+            .wall-chart-root .chart-page {
+              margin-bottom: 12px;
+            }
+            .wall-chart-root .mat-toolbar {
+              flex-wrap: nowrap;
+              align-items: center;
+              gap: 8px;
+              overflow-x: auto;
+              -webkit-overflow-scrolling: touch;
+            }
+            .wall-chart-root .mat-toolbar .chart-controls,
+            .wall-chart-root .mat-toolbar .mat-toggle-bar {
+              width: auto;
+              min-width: 0;
+              flex: 0 0 auto;
+              align-items: center;
+            }
+            .wall-chart-root .mat-toolbar .chart-controls {
+              margin-left: 0;
+              flex-direction: row;
+              align-items: center;
+              justify-content: flex-start;
+              gap: 8px;
+            }
+            .wall-chart-root .chart-controls {
+              flex-direction: column;
+              align-items: stretch;
+              justify-content: flex-start;
+              gap: 8px;
+            }
+            .wall-chart-root .mat-toolbar .chart-controls > span,
+            .wall-chart-root .mat-toolbar .chart-controls label,
+            .wall-chart-root .mat-toolbar .chart-controls button {
+              width: auto;
+            }
+            .wall-chart-root .chart-controls > span,
+            .wall-chart-root .chart-controls label,
+            .wall-chart-root .chart-controls button {
+              width: 100%;
+            }
+            .wall-chart-root .mat-toolbar .chart-controls button,
+            .wall-chart-root .mat-toolbar .chart-controls select {
+              min-height: 0;
+            }
+            .wall-chart-root .chart-controls button,
+            .wall-chart-root .chart-controls select {
+              min-height: 40px;
+            }
+            .wall-chart-root .mat-toggle-bar {
+              flex-wrap: nowrap;
+              align-items: center;
+              gap: 8px;
+              overflow-x: auto;
+              -webkit-overflow-scrolling: touch;
+            }
+            .wall-chart-root .mat-toggle-label {
+              flex: 0 0 auto;
+            }
+            .wall-chart-root .mat-toggle-buttons {
+              width: auto;
+              min-width: 0;
+              flex: 1 1 auto;
+              flex-wrap: nowrap;
+              overflow-x: auto;
+              -webkit-overflow-scrolling: touch;
+            }
+            .wall-chart-root .mat-toggle-btn {
+              flex: 0 0 auto;
+              text-align: center;
+              padding: 8px 10px;
+            }
+            .wall-chart-root .mat-block {
+              padding: 10px;
+              border-radius: 10px;
+            }
+            .wall-chart-root .mat-header,
+            .wall-chart-root .team-header {
+              flex-direction: column;
+              align-items: flex-start;
+            }
+            .wall-chart-root .card-meet-label {
+              white-space: normal;
+              font-size: 13px;
+            }
+            .wall-chart-root .mat-table {
+              width: 334px;
+              min-width: 334px;
+              table-layout: fixed;
+              font-size: 9px;
+            }
+            .wall-chart-root .mat-col-bout {
+              width: 34px;
+            }
+            .wall-chart-root .mat-col-name {
+              width: 150px;
+            }
+            .wall-chart-root .mat-table th,
+            .wall-chart-root .mat-table td {
+              padding: 3px 4px;
+            }
+            .wall-chart-root .mat-table td.mat-wrestler-name {
+              font-size: 11px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
           }
           @media print {
             .wall-chart-root .chart-controls {
@@ -371,24 +556,22 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           }
   `;
 
-  if (loading) {
-    return <p>Loading wall chart…</p>;
-  }
-  if (error) {
-    return <div className="notice">Unable to load wall chart: {error}</div>;
-  }
-  if (!payload) {
-    return null;
-  }
+  const derivedMeet = payload?.meet ?? null;
+  const statuses = payload?.statuses ?? [];
+  const absentIds = new Set(
+    statuses
+      .filter(s => s.status === "NOT_COMING" || s.status === "ABSENT")
+      .map(s => s.wrestlerId)
+  );
+  const filteredBouts = (payload?.bouts ?? []).filter(
+    b => !absentIds.has(b.redId) && !absentIds.has(b.greenId)
+  );
+  const wMap = new Map((payload?.wrestlers ?? []).map(w => [w.id, w]));
+  const meetTeams = derivedMeet?.meetTeams ?? [];
+  const tMap = new Map(meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
+  const teamSymbolMap = new Map(meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
+  const tColor = new Map(meetTeams.map(mt => [mt.team.id, mt.team.color ?? "#000"]));
 
-  const meet = payload.meet;
-  const statuses = payload.statuses;
-  const absentIds = new Set(statuses.filter(s => s.status === "NOT_COMING" || s.status === "ABSENT").map(s => s.wrestlerId));
-  const filteredBouts = payload.bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
-  const wMap = new Map(payload.wrestlers.map(w => [w.id, w]));
-  const tMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
-  const teamSymbolMap = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
-  const tColor = new Map(meet.meetTeams.map(mt => [mt.team.id, mt.team.color ?? "#000"]));
   const darkenHex = (color: string, amount: number) => {
     if (!color.startsWith("#") || color.length !== 7) return color;
     const r = parseInt(color.slice(1, 3), 16);
@@ -416,6 +599,30 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   };
   const maxMat = Math.max(1, ...filteredBouts.map(b => b.mat ?? 1));
   const mats = Array.from({ length: maxMat }, (_, i) => i + 1);
+  const matsKey = mats.join(",");
+
+  useEffect(() => {
+    if (!payload) return;
+    setVisibleMats(current => {
+      if (current === null) return mats;
+      const next = current.filter(mat => mats.includes(mat));
+      if (next.length === current.length && next.every((mat, index) => mat === current[index])) {
+        return current;
+      }
+      return next;
+    });
+  }, [payload, matsKey]);
+
+  if (loading) {
+    return <p>Loading wall chart...</p>;
+  }
+  if (error) {
+    return <div className="notice">Unable to load wall chart: {error}</div>;
+  }
+  if (!payload) {
+    return null;
+  }
+  const meet = payload.meet;
 
   const perMat = new Map<number, Bout[]>();
   for (const mat of mats) perMat.set(mat, []);
@@ -425,7 +632,8 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     perMat.get(mat)!.push(bout);
   }
   for (const mat of mats) perMat.get(mat)!.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
-  const matPages = mats.flatMap((mat) => {
+  const selectedMats = visibleMats ?? mats;
+  const matPages = selectedMats.flatMap((mat) => {
     const entries = (perMat.get(mat) ?? []).map((bout, idx) => {
       const displayOrder = Math.max(0, (bout.order ?? (idx + 1)) - 1);
       return {
@@ -547,46 +755,90 @@ function chunkArray<T>(items: T[], size: number): T[][] {
     <div className="wall-chart-root" ref={wallChartRef}>
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
-      <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
+      {(chartType === "both" || chartType === "mat") ? (
+        <div className="mat-toolbar">
+          <div className="mat-toggle-bar">
+            <span className="mat-toggle-label">Mats</span>
+            <div className="mat-toggle-buttons" role="group" aria-label="Visible mats">
+              {mats.map((mat) => {
+                const isActive = selectedMats.includes(mat);
+                return (
+                  <button
+                    key={`mat-toggle-${mat}`}
+                    type="button"
+                    className={`mat-toggle-btn${isActive ? " is-active" : ""}`}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      setVisibleMats(current => {
+                        const activeMats = current ?? mats;
+                        if (activeMats.includes(mat)) {
+                          return activeMats.filter(value => value !== mat);
+                        }
+                        return [...activeMats, mat].sort((a, b) => a - b);
+                      });
+                    }}
+                  >
+                    Mat {mat}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
+        </div>
+      ) : (
+        <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
+      )}
       <div>
         {(chartType === "both" || chartType === "mat") && (
           <section className="chart-page per-mat">
             <div className="mat-grid">
-              {matPages.map((matPage) => (
-                <article key={matPage.pageKey} className="mat-block">
-                  <div className="mat-header">
-                    <span>
-                      <strong>Mat {matPage.mat}</strong> (Page {matPage.pageIndex + 1}/{matPage.pageCount})
-                    </span>
-                    <span className="card-meet-label">{cardLabel}</span>
-                  </div>
-                  {matPage.entries.length ? (
-                    <table className="mat-table">
-                      <thead>
-                        <tr>
-                          <th>Bout #</th>
-                          <th>Wrestler 1</th>
-                          <th>Wrestler 2</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {matPage.entries.map(({ bout, boutNumber }) => {
-                          const t = cellText(bout);
-                          return (
-                            <tr key={bout.id}>
-                              <td>{boutNumber}</td>
-                              <td className="mat-wrestler-name" style={{ color: t.redColor }}>{t.red}</td>
-                              <td className="mat-wrestler-name" style={{ color: t.greenColor }}>{t.green}</td>
+              {matPages.length === 0 ? (
+                <div className="mat-empty-state">Turn on at least one mat to show mat sheets.</div>
+              ) : (
+                matPages.map((matPage) => (
+                  <article key={matPage.pageKey} className="mat-block">
+                    <div className="mat-header">
+                      <span>
+                        <strong>Mat {matPage.mat}</strong> (Page {matPage.pageIndex + 1}/{matPage.pageCount})
+                      </span>
+                      <span className="card-meet-label">{cardLabel}</span>
+                    </div>
+                    {matPage.entries.length ? (
+                      <div className="mat-table-wrap">
+                        <table className="mat-table">
+                          <colgroup>
+                            <col className="mat-col-bout" />
+                            <col className="mat-col-name" />
+                            <col className="mat-col-name" />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>Bout #</th>
+                              <th>Wrestler 1</th>
+                              <th>Wrestler 2</th>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="mat-empty">No bouts scheduled for this mat.</p>
-                  )}
-                </article>
-              ))}
+                          </thead>
+                          <tbody>
+                            {matPage.entries.map(({ bout, boutNumber }) => {
+                              const t = cellText(bout);
+                              return (
+                                <tr key={bout.id}>
+                                  <td>{boutNumber}</td>
+                                  <td className="mat-wrestler-name" style={{ color: t.redColor }}>{t.red}</td>
+                                  <td className="mat-wrestler-name" style={{ color: t.greenColor }}>{t.green}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="mat-empty">No bouts scheduled for this mat.</p>
+                    )}
+                  </article>
+                ))
+              )}
             </div>
           </section>
         )}

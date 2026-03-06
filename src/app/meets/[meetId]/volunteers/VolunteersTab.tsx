@@ -652,7 +652,7 @@ export default function VolunteersTab({
         )}
         <div className="volunteers-help-note">
           {canEdit
-            ? "Drag volunteers to assign mats. Click on cards to move their kids's bouts to their mat. Badge colors: red = wrong mat, yellow = parents on different mats."
+            ? "Drag volunteers to assign mats. Click on cards to move their kids' bouts to their mat. Badge colors: red = wrong mat, yellow = parents on different mats."
             : "Badge colors: red = wrong mat, yellow = parents on different mats."}
         </div>
       </div>

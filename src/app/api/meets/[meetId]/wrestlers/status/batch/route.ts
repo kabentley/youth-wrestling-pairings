@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
 const ChangeSchema = z.object({
   wrestlerId: z.string().min(1),
@@ -86,14 +87,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     });
     const absentIds = absentStatuses.map(status => status.wrestlerId);
     if (absentIds.length > 0) {
-      await tx.bout.deleteMany({
-        where: {
-          meetId,
-          OR: [
-            { redId: { in: absentIds } },
-            { greenId: { in: absentIds } },
-          ],
-        },
+      await deleteBoutsAndRenumber(tx, meetId, {
+        OR: [
+          { redId: { in: absentIds } },
+          { greenId: { in: absentIds } },
+        ],
       });
     }
   });

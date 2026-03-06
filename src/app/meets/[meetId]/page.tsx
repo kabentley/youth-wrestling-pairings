@@ -252,6 +252,7 @@ const CURRENT_SHARED_COLUMN_MAP: Record<number, number | undefined> = {
 };
 
 const AVAILABLE_SHARED_COLUMN_MAP = CURRENT_SHARED_COLUMN_MAP;
+const DEFAULT_PRUNE_TARGET_MATCHES = 5;
 
 export default function MeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = use(params);
@@ -441,8 +442,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
       }
         const targetMatchesValue = autoMatchesPerWrestler ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? undefined;
-        const pruneTargetValue = pruneTargetMatches ?? targetMatchesValue ?? undefined;
-        const effectivePruneTarget = targetMatchesValue !== undefined && pruneTargetValue !== undefined
+        const pruneTargetValue = pruneTargetMatches ?? DEFAULT_PRUNE_TARGET_MATCHES;
+        const effectivePruneTarget = targetMatchesValue !== undefined
           ? Math.max(pruneTargetValue, targetMatchesValue)
           : pruneTargetValue;
         const payload = {
@@ -509,12 +510,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   const [target, setTarget] = useState<Wrestler | null>(null);
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
+  const [pairingMenuSize, setPairingMenuSize] = useState({ width: 210, height: 150 });
   const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
   const [matchesTooltip, setMatchesTooltip] = useState<MatchesTooltip | null>(null);
   const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
   const autoTargetMatches = autoMatchesPerWrestler ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? null;
   const pruneTargetMin = autoTargetMatches ?? 1;
-  const pruneTargetDisplay = pruneTargetMatches ?? autoTargetMatches ?? "";
+  const pruneTargetDisplay = pruneTargetMatches ?? DEFAULT_PRUNE_TARGET_MATCHES;
   const attendanceStatusStyles: Record<AttendanceStatus, { background: string; borderColor: string }> = {
     COMING: { background: "#eaf6e6", borderColor: "#c6e2ba" },
     NOT_COMING: { background: "#f0f0f0", borderColor: "#cfcfcf" },
@@ -1165,7 +1167,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           ? meetJson.matchesPerWrestler
           : null;
         setSavedMatchesPerWrestler(nextTargetMatches);
-        setPruneTargetMatches(nextTargetMatches);
         setMaxMatchesPerWrestler(
           typeof meetJson.maxMatchesPerWrestler === "number" ? meetJson.maxMatchesPerWrestler : null,
         );
@@ -1754,7 +1755,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   useEffect(() => {
     if (matchesPerWrestler === null) return;
     setPruneTargetMatches((prev) => {
-      if (prev === null || prev < matchesPerWrestler) return matchesPerWrestler;
+      if (prev !== null && prev < matchesPerWrestler) return matchesPerWrestler;
       return prev;
     });
   }, [matchesPerWrestler]);
@@ -2046,6 +2047,28 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     };
   }, [pairingContext]);
 
+  useEffect(() => {
+    if (!pairingContext) return;
+    let frameId = 0;
+    const updateMenuSize = () => {
+      const menu = pairingMenuRef.current;
+      if (!menu) return;
+      const nextWidth = Math.ceil(menu.offsetWidth);
+      const nextHeight = Math.ceil(menu.offsetHeight);
+      setPairingMenuSize((current) => (
+        current.width === nextWidth && current.height === nextHeight
+          ? current
+          : { width: nextWidth, height: nextHeight }
+      ));
+    };
+    frameId = window.requestAnimationFrame(updateMenuSize);
+    window.addEventListener("resize", updateMenuSize);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateMenuSize);
+    };
+  }, [pairingContext, canEdit]);
+
   const candidateFetchConfig = useMemo(() => ({
     enforceAgeGapCheck: settings.enforceAgeGapCheck,
     enforceWeightCheck: settings.enforceWeightCheck,
@@ -2291,8 +2314,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       return;
     }
     if (!pairingContext) return;
+    const currentStatus = pairingContext.wrestler.status ?? "COMING";
+    const nextStatus =
+      (status === "LATE" || status === "EARLY") && currentStatus === status
+        ? null
+        : status;
     try {
-      await updateWrestlerStatus(pairingContext.wrestler.id, status);
+      await updateWrestlerStatus(pairingContext.wrestler.id, nextStatus);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to update attendance.";
       window.alert(message);
@@ -5072,7 +5100,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         const next = Math.min(5, Math.max(1, parsed));
                         setAutoMatchesPerWrestler(next);
                         setPruneTargetMatches((prev) => {
-                          if (prev === null || prev < next) return next;
+                          if (prev !== null && prev < next) return next;
                           return prev;
                         });
                       }}
@@ -5209,12 +5237,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </ModalPortal>
       )}
       {pairingContext && (() => {
-        const menuWidth = 210;
-        const menuHeight = pairingContext.mode === "status" ? 150 : 86;
+        const menuWidth = pairingMenuSize.width;
+        const menuHeight = pairingMenuSize.height;
+        const viewportPadding = 8;
         const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
         const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
-        const left = viewportWidth ? Math.min(pairingContext.x, viewportWidth - menuWidth) : pairingContext.x;
-        const top = viewportHeight ? Math.min(pairingContext.y, viewportHeight - menuHeight) : pairingContext.y;
+        const left = viewportWidth
+          ? Math.max(viewportPadding, Math.min(pairingContext.x, viewportWidth - menuWidth - viewportPadding))
+          : pairingContext.x;
+        const top = viewportHeight
+          ? Math.max(viewportPadding, Math.min(pairingContext.y, viewportHeight - menuHeight - viewportPadding))
+          : pairingContext.y;
         const fullName = `${pairingContext.wrestler.first} ${pairingContext.wrestler.last}`;
         const currentStatus = pairingContext.wrestler.status ?? "COMING";
         const isShowMatches = pairingContext.mode === "showMatches";
@@ -5241,20 +5274,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               )}
               {!isShowMatches && (
                 <>
-                  <button
-                    className="pairings-context-item"
-                    style={{
-                      background: attendanceStatusStyles.COMING.background,
-                      border: `1px solid ${attendanceStatusStyles.COMING.borderColor}`,
-                    }}
-                    onClick={() => handlePairingContextStatus("COMING")}
-                    disabled={!canEdit}
-                  >
-                    <span className="pairings-context-check" aria-hidden="true">
-                      <input type="checkbox" checked={currentStatus === "COMING"} readOnly />
-                    </span>
-                    Coming
-                  </button>
                   <button
                     className="pairings-context-item"
                     style={{

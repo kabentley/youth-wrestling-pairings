@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { buildMeetCheckpointPayload, buildTeamSignature } from "@/lib/meetCheckpoints";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
 
@@ -25,6 +26,11 @@ function normalizeNullableString(value?: string | null) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
   return trimmed;
+}
+
+function buildAutoPublishCheckpointName(now: Date) {
+  const stamp = now.toISOString().replace("T", " ").slice(0, 16);
+  return `Published ${stamp} UTC`;
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -91,9 +97,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.homeTeamId === null) {
     return NextResponse.json({ error: "Meet must have a home team." }, { status: 400 });
   }
-  const current = body.name
-    ? await db.meet.findUnique({ where: { id: meetId }, select: { name: true } })
-    : null;
+  const current = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { name: true, status: true },
+  });
+  if (!current) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
   const data: {
     name?: string;
     date?: Date;
@@ -121,31 +131,56 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.restGap !== undefined) data.restGap = body.restGap;
   if (body.status) data.status = body.status;
 
-  const updated = await db.meet.update({
-    where: { id: meetId },
-    data,
-    select: {
-      id: true,
-      name: true,
-      date: true,
-      location: true,
-      homeTeamId: true,
-      numMats: true,
-      allowSameTeamMatches: true,
-      girlsWrestleGirls: true,
-      matchesPerWrestler: true,
-      maxMatchesPerWrestler: true,
-      restGap: true,
-      status: true,
-      updatedAt: true,
-      updatedBy: { select: { username: true } },
-    },
+  const now = new Date();
+  const autoPublishCheckpointName = buildAutoPublishCheckpointName(now);
+  const updated = await db.$transaction(async (tx) => {
+    const updatedMeet = await tx.meet.update({
+      where: { id: meetId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        date: true,
+        location: true,
+        homeTeamId: true,
+        numMats: true,
+        allowSameTeamMatches: true,
+        girlsWrestleGirls: true,
+        matchesPerWrestler: true,
+        maxMatchesPerWrestler: true,
+        restGap: true,
+        status: true,
+        updatedAt: true,
+        updatedBy: { select: { username: true } },
+      },
+    });
+
+    const transitionedToPublished =
+      body.status === "PUBLISHED" && current.status !== "PUBLISHED" && updatedMeet.status === "PUBLISHED";
+
+    if (transitionedToPublished) {
+      const payload = await buildMeetCheckpointPayload(meetId, autoPublishCheckpointName, tx);
+      if (!payload) {
+        throw new Error("Meet not found");
+      }
+      await tx.meetCheckpoint.create({
+        data: {
+          meetId,
+          name: autoPublishCheckpointName,
+          payload,
+          teamSignature: buildTeamSignature(payload.teamIds),
+          createdById: user.id,
+        },
+      });
+    }
+
+    return updatedMeet;
   });
 
   const otherChanges: string[] = [];
   let nameChangeMessage = "";
   if (body.name) {
-    const oldName = current?.name ?? "Unnamed";
+    const oldName = current.name;
     const newName = body.name.trim();
     nameChangeMessage = `Update meet name from [${oldName}] to [${newName}].`;
   }
@@ -165,6 +200,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       ? `${nameChangeMessage} ${otherMessage}`
       : (nameChangeMessage || otherMessage);
     await logMeetChange(meetId, user.id, message);
+  }
+  if (body.status === "PUBLISHED" && current.status !== "PUBLISHED" && updated.status === "PUBLISHED") {
+    await logMeetChange(
+      meetId,
+      user.id,
+      `Saved checkpoint automatically on publish: ${autoPublishCheckpointName}.`,
+    );
   }
 
   revalidatePath(`/meets/${meetId}`);

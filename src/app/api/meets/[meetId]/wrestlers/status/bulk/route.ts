@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireRole } from "@/lib/rbac";
+import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
 const BodySchema = z.object({
   action: z.enum(["CLEAR", "SET"]),
@@ -80,8 +81,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     })),
   });
 
-  if (status === "NOT_COMING") {
-    await db.bout.deleteMany({ where: { meetId } });
+  if (status === "NOT_COMING" && wrestlerIds.length > 0) {
+    await deleteBoutsAndRenumber(db, meetId, {
+      OR: [
+        { redId: { in: wrestlerIds } },
+        { greenId: { in: wrestlerIds } },
+      ],
+    });
   }
 
   await logMeetChange(

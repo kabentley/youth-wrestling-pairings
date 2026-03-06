@@ -69,7 +69,7 @@ export default function ScratchSheetTab({
     let isMounted = true;
     setLoading(true);
     setError(null);
-    fetch(`/api/wall-chart/${meetId}?r=${encodeURIComponent(String(refreshIndex ?? 0))}&req=${requestId}`, { cache: "no-store" })
+    fetch(`/api/wall-chart/${meetId}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
