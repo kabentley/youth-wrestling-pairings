@@ -38,13 +38,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
       where: { id: meetId },
       select: {
         deletedAt: true,
-        status: true,
-        homeTeamId: true,
-        allowSameTeamMatches: true,
-        girlsWrestleGirls: true,
-        maxMatchesPerWrestler: true,
-        homeTeam: { select: { headCoachId: true } },
-      },
+      status: true,
+      homeTeamId: true,
+      allowSameTeamMatches: true,
+      girlsWrestleGirls: true,
+      matchesPerWrestler: true,
+      maxMatchesPerWrestler: true,
+      homeTeam: { select: { headCoachId: true } },
+    },
     }),
     db.league.findFirst({ select: { maxAgeGapYears: true, maxWeightDiffPct: true } }),
     db.meetCheckpoint.findFirst({
@@ -112,12 +113,20 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   const targetDeficits: Record<string, number> = {};
+  const targetMatches = typeof meet.matchesPerWrestler === "number" ? Math.max(1, Math.floor(meet.matchesPerWrestler)) : null;
   for (const [wrestlerId, baselineMatches] of baselineMatchCounts.entries()) {
     if (!attendingIds.has(wrestlerId)) continue;
     const currentMatches = currentMatchCounts.get(wrestlerId) ?? 0;
     const lostMatches = Math.max(0, baselineMatches - currentMatches);
-    if (lostMatches > 0) {
+    if (lostMatches <= 0) continue;
+    if (targetMatches === null) {
       targetDeficits[wrestlerId] = lostMatches;
+      continue;
+    }
+    const shortfall = Math.max(0, targetMatches - currentMatches);
+    const deficit = Math.min(lostMatches, shortfall);
+    if (deficit > 0) {
+      targetDeficits[wrestlerId] = deficit;
     }
   }
 

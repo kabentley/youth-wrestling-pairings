@@ -2347,6 +2347,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function ensureMeetLock() {
+    if (lockState.status === "acquired") return true;
     const ok = await acquireLock();
     if (!ok) {
       triggerNoticeFlash();
@@ -2359,13 +2360,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function updateMeetStatus(nextStatus: MeetPhase) {
     if (!canChangeStatus) return false;
     if (!(await ensureMeetLock())) return false;
-    const res = await fetch(`/api/meets/${meetId}`, {
+    const sendStatusUpdate = () => fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus }),
     });
+    let res = await sendStatusUpdate();
+    let payload = res.ok ? null : await res.json().catch(() => null);
+    if (!res.ok && payload?.error === "Meet lock required") {
+      const reacquired = await acquireLock();
+      if (reacquired) {
+        res = await sendStatusUpdate();
+        payload = res.ok ? null : await res.json().catch(() => null);
+      }
+    }
     if (!res.ok) {
-      const payload = await res.json().catch(() => null);
       if (nextStatus === "READY_FOR_CHECKIN" && payload?.checklist) {
         setReadyForCheckinChecklist(payload.checklist as ReadyForCheckinChecklist);
         setShowReadyForCheckinModal(true);
@@ -2454,17 +2463,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setReadyForCheckinActionId(action);
     setReadyForCheckinError(null);
     try {
-      const res = action === "sync-volunteer-mats"
-        ? await fetch(`/api/meets/${meetId}/mats/people-sync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          })
-        : await fetch(`/api/meets/${meetId}/ready-for-checkin/fix-rest-conflicts`, {
-            method: "POST",
-          });
+      const sendChecklistAction = () => (
+        action === "sync-volunteer-mats"
+          ? fetch(`/api/meets/${meetId}/mats/people-sync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            })
+          : fetch(`/api/meets/${meetId}/ready-for-checkin/fix-rest-conflicts`, {
+              method: "POST",
+            })
+      );
+      let res = await sendChecklistAction();
+      let payload = res.ok ? null : await res.json().catch(() => null);
+      if (!res.ok && payload?.error === "Meet lock required") {
+        const reacquired = await acquireLock();
+        if (reacquired) {
+          res = await sendChecklistAction();
+          payload = res.ok ? null : await res.json().catch(() => null);
+        }
+      }
       if (!res.ok) {
-        const payload = await res.json().catch(() => null);
         throw new Error(payload?.error ?? `Unable to run checklist fix (${res.status}).`);
       }
       await load();
@@ -5474,6 +5493,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             checkpoints={checkpoints}
             targetMatchesPerWrestler={matchesPerWrestler ?? savedMatchesPerWrestler}
             canManage={canManageScratches}
+            onEnsureLock={ensureMeetLock}
             onRefresh={async () => {
               await load();
               await loadActivity();
