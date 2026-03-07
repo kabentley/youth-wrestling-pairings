@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
 
 const HomeVolunteerRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
@@ -239,7 +240,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (!meet.homeTeamId) {
     return NextResponse.json({ error: "Meet must have a home team before managing volunteers." }, { status: 400 });
   }
-  if (meet.status !== "DRAFT") {
+  if (!isEditableMeetPhase(meet.status)) {
     return NextResponse.json({ error: "Volunteer mat changes are only available before the meet starts." }, { status: 400 });
   }
   const hasResults = await db.bout.findFirst({

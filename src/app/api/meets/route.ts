@@ -9,6 +9,10 @@ import { requireRole, requireSession } from "@/lib/rbac";
 const MeetSchema = z.object({
   name: z.string().optional().default(""),
   date: z.string(),
+  attendanceDeadline: z.string().trim().nullable().optional().refine(
+    (value) => value == null || value === "" || !Number.isNaN(new Date(value).getTime()),
+    "Invalid attendance deadline.",
+  ),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(5),
   homeTeamId: z.string().optional(),
@@ -21,6 +25,12 @@ const MeetSchema = z.object({
   autoPairings: z.boolean().optional().default(true),
   allCoachesHaveLockAccess: z.boolean().optional().default(true),
 });
+
+function normalizeOptionalDateTime(value?: string | null) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return new Date(trimmed);
+}
 
 function formatMeetDate(dateStr: string) {
   const iso = dateStr.slice(0, 10);
@@ -141,9 +151,11 @@ export async function GET() {
       const hasCoordinatorGrant = lockAccesses.length > 0;
       const canStartEditing =
         user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+      const canDelete = user.role === "ADMIN" || isCoordinator;
       return {
         ...meetWithoutAccessMeta,
         canStartEditing,
+        canDelete,
         lastChangeAt: entry ? entry.at : null,
         lastChangeBy: entry?.by ?? null,
       };
@@ -194,6 +206,7 @@ export async function POST(req: Request) {
     data: {
       name: uniqueMeetName,
       date: new Date(parsed.date),
+      attendanceDeadline: normalizeOptionalDateTime(parsed.attendanceDeadline),
       location: normalizeLocation(parsed.location),
       homeTeamId,
       numMats: parsed.numMats,
@@ -202,6 +215,7 @@ export async function POST(req: Request) {
       matchesPerWrestler: parsed.matchesPerWrestler,
       maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
       restGap: parsed.restGap,
+      status: "ATTENDANCE",
       updatedById: user.id,
       lockedById: user.id,
       lockedAt: now,

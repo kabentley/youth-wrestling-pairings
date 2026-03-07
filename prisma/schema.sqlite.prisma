@@ -90,6 +90,7 @@ model Meet {
   matchesPerWrestler Int @default(2)
   maxMatchesPerWrestler Int @default(5)
   restGap   Int        @default(6)
+  attendanceDeadline DateTime?
   status    String    @default("DRAFT")
   deletedAt DateTime?
   deletedById String?

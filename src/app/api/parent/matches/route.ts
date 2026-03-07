@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireSession } from "@/lib/rbac";
+
+type AttendanceStatus = "COMING" | "NOT_COMING" | null;
+
+function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
+  if (status === "ABSENT" || status === "NOT_COMING") return "NOT_COMING";
+  if (status === "COMING" || status === "LATE" || status === "EARLY") return "COMING";
+  return null;
+}
 
 export async function GET() {
   const { userId } = await requireSession();
@@ -30,34 +39,60 @@ export async function GET() {
   }
 
   const childIds = children.map((c) => c.wrestler.id);
-  const bouts = await db.bout.findMany({
-    where: {
-      OR: [{ redId: { in: childIds } }, { greenId: { in: childIds } }],
-    },
-    select: {
-      id: true,
-      meetId: true,
-      redId: true,
-      greenId: true,
-      mat: true,
-      order: true,
-      resultWinnerId: true,
-      resultType: true,
-      resultScore: true,
-      resultPeriod: true,
-      resultTime: true,
-      meet: {
-        select: {
-          id: true,
-          name: true,
-          date: true,
-          location: true,
-          status: true,
+  const childTeamIds = Array.from(new Set(children.map((c) => c.wrestler.teamId)));
+
+  const [bouts, meetStatuses, teamMeets] = await Promise.all([
+    db.bout.findMany({
+      where: {
+        OR: [{ redId: { in: childIds } }, { greenId: { in: childIds } }],
+      },
+      select: {
+        id: true,
+        meetId: true,
+        redId: true,
+        greenId: true,
+        mat: true,
+        order: true,
+        resultWinnerId: true,
+        resultType: true,
+        resultScore: true,
+        resultPeriod: true,
+        resultTime: true,
+        meet: {
+          select: {
+            id: true,
+            name: true,
+            date: true,
+            location: true,
+            status: true,
+            attendanceDeadline: true,
+          },
         },
       },
-    },
-    orderBy: [{ meet: { date: "asc" } }, { mat: "asc" }, { order: "asc" }],
-  });
+      orderBy: [{ meet: { date: "asc" } }, { mat: "asc" }, { order: "asc" }],
+    }),
+    db.meetWrestlerStatus.findMany({
+      where: { wrestlerId: { in: childIds } },
+      select: { meetId: true, wrestlerId: true, status: true },
+    }),
+    db.meet.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: ["ATTENDANCE", "CREATED", "PUBLISHED"] },
+        meetTeams: { some: { teamId: { in: childTeamIds } } },
+      },
+      select: {
+        id: true,
+        name: true,
+        date: true,
+        location: true,
+        status: true,
+        attendanceDeadline: true,
+        meetTeams: { select: { teamId: true } },
+      },
+      orderBy: [{ date: "asc" }],
+    }),
+  ]);
 
   const wrestlerIds = new Set<string>();
   const formatOpponent = (
@@ -78,18 +113,59 @@ export async function GET() {
     wrestlerIds.add(b.greenId);
   }
 
-  const wrestlers = await db.wrestler.findMany({
-    where: { id: { in: Array.from(wrestlerIds) } },
-    select: { id: true, first: true, last: true, teamId: true, team: { select: { name: true, symbol: true, color: true } } },
-  });
+  const wrestlers = wrestlerIds.size > 0
+    ? await db.wrestler.findMany({
+        where: { id: { in: Array.from(wrestlerIds) } },
+        select: { id: true, first: true, last: true, teamId: true, team: { select: { name: true, symbol: true, color: true } } },
+      })
+    : [];
   const wMap = new Map(wrestlers.map((w) => [w.id, w]));
+  const childMap = new Map(children.map((c) => [c.wrestler.id, c.wrestler]));
+  const statusMap = new Map(
+    meetStatuses.map((entry) => [`${entry.meetId}:${entry.wrestlerId}`, normalizeAttendanceStatus(entry.status)]),
+  );
 
-  const meetMap = new Map<string, { meet: { id: string; name: string; date: Date; location: string | null; status: string | null }; matches: any[] }>();
+  const meetMap = new Map<string, {
+    meet: {
+      id: string;
+      name: string;
+      date: Date;
+      location: string | null;
+      status: string | null;
+      attendanceDeadline: Date | null;
+    };
+    matches: Array<Record<string, unknown>>;
+    children: Array<{
+      childId: string;
+      first: string;
+      last: string;
+      teamSymbol?: string | null;
+      teamName: string;
+      teamColor?: string | null;
+      attendanceStatus: AttendanceStatus;
+    }>;
+  }>();
+
+  for (const meet of teamMeets) {
+    const linkedChildren = children
+      .map((entry) => entry.wrestler)
+      .filter((wrestler) => meet.meetTeams.some((team) => team.teamId === wrestler.teamId))
+      .map((wrestler) => ({
+        childId: wrestler.id,
+        first: wrestler.first,
+        last: wrestler.last,
+        teamSymbol: wrestler.team.symbol,
+        teamName: wrestler.team.name,
+        teamColor: wrestler.team.color,
+        attendanceStatus: statusMap.get(`${meet.id}:${wrestler.id}`) ?? null,
+      }));
+    meetMap.set(meet.id, { meet, matches: [], children: linkedChildren });
+  }
 
   for (const b of bouts) {
     const meet = b.meet;
     if (!meetMap.has(meet.id)) {
-      meetMap.set(meet.id, { meet, matches: [] });
+      meetMap.set(meet.id, { meet, matches: [], children: [] });
     }
 
     if (childIds.includes(b.redId)) {
@@ -154,6 +230,32 @@ export async function GET() {
       weight: c.wrestler.weight,
       experienceYears: c.wrestler.experienceYears,
     })),
-    meets,
+    meets: meets.map((entry) => ({
+      meet: {
+        id: entry.meet.id,
+        name: entry.meet.name,
+        date: entry.meet.date,
+        location: entry.meet.location,
+        status: normalizeMeetPhase(entry.meet.status),
+        attendanceDeadline: entry.meet.attendanceDeadline,
+      },
+      matches: entry.matches,
+      children: entry.children.length > 0
+        ? entry.children
+        : childIds
+          .filter((childId) => childMap.has(childId))
+          .map((childId) => {
+            const child = childMap.get(childId)!;
+            return {
+              childId: child.id,
+              first: child.first,
+              last: child.last,
+              teamSymbol: child.team.symbol,
+              teamName: child.team.name,
+              teamColor: child.team.color,
+              attendanceStatus: statusMap.get(`${entry.meet.id}:${child.id}`) ?? null,
+            };
+          }),
+    })),
   });
 }

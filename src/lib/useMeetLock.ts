@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { isEditableMeetPhase, type MeetPhase } from "@/lib/meetPhase";
+
 
 /**
  * Client-friendly lock status used by meet pages to show editability state.
@@ -16,7 +18,7 @@ export type LockState = {
 
 interface UseMeetLockOptions {
   meetId: string;
-  meetStatus: "DRAFT" | "PUBLISHED";
+  meetStatus: MeetPhase;
   meetLoaded: boolean;
 }
 
@@ -61,7 +63,7 @@ export function useMeetLock({ meetId, meetStatus, meetLoaded }: UseMeetLockOptio
     if (!meetLoaded) {
       return;
     }
-    if (meetStatus !== "DRAFT") {
+    if (!isEditableMeetPhase(meetStatus)) {
       if (lockStatusRef.current === "acquired") {
         releaseLock();
       }

@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 
 type Child = {
   id: string;
@@ -38,10 +40,27 @@ type Match = {
   };
 };
 type MatchWithMeet = Match & { meetName: string; meetDate: string };
+type AttendanceStatus = "COMING" | "NOT_COMING" | null;
 
 type MeetGroup = {
-  meet: { id: string; name: string; date: string; location?: string | null; status?: string | null };
+  meet: {
+    id: string;
+    name: string;
+    date: string;
+    location?: string | null;
+    status?: string | null;
+    attendanceDeadline?: string | null;
+  };
   matches: Match[];
+  children: Array<{
+    childId: string;
+    first: string;
+    last: string;
+    teamSymbol?: string | null;
+    teamName: string;
+    teamColor?: string | null;
+    attendanceStatus: AttendanceStatus;
+  }>;
 };
 
 type TeamWrestler = {
@@ -249,7 +268,21 @@ export default function ParentPage() {
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-  const upcomingMeets = meetGroups.filter(g => g.meet.status === "PUBLISHED" && new Date(g.meet.date) >= today);
+  const attendanceLabel = (status: AttendanceStatus) => {
+    if (status === null) return "No Reply";
+    if (status === "NOT_COMING") return "Not Coming";
+    return "Coming";
+  };
+  const canEditAttendance = (group: MeetGroup) => {
+    if (normalizeMeetPhase(group.meet.status) !== "ATTENDANCE") return false;
+    if (!group.meet.attendanceDeadline) return true;
+    return new Date(group.meet.attendanceDeadline) > new Date();
+  };
+  const upcomingMeets = meetGroups.filter((g) => {
+    const meetDate = new Date(g.meet.date);
+    const phase = normalizeMeetPhase(g.meet.status);
+    return meetDate >= today && (phase === "ATTENDANCE" || phase === "PUBLISHED");
+  });
   const daysPerYear = 365;
   const sortedChildren = useMemo(() => {
     return [...children].sort((a, b) => {
@@ -510,6 +543,52 @@ export default function ParentPage() {
           border-color: #1e88e5;
           color: #fff;
         }
+        .attendance-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          background: #1e88e5;
+          color: #ffffff;
+          padding: 10px 16px;
+          font-weight: 700;
+          border: 1px solid #1e88e5;
+        }
+        .attendance-link:hover {
+          color: #ffffff;
+          background: #1769bf;
+          border-color: #1769bf;
+        }
+        .attendance-link.secondary {
+          background: #ffffff;
+          color: var(--ink);
+          border-color: #cfd8e3;
+        }
+        .attendance-link.secondary:hover {
+          color: var(--ink);
+          background: #f7f9fb;
+          border-color: #cfd8e3;
+        }
+        .attendance-summary {
+          display: grid;
+          gap: 8px;
+        }
+        .attendance-summary-card {
+          border: 1px solid #dfe4ea;
+          border-radius: 10px;
+          padding: 12px;
+          background: #f8fafc;
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .attendance-summary-name {
+          font-weight: 700;
+        }
+        .attendance-summary-status {
+          font-weight: 700;
+        }
         .coach-btn,
         .coach-btn-secondary {
           border: 0;
@@ -546,6 +625,9 @@ export default function ParentPage() {
       <AppHeader links={headerLinks} />
 
       <h2>{dashboardTitle}</h2>
+      <div style={{ margin: "8px 0 16px" }}>
+        <Link href="/parent/attendance" className="attendance-link">Attendance</Link>
+      </div>
 
       {children.length === 0 && <div>No wrestlers linked yet.</div>}
       {children.length > 0 && (
@@ -610,6 +692,40 @@ export default function ParentPage() {
             {new Date(group.meet.date).toISOString().slice(0, 10)}{" "}
             {group.meet.location ? `• ${group.meet.location}` : "• Location TBD"}
           </div>
+          {normalizeMeetPhase(group.meet.status) === "ATTENDANCE" && (
+            <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+              <div className="muted">
+                Attendance deadline:{" "}
+                {group.meet.attendanceDeadline
+                  ? new Date(group.meet.attendanceDeadline).toLocaleString()
+                  : "Not set"}
+              </div>
+              <div className="attendance-summary">
+                {group.children.map((child) => (
+                  <div key={`${group.meet.id}-${child.childId}`} className="attendance-summary-card">
+                    <div>
+                      <div className="attendance-summary-name">
+                        {child.first} {child.last}
+                        {child.teamSymbol ? ` (${child.teamSymbol})` : child.teamName ? ` (${child.teamName})` : ""}
+                      </div>
+                    </div>
+                    <div className="attendance-summary-status">{attendanceLabel(child.attendanceStatus)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <Link
+                  href="/parent/attendance"
+                  className={`attendance-link${canEditAttendance(group) ? "" : " secondary"}`}
+                >
+                  {canEditAttendance(group) ? "Reply for Attendance" : "View Attendance"}
+                </Link>
+                {!canEditAttendance(group) && (
+                  <span className="muted">Attendance entry is closed for this meet.</span>
+                )}
+              </div>
+            </div>
+          )}
           {group.matches.length === 0 && <div>No scheduled matches yet.</div>}
           {group.matches.length > 0 && (
           <table cellPadding={10} style={{ borderCollapse: "collapse" }}>

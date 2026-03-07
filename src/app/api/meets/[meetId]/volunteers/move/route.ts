@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
 
@@ -54,7 +55,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       { status: 403 },
     );
   }
-  if (meet.status !== "DRAFT") {
+  if (!isEditableMeetPhase(meet.status)) {
     return NextResponse.json({ error: "Volunteer mat changes are only available before the meet starts." }, { status: 400 });
   }
   const hasResults = await db.bout.findFirst({

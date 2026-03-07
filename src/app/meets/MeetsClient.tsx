@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import NumberInput from "@/components/NumberInput";
 import { formatTeamName } from "@/lib/formatTeamName";
+import { meetPhaseLabel, normalizeMeetPhase, type MeetPhase } from "@/lib/meetPhase";
 
 type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
 type RestartDefaults = {
   name?: string;
   date?: string;
+  attendanceDeadline?: string | null;
   location?: string | null;
   homeTeamId?: string | null;
   teamIds?: string[];
@@ -21,6 +23,32 @@ function formatLocalDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatLocalDateTime(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseDateInput(dateStr: string) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function getDefaultAttendanceDeadline(dateStr: string) {
+  const meetDate = parseDateInput(dateStr);
+  if (!meetDate) return "";
+  const deadline = new Date(meetDate);
+  const dayOfWeek = deadline.getDay();
+  const daysBackToWednesday = ((dayOfWeek - 3 + 7) % 7) || 7;
+  deadline.setDate(deadline.getDate() - daysBackToWednesday);
+  deadline.setHours(18, 0, 0, 0);
+  return formatLocalDateTime(deadline);
 }
 
 function formatMeetDisplayDate(dateStr: string) {
@@ -91,6 +119,7 @@ type Meet = {
   id: string;
   name: string;
   date: string;
+  attendanceDeadline?: string | null;
   location?: string | null;
   meetTeams: { team: Team }[];
   homeTeamId?: string | null;
@@ -100,12 +129,13 @@ type Meet = {
   matchesPerWrestler?: number;
   maxMatchesPerWrestler?: number;
   restGap?: number;
-  status?: "DRAFT" | "PUBLISHED";
+  status?: MeetPhase;
   updatedAt?: string;
   updatedBy?: { username?: string | null } | null;
   lastChangeAt?: string | null;
   lastChangeBy?: string | null;
   canStartEditing?: boolean;
+  canDelete?: boolean;
 };
 
 type DeletedMeet = Meet & {
@@ -120,6 +150,8 @@ export default function MeetsPage() {
   const [isLoadingMeets, setIsLoadingMeets] = useState(true);
   const [name, setName] = useState("");
   const [date, setDate] = useState(DEFAULT_DATE);
+  const [attendanceDeadline, setAttendanceDeadline] = useState(getDefaultAttendanceDeadline(DEFAULT_DATE));
+  const [attendanceDeadlineDirty, setAttendanceDeadlineDirty] = useState(false);
   const [location, setLocation] = useState("");
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -170,6 +202,8 @@ export default function MeetsPage() {
   const resetFormFields = useCallback(() => {
     setName("");
     setDate(DEFAULT_DATE);
+    setAttendanceDeadline(getDefaultAttendanceDeadline(DEFAULT_DATE));
+    setAttendanceDeadlineDirty(false);
     setLocation("");
     setTeamIds([]);
     setHomeTeamId(null);
@@ -271,6 +305,11 @@ export default function MeetsPage() {
   );
   const displayMeetName = isEditing ? name : autoMeetName;
 
+  useEffect(() => {
+    if (attendanceDeadlineDirty) return;
+    setAttendanceDeadline(getDefaultAttendanceDeadline(date));
+  }, [date, attendanceDeadlineDirty]);
+
   async function addMeet() {
     const normalizedTeamIds = currentTeamId && !teamIds.includes(currentTeamId)
       ? [currentTeamId, ...teamIds]
@@ -281,6 +320,7 @@ export default function MeetsPage() {
         body: JSON.stringify({
           name: displayMeetName,
           date,
+          attendanceDeadline: attendanceDeadline || null,
           location,
           teamIds: normalizedTeamIds,
           homeTeamId: homeTeamId ?? currentTeamId ?? null,
@@ -310,6 +350,7 @@ export default function MeetsPage() {
       body: JSON.stringify({
         name,
         date,
+        attendanceDeadline: attendanceDeadline || null,
         location,
         homeTeamId: homeTeamId ?? null,
         numMats,
@@ -423,6 +464,10 @@ export default function MeetsPage() {
     if (restartDefaults.date) {
       setDate(restartDefaults.date);
     }
+    if (restartDefaults.attendanceDeadline !== undefined) {
+      setAttendanceDeadline(restartDefaults.attendanceDeadline ?? "");
+      setAttendanceDeadlineDirty(true);
+    }
     if (restartDefaults.location !== undefined) {
       setLocation(restartDefaults.location ?? "");
     }
@@ -512,7 +557,7 @@ export default function MeetsPage() {
       const teamFiltered = currentTeamId
         ? meets.filter(m => m.meetTeams.some(mt => mt.team.id === currentTeamId))
         : meets;
-      return teamFiltered.filter(m => m.status === "PUBLISHED");
+      return teamFiltered.filter(m => normalizeMeetPhase(m.status) === "PUBLISHED");
     }
     return meets;
   }, [meets, role, currentTeamId]);
@@ -871,6 +916,16 @@ export default function MeetsPage() {
           border-color: #b5d6f2;
           color: #0d3b66;
         }
+        .badge.ready_for_checkin {
+          background: #e8f8ee;
+          border-color: #b9dfc2;
+          color: #1b5e20;
+        }
+        .badge.attendance {
+          background: #efe8ff;
+          border-color: #d3c3f3;
+          color: #5a3d8f;
+        }
         .badge.draft {
           background: #fff4dd;
           border-color: #f2d3a6;
@@ -1105,8 +1160,8 @@ export default function MeetsPage() {
                       ) : (
                         <a href={`/meets/${m.id}`}>{m.name}</a>
                       )}
-                      <span className={`badge ${m.status === "PUBLISHED" ? "published" : "draft"}`}>
-                        {m.status === "PUBLISHED" ? "Published" : "Draft"}
+                      <span className={`badge ${normalizeMeetPhase(m.status).toLowerCase()}`}>
+                        {meetPhaseLabel(m.status)}
                       </span>
                     </div>
                     <div className="muted">
@@ -1117,18 +1172,16 @@ export default function MeetsPage() {
                   </div>
                 {(canManageMeets || isTableWorker) && (
                   <div className="meet-item-actions">
-                    <span
-                      className="meet-action-results-wrap meet-action-results"
-                      title={!isTableWorker && m.status !== "PUBLISHED" ? "Meet is still in Draft status" : undefined}
-                    >
-                      <button
-                        className="nav-btn primary"
-                        onClick={() => router.push(`/results/${m.id}`)}
-                        disabled={m.status !== "PUBLISHED"}
-                      >
-                        Results
-                      </button>
-                    </span>
+                    {normalizeMeetPhase(m.status) === "PUBLISHED" && (
+                      <span className="meet-action-results-wrap meet-action-results">
+                        <button
+                          className="nav-btn primary"
+                          onClick={() => router.push(`/results/${m.id}`)}
+                        >
+                          Results
+                        </button>
+                      </span>
+                    )}
                     {canManageMeets && (
                       <>
                         <button
@@ -1137,21 +1190,22 @@ export default function MeetsPage() {
                         >
                           View
                         </button>
-                        <button
-                          className="nav-btn meet-action-edit"
-                          onClick={() => router.push(`/meets/${m.id}?edit=1`)}
-                          disabled={coachCannotEdit}
-                          title={coachCannotEdit ? "Meet Coordinator has not granted you edit access yet." : undefined}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="nav-btn delete-btn meet-action-delete"
-                          onClick={() => openDeleteDialog(m)}
-                          disabled={Boolean(deletingMeetId) && deletingMeetId !== m.id}
-                        >
-                          Delete
-                        </button>
+                        {!coachCannotEdit && (
+                          <button
+                            className="nav-btn meet-action-edit"
+                            onClick={() => router.push(`/meets/${m.id}?edit=1`)}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {m.canDelete && (
+                          <button
+                            className="nav-btn delete-btn meet-action-delete"
+                            onClick={() => openDeleteDialog(m)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1207,6 +1261,24 @@ export default function MeetsPage() {
                 <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
                   <span className="muted">Meet Location (optional)</span>
                   <input className="input" placeholder="Location" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
+                </label>
+              </div>
+              <div className="row">
+                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                  <span className="muted">Attendance deadline</span>
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    value={attendanceDeadline}
+                    onChange={(e) => {
+                      setAttendanceDeadline(e.target.value);
+                      setAttendanceDeadlineDirty(true);
+                    }}
+                    disabled={!canManageMeets}
+                  />
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    Default: 6:00 PM on the Wednesday before the meet.
+                  </span>
                 </label>
               </div>
               <div className="row" style={{ marginTop: 10 }}>

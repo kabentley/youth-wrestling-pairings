@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
 
@@ -41,7 +42,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   if (!meet.homeTeamId) {
     return NextResponse.json({ error: "Meet must have a home team before syncing staff mats." }, { status: 400 });
   }
-  if (meet.status !== "DRAFT") {
+  if (!isEditableMeetPhase(meet.status)) {
     return NextResponse.json({ error: "Staff-based mat sync is only available before the meet starts." }, { status: 400 });
   }
 

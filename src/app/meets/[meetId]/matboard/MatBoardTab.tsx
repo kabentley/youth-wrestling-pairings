@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import { isEditableMeetPhase, type MeetPhase } from "@/lib/meetPhase";
 import type { LockState } from "@/lib/useMeetLock";
 
 type Team = { id: string; name: string; symbol?: string; color?: string };
@@ -47,7 +48,7 @@ const MAX_MATS = 6;
 interface MatBoardTabProps {
   meetId: string;
   onMatAssignmentsChange?: () => void;
-  meetStatus: "DRAFT" | "PUBLISHED";
+  meetStatus: MeetPhase;
   lockState: LockState;
   refreshIndex?: number;
 }
@@ -194,7 +195,7 @@ export default function MatBoardTab({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
   const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
-  const canEdit = lockState.status === "acquired" && meetStatus === "DRAFT";
+  const canEdit = lockState.status === "acquired" && isEditableMeetPhase(meetStatus);
   useEffect(() => {
     void load();
   }, [meetId, refreshIndex]);

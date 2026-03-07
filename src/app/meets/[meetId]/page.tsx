@@ -14,6 +14,12 @@ import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR } from "@/lib/constants";
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
+import {
+  isEditableMeetPhase,
+  meetPhaseLabel,
+  normalizeMeetPhase,
+  type MeetPhase,
+} from "@/lib/meetPhase";
 import { pairKey } from "@/lib/pairKey";
 
 // Render into document.body after mount to avoid SSR/DOM mismatches for modals.
@@ -189,6 +195,20 @@ type CheckpointDiff = {
   boutsRemoved: { redId: string; greenId: string; redTeam?: string; greenTeam?: string }[];
   matChangedCount: number;
 };
+type ReadyForCheckinChecklistItem = {
+  id: string;
+  label: string;
+  detail: string;
+  ok: boolean;
+  severity: "error" | "warning";
+  action?: "sync-volunteer-mats" | "fix-rest-conflicts";
+  actionLabel?: string;
+};
+type ReadyForCheckinChecklist = {
+  ok: boolean;
+  checkedAt: string;
+  items: ReadyForCheckinChecklistItem[];
+};
 
 type CheckpointSaveRowProps = {
   onSave: (name: string) => Promise<boolean>;
@@ -271,7 +291,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
   const [meetName, setMeetName] = useState("");
   const [meetDate, setMeetDate] = useState<string | null>(null);
-  const [meetStatus, setMeetStatus] = useState<"DRAFT" | "PUBLISHED">("DRAFT");
+  const [meetStatus, setMeetStatus] = useState<MeetPhase>("DRAFT");
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
   const [savedMatchesPerWrestler, setSavedMatchesPerWrestler] = useState<number | null>(null);
@@ -426,6 +446,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [lockAccessDraftIds, setLockAccessDraftIds] = useState<Set<string>>(new Set());
   const [lockAccessSaving, setLockAccessSaving] = useState(false);
   const [lockAccessError, setLockAccessError] = useState<string | null>(null);
+  const [showReadyForCheckinModal, setShowReadyForCheckinModal] = useState(false);
+  const [readyForCheckinChecklist, setReadyForCheckinChecklist] = useState<ReadyForCheckinChecklist | null>(null);
+  const [readyForCheckinLoading, setReadyForCheckinLoading] = useState(false);
+  const [readyForCheckinSubmitting, setReadyForCheckinSubmitting] = useState(false);
+  const [readyForCheckinError, setReadyForCheckinError] = useState<string | null>(null);
+  const [readyForCheckinActionId, setReadyForCheckinActionId] = useState<string | null>(null);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -1155,7 +1181,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
           girlsWrestleGirls: Boolean(meetJson.girlsWrestleGirls),
         }));
-        setMeetStatus(meetJson.status ?? "DRAFT");
+        setMeetStatus(normalizeMeetPhase(meetJson.status));
         setLastUpdatedAt(meetJson.lastChangeAt ?? null);
         setLastUpdatedBy(meetJson.lastChangeBy ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
@@ -1313,11 +1339,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }, [saveCheckpointByName]);
 
-  const isDraft = meetStatus === "DRAFT";
   const isPublished = meetStatus === "PUBLISHED";
+  const isEditablePhase = isEditableMeetPhase(meetStatus);
   const lockAccessDenied = lockAccessLoaded && !canManageLockAccess && !canAcquireMeetLock;
-  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isDraft;
-  const canChangeStatus = editAllowed && (isPublished || lockState.status === "acquired");
+  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase;
+  const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
+  const canChangeStatus =
+    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    editAllowed &&
+    (isPublished || lockState.status === "acquired");
   const canViewVolunteers = Boolean(
     homeTeamId &&
     currentUserTeamId &&
@@ -1551,7 +1581,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, []);
   useEffect(() => {
     if (!editAllowed || !meetLoaded) return;
-    if (meetStatus !== "DRAFT") {
+    if (!isEditableMeetPhase(meetStatus)) {
       lockStatusRef.current = "locked";
       updateLockState({ status: "locked", lockedByUsername: null });
       return;
@@ -2365,19 +2395,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (target) await loadCandidates(target.id);
   }
 
-  // Toggle meet status while ensuring lock ownership.
-  async function updateMeetStatus(nextStatus: "DRAFT" | "PUBLISHED") {
-    if (!canChangeStatus) return;
-    const ensureLock = async () => {
-      if (lockState.status === "acquired") return true;
-      const ok = await acquireLock();
-      if (!ok) {
-        triggerNoticeFlash();
-        return false;
-      }
-      return true;
-    };
-    if (!(await ensureLock())) return;
+  async function ensureMeetLock() {
+    if (lockState.status === "acquired") return true;
+    const ok = await acquireLock();
+    if (!ok) {
+      triggerNoticeFlash();
+      return false;
+    }
+    return true;
+  }
+
+  // Change meet status while ensuring lock ownership.
+  async function updateMeetStatus(nextStatus: MeetPhase) {
+    if (!canChangeStatus) return false;
+    if (!(await ensureMeetLock())) return false;
     const res = await fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -2385,12 +2416,83 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     });
     if (!res.ok) {
       const payload = await res.json().catch(() => null);
+      if (nextStatus === "READY_FOR_CHECKIN" && payload?.checklist) {
+        setReadyForCheckinChecklist(payload.checklist as ReadyForCheckinChecklist);
+        setShowReadyForCheckinModal(true);
+        setReadyForCheckinError(payload?.error ?? null);
+        return false;
+      }
       const message = payload?.error ?? `Unable to update status (${res.status}).`;
       window.alert(message);
-      return;
+      return false;
     }
     await load();
+    await loadCheckpoints();
     await loadActivity();
+    return true;
+  }
+
+  async function openReadyForCheckinChecklist() {
+    setShowReadyForCheckinModal(true);
+    setReadyForCheckinLoading(true);
+    setReadyForCheckinError(null);
+    setReadyForCheckinChecklist(null);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/ready-for-checkin`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to load checklist (${res.status}).`);
+      }
+      const payload = await res.json().catch(() => null);
+      setReadyForCheckinChecklist(payload as ReadyForCheckinChecklist);
+    } catch (err) {
+      setReadyForCheckinChecklist(null);
+      setReadyForCheckinError(err instanceof Error ? err.message : "Unable to load checklist.");
+    } finally {
+      setReadyForCheckinLoading(false);
+    }
+  }
+
+  async function confirmReadyForCheckin() {
+    setReadyForCheckinSubmitting(true);
+    try {
+      const ok = await updateMeetStatus("READY_FOR_CHECKIN");
+      if (ok) {
+        setShowReadyForCheckinModal(false);
+        setReadyForCheckinChecklist(null);
+        setReadyForCheckinError(null);
+      }
+    } finally {
+      setReadyForCheckinSubmitting(false);
+    }
+  }
+
+  async function runReadyForCheckinAction(action: NonNullable<ReadyForCheckinChecklistItem["action"]>) {
+    if (!(await ensureMeetLock())) return;
+    setReadyForCheckinActionId(action);
+    setReadyForCheckinError(null);
+    try {
+      const res = action === "sync-volunteer-mats"
+        ? await fetch(`/api/meets/${meetId}/mats/people-sync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          })
+        : await fetch(`/api/meets/${meetId}/ready-for-checkin/fix-rest-conflicts`, {
+            method: "POST",
+          });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error ?? `Unable to run checklist fix (${res.status}).`);
+      }
+      await load();
+      await loadActivity();
+      await openReadyForCheckinChecklist();
+    } catch (err) {
+      setReadyForCheckinError(err instanceof Error ? err.message : "Unable to run checklist fix.");
+    } finally {
+      setReadyForCheckinActionId(null);
+    }
   }
 
   // Persist meet name edits with debounce protection.
@@ -3132,6 +3234,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .modal-card.checkpoint-modal {
           width: min(760px, 94vw);
         }
+        .modal-card.ready-checkin-modal {
+          width: min(760px, 94vw);
+        }
         .modal-card.edit-access-modal {
           width: min(1080px, 96vw);
           max-height: 86vh;
@@ -3380,6 +3485,69 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         .checkpoint-empty {
           font-size: 13px;
           color: var(--muted);
+        }
+        .ready-checkin-summary {
+          font-size: 13px;
+          color: #5b6472;
+        }
+        .ready-checkin-error {
+          color: #b00020;
+          font-size: 13px;
+        }
+        .ready-checkin-list {
+          display: grid;
+          gap: 10px;
+          margin-top: 4px;
+        }
+        .ready-checkin-item {
+          border: 1px solid #d8dee7;
+          border-radius: 10px;
+          padding: 12px 14px;
+          background: #ffffff;
+        }
+        .ready-checkin-item.error {
+          border-color: #e8c3c3;
+          background: #fff7f7;
+        }
+        .ready-checkin-item.warning {
+          border-color: #e9ddb2;
+          background: #fffbee;
+        }
+        .ready-checkin-item.ok {
+          border-color: #cfe5d1;
+          background: #f4fbf5;
+        }
+        .ready-checkin-item-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          font-weight: 700;
+          color: #223041;
+        }
+        .ready-checkin-item-state {
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .ready-checkin-item-detail {
+          margin-top: 6px;
+          font-size: 13px;
+          line-height: 1.4;
+          color: #4b5563;
+        }
+        .ready-checkin-item-actions {
+          margin-top: 10px;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .ready-checkin-footer {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-top: 8px;
         }
         .modal-card.checkpoint-diff-modal {
           width: min(760px, 94vw);
@@ -3793,7 +3961,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <div className="meet-heading-actions">
           <div className="meet-status">
             <span className="meet-status-label">
-              Status: <b>{meetStatus === "PUBLISHED" ? "Published" : "Draft"}</b>
+              Status: <b>{meetPhaseLabel(meetStatus)}</b>
             </span>
             {lastUpdatedAt && (
               <span className="meet-last-updated">
@@ -3801,26 +3969,64 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               </span>
             )}
           </div>
-          <button
-            type="button"
-            className="nav-btn primary meet-status-btn"
-            onClick={() => updateMeetStatus(meetStatus === "PUBLISHED" ? "DRAFT" : "PUBLISHED")}
-            disabled={!canChangeStatus}
-            title={meetStatus === "PUBLISHED"
-              ? "Reopen this meet as Draft so coaches can edit pairings and attendance."
-              : "Publish this meet to lock pairings and show schedules to families."}
-          >
-            {meetStatus === "PUBLISHED" ? "Reopen as Draft" : "Publish"}
-          </button>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {isDraft && lockState.status !== "acquired" && (
+            {meetStatus === "ATTENDANCE" && canChangeStatus && (
+              <button
+                type="button"
+                className="nav-btn primary meet-status-btn"
+                onClick={() => updateMeetStatus("DRAFT")}
+                title="Close parent attendance entry and move this meet into Draft."
+              >
+                Move to Draft
+              </button>
+            )}
+            {meetStatus === "DRAFT" && canChangeStatus && (
+              <button
+                type="button"
+                className="nav-btn primary meet-status-btn"
+                onClick={() => void openReadyForCheckinChecklist()}
+                title="Run the ready-for-check-in checklist, then save an automatic checkpoint."
+              >
+                Ready for Check-in
+              </button>
+            )}
+            {meetStatus === "READY_FOR_CHECKIN" && canChangeStatus && (
+              <>
+                <button
+                  type="button"
+                  className="nav-btn primary meet-status-btn"
+                  onClick={() => updateMeetStatus("PUBLISHED")}
+                  title="Publish this meet to lock pairings and show schedules to families."
+                >
+                  Publish
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn secondary meet-status-btn"
+                  onClick={() => updateMeetStatus("DRAFT")}
+                  title="Reopen this meet as Draft so coaches can continue working on pairings."
+                >
+                  Reopen as Draft
+                </button>
+              </>
+            )}
+            {meetStatus === "PUBLISHED" && canChangeStatus && (
+              <button
+                type="button"
+                className="nav-btn primary meet-status-btn"
+                onClick={() => updateMeetStatus("DRAFT")}
+                title="Reopen this meet as Draft so coaches can edit pairings and attendance."
+              >
+                Reopen as Draft
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
               <button
                 type="button"
                 className="nav-btn secondary"
-                disabled={lockAccessDenied}
-                title={lockAccessDenied ? "Meet Coordinator has not granted you edit access yet." : undefined}
                 onClick={() => {
-                  if (lockAccessDenied) return;
                   if (wantsEdit) {
                     void (async () => {
                       const ok = await acquireLock();
@@ -3834,7 +4040,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Start Editing
               </button>
             )}
-            {isDraft && wantsEdit && lockState.status === "acquired" && (
+            {isEditablePhase && wantsEdit && lockState.status === "acquired" && (
               <button
                 type="button"
                 className="nav-btn secondary"
@@ -3875,7 +4081,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
-      {isDraft && lockState.status !== "acquired" && !lockAccessDenied && (
+      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
           {"Read-only mode. Click Start Editing to make changes."}
           {lockState.lockedByUsername ? (
@@ -3885,7 +4091,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           ) : ""}
         </div>
       )}
-      {isDraft && lockAccessDenied && !lockActionError && (
+      {isEditablePhase && lockAccessDenied && !lockActionError && (
         <div className="notice" style={{ marginTop: 10 }}>
           You do not have edit access yet. Meet Coordinator {coordinatorDisplay ? `${coordinatorDisplay} ` : ""}has not granted you edit access.
         </div>
@@ -3935,7 +4141,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           )}
 
 
-      {meetStatus === "PUBLISHED" && (
+      {isPublished && (
         <div className="notice" style={{ marginTop: 16 }}>
           Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
         </div>
@@ -5525,7 +5731,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
         {activeTab === "matboard" && (
           <section>
-            {meetStatus === "PUBLISHED" && (
+            {isPublished && (
               <div className="notice">
                 Meet has been published, so matches may not be changed. Reopen as Draft to make changes.
               </div>
@@ -5548,7 +5754,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
         {activeTab === "volunteers" && canViewVolunteers && (
           <section>
-            {meetStatus === "PUBLISHED" && (
+            {isPublished && (
               <div className="notice">
                 Meet has been published, so volunteer mat assignments may not be changed.
               </div>
@@ -5716,6 +5922,94 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <button type="button" className="nav-btn" onClick={handleEditAccessDone}>
                   Done
                 </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showReadyForCheckinModal && (
+        <ModalPortal>
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              if (readyForCheckinSubmitting || readyForCheckinActionId) return;
+              setShowReadyForCheckinModal(false);
+            }}
+          >
+            <div className="modal-card ready-checkin-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Ready for Check-in Checklist</h3>
+              <div className="ready-checkin-summary">
+                Review these checks before moving the meet out of Draft.
+              </div>
+              {readyForCheckinError && (
+                <div className="ready-checkin-error">{readyForCheckinError}</div>
+              )}
+              {readyForCheckinLoading && (
+                <div className="ready-checkin-summary">Loading checklist...</div>
+              )}
+              {!readyForCheckinLoading && readyForCheckinChecklist && (
+                <>
+                  <div className="ready-checkin-list">
+                    {readyForCheckinChecklist.items.map((item) => {
+                      const itemClass = item.ok ? "ok" : item.severity;
+                      const stateLabel = item.ok ? "OK" : item.severity === "warning" ? "Warning" : "Fix";
+                      return (
+                        <div key={item.id} className={`ready-checkin-item ${itemClass}`}>
+                          <div className="ready-checkin-item-header">
+                            <span>{item.label}</span>
+                            <span className="ready-checkin-item-state">{stateLabel}</span>
+                          </div>
+                          <div className="ready-checkin-item-detail">{item.detail}</div>
+                          {!item.ok && item.action && item.actionLabel && (
+                            <div className="ready-checkin-item-actions">
+                              <button
+                                type="button"
+                                className="nav-btn secondary"
+                                onClick={() => void runReadyForCheckinAction(item.action!)}
+                                disabled={Boolean(readyForCheckinActionId) || readyForCheckinSubmitting}
+                              >
+                                {readyForCheckinActionId === item.action ? "Fixing..." : item.actionLabel}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="ready-checkin-summary">
+                    {readyForCheckinChecklist.ok
+                      ? "All blocking checks passed. You can mark the meet Ready for Check-in."
+                      : "Fix the failed checklist items before moving the meet to Ready for Check-in."}
+                  </div>
+                </>
+              )}
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn secondary"
+                  onClick={() => void openReadyForCheckinChecklist()}
+                  disabled={readyForCheckinLoading || readyForCheckinSubmitting || Boolean(readyForCheckinActionId)}
+                >
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => setShowReadyForCheckinModal(false)}
+                  disabled={readyForCheckinSubmitting || Boolean(readyForCheckinActionId)}
+                >
+                  Close
+                </button>
+                {readyForCheckinChecklist?.ok && (
+                  <button
+                    type="button"
+                    className="nav-btn primary"
+                    onClick={() => void confirmReadyForCheckin()}
+                    disabled={readyForCheckinSubmitting || Boolean(readyForCheckinActionId)}
+                  >
+                    {readyForCheckinSubmitting ? "Saving..." : "Mark Ready for Check-in"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

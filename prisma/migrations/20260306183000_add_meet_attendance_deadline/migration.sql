@@ -1,0 +1,1 @@
+ALTER TABLE "Meet" ADD COLUMN IF NOT EXISTS "attendanceDeadline" TIMESTAMP(3);
