@@ -189,6 +189,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       );
     }
   }
+  if (currentStatus === "READY_FOR_CHECKIN" && nextStatus === "PUBLISHED") {
+    const checklist = await buildReadyForCheckinChecklist(meetId, undefined, "PUBLISHED");
+    if (!checklist) {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    }
+    if (!checklist.ok) {
+      return NextResponse.json(
+        {
+          error: "Publish checklist failed.",
+          checklist,
+        },
+        { status: 400 },
+      );
+    }
+  }
   if (currentStatus === "DRAFT" && nextStatus === "ATTENDANCE") {
     const existingBout = await db.bout.findFirst({
       where: { meetId },
@@ -596,6 +611,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
     where: { id: meetId },
     select: {
       id: true,
+      status: true,
       homeTeam: { select: { headCoachId: true } },
       lockedById: true,
       lockExpiresAt: true,
@@ -605,9 +621,13 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
   });
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const coordinatorId = meet.homeTeam?.headCoachId ?? null;
-  const canDelete = user.role === "ADMIN" || (Boolean(coordinatorId) && coordinatorId === user.id);
+  const isPublished = normalizeMeetPhase(meet.status) === "PUBLISHED";
+  const canDelete = user.role === "ADMIN" || (!isPublished && Boolean(coordinatorId) && coordinatorId === user.id);
   if (!canDelete) {
-    return NextResponse.json({ error: "Only the Meet Coordinator or an admin can delete this meet." }, { status: 403 });
+    return NextResponse.json(
+      { error: isPublished ? "Only admins can delete a published meet." : "Only the Meet Coordinator or an admin can delete this meet." },
+      { status: 403 },
+    );
   }
   if (meet.lockExpiresAt && meet.lockExpiresAt < now) {
     await db.meet.update({

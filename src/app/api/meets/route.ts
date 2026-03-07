@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireRole, requireSession } from "@/lib/rbac";
 
 const MeetSchema = z.object({
@@ -151,7 +152,8 @@ export async function GET() {
       const hasCoordinatorGrant = lockAccesses.length > 0;
       const canStartEditing =
         user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
-      const canDelete = user.role === "ADMIN" || isCoordinator;
+      const isPublished = normalizeMeetPhase(meetWithoutAccessMeta.status) === "PUBLISHED";
+      const canDelete = user.role === "ADMIN" || (!isPublished && isCoordinator);
       return {
         ...meetWithoutAccessMeta,
         canStartEditing,

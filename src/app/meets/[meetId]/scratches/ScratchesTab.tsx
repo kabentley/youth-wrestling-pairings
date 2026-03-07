@@ -855,23 +855,13 @@ export default function ScratchesTab({
                         {filteredTeamRoster.map((wrestler) => {
                           const absent = wrestler.status === "ABSENT";
                           const loading = scratchLoadingId === wrestler.id;
-                          const isLate = wrestler.status === "LATE";
-                          const isEarly = wrestler.status === "EARLY";
                           const beforeOpponents = baselineOpponentsText(wrestler.id);
                           const rowBackground = absent
                             ? "#f8eded"
-                            : isLate
-                              ? "#dff1ff"
-                              : isEarly
-                                ? "#f3eadf"
-                                : "#e6f7e6";
+                            : "#e6f7e6";
                           const rowBorder = absent
                             ? "#dfc1c1"
-                            : isLate
-                              ? "#b6defc"
-                              : isEarly
-                                ? "#e2c8ad"
-                                : "#c7ddc7";
+                            : "#c7ddc7";
                           return (
                             <tr
                               key={wrestler.id}

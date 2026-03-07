@@ -1352,6 +1352,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
   const canViewScratches = meetStatus === "READY_FOR_CHECKIN" && (isMeetCoordinator || currentUserRole === "ADMIN");
   const canManageScratches = canViewScratches && canEdit;
+  const canSetPairingNotComing = meetStatus === "DRAFT";
   const defaultTabForPhase = meetStatus === "ATTENDANCE" ? "attendance" : "pairings";
   const canChangeStatus =
     (isMeetCoordinator || currentUserRole === "ADMIN") &&
@@ -2375,10 +2376,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
     }
     if (!res.ok) {
-      if (nextStatus === "READY_FOR_CHECKIN" && payload?.checklist) {
+      if ((nextStatus === "READY_FOR_CHECKIN" || nextStatus === "PUBLISHED") && payload?.checklist) {
         setReadyForCheckinChecklist(payload.checklist as ReadyForCheckinChecklist);
         setShowReadyForCheckinModal(true);
         setReadyForCheckinError(payload?.error ?? null);
+        setReadyForCheckinTargetStatus(nextStatus);
         return false;
       }
       const message = payload?.error ?? `Unable to update status (${res.status}).`;
@@ -2418,10 +2420,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return updateMeetStatus("DRAFT");
   }
 
-  function openPublishWarning() {
-    setShowPublishWarningModal(true);
-  }
-
   async function openReadyForCheckinChecklist(targetStatus: "READY_FOR_CHECKIN" | "PUBLISHED" = "READY_FOR_CHECKIN") {
     setReadyForCheckinTargetStatus(targetStatus);
     setShowReadyForCheckinModal(true);
@@ -2429,7 +2427,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setReadyForCheckinError(null);
     setReadyForCheckinChecklist(null);
     try {
-      const res = await fetch(`/api/meets/${meetId}/ready-for-checkin`);
+      const res = await fetch(`/api/meets/${meetId}/ready-for-checkin?target=${targetStatus}`);
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
         throw new Error(payload?.error ?? `Unable to load checklist (${res.status}).`);
@@ -2445,10 +2443,30 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function confirmReadyForCheckin() {
+    if (readyForCheckinTargetStatus === "PUBLISHED") {
+      setShowReadyForCheckinModal(false);
+      setShowPublishWarningModal(true);
+      return;
+    }
     setReadyForCheckinSubmitting(true);
     try {
       const ok = await updateMeetStatus(readyForCheckinTargetStatus);
       if (ok) {
+        setShowReadyForCheckinModal(false);
+        setReadyForCheckinChecklist(null);
+        setReadyForCheckinError(null);
+      }
+    } finally {
+      setReadyForCheckinSubmitting(false);
+    }
+  }
+
+  async function confirmPublishAfterWarning() {
+    setReadyForCheckinSubmitting(true);
+    try {
+      const ok = await updateMeetStatus("PUBLISHED");
+      if (ok) {
+        setShowPublishWarningModal(false);
         setShowReadyForCheckinModal(false);
         setReadyForCheckinChecklist(null);
         setReadyForCheckinError(null);
@@ -3961,7 +3979,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <button
                   type="button"
                   className="nav-btn primary meet-status-btn"
-                  onClick={openPublishWarning}
+                  onClick={() => void openReadyForCheckinChecklist("PUBLISHED")}
                   title="Publish this meet to lock pairings and show schedules to families."
                 >
                   Publish
@@ -5184,20 +5202,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               )}
               {!isShowMatches && (
                 <>
-                  <button
-                    className="pairings-context-item"
-                    style={{
-                      background: attendanceStatusStyles.NOT_COMING.background,
-                    border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
-                  }}
-                  onClick={() => handlePairingContextStatus("NOT_COMING")}
-                  disabled={!canEdit}
-                >
-                  <span className="pairings-context-check" aria-hidden="true">
-                    <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
-                  </span>
-                  Not Coming
-                </button>
+                  {canSetPairingNotComing && (
+                    <button
+                      className="pairings-context-item"
+                      style={{
+                        background: attendanceStatusStyles.NOT_COMING.background,
+                        border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
+                      }}
+                      onClick={() => handlePairingContextStatus("NOT_COMING")}
+                      disabled={!canEdit}
+                    >
+                      <span className="pairings-context-check" aria-hidden="true">
+                        <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
+                      </span>
+                      Not Coming
+                    </button>
+                  )}
                 <button
                   className="pairings-context-item"
                   style={{
@@ -5466,6 +5486,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <VolunteersTab
               meetId={meetId}
               canEdit={canEdit}
+              hideReadonlyEditNotice={isPublished}
               onSaved={refreshAfterMatAssignments}
             />
           </section>
@@ -5731,7 +5752,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   >
                     {readyForCheckinSubmitting
                       ? (readyForCheckinTargetStatus === "PUBLISHED" ? "Publishing..." : "Saving...")
-                      : (readyForCheckinTargetStatus === "PUBLISHED" ? "Publish" : "Mark ready for meet day")}
+                      : (readyForCheckinTargetStatus === "PUBLISHED" ? "Continue" : "Mark ready for meet day")}
                   </button>
                 )}
               </div>
@@ -5741,32 +5762,37 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       {showPublishWarningModal && (
         <ModalPortal>
-          <div className="modal-backdrop" onClick={() => setShowPublishWarningModal(false)}>
+          <div
+            className="modal-backdrop"
+            onClick={() => {
+              if (readyForCheckinSubmitting) return;
+              setShowPublishWarningModal(false);
+            }}
+          >
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: 0 }}>Publish Meet</h3>
+              <h3 style={{ margin: 0 }}>Publish Meet?</h3>
               <div>
-                Publishing is permanent. After this step, all changes must be done on paper.
+                Publishing will prepare the wall charts and scoring sheet, and notify parents of their wrestlers' bout numbers and opponents.
               </div>
-              <div className="ready-checkin-summary">
-                Continue only when pairings, mat assignments, and sheets are final.
+              <div>
+                For that reason, publishing is irreversible.
               </div>
               <div className="ready-checkin-footer">
                 <button
                   type="button"
                   className="nav-btn"
                   onClick={() => setShowPublishWarningModal(false)}
+                  disabled={readyForCheckinSubmitting}
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   className="nav-btn primary"
-                  onClick={() => {
-                    setShowPublishWarningModal(false);
-                    void openReadyForCheckinChecklist("PUBLISHED");
-                  }}
+                  onClick={() => void confirmPublishAfterWarning()}
+                  disabled={readyForCheckinSubmitting}
                 >
-                  Continue
+                  {readyForCheckinSubmitting ? "Publishing..." : "Publish"}
                 </button>
               </div>
             </div>

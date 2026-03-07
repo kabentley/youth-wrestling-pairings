@@ -20,6 +20,8 @@ export type ReadyForCheckinChecklist = {
   items: ReadyForCheckinChecklistItem[];
 };
 
+export type ChecklistTargetStatus = "READY_FOR_CHECKIN" | "PUBLISHED";
+
 function normalizeAttendanceStatus(status?: string | null) {
   if (status === "ABSENT") return "NOT_COMING";
   if (status === "COMING" || status === "LATE" || status === "EARLY") return status;
@@ -47,6 +49,7 @@ function restConflictSeverityLabel(minGap: number, restGap: number) {
 export async function buildReadyForCheckinChecklist(
   meetId: string,
   client: ChecklistClient = db,
+  targetStatus: ChecklistTargetStatus = "READY_FOR_CHECKIN",
 ): Promise<ReadyForCheckinChecklist | null> {
   const meet = await client.meet.findUnique({
     where: { id: meetId },
@@ -231,7 +234,7 @@ export async function buildReadyForCheckinChecklist(
       return `Mat ${mat}: ${stats.count} conflict${stats.count === 1 ? "" : "s"}, ${severity} severity (closest gap ${stats.minGap}).`;
     });
 
-  const items: ReadyForCheckinChecklistItem[] = [
+  const allItems: ReadyForCheckinChecklistItem[] = [
     {
       id: "bouts-created",
       label: "Bouts created",
@@ -291,6 +294,26 @@ export async function buildReadyForCheckinChecklist(
       actionLabel: restConflictDetails.length > 0 ? "Reorder Mats" : undefined,
     },
   ];
+
+  const items: ReadyForCheckinChecklistItem[] = targetStatus === "PUBLISHED"
+    ? [
+        {
+          ...allItems[0],
+        },
+        {
+          ...allItems[1],
+          label: "No wrestlers have zero matches",
+          severity: "warning",
+          detail: wrestlersWithoutBouts.length === 0
+            ? "Every attending wrestler has at least one match."
+            : `${wrestlersWithoutBouts.length} attending wrestler${wrestlersWithoutBouts.length === 1 ? "" : "s"} still have no matches: ${formatNames(wrestlersWithoutBouts)}.`,
+        },
+        {
+          ...allItems[5],
+          severity: "warning",
+        },
+      ]
+    : allItems;
 
   return {
     ok: items.every((item) => item.severity !== "error" || item.ok),

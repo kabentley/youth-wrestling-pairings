@@ -91,10 +91,12 @@ function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) 
 export default function VolunteersTab({
   meetId,
   canEdit,
+  hideReadonlyEditNotice = false,
   onSaved,
 }: {
   meetId: string;
   canEdit: boolean;
+  hideReadonlyEditNotice?: boolean;
   onSaved?: () => void;
 }) {
   const [payload, setPayload] = useState<VolunteersPayload | null>(null);
@@ -656,7 +658,7 @@ export default function VolunteersTab({
             : "Badge colors: red = wrong mat, yellow = parents on different mats."}
         </div>
       </div>
-      {!canEdit && (
+      {!canEdit && !hideReadonlyEditNotice && (
         <div className="notice">Read-only mode. Start editing to update volunteer mat assignments.</div>
       )}
 

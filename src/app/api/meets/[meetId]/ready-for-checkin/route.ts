@@ -5,6 +5,9 @@ import { requireRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
+  const url = new URL(_req.url);
+  const targetParam = url.searchParams.get("target");
+  const targetStatus = targetParam === "PUBLISHED" ? "PUBLISHED" : "READY_FOR_CHECKIN";
   try {
     await requireRole("COACH");
   } catch (error) {
@@ -19,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     throw error;
   }
 
-  const checklist = await buildReadyForCheckinChecklist(meetId);
+  const checklist = await buildReadyForCheckinChecklist(meetId, undefined, targetStatus);
   if (!checklist) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
