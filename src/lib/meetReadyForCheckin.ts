@@ -22,8 +22,8 @@ export type ReadyForCheckinChecklist = {
 
 function normalizeAttendanceStatus(status?: string | null) {
   if (status === "ABSENT") return "NOT_COMING";
-  if (status === "NOT_COMING" || status === "LATE" || status === "EARLY") return status;
-  return "COMING";
+  if (status === "COMING" || status === "LATE" || status === "EARLY") return status;
+  return "NOT_COMING";
 }
 
 function formatNames(list: Array<{ first: string; last: string }>, limit = 4) {
@@ -156,16 +156,23 @@ export async function buildReadyForCheckinChecklist(
     }
   }
 
-  let wrongVolunteerBoutCount = 0;
+  const acceptableVolunteerMatsByKidId = new Map<string, Set<number>>();
   for (const volunteer of volunteers) {
     const volunteerMat = validVolunteerMat(volunteer.staffMatNumber);
     if (volunteerMat === null) continue;
     for (const child of volunteer.children) {
       if (child.wrestler.teamId !== meet.homeTeamId) continue;
-      for (const bout of boutsByKidId.get(child.wrestler.id) ?? []) {
-        if (bout.mat !== null && bout.mat !== volunteerMat) {
-          wrongVolunteerBoutCount += 1;
-        }
+      const mats = acceptableVolunteerMatsByKidId.get(child.wrestler.id) ?? new Set<number>();
+      mats.add(volunteerMat);
+      acceptableVolunteerMatsByKidId.set(child.wrestler.id, mats);
+    }
+  }
+
+  let wrongVolunteerBoutCount = 0;
+  for (const [wrestlerId, acceptableMats] of acceptableVolunteerMatsByKidId.entries()) {
+    for (const bout of boutsByKidId.get(wrestlerId) ?? []) {
+      if (bout.mat !== null && !acceptableMats.has(bout.mat)) {
+        wrongVolunteerBoutCount += 1;
       }
     }
   }
@@ -232,7 +239,7 @@ export async function buildReadyForCheckinChecklist(
       severity: "error",
       detail: bouts.length > 0
         ? `${bouts.length} bout${bouts.length === 1 ? "" : "s"} created.`
-        : "Create bouts before moving to Ready for Check-in.",
+        : "Create bouts before moving to Check-in.",
     },
     {
       id: "coverage",
@@ -263,12 +270,12 @@ export async function buildReadyForCheckinChecklist(
     },
     {
       id: "volunteer-mat-mismatch",
-      label: "Volunteer kids are on the correct mat",
+      label: "All volunteers' wrestlers are on their mat",
       ok: wrongVolunteerBoutCount === 0,
       severity: "warning",
       detail: wrongVolunteerBoutCount === 0
-        ? "Volunteer mat assignments match their kids' bouts."
-        : `${wrongVolunteerBoutCount} volunteer kid bout${wrongVolunteerBoutCount === 1 ? "" : "s"} are on the wrong mat.`,
+        ? ""
+        : `${wrongVolunteerBoutCount} volunteer kid bout${wrongVolunteerBoutCount === 1 ? "" : "s"} are not on any linked volunteer mat.`,
       action: wrongVolunteerBoutCount > 0 ? "sync-volunteer-mats" : undefined,
       actionLabel: wrongVolunteerBoutCount > 0 ? "Fix volunteer mats" : undefined,
     },
@@ -281,7 +288,7 @@ export async function buildReadyForCheckinChecklist(
         ? "No rest conflicts detected across mats."
         : restConflictDetails.join(" "),
       action: restConflictDetails.length > 0 ? "fix-rest-conflicts" : undefined,
-      actionLabel: restConflictDetails.length > 0 ? "Fix rest conflicts" : undefined,
+      actionLabel: restConflictDetails.length > 0 ? "Reorder Mats" : undefined,
     },
   ];
 

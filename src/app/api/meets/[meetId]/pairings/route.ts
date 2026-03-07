@@ -53,11 +53,15 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     teamColor: user.team?.color ?? null,
   }]));
   const statuses = await db.meetWrestlerStatus.findMany({
-    where: { meetId, status: { in: ["NOT_COMING"] } },
-    select: { wrestlerId: true },
+    where: { meetId },
+    select: { wrestlerId: true, status: true },
   });
-  const absentIds = new Set(statuses.map(s => s.wrestlerId));
-  const filtered = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
+  const attendingIds = new Set(
+    statuses
+      .filter((status) => status.status === "COMING" || status.status === "LATE" || status.status === "EARLY")
+      .map((status) => status.wrestlerId),
+  );
+  const filtered = bouts.filter(b => attendingIds.has(b.redId) && attendingIds.has(b.greenId));
   const enriched = filtered.map(b => ({
     ...b,
     sourceUser: b.source ? sourceMap.get(b.source) ?? null : null,

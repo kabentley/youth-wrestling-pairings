@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
 
 export type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY";
+export type CheckpointAttendanceStatus = AttendanceStatus | null;
 
 export type BoutSource = string | null;
 
@@ -14,7 +15,7 @@ export type MeetCheckpointPayload = {
   meetName: string;
   meetDate: string;
   teamIds: string[];
-  attendance: { wrestlerId: string; status: AttendanceStatus }[];
+  attendance: { wrestlerId: string; status: CheckpointAttendanceStatus }[];
   bouts: {
     redId: string;
     greenId: string;
@@ -36,10 +37,11 @@ export function buildTeamSignature(teamIds: string[]) {
   return teamIds.slice().sort().join("|");
 }
 
-function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
-  if (status === "ABSENT") return "NOT_COMING";
-  if (status === "NOT_COMING" || status === "LATE" || status === "EARLY") return status;
-  return "COMING";
+function normalizeAttendanceStatus(status?: string | null): CheckpointAttendanceStatus {
+  if (status == null) return null;
+  if (status === "ABSENT" || status === "NOT_COMING") return "NOT_COMING";
+  if (status === "COMING" || status === "LATE" || status === "EARLY") return status;
+  return null;
 }
 
 export async function buildMeetCheckpointPayload(

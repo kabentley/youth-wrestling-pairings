@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     const historyEntries = changes.map(change => ({
       meetId,
       wrestlerId: change.wrestlerId,
-      status: change.status ?? "COMING",
+      status: change.status ?? "NO_REPLY",
       changedById: user.id,
     }));
 
@@ -81,11 +81,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       data: historyEntries,
     });
 
+    const explicitNonAttending = changes
+      .filter((change) => change.status === null || change.status === "NOT_COMING")
+      .map((change) => change.wrestlerId);
     const absentStatuses = await tx.meetWrestlerStatus.findMany({
       where: { meetId, status: { in: ["NOT_COMING"] } },
       select: { wrestlerId: true },
     });
-    const absentIds = absentStatuses.map(status => status.wrestlerId);
+    const absentIds = [...new Set([...explicitNonAttending, ...absentStatuses.map(status => status.wrestlerId)])];
     if (absentIds.length > 0) {
       await deleteBoutsAndRenumber(tx, meetId, {
         OR: [

@@ -1144,6 +1144,7 @@ export default function MeetsPage() {
             {visibleMeets.map(m => {
               const coachCannotEdit =
                 role === "COACH" && m.canStartEditing === false;
+              const isPublishedMeet = normalizeMeetPhase(m.status) === "PUBLISHED";
               const homeTeam =
                 m.homeTeamId
                   ? m.meetTeams.find(mt => mt.team.id === m.homeTeamId)?.team
@@ -1190,7 +1191,7 @@ export default function MeetsPage() {
                         >
                           View
                         </button>
-                        {!coachCannotEdit && (
+                        {!coachCannotEdit && !isPublishedMeet && (
                           <button
                             className="nav-btn meet-action-edit"
                             onClick={() => router.push(`/meets/${m.id}?edit=1`)}

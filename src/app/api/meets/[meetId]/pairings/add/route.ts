@@ -8,13 +8,13 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { formatWrestlerLabel } from "@/lib/meetChangeFormat";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { pairingScore } from "@/lib/pairingScore";
-import { requireRole } from "@/lib/rbac";
+import { requireAnyRole } from "@/lib/rbac";
 
 const BodySchema = z.object({ redId: z.string().min(1), greenId: z.string().min(1) });
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  const { user } = await requireAnyRole(["COACH", "ADMIN"]);
   try {
     await requireMeetLock(meetId, user.id);
   } catch (err) {
@@ -36,12 +36,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   if (!meet.homeTeamId) {
     return NextResponse.json({ error: "Meet must have a home team before adding bouts." }, { status: 400 });
   }
-  const absent = await db.meetWrestlerStatus.findMany({
-    where: { meetId, status: { in: ["NOT_COMING"] }, wrestlerId: { in: [body.redId, body.greenId] } },
-    select: { wrestlerId: true },
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId, wrestlerId: { in: [body.redId, body.greenId] } },
+    select: { wrestlerId: true, status: true },
   });
-  if (absent.length > 0) {
-    return NextResponse.json({ error: "Cannot create a match for a not-attending wrestler" }, { status: 400 });
+  const attendingIds = new Set(
+    statuses
+      .filter((entry) => entry.status === "COMING" || entry.status === "LATE" || entry.status === "EARLY")
+      .map((entry) => entry.wrestlerId),
+  );
+  if (!attendingIds.has(body.redId) || !attendingIds.has(body.greenId)) {
+    return NextResponse.json({ error: "Both wrestlers must be marked coming before creating a match." }, { status: 400 });
   }
 
   const existing = await db.bout.findFirst({

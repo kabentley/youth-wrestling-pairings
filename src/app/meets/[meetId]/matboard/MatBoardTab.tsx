@@ -161,7 +161,6 @@ export default function MatBoardTab({
     homeTeamId?: string | null;
     date?: string | null;
   } | null>(null);
-  const [italicizeSingles, setItalicizeSingles] = useState(true);
   const [showTeamSymbols, setShowTeamSymbols] = useState(false);
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [lockedBoutIds, setLockedBoutIds] = useState<Set<string>>(new Set());
@@ -1357,6 +1356,11 @@ export default function MatBoardTab({
           color: #5a6673;
           font-weight: 600;
         }
+        .matboard-italic-note {
+          font-size: 14px;
+          color: #5a6673;
+          font-weight: 700;
+        }
         .matboard-legend {
           display: flex;
           align-items: center;
@@ -1694,21 +1698,14 @@ export default function MatBoardTab({
             <label className="matboard-italic-control">
               <input
                 type="checkbox"
-                checked={italicizeSingles}
-                onChange={e => setItalicizeSingles(e.target.checked)}
-              />
-              <span>
-                Show wrestlers with only one match in <em>italics</em>
-              </span>
-            </label>
-            <label className="matboard-italic-control">
-              <input
-                type="checkbox"
                 checked={showTeamSymbols}
                 onChange={e => setShowTeamSymbols(e.target.checked)}
               />
               <span>Show team</span>
             </label>
+            <span className="matboard-italic-note">
+              Wrestlers with only one match are always shown in <em>italics</em>.
+            </span>
           </div>
           <div className="matboard-legend">
           <span style={{ fontWeight: 600 }}>Legend:</span>
@@ -1794,8 +1791,8 @@ export default function MatBoardTab({
       const getSeverity = (wrestlerId: string) => conflictSeverity.get(`${b.id}-${wrestlerId}`);
       const severityRed = getSeverity(b.redId);
       const severityGreen = getSeverity(b.greenId);
-      const singleMatchRed = italicizeSingles && (matchCounts.get(b.redId) ?? 0) === 1;
-      const singleMatchGreen = italicizeSingles && (matchCounts.get(b.greenId) ?? 0) === 1;
+      const singleMatchRed = (matchCounts.get(b.redId) ?? 0) === 1;
+      const singleMatchGreen = (matchCounts.get(b.greenId) ?? 0) === 1;
       const conflictOpacity = (value?: number) => {
         if (value === undefined) return undefined;
         if (value <= 0) return 0.65;

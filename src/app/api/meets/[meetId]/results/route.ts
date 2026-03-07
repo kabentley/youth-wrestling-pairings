@@ -43,12 +43,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     }
   }
 
-  const absent = await db.meetWrestlerStatus.findMany({
-    where: { meetId, status: { in: ["NOT_COMING"] } },
-    select: { wrestlerId: true },
-  });
-  const absentIds = new Set(absent.map(a => a.wrestlerId));
-
   const bouts = await db.bout.findMany({
     where: { meetId },
     orderBy: [{ mat: "asc" }, { order: "asc" }, { createdAt: "asc" }],
@@ -67,7 +61,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       resultAt: true,
     },
   });
-  const filtered = bouts.filter(b => !absentIds.has(b.redId) && !absentIds.has(b.greenId));
+  const statuses = await db.meetWrestlerStatus.findMany({
+    where: { meetId },
+    select: { wrestlerId: true, status: true },
+  });
+  const attendingIds = new Set(
+    statuses
+      .filter((status) => status.status === "COMING" || status.status === "LATE" || status.status === "EARLY")
+      .map((status) => status.wrestlerId),
+  );
+  const filtered = bouts.filter(b => attendingIds.has(b.redId) && attendingIds.has(b.greenId));
   const wrestlerIds = new Set<string>();
   for (const b of filtered) {
     wrestlerIds.add(b.redId);

@@ -9,7 +9,7 @@ import { requireRole } from "@/lib/rbac";
 
 const AttendanceSchema = z.object({
   wrestlerId: z.string().min(1),
-  status: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]),
+  status: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable(),
 });
 
 const BoutSchema = z.object({
@@ -51,10 +51,28 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { deletedAt: true, homeTeamId: true },
+    select: {
+      deletedAt: true,
+      status: true,
+      homeTeamId: true,
+      homeTeam: { select: { headCoachId: true } },
+    },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+  if (meet.status === "PUBLISHED") {
+    return NextResponse.json(
+      { error: "Published meets cannot apply checkpoints." },
+      { status: 400 },
+    );
+  }
+  const coordinatorId = meet.homeTeam?.headCoachId ?? null;
+  if (!coordinatorId || coordinatorId !== user.id) {
+    return NextResponse.json(
+      { error: "Only the Meet Coordinator can apply checkpoints." },
+      { status: 403 },
+    );
   }
 
   const checkpoint = await db.meetCheckpoint.findFirst({
@@ -92,6 +110,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   const activeIds = new Set(wrestlers.filter(w => w.active).map(w => w.id));
 
   const attendance = payload.attendance.filter(a => wrestlerIds.has(a.wrestlerId) && activeIds.has(a.wrestlerId));
+  const attendanceWithStatus = attendance.filter(
+    (a): a is typeof a & { status: "COMING" | "NOT_COMING" | "LATE" | "EARLY" } => a.status != null,
+  );
   const teamOrder = (() => {
     const order = new Map<string, number>();
     const homeId = meet.homeTeamId ?? null;
@@ -143,10 +164,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   await db.$transaction(async (tx) => {
     await tx.meetWrestlerStatus.deleteMany({ where: { meetId } });
 
-    const statusRows = attendance.filter(a => a.status !== "COMING");
-    if (statusRows.length > 0) {
+    if (attendanceWithStatus.length > 0) {
       await tx.meetWrestlerStatus.createMany({
-        data: statusRows.map(a => ({
+        data: attendanceWithStatus.map(a => ({
           meetId,
           wrestlerId: a.wrestlerId,
           status: a.status,
@@ -154,9 +174,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
       });
     }
 
-    if (attendance.length > 0) {
+    if (attendanceWithStatus.length > 0) {
       await tx.meetWrestlerStatusHistory.createMany({
-        data: attendance.map(a => ({
+        data: attendanceWithStatus.map(a => ({
           meetId,
           wrestlerId: a.wrestlerId,
           status: a.status,

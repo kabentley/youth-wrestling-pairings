@@ -63,9 +63,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
     select: { wrestlerId: true, status: true },
   });
   const statusById = new Map(statuses.map(s => [s.wrestlerId, s.status]));
-  const absentIds = new Set(
+  const attendingIds = new Set(
     statuses
-      .filter(s => s.status === "NOT_COMING")
+      .filter(s => s.status === "COMING" || s.status === "LATE" || s.status === "EARLY")
       .map(s => s.wrestlerId)
   );
 
@@ -84,22 +84,31 @@ export async function GET(req: Request, { params }: { params: Promise<{ meetId: 
       active: w.active,
       status: statusById.get(w.id) ?? null,
     }))
-  ).filter(w => w.active && !absentIds.has(w.id));
+  ).filter(w => w.active && attendingIds.has(w.id));
+  const meetWrestlerIds = new Set(
+    meetTeams.flatMap((mt) => mt.team.wrestlers.filter((w) => w.active).map((w) => w.id)),
+  );
 
   const target = wrestlers.find(w => w.id === q.wrestlerId);
-  if (!target && absentIds.has(q.wrestlerId)) {
-    return NextResponse.json({ error: "wrestler is marked not attending" }, { status: 400 });
+  if (!target) {
+    if (!meetWrestlerIds.has(q.wrestlerId)) {
+      return NextResponse.json({ error: "wrestler not in this meet" }, { status: 404 });
+    }
+    const explicitStatus = statusById.get(q.wrestlerId) ?? null;
+    if (explicitStatus === null || explicitStatus === "NOT_COMING") {
+      return NextResponse.json({ error: "wrestler is not marked coming" }, { status: 400 });
+    }
   }
   if (!target) return NextResponse.json({ error: "wrestler not in this meet" }, { status: 404 });
 
+  const currentOpponentIds = new Set<string>();
+  const matchCounts = new Map<string, number>();
   const currentBouts = await db.bout.findMany({
     where: {
       meetId,
     },
     select: { redId: true, greenId: true },
   });
-  const currentOpponentIds = new Set<string>();
-  const matchCounts = new Map<string, number>();
   for (const b of currentBouts) {
     matchCounts.set(b.redId, (matchCounts.get(b.redId) ?? 0) + 1);
     matchCounts.set(b.greenId, (matchCounts.get(b.greenId) ?? 0) + 1);

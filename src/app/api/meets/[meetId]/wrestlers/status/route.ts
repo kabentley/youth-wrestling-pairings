@@ -52,33 +52,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     data: {
       meetId,
       wrestlerId: body.wrestlerId,
-      status: body.status ?? "COMING",
+      status: body.status ?? "NO_REPLY",
       changedById: user.id,
     },
   });
 
-  const absentStatuses = new Set(["NOT_COMING"]);
-  if (body.status && absentStatuses.has(body.status)) {
+  const nonAttendingStatuses = new Set(["NOT_COMING"]);
+  if (body.status === null || nonAttendingStatuses.has(body.status)) {
     await deleteBoutsAndRenumber(db, meetId, {
       OR: [{ redId: body.wrestlerId }, { greenId: body.wrestlerId }],
     });
   } else {
     const statuses = await db.meetWrestlerStatus.findMany({
-      where: { meetId, status: { in: ["NOT_COMING"] } },
-      select: { wrestlerId: true },
+      where: { meetId },
+      select: { wrestlerId: true, status: true },
     });
-    const absentIds = new Set(statuses.map(s => s.wrestlerId));
-    if (absentIds.size > 0) {
+    const nonAttendingIds = new Set(
+      statuses
+        .filter((status) => status.status === "NOT_COMING")
+        .map((status) => status.wrestlerId),
+    );
+    if (nonAttendingIds.size > 0) {
       await deleteBoutsAndRenumber(db, meetId, {
         OR: [
-          { redId: { in: Array.from(absentIds) } },
-          { greenId: { in: Array.from(absentIds) } },
+          { redId: { in: Array.from(nonAttendingIds) } },
+          { greenId: { in: Array.from(nonAttendingIds) } },
         ],
       });
     }
   }
 
-  const statusLabel = body.status ?? "COMING";
+  const statusLabel = body.status ?? "NO_REPLY";
   await logMeetChange(
     meetId,
     user.id,

@@ -45,7 +45,7 @@ function daysBetween(a: Date, b: Date) {
  * Generates "counting" bouts for a meet using a greedy, weight-sorted search.
  *
  * Overview:
- * - Builds a pool of active wrestlers, excluding `NOT_COMING`.
+ * - Builds a pool of active wrestlers, including only explicit attendees.
  * - Avoids duplicates against existing bouts in the meet.
  * - Filters candidates by age and weight caps.
  * - Ranks candidates by absolute pairing score (see `pairingScore`).
@@ -64,22 +64,30 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     },
   });
   const scoreOptions = league ?? undefined;
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { status: true },
+  });
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },
+  });
+  const existingBouts = await db.bout.findMany({
+    where: { meetId },
+    select: { redId: true, greenId: true },
   });
   const statuses = await db.meetWrestlerStatus.findMany({
     where: { meetId },
     select: { wrestlerId: true, status: true },
   });
-  const absentIds = new Set(
+  const attendingIds = new Set(
     statuses
-      .filter(s => s.status === "NOT_COMING")
+      .filter(s => s.status === "COMING" || s.status === "LATE" || s.status === "EARLY")
       .map(s => s.wrestlerId)
   );
   const wrestlers = meetTeams
     .flatMap(mt => mt.team.wrestlers)
-    .filter(w => w.active && !absentIds.has(w.id));
+    .filter(w => w.active && attendingIds.has(w.id));
   const teamOrder = (() => {
     const order = new Map<string, number>();
     const homeId = settings.homeTeamId ?? null;
@@ -104,12 +112,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   })();
   const matchCounts = new Map<string, number>();
   const paired = new Set<string>();
-
-
-  const existingBouts = await db.bout.findMany({
-    where: { meetId },
-    select: { redId: true, greenId: true },
-  });
   for (const bout of existingBouts) {
     matchCounts.set(bout.redId, (matchCounts.get(bout.redId) ?? 0) + 1);
     matchCounts.set(bout.greenId, (matchCounts.get(bout.greenId) ?? 0) + 1);
@@ -200,7 +202,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   const wrestlersByTeam = new Map<string, typeof pool>();
   for (const mt of meetTeams) {
     const teamWrestlers = mt.team.wrestlers
-      .filter(w => w.active && !absentIds.has(w.id));
+      .filter(w => w.active && attendingIds.has(w.id));
     wrestlersByTeam.set(mt.teamId, shuffle(teamWrestlers));
   }
 
