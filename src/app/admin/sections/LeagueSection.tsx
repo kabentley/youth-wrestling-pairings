@@ -499,6 +499,19 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             </div>
           </div>
         </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            onClick={() => {
+              setShowResetModal(true);
+              setResetConfirm("");
+              setResetError("");
+            }}
+          >
+            Reset For New Year
+          </button>
+        </div>
       </div>
       )}
 
@@ -697,17 +710,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             >
               Import Teams + Rosters
             </button>
-            <button
-              type="button"
-              className="admin-btn admin-btn-danger"
-              onClick={() => {
-                setShowResetModal(true);
-                setResetConfirm("");
-                setResetError("");
-              }}
-            >
-              Reset For New Year
-            </button>
           </div>
         </div>
         <div className="admin-row" style={{ marginTop: 12 }}>
@@ -891,7 +893,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
           >
             <h4 id="reset-title">Reset For New Year</h4>
             <p className="reset-message">
-              This will permanently delete every meet and clear all team rosters.
+              This will permanently delete every meet, clear all team rosters, and delete every non-head-coach account.
             </p>
             <p className="reset-message">
               Type{" "}

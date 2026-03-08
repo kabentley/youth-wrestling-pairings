@@ -26,9 +26,10 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Coaches set up meets and keep rosters accurate. Strong roster data and clear setup lead to fair pairings, smooth mat flow, and reliable results [Rosters, Meets, Team Settings].",
           "Each team has one head coach [Admin > Teams] and may have multiple assistant coaches. The head coach is the primary contact and serves as Meet Coordinator for home meets [Team Settings, Rosters, Meets].",
-          "Coaches can create and edit meets and adjust team and mat settings for their team [Meets, Team Settings]. Assistant coaches use the same workflows for pairings, mat assignments, and results, and can acquire the meet lock only when the Meet Coordinator grants access [Meet > Start Editing, Meet > Mat Assignments, Meets > Enter Results].",
+          "Head coaches create home meets for their own team [Meets]. Assistant coaches help run those meets, but lock-based editing in Draft and later phases still depends on the Meet Coordinator granting access [Meet > Coordinator, Meet > Start Editing].",
+          "Any coach on a team in the meet can edit attendance for that coach's own team during Draft without the meet lock. During Check-in, any coach on a team in the meet can enter scratches for that coach's own team, while the Meet Coordinator or an admin can manage scratches for any team and make replacement matches [Meet > Attendance, Meet > Scratches].",
           "Only admins can change the head coach, and each team keeps a single head coach for clarity [Admin > Users, Admin > Teams].",
-          "When several coaches work the same meet, agree on who holds the lock by phase. One coach can build pairings while another reviews read-only, then hand off the lock for mat order or results [Meet > Start Editing, Meet > Release Lock, Meet > Comments].",
+          "When several coaches work the same meet, agree on who is handling each phase. A common pattern is parent replies during Attendance, one coach building pairings in Draft, team coaches handling scratches in Check-in, and then everyone switching to read-only once the meet is published [Meet > Attendance, Meet > Pairings, Meet > Scratches, Meet > Publish].",
         ],
       },
       {
@@ -66,57 +67,57 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Creating a new meet",
         paragraphs: [
-          "Go to [Meets] and choose [Create New Meet]. Enter the meet date, then select the other teams. Your team is always included.",
-          "The home team drives defaults for mats and pairing preferences. Coaches can choose the home team while creating the meet, but after the meet is created only admins can change it [Meets > Create New Meet, Meet > Edit].",
-          "Set the number of mats and the target matches per wrestler; these shape layout and auto-pairing output [Meets > Create New Meet].",
-          "Review match limits, rest gap, and auto-pairing limits before saving; these settings drive fairness and pacing [Team Settings > Meet Setup, Meet > Pairings].",
-          "Click Create Meet to open the draft in edit mode and confirm attendance before pairings run [Meet > Pairings].",
-          "Attendance always comes first. Use Generate Automatic Pairings when creating the meet if you want auto pairings to run after attendance; otherwise you can keep manual pairings [Meet > Pairings].",
+          "Go to [Meets] and choose [Create New Meet]. Only the home team's head coach or an admin can create the meet. Your team is already the home team, so you only choose the date, location, other teams, attendance deadline, and number of mats [Meets > Create New Meet].",
+          "The create dialog also includes an option to allow other coaches to edit while the meet is in Draft. That pre-grants Draft lock access to the participating coaches, but the home-team head coach still remains the Meet Coordinator [Meets > Create New Meet, Meet > Coordinator].",
+          "Meet setup defaults such as match targets, rest gap, and pairing rules come from [Team Settings > Meet Setup]. Review those before creating the meet if you want different pairing behavior.",
+          "A newly created meet starts in the Attendance phase. Parents respond first, coaches review those replies, and then the meet moves into Draft when you click [Close Attendance] [Meet > Attendance].",
         ],
       },
       {
         title: "Meets page",
         paragraphs: [
-          "The Meets page lists meets by date with name, date, location, team symbols, and status [Meets]. Coaches see meets for their team; admins see all meets.",
-          "Use View to open, Edit for edit mode, and Delete to remove a meet. The list also shows last edit info and a Restore Deleted option when there are deleted meets [Meets].",
-          "Delete is a soft delete so the meet can be restored. Purge permanently removes a deleted meet and cannot be undone [Meets > Restore Deleted].",
-          "Create New Meet opens the setup dialog for date/teams and settings like mats and target matches. You can select up to three other teams; your team is always included [Meets > Create New Meet].",
-          "Draft means the meet is still in setup and supports full editing with the lock.",
-          "Published means the plan is ready to share; you can reopen as draft if changes are needed [Meet > Publish].",
+          "The Meets page is split into [Active Meets] and [Published Meets]. Coaches see meets for their team; admins see all meets [Meets].",
+          "Active meets move through four phases: Attendance, Draft, Check-in, and Published. The status badge on each meet shows where the meet is in that workflow [Meets].",
+          "Use View to open a meet. Edit actions are available only while the meet is still editable for your role. Published meets stay visible in their own card so families and staff can keep using the final schedule [Meets].",
+          "Delete permanently removes a meet. Head coaches can delete their team's non-published meets, and only admins can delete a published meet [Meets].",
         ],
       },
       {
-        title: "Meet page tabs",
+        title: "Meet phases and tabs",
         paragraphs: [
-          "The meet header shows status, last edit info, and lock controls. Use Edit or Start Editing to request the lock before changing anything [Meet > Edit, Meet > Start Editing].",
-          "Pairings is for assigning bouts. Mat Assignments sets the mat and order. Wall Charts is a visual overview for checking balance and printing [Meet > Pairings, Meet > Mat Assignments, Meet > Wall Charts].",
+          "The meet header shows the current phase, last edit info, phase-change buttons, and lock controls when the lock matters [Meet > Start Editing, Meet > Release Lock].",
+          "Attendance phase is review-only for coaches. Parents should be responding for their kids, and the Attendance tab shows what parents have entered so far. The Pairings, Mat Assignments, and Volunteers tabs are hidden in this phase [Meet > Attendance].",
+          "Draft is the working phase. Use Attendance to finish status changes, Pairings to build bouts, Mat Assignments to order bouts on mats, and Volunteers to place home-team staff on mats. Run automatic pairings only in Draft [Meet > Attendance, Meet > Pairings, Meet > Mat Assignments, Meet > Volunteers].",
+          "Check-in is the live meet-day adjustment phase. The default tab is Scratches, where coaches record scratches for each team and the coordinator can assign replacement matches. Volunteers is hidden in this phase, and the published wall-chart and scoring-sheet tabs are not shown until publishing [Meet > Scratches].",
+          "Published is final. Publishing prepares the wall charts and scoring sheets, notifies parents of bout numbers and opponents, and makes the meet read-only. A published meet cannot be reopened [Meet > Publish, Meet > Check-in Sheets, Meet > Scoring Sheets].",
         ],
       },
       {
         title: "Checkpoints",
         paragraphs: [
           "Checkpoints save the current state of meet attendance and scheduled bouts so you can roll back later [Meet > Checkpoints]. Each checkpoint stores attendance and all bouts with their mat assignments.",
-          "Use Save to capture a snapshot before a major change. Use Show Changes to review what has changed since a checkpoint, and Apply to revert the meet to that saved state [Meet > Checkpoints].",
-          "Applying a checkpoint restores attendance for active wrestlers, clears current bouts, and recreates the saved bouts. Wrestlers who were deleted or set inactive after the checkpoint are not re-matched, and newly added wrestlers will have zero matches after applying [Meet > Checkpoints].",
-          "Checkpoints only apply when the same teams are in the meet. If the team list changes, the checkpoint will not apply.",
+          "The system also creates automatic checkpoints at key transitions. Closing Attendance saves an Attendance Closed checkpoint, and moving from Draft to Check-in saves a Check-in checkpoint that becomes the baseline for scratches and unexpected arrivals [Meet > Close Attendance, Meet > Ready for Meet day].",
+          "Use Save to capture a manual snapshot before a major change. Use Show Changes to review what has changed since a checkpoint, and Apply to revert the meet to that saved state [Meet > Checkpoints].",
+          "Only the Meet Coordinator can apply checkpoints, and Apply is hidden after publish. Applying a checkpoint restores attendance for active wrestlers, clears current bouts, and recreates the saved bouts. Wrestlers who were deleted or set inactive after the checkpoint are not re-matched, and newly added wrestlers will have zero matches after applying [Meet > Checkpoints].",
         ],
       },
       {
         title: "Attendance panel",
         paragraphs: [
-          "Use Attendance to mark availability before fine-tuning pairings. In Pairings, click Attendance; you must hold the lock to edit [Meet > Start Editing, Meet > Pairings].",
-          "Coming is the default. Not Coming removes the wrestler from pairing suggestions and deletes existing bouts for that wrestler.",
-          "Arrive Late and Leave Early are planning flags. The wrestler still wrestles, but their name is highlighted so you can adjust bout order in Mat Assignments [Meet > Mat Assignments].",
-          "Right click a wrestler in the Pairings roster list to mark Not Coming, Arrive Late, or Leave Early without opening the attendance dialog. Right click a wrestler in Current Matches or Possible Additional Matches to switch the focus to that wrestler [Meet > Pairings].",
-          "Best practice: update attendance first, then run auto pairings to fill gaps and refresh recommendations [Meet > Pairings].",
+          "Attendance is phase-aware. During Attendance, the tab is read-only for coaches and is meant to show what parents have entered so far. After Attendance closes and the meet enters Draft, coaches can edit attendance there [Meet > Attendance].",
+          "In Draft, the home-team coordinator and any coach with edit access can update attendance across the meet while holding the lock. Coaches on a meet team can also edit attendance for their own team in Draft without the meet lock [Meet > Attendance, Meet > Start Editing].",
+          "Coming keeps the wrestler eligible for pairings. Not Coming removes the wrestler from pairing suggestions and deletes that wrestler's current bouts. Arrive Late and Leave Early keep the wrestler attending, but mark them so mat order can be adjusted around them [Meet > Attendance, Meet > Mat Assignments].",
+          "Right click a wrestler in Pairings or Mat Assignments to mark Arrive Late or Leave Early quickly. The Not Attending option appears there only in Draft [Meet > Pairings, Meet > Mat Assignments].",
+          "No Reply remains distinct from Not Coming. In Draft, the Not Coming column also shows No Reply wrestlers so coaches can clean them up before pairings are finalized [Meet > Attendance].",
         ],
       },
       {
         title: "Locks and collaboration",
         paragraphs: [
-          "Each meet has a lock so only one coach can edit at a time. Click Edit on the Meets list or Start Editing inside a meet to request the lock and become the active editor until you release it [Meets > Edit, Meet > Start Editing, Meet > Release Lock].",
+          "The meet lock is mainly for Draft pairings and mat work. Click Edit on the Meets list or Start Editing inside a meet to request the lock and become the active editor until you release it [Meets > Edit, Meet > Start Editing, Meet > Release Lock].",
           "If another coach holds the lock, you will see their username. You can still view the meet in read-only mode and use comments to coordinate handoffs [Meet > Comments].",
-          "Locks prevent conflicts such as one coach reordering mats while another adds bouts. Use a simple rhythm: edit, save, communicate, release [Meet > Comments].",
+          "The lock is not used for every workflow. Team coaches can update their own team attendance in Draft without the lock, and team coaches can enter scratches for their own team during Check-in without the lock [Meet > Attendance, Meet > Scratches].",
+          "Outside Draft, editing is much tighter. After the meet leaves Draft, the Meet Coordinator or an admin controls most remaining edit actions, while team coaches keep only the team-specific Check-in tools [Meet > Coordinator, Meet > Scratches].",
           "Locks expire if they are not refreshed. The timeout is 2 minutes, so the lock clears if the tab closes, the device sleeps, the network drops, the page is backgrounded, or the session expires.",
           "The app also releases your lock after inactivity. The inactivity timer is 5 minutes, and you will see a countdown near the top of the meet page. Move the mouse, click, or tap to reset it.",
         ],
@@ -127,10 +128,10 @@ export const HELP_PAGES: HelpPage[] = [
           "Start with automatic pairings, then review and adjust [Meet > Pairings]. The goal is fair, safe, and realistic matchups, not a perfect mathematical result.",
           "Weight, age, experience, and skill are the primary matching factors. With accurate roster data, the top suggestions are usually strong starting points, but coaches should still apply judgment [Rosters, Meet > Pairings].",
           "The Delta column shows the weight percentage difference between wrestlers, biased by age, experience, and skill. Values closer to zero are tighter matches; a positive value favors the first wrestler and a negative value favors the second [Meet > Pairings].",
-          "Use Girls wrestle girls to limit pairings to same-sex matchups. This setting defaults on for new meets and can be toggled during pairing review [Meet > Pairings].",
+          "Use Girls wrestle girls and the other pairing filters to tighten or loosen suggestions during review [Meet > Pairings].",
           "Pairings fairness settings live in the admin Pairings Settings tab and apply immediately to new pairing suggestions; existing bouts keep their saved scores until you regenerate pairings [Admin > Pairings Settings, Meet > Pairings].",
-          "Run Auto Pairings can clear current bouts or keep them, depending on the Clear existing bouts option in the dialog [Meet > Pairings].",
-          "Remove all bouts where both wrestlers have more than the target matches removes bouts after auto pairings run. It removes bouts where both wrestlers have more than the target number of matches [Meet > Pairings].",
+          "Run Auto Pairings is available only in Draft. The dialog can clear current bouts first or keep them, depending on the Clear existing bouts option [Meet > Pairings].",
+          "The prune step after auto pairings removes bouts where both wrestlers are above the target match count. Use that to trim extras while keeping low-match wrestlers covered [Meet > Pairings].",
           "Removing a bout marks that matchup as rejected for the meet. Rejected matchups show a badge in Additional Matches and will not be recreated by auto pairings unless you enable Allow previously rejected matchups in the run dialog [Meet > Pairings].",
           "Use the additional matches list to add or remove bouts [Meet > Pairings > Additional Matches]. Enforce weight checks when required and document exceptions in comments [Meet > Comments].",
           "Use rest gap settings to avoid scheduling the same wrestler too close together. This improves pacing, especially in multi-mat meets [Team Settings > Meet Setup, Meet > Pairings].",
@@ -142,8 +143,9 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Mat Assignments is the running order for the gym. Drag and drop bouts to balance mats or group divisions or teams when your format requires it [Meet > Mat Assignments].",
           "Use bout locks to hold matches in place when you reorder. Click on a bout number to lock or unlock that bout, and use Lock All or Unlock All on a mat to lock or unlock all bouts [Meet > Mat Assignments].",
-          "Use Reorder to improve rest time between bouts based on the rest gap setting. It is most useful after major pairing edits or large mat moves [Meet > Mat Assignments].",
+          "Use Reorder on a single mat or Reorder All to improve rest time between bouts based on the rest gap setting. It is most useful after major pairing edits or large mat moves [Meet > Mat Assignments].",
           "Reorder only moves unlocked bouts. If every bout on a mat is locked, Reorder is disabled for that mat until at least one bout is unlocked [Meet > Mat Assignments].",
+          "The Show team toggle stays with you as you move between tabs, which makes it easier to review team-heavy layouts. Wrestlers with only one match are always shown in italics on this page [Meet > Mat Assignments].",
           "Confirm each mat has a sensible flow and coaches can cover their wrestlers. If you make major changes close to start time, communicate them and reprint affected sheets [Meet > Comments].",
         ],
       },
@@ -152,7 +154,8 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Use Volunteers to assign home-team staff to mats so families and helpers can follow their wrestlers more easily [Meet > Volunteers].",
           "The tab is available only to home-team coaches. It lists home-team coaches, table workers, and parents, including linked kids, and lets you drag each person to a mat or back to Unassigned [Meet > Volunteers, Team Settings > Team Roles].",
-          "Volunteer mat assignments can be changed only in Draft while you hold edit lock. If the meet is published, results have already been entered, or you are read-only, assignments are view-only [Meet > Start Editing, Meet > Reopen as Draft].",
+          "Volunteers is available during Draft and remains viewable after publish. It is hidden during Attendance and Check-in because those phases focus on parent responses and scratches instead [Meet > Attendance, Meet > Scratches, Meet > Volunteers].",
+          "Volunteer mat assignments can be changed only in Draft while you hold edit lock. After publish the page stays visible, but the assignments are read-only [Meet > Start Editing, Meet > Publish].",
           "Use the Unassigned search box to filter immediately as you type by volunteer name, role, or kid name during fast meet-day changes [Meet > Volunteers].",
           "Each volunteer card shows each kid with bout-number badges. A normal badge means that bout is already on the volunteer's mat, red means the bout is on a different mat, and yellow means the kid has parents assigned to different mats [Meet > Volunteers].",
           "Click a volunteer card with mismatched bouts to move that volunteer's kids to that volunteer's mat. Use Move all at the top to move all pending mismatches at once; it is enabled only when there are matches to move, and the toolbar shows the current count [Meet > Volunteers].",
@@ -162,7 +165,7 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Printing and sharing",
         paragraphs: [
-          "Plan prints around stability. Rosters are best printed early for check-in and weigh-ins, while wall charts and mat sheets should be printed after mat order is stable [Meet > Wall Charts].",
+          "Plan prints around stability. Check-in sheets are useful before or during Check-in, while wall charts and scoring sheets are created as part of publishing and should be printed after the schedule is final [Meet > Check-in Sheets, Meet > Wall Charts, Meet > Scoring Sheets].",
           "If pairings or mat assignments change, assume any paper already handed out is outdated. Communicate changes and reprint what table workers and coaches will reference [Meet > Comments].",
           "Use Checkpoints, then Export to .wrs, to download a zip with the legacy Pairings2010 files (.wrs, .web.xml, .excel.xml, and pairings.xsl). This helps coaches who still use the old program and provides an archival backup [Meet > Checkpoints].",
         ],
@@ -170,9 +173,9 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Running the meet",
         paragraphs: [
-          "Confirm weigh-ins are complete before final pairing changes [Meet > Pairings]. Assign a coach or table worker to keep results entry current as bouts finish [Meets > Enter Results].",
-          "If mat order shifts due to delays or substitutions, update the plan and reprint affected sheets [Meet > Mat Assignments, Meet > Wall Charts]. Keep rosters updated if late scratches occur [Rosters].",
-          "Keep the workflow simple. Make pairing changes only when necessary, communicate them clearly, and stabilize the plan so table workers and coaches can trust what they see [Meet > Comments].",
+          "A good meet flow is simple: review parent replies in Attendance, build and clean up bouts in Draft, handle no-shows and unexpected arrivals in Check-in, then publish once the schedule is final [Meet > Attendance, Meet > Pairings, Meet > Scratches, Meet > Publish].",
+          "During Check-in, use the Scratches modal for each team, mark that team Done when finished, add unexpected arrivals if needed, and use Auto pair for scratches only for wrestlers still below the meet minimum [Meet > Scratches].",
+          "If mat order shifts due to delays or substitutions before publish, update the plan and reprint affected sheets. Once the meet is published, treat the digital schedule as final and handle later changes on paper [Meet > Mat Assignments, Meet > Publish].",
         ],
       },
       {
@@ -196,6 +199,8 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Troubleshooting",
         paragraphs: [
           "If you cannot edit a meet, check whether another coach holds the lock or you are in read-only mode. Start Editing shows who has the lock and when it expires [Meet > Start Editing].",
+          "If a Draft attendance save says lock is required, confirm you are editing your own team. Team coaches can edit only their own team in Draft without the lock; other attendance changes still follow the normal edit rules [Meet > Attendance].",
+          "If scratches or unexpected arrivals are missing in Check-in, confirm a Check-in checkpoint exists and that the team has not already been marked done by someone else. Use the Refresh button in Scratches to pick up other coaches' updates [Meet > Scratches, Meet > Checkpoints].",
           "If a wrestler is missing, confirm they are active on the roster and that their data is complete [Rosters]. Pairing quality depends on accurate age, weight, and experience values.",
           "If rest time between bouts looks tight or prints look wrong, review rest gap, match limits, and mat order, then reprint [Team Settings > Meet Setup, Meet > Mat Assignments, Meet > Wall Charts]. Use comments to coordinate with other coaches and table staff.",
         ],
@@ -233,8 +238,8 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Use export to back up teams and rosters before major changes or at season end [Admin > Teams > Export Teams + Rosters]. Save the zip file somewhere safe.",
           "Use import to restore teams and rosters from a prior export or a league-provided file [Admin > Teams > Import Teams + Rosters]. Import clears existing rosters first, so confirm you have a backup before proceeding.",
-          "Import and reset require typing a confirmation word. This is intentional because these actions are destructive and difficult to undo [Admin > Teams].",
-          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > Teams > Reset For New Year]. This is permanent and should be done only after exporting what you want to keep.",
+          "Import and reset require typing a confirmation word. This is intentional because these actions are destructive and difficult to undo [Admin > Teams, Admin > League].",
+          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > League > Reset For New Year]. This permanently deletes all non-head-coach accounts too, so do it only after exporting what you want to keep.",
         ],
       },
       {
@@ -261,7 +266,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "Admins should avoid routine meet editing unless asked so coaches can keep control of their workflow. Step in when there is a dispute, a technical issue, or a need for cross-team coordination [Meets].",
           "Use your access to review data quality, promote consistency across teams, and support first-time users with training or documentation [Admin > League, Admin > Teams, Admin > Users].",
-          "When someone reports missing meets or missing editing access, check role, team assignment, and meet status. Draft meets are editable by coaches with the lock, while published meets are intended to be stable and may need to be reopened as draft for changes [Admin > Users, Meets].",
+          "When someone reports missing meets or missing editing access, check role, team assignment, and meet status. Draft is the main working phase, Check-in has separate scratch permissions, and Published is final and cannot be reopened [Admin > Users, Meets].",
         ],
       },
     ],
@@ -275,7 +280,8 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "The Meet Coordinator is the head coach of the home team for that meet. This person controls who can start editing and is the default owner of editing access [Meet > Coordinator, Meet > Start Editing].",
           "The coordinator role is assigned through the home team's head coach. If the home team head coach changes, coordinator responsibilities follow that head coach assignment [Admin > Teams, Admin > Users].",
-          "Assistant coaches can still build pairings, adjust mat order, and enter changes, but only after the coordinator grants them access for that meet [Meet > Coordinator, Meet > Start Editing].",
+          "Assistant coaches can still build pairings, adjust mat order, and enter changes, but lock-based editing after Attendance depends on the coordinator granting access for that meet [Meet > Coordinator, Meet > Start Editing].",
+          "The coordinator also controls the phase transitions that matter most: moving from Draft into Check-in, publishing the meet, and applying checkpoints [Meet > Ready for Meet day, Meet > Publish, Meet > Checkpoints].",
         ],
       },
       {
@@ -285,6 +291,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Use team-level All or None to quickly grant or remove access for one team, and use Everyone or Only me for quick global changes across eligible coaches [Meet > Coordinator].",
           "The Meet Coordinator always keeps access and is not listed as a selectable coach. Click Done to save and close after reviewing selections [Meet > Coordinator].",
           "If a coach currently holds the lock and you remove their access, the system releases that lock so editing rights match the coordinator's latest access list [Meet > Coordinator, Meet > Release Lock].",
+          "Grant edit access applies to lock-based editing. It does not block team coaches from editing their own team's attendance in Draft or entering scratches for their own team during Check-in [Meet > Attendance, Meet > Scratches].",
         ],
       },
       {
@@ -298,8 +305,8 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Create meet defaults",
         paragraphs: [
-          "During meet creation, the [Allow all coaches to edit this meet] option pre-grants lock access to all eligible coaches in participating teams except the coordinator, who is always allowed [Meets > Create New Meet].",
-          "If you leave that option off, only the coordinator can start editing until access is granted manually from the meet header [Meet > Coordinator].",
+          "During meet creation, the [Allow other coaches to edit while the meet is in Draft phase] option pre-grants Draft lock access to the participating coaches except the coordinator, who is always allowed [Meets > Create New Meet].",
+          "If you leave that option off, only the coordinator can start lock-based Draft editing until access is granted manually from the meet header [Meet > Coordinator].",
         ],
       },
       {
@@ -307,6 +314,7 @@ export const HELP_PAGES: HelpPage[] = [
         paragraphs: [
           "If Grant Edit Access is unavailable with a warning about assignment, set a head coach for the home team first, then reopen the meet [Admin > Teams, Admin > Users, Meet > Coordinator].",
           "If a coach gets the message that the coordinator has not granted edit access, confirm they are a coach on one of the meet teams and then add them in Grant Edit Access [Meet > Coordinator, Meet > Start Editing].",
+          "If a team says it cannot complete Check-in, remember that team coaches do not need the meet lock for scratch entry. They only need to be a coach on that team; the coordinator can still handle any team and any replacement matches [Meet > Scratches].",
           "If coordination breaks down during live changes, use comments and explicit lock handoffs so all coaches and table workers know when the plan changed [Meet > Comments].",
         ],
       },
@@ -319,7 +327,7 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Role overview",
         paragraphs: [
-          "When you create an account you begin as a parent [Sign Up]. Parents can link their wrestler, view upcoming meets and match history, and see published meet information, but cannot edit team data by default [My Wrestlers].",
+          "When you create an account you begin as a parent [Sign Up]. Parents can link their wrestler, reply to attendance requests, view upcoming meets and match history, and see published meet information, but cannot edit team data by default [My Wrestlers, Attendance].",
           "If you need to help run a meet, ask a coach to promote you to assistant coach or table worker. Table worker access is designed for volunteers who record results without changing pairings [Team Settings > Team Roles].",
         ],
       },
@@ -327,8 +335,8 @@ export const HELP_PAGES: HelpPage[] = [
         title: "My Wrestlers page",
         paragraphs: [
           "My Wrestlers is where you connect your account to the wrestler you want to track [My Wrestlers]. Search for the wrestler, confirm the name and team, and add them to your list.",
-          "Once a wrestler is linked, you will see upcoming meets with scheduled bouts when a meet is published. You will also see match history for past meets so you can track opponents and results over time [My Wrestlers].",
-          "If you do not see an upcoming meet yet, it usually means the meet is still in draft or coaches have not finished scheduling. Ask your coach when the meet will be published [My Wrestlers].",
+          "Once a wrestler is linked, you will see upcoming meets and can open the Attendance page while the meet is still in Attendance or Draft. After a meet is published, you will also see bout numbers and opponents for that wrestler [My Wrestlers, Attendance].",
+          "If you do not see bout information yet, it usually means the meet has not been published. Coaches can still be adjusting pairings, scratches, or mat order until that point [My Wrestlers].",
         ],
       },
       {
@@ -342,14 +350,15 @@ export const HELP_PAGES: HelpPage[] = [
       {
         title: "Meet day expectations",
         paragraphs: [
-          "Published meet schedules can change due to weigh-in changes, scratches, substitutions, or safety concerns. When things change, coaches may adjust pairings or mat order to keep the meet running smoothly.",
-          "If something looks incorrect, bring it to your coach or table staff. Coaches coordinate changes using locks to avoid conflicting edits, so the best path is to alert them rather than trying to fix it yourself [My Wrestlers].",
+          "Parents are expected to respond for their kids before the attendance deadline. After that deadline, coaches take over attendance cleanup and later meet-day changes [Attendance].",
+          "When a meet is published, parents are notified of bout numbers and opponents. That published plan is meant to be final because it also prepares the wall charts and scoring sheets [My Wrestlers].",
+          "If something looks incorrect on meet day, bring it to your coach or table staff. Do not expect the published schedule to keep changing in the app; later changes are handled by the meet staff [My Wrestlers].",
         ],
       },
       {
         title: "Working with coaches",
         paragraphs: [
-          "Coaches may share instructions for weigh-ins, check-in, or mat assignments. Use the help guide and the page labels to follow the workflow [Help].",
+          "Coaches may share instructions for attendance deadlines, weigh-ins, check-in, or mat assignments. Use the Attendance page before the deadline and ask your coach if you are unsure which action is expected [Attendance, Help].",
           "When the meet is active, avoid editing unless you have been promoted and asked to make changes. If you are promoted to table worker, focus on entering results accurately and quickly [Meets > Enter Results].",
         ],
       },

@@ -17,3 +17,6 @@ prisma/e2e.db
 backups/
 *.dump
 *.backup
+
+# local test fixtures
+testdata/

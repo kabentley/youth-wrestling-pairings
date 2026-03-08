@@ -5,6 +5,28 @@ import { requireAdmin } from "@/lib/rbac";
 
 export async function POST() {
   await requireAdmin();
-  await db.$transaction([db.meet.deleteMany(), db.wrestler.deleteMany()]);
+  await db.$transaction(async (tx) => {
+    const teams = await tx.team.findMany({
+      select: { headCoachId: true },
+    });
+    const headCoachIds = Array.from(new Set(
+      teams
+        .map((team) => team.headCoachId)
+        .filter((value): value is string => Boolean(value)),
+    ));
+
+    await tx.meet.deleteMany();
+    await tx.wrestler.deleteMany();
+
+    if (headCoachIds.length > 0) {
+      await tx.user.deleteMany({
+        where: {
+          id: { notIn: headCoachIds },
+        },
+      });
+    } else {
+      await tx.user.deleteMany();
+    }
+  });
   return NextResponse.json({ ok: true });
 }

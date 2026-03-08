@@ -3,8 +3,8 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
-import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
@@ -68,19 +68,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
 
   if (body.action === "CLEAR") {
     await db.meetWrestlerStatus.deleteMany({ where: { meetId } });
-    await db.meetWrestlerStatusHistory.createMany({
-      data: wrestlerIds.map(wrestlerId => ({
-        meetId,
-        wrestlerId,
-        status: "COMING",
-        changedById: user.id,
-      })),
-    });
-  await logMeetChange(
-    meetId,
-    user.id,
-    scopedTeamId ? `Set ${scopedTeamName} to all coming.` : "Set all to all coming."
-  );
+    await logMeetChange(
+      meetId,
+      user.id,
+      scopedTeamId ? `Set ${scopedTeamName} to all coming.` : "Set all to all coming."
+    );
     return NextResponse.json({ ok: true });
   }
 
@@ -96,15 +88,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       })),
     });
   }
-  await db.meetWrestlerStatusHistory.createMany({
-    data: wrestlerIds.map(wrestlerId => ({
-      meetId,
-      wrestlerId,
-      status,
-      changedById: user.id,
-    })),
-  });
-
   if (status === "NOT_COMING" && wrestlerIds.length > 0) {
     await deleteBoutsAndRenumber(db, meetId, {
       OR: [

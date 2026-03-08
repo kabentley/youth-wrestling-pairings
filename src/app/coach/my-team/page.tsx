@@ -78,6 +78,25 @@ type ParentImportRow = {
   kids: string[];
 };
 
+type ParentImportCreatedRow = {
+  rowNumber?: number;
+  username?: string;
+  name?: string | null;
+  email?: string | null;
+};
+
+type ParentImportSkippedRow = ParentImportCreatedRow & {
+  phone?: string | null;
+};
+
+type ParentImportResult = {
+  status: string;
+  username?: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 const LAST_NAME_MATCH_THRESHOLD = 0.82;
 const MIN_USERNAME_LEN = 6;
@@ -122,20 +141,15 @@ const splitFullName = (fullName: string) => {
 const downloadParentImportResults = (
   teamName: string,
   rows: ParentImportRow[],
-  resultsByRow: Map<number, {
-    status: string;
-    username?: string;
-    name?: string | null;
-    email?: string | null;
-    phone?: string | null;
-  }>,
+  resultsByRow: Map<number, ParentImportResult>,
   password: string,
 ) => {
-  const safeTeamSlug = teamName
+  const rawTeamSlug = teamName
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "team";
+    .replace(/^-+|-+$/g, "");
+  const resolvedTeamSlug = rawTeamSlug.length > 0 ? rawTeamSlug : "team";
   const stamp = new Date().toISOString().slice(0, 10);
   const csvRows = [
     ["Parent Name", "Username", "Password", "Kids", "Note"],
@@ -143,8 +157,8 @@ const downloadParentImportResults = (
       const result = resultsByRow.get(row.rowNumber) ?? { status: "Created" };
       const isExisting = result.status === "Existing account";
       return [
-        result.name?.trim() || `${row.firstName} ${row.lastName}`.trim(),
-        result.username?.trim() || row.username.trim(),
+        result.name?.trim() ?? `${row.firstName} ${row.lastName}`.trim(),
+        result.username?.trim() ?? row.username.trim(),
         isExisting ? "" : password,
         row.kids.join("; "),
         isExisting ? "Existing account" : "",
@@ -158,7 +172,7 @@ const downloadParentImportResults = (
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${safeTeamSlug}_parent_credentials_${stamp}.csv`;
+  link.download = `${resolvedTeamSlug}_parent_credentials_${stamp}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -999,7 +1013,7 @@ export default function CoachMyTeamPage() {
     setEditUserFirstName(split.firstName);
     setEditUserLastName(split.lastName);
     setEditUserUsername(member.username);
-    setEditUserEmail(member.email ?? "");
+    setEditUserEmail(member.email);
     setEditUserPhone(member.phone ?? "");
     setEditUserPassword("");
     setEditUserModalMember(member);
@@ -1470,26 +1484,14 @@ export default function CoachMyTeamPage() {
       const createdCount = typeof data?.createdCount === "number" ? data.createdCount : importUsersRows.length;
       const skippedCount = typeof data?.skippedCount === "number" ? data.skippedCount : 0;
       const adjustedUsernameCount = typeof data?.adjustedUsernameCount === "number" ? data.adjustedUsernameCount : 0;
-      const createdRows = Array.isArray(data?.created)
-        ? data.created.filter((value: unknown): value is { rowNumber?: number; username?: string; name?: string | null; email?: string | null } => typeof value === "object" && value !== null)
+      const createdRows: ParentImportCreatedRow[] = Array.isArray(data?.created)
+        ? data.created.filter((value: unknown): value is ParentImportCreatedRow => typeof value === "object" && value !== null)
         : [];
-      const skippedRows = Array.isArray(data?.skipped)
-        ? data.skipped.filter((value: unknown): value is {
-          rowNumber?: number;
-          username?: string;
-          name?: string | null;
-          email?: string | null;
-          phone?: string | null;
-        } => typeof value === "object" && value !== null)
+      const skippedRows: ParentImportSkippedRow[] = Array.isArray(data?.skipped)
+        ? data.skipped.filter((value: unknown): value is ParentImportSkippedRow => typeof value === "object" && value !== null)
         : [];
-      const resultsByRow = new Map<number, {
-        status: string;
-        username?: string;
-        name?: string | null;
-        email?: string | null;
-        phone?: string | null;
-      }>();
-      createdRows.forEach((row) => {
+      const resultsByRow = new Map<number, ParentImportResult>();
+      createdRows.forEach((row: ParentImportCreatedRow) => {
         if (typeof row.rowNumber !== "number") return;
         resultsByRow.set(row.rowNumber, {
           status: "Created",
@@ -1498,7 +1500,7 @@ export default function CoachMyTeamPage() {
           email: row.email,
         });
       });
-      skippedRows.forEach((row) => {
+      skippedRows.forEach((row: ParentImportSkippedRow) => {
         if (typeof row.rowNumber !== "number") return;
         resultsByRow.set(row.rowNumber, {
           status: "Existing account",
@@ -2551,7 +2553,7 @@ export default function CoachMyTeamPage() {
         </div>
       )}
       {importUsersModalOpen && canEditRoles && (
-        <div className="coach-modal-backdrop" onClick={closeImportUsersModal}>
+        <div className="coach-modal-backdrop" onClick={() => closeImportUsersModal()}>
           <div className="coach-modal coach-import-users-modal" onClick={(event) => event.stopPropagation()}>
             <h4>Import parent accounts for {teamName}{teamSymbol ? ` (${teamSymbol})` : ""}</h4>
             <div className="coach-import-users-body">
@@ -2655,7 +2657,7 @@ export default function CoachMyTeamPage() {
               <button
                 type="button"
                 className="coach-btn-secondary"
-                onClick={closeImportUsersModal}
+                onClick={() => closeImportUsersModal()}
                 disabled={importingUsers}
               >
                 Cancel
@@ -2672,7 +2674,7 @@ export default function CoachMyTeamPage() {
           </div>
         </div>
       )}
-      {missingParentsModalOpen && (canEditRoles || role === "ADMIN") && (
+      {missingParentsModalOpen && canEditRoles && (
         <div className="coach-modal-backdrop" onClick={() => setMissingParentsModalOpen(false)}>
           <div className="coach-modal coach-missing-parents-modal" onClick={(event) => event.stopPropagation()}>
             <h4>Wrestlers without a parent account</h4>

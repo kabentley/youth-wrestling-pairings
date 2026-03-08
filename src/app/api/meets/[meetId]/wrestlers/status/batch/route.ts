@@ -3,8 +3,8 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
-import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
@@ -82,12 +82,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   await db.$transaction(async tx => {
     const changedAt = new Date();
     const attribution = buildMeetStatusAttribution(user, "COACH", changedAt);
-    const historyEntries = changes.map(change => ({
-      meetId,
-      wrestlerId: change.wrestlerId,
-      status: change.status ?? "NO_REPLY",
-      changedById: user.id,
-    }));
 
     for (const change of changes) {
       if (change.status === null) {
@@ -102,10 +96,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
         });
       }
     }
-
-    await tx.meetWrestlerStatusHistory.createMany({
-      data: historyEntries,
-    });
 
     const explicitNonAttending = changes
       .filter((change) => change.status === null || change.status === "NOT_COMING")

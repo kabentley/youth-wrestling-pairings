@@ -174,15 +174,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       })
     )));
 
-    await tx.meetWrestlerStatusHistory.createMany({
-      data: changes.map((change) => ({
-        meetId,
-        wrestlerId: change.wrestlerId,
-        status: change.absent ? "ABSENT" : "COMING",
-        changedById: user.id,
-      })),
-    });
-
     const deleted = scratchIds.length > 0
       ? await deleteBoutsAndRenumber(tx, meetId, {
           OR: [

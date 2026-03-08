@@ -78,7 +78,6 @@ model Wrestler {
 
   createdAt       DateTime @default(now())
   meetStatuses    MeetWrestlerStatus[]
-  meetStatusHistory MeetWrestlerStatusHistory[] @relation("WrestlerStatusHistory")
   parentLinks     UserChild[]
   wonBouts        Bout[]   @relation("BoutWinner")
   rejectedPairsAsA MeetRejectedPair[] @relation("MeetRejectedPairA")
@@ -124,7 +123,6 @@ model Meet {
   meetChanges MeetChange[]
   meetComments MeetComment[]
   rejectedPairs MeetRejectedPair[]
-  meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusHistory")
   checkpoints MeetCheckpoint[]
   lockAccesses MeetLockAccess[]
 }
@@ -164,23 +162,6 @@ model MeetWrestlerStatus {
   @@unique([meetId, wrestlerId])
   @@index([meetId])
   @@index([wrestlerId])
-}
-
-model MeetWrestlerStatusHistory {
-  id         String   @id @default(cuid())
-  meetId     String
-  wrestlerId String
-  status     String
-  changedById String
-  createdAt  DateTime @default(now())
-
-  meet     Meet     @relation("MeetStatusHistory", fields: [meetId], references: [id], onDelete: Cascade)
-  wrestler Wrestler @relation("WrestlerStatusHistory", fields: [wrestlerId], references: [id], onDelete: Cascade)
-  changedBy User    @relation("MeetStatusChangedBy", fields: [changedById], references: [id], onDelete: Cascade)
-
-  @@index([meetId])
-  @@index([wrestlerId])
-  @@index([changedById])
 }
 
 model MeetChange {
@@ -336,7 +317,6 @@ model User {
   meetChanges   MeetChange[] @relation("MeetChangeActor")
   meetComments  MeetComment[] @relation("MeetCommentAuthor")
   rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
-  meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   completedTeamCheckins MeetTeam[] @relation("MeetTeamCheckinCompletedBy")
   children      UserChild[]

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/rbac";
+import { requireAdmin, requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).optional(),

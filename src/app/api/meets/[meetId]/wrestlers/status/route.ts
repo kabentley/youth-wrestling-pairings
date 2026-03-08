@@ -50,15 +50,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     });
   }
 
-  await db.meetWrestlerStatusHistory.create({
-    data: {
-      meetId,
-      wrestlerId: body.wrestlerId,
-      status: body.status ?? "NO_REPLY",
-      changedById: user.id,
-    },
-  });
-
   const nonAttendingStatuses = new Set(["NOT_COMING"]);
   if (body.status === null || nonAttendingStatuses.has(body.status)) {
     await deleteBoutsAndRenumber(db, meetId, {

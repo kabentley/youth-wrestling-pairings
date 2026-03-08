@@ -16,7 +16,6 @@ import {
 } from "@/lib/meetPhase";
 import { buildReadyForCheckinChecklist } from "@/lib/meetReadyForCheckin";
 import { requireRole } from "@/lib/rbac";
-import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
 const PatchSchema = z.object({
   name: z.string().min(2).optional(),
@@ -429,14 +428,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
             lastChangedAt: entry.lastChangedAt ? new Date(entry.lastChangedAt) : null,
           })),
         });
-        await tx.meetWrestlerStatusHistory.createMany({
-          data: attendanceWithStatus.map((entry) => ({
-            meetId,
-            wrestlerId: entry.wrestlerId,
-            status: entry.status,
-            changedById: user.id,
-          })),
-        });
       }
 
       await tx.bout.deleteMany({ where: { meetId } });
@@ -488,6 +479,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
         updatedBy: { select: { username: true } },
       },
     });
+
+    if (currentStatus === "READY_FOR_CHECKIN" && nextStatus === "PUBLISHED") {
+      await tx.meetCheckpoint.deleteMany({
+        where: { meetId },
+      });
+    }
 
     if (shouldCreateCheckpoint && !closingAttendance) {
       const payload = await buildMeetCheckpointPayload(meetId, autoCheckpointName, tx);

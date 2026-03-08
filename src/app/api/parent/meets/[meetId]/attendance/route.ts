@@ -80,15 +80,6 @@ export async function PATCH(
     });
   }
 
-  await db.meetWrestlerStatusHistory.create({
-    data: {
-      meetId,
-      wrestlerId: body.wrestlerId,
-      status: body.status ?? "NO_REPLY",
-      changedById: userId,
-    },
-  });
-
   await logMeetChange(
     meetId,
     userId,

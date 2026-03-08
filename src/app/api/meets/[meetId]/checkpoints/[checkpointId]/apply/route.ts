@@ -182,17 +182,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
       });
     }
 
-    if (attendanceWithStatus.length > 0) {
-      await tx.meetWrestlerStatusHistory.createMany({
-        data: attendanceWithStatus.map(a => ({
-          meetId,
-          wrestlerId: a.wrestlerId,
-          status: a.status,
-          changedById: user.id,
-        })),
-      });
-    }
-
     await tx.bout.deleteMany({ where: { meetId } });
     if (bouts.length > 0) {
       await tx.bout.createMany({
