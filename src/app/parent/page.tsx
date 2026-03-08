@@ -385,6 +385,7 @@ export default function ParentPage() {
     { href: "/", label: "Home" },
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
+    { href: "/parent/today", label: "Today", roles: ["PARENT"] as const },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     // Current page
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
@@ -625,9 +626,6 @@ export default function ParentPage() {
       <AppHeader links={headerLinks} />
 
       <h2>{dashboardTitle}</h2>
-      <div style={{ margin: "8px 0 16px" }}>
-        <Link href="/parent/attendance" className="attendance-link">Attendance</Link>
-      </div>
 
       {children.length === 0 && <div>No wrestlers linked yet.</div>}
       {children.length > 0 && (

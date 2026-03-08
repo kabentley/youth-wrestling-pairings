@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/rbac";
 const BodySchema = z.object({
   name: z.string().trim().max(80).optional(),
   email: z.string().trim().email().optional(),
+  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   teamId: z.string().trim().optional().or(z.literal("")),
 });
 
@@ -18,6 +19,7 @@ export async function GET() {
       username: true,
       name: true,
       email: true,
+      phone: true,
       role: true,
       teamId: true,
       team: { select: { name: true, symbol: true } },
@@ -29,6 +31,7 @@ export async function GET() {
     username: full.username,
     name: full.name,
     email: full.email,
+    phone: full.phone,
     role: full.role,
     teamId: full.teamId,
     team: teamLabel,
@@ -41,15 +44,18 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input." }, { status: 400 });
   }
-  const { name, email, teamId } = parsed.data;
+  const { name, email, phone, teamId } = parsed.data;
 
-  const data: { name?: string | null; email?: string; teamId?: string | null } = {};
+  const data: { name?: string | null; email?: string; phone?: string; teamId?: string | null } = {};
   if (name !== undefined) {
     const trimmed = name.trim();
     data.name = trimmed ? trimmed : null;
   }
   if (email) {
     data.email = email.trim().toLowerCase();
+  }
+  if (phone !== undefined) {
+    data.phone = phone.trim();
   }
   if (teamId !== undefined) {
     const nextTeamId = teamId.trim() || null;
@@ -70,7 +76,7 @@ export async function PATCH(req: Request) {
   const updated = await db.user.update({
     where: { id: user.id },
     data,
-    select: { username: true, email: true, role: true, teamId: true },
+    select: { username: true, email: true, phone: true, role: true, teamId: true },
   });
   return NextResponse.json(updated);
 }

@@ -34,6 +34,7 @@ export default function ParentMeetDetail({ params }: { params: Promise<{ meetId:
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/parent", label: "My Wrestlers" },
+    { href: "/parent/today", label: "Today", roles: ["PARENT"] as const },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];

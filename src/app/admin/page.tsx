@@ -6,6 +6,8 @@ import AdminTabs from "./AdminTabs";
 
 import { requireAdmin } from "@/lib/rbac";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type Props = {
   searchParams?: Promise<{ tab?: string } | undefined>;

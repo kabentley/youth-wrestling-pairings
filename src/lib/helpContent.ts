@@ -239,7 +239,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Use export to back up teams and rosters before major changes or at season end [Admin > Teams > Export Teams + Rosters]. Save the zip file somewhere safe.",
           "Use import to restore teams and rosters from a prior export or a league-provided file [Admin > Teams > Import Teams + Rosters]. Import clears existing rosters first, so confirm you have a backup before proceeding.",
           "Import and reset require typing a confirmation word. This is intentional because these actions are destructive and difficult to undo [Admin > Teams, Admin > League].",
-          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > League > Reset For New Year]. This permanently deletes all non-head-coach accounts too, so do it only after exporting what you want to keep.",
+          "Use the new year reset when you are ready to clear all meets and rosters for a fresh season [Admin > League > Reset For New Year]. This permanently deletes all accounts except admins and head coaches, so do it only after exporting what you want to keep.",
         ],
       },
       {

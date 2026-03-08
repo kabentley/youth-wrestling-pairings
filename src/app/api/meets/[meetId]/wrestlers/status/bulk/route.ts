@@ -20,11 +20,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const { user } = await requireRole("COACH");
   const meet = await db.meet.findUnique({
     where: { id: meetId },
-    select: { deletedAt: true, status: true },
+    select: {
+      deletedAt: true,
+      status: true,
+      homeTeam: { select: { headCoachId: true } },
+    },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
+  const isCoordinator = Boolean(meet.homeTeam?.headCoachId) && meet.homeTeam.headCoachId === user.id;
   const allowCoachWithoutLock =
     normalizeMeetPhase(meet.status) === "DRAFT" &&
     user.role === "COACH" &&
@@ -49,7 +54,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   });
   const teamIds = meetTeams.map(t => t.teamId);
   const scopedTeamId = body.teamId && teamIds.includes(body.teamId) ? body.teamId : null;
-  if (allowCoachWithoutLock && scopedTeamId !== user.teamId) {
+  if (allowCoachWithoutLock && !isCoordinator && scopedTeamId !== user.teamId) {
     return NextResponse.json(
       { error: "Coaches may only edit attendance for their own team during Draft." },
       { status: 403 },

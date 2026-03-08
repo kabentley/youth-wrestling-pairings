@@ -10,12 +10,13 @@ export default function AccountPage() {
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [nameMsg, setNameMsg] = useState("");
-  const [emailMsg, setEmailMsg] = useState("");
+  const [profileMsg, setProfileMsg] = useState("");
+  const [profileErr, setProfileErr] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
   const [passwordErr, setPasswordErr] = useState("");
   const [accountErr, setAccountErr] = useState("");
@@ -24,6 +25,7 @@ export default function AccountPage() {
     { href: "/rosters", label: "Rosters" },
     { href: "/meets", label: "Meets", minRole: "COACH" as const },
     { href: "/parent", label: "My Wrestlers" },
+    { href: "/parent/today", label: "Today", roles: ["PARENT"] as const },
     { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
     { href: "/account", label: "Account" },
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
@@ -38,6 +40,7 @@ export default function AccountPage() {
         setUsername(String(json.username ?? ""));
         setName(String(json.name ?? ""));
         setEmail(String(json.email ?? ""));
+        setPhone(String(json.phone ?? ""));
       })
       .catch(() => {
         if (!active) return;
@@ -46,34 +49,20 @@ export default function AccountPage() {
     return () => { active = false; };
   }, []);
 
-  async function saveEmail() {
-    setEmailMsg("");
+  async function saveProfile() {
+    setProfileMsg("");
+    setProfileErr("");
     const res = await fetch("/api/account", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ name, email, phone }),
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      setEmailMsg(json?.error ?? "Unable to update email.");
+      setProfileErr(json?.error ?? "Unable to update account.");
       return;
     }
-    setEmailMsg("Email updated.");
-  }
-
-  async function saveName() {
-    setNameMsg("");
-    const res = await fetch("/api/account", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      setNameMsg(json?.error ?? "Unable to update name.");
-      return;
-    }
-    setNameMsg("Name updated.");
+    setProfileMsg("Account updated.");
   }
 
   async function updatePassword() {
@@ -134,31 +123,30 @@ export default function AccountPage() {
         </div>
 
         <div className="account-card">
-          <h3>Name</h3>
-          <div className="account-row">
+          <h3>Profile</h3>
+          <div className="account-grid">
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Full name"
             />
-            <button className="account-btn" onClick={saveName}>Save Name</button>
-          </div>
-          {nameMsg && <div className="account-muted">{nameMsg}</div>}
-        </div>
-
-        <div className="account-card">
-          <h3>Email</h3>
-          <div className="account-row">
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email address"
             />
-            <button className="account-btn" onClick={saveEmail}>Save Email</button>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone number"
+            />
           </div>
-          {emailMsg && <div className="account-muted">{emailMsg}</div>}
+          <button className="account-btn" style={{ marginTop: 12 }} onClick={saveProfile}>Update</button>
+          {profileErr && <div className="account-error">{profileErr}</div>}
+          {profileMsg && <div className="account-muted">{profileMsg}</div>}
         </div>
 
         <div className="account-card">

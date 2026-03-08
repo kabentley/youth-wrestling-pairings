@@ -7,10 +7,17 @@ import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireSession } from "@/lib/rbac";
 
-const BodySchema = z.object({
+const UpdateSchema = z.object({
   wrestlerId: z.string().min(1),
   status: z.enum(["COMING", "NOT_COMING"]).nullable(),
 });
+
+const BodySchema = z.union([
+  UpdateSchema,
+  z.object({
+    updates: z.array(UpdateSchema).min(1),
+  }),
+]);
 
 export async function PATCH(
   req: Request,
@@ -19,12 +26,14 @@ export async function PATCH(
   const { meetId } = await params;
   const { userId, user } = await requireSession();
   const body = BodySchema.parse(await req.json());
+  const updates = "updates" in body ? body.updates : [body];
+  const wrestlerIds = Array.from(new Set(updates.map((entry) => entry.wrestlerId)));
 
-  const [link, meet, wrestler] = await Promise.all([
-    db.userChild.findFirst({
+  const [links, meet, wrestlers] = await Promise.all([
+    db.userChild.findMany({
       where: {
         userId,
-        wrestlerId: body.wrestlerId,
+        wrestlerId: { in: wrestlerIds },
       },
       select: { wrestlerId: true },
     }),
@@ -37,14 +46,14 @@ export async function PATCH(
         attendanceDeadline: true,
       },
     }),
-    db.wrestler.findUnique({
-      where: { id: body.wrestlerId },
+    db.wrestler.findMany({
+      where: { id: { in: wrestlerIds } },
       select: { id: true, first: true, last: true, teamId: true },
     }),
   ]);
 
-  if (!link) {
-    return NextResponse.json({ error: "That wrestler is not linked to your account." }, { status: 403 });
+  if (links.length !== wrestlerIds.length) {
+    return NextResponse.json({ error: "One or more wrestlers are not linked to your account." }, { status: 403 });
   }
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
@@ -55,36 +64,42 @@ export async function PATCH(
   if (meet.attendanceDeadline && new Date() > meet.attendanceDeadline) {
     return NextResponse.json({ error: "The attendance deadline has passed." }, { status: 400 });
   }
-  if (!wrestler) {
-    return NextResponse.json({ error: "Wrestler not found." }, { status: 404 });
+  if (wrestlers.length !== wrestlerIds.length) {
+    return NextResponse.json({ error: "One or more wrestlers were not found." }, { status: 404 });
   }
 
-  const inMeet = await db.meetTeam.findFirst({
-    where: { meetId, teamId: wrestler.teamId },
+  const meetTeams = await db.meetTeam.findMany({
+    where: { meetId },
     select: { teamId: true },
   });
-  if (!inMeet) {
-    return NextResponse.json({ error: "Wrestler is not in this meet." }, { status: 400 });
+  const meetTeamIds = new Set(meetTeams.map((entry) => entry.teamId));
+  if (wrestlers.some((wrestler) => !meetTeamIds.has(wrestler.teamId))) {
+    return NextResponse.json({ error: "One or more wrestlers are not in this meet." }, { status: 400 });
   }
 
-  if (body.status === null) {
-    await db.meetWrestlerStatus.deleteMany({
-      where: { meetId, wrestlerId: body.wrestlerId },
-    });
-  } else {
-    const attribution = buildMeetStatusAttribution(user, "PARENT");
-    await db.meetWrestlerStatus.upsert({
-      where: { meetId_wrestlerId: { meetId, wrestlerId: body.wrestlerId } },
-      update: { status: body.status, ...attribution },
-      create: { meetId, wrestlerId: body.wrestlerId, status: body.status, ...attribution },
-    });
-  }
+  const wrestlerMap = new Map(wrestlers.map((wrestler) => [wrestler.id, wrestler]));
+  for (const update of updates) {
+    const wrestler = wrestlerMap.get(update.wrestlerId);
+    if (!wrestler) continue;
+    if (update.status === null) {
+      await db.meetWrestlerStatus.deleteMany({
+        where: { meetId, wrestlerId: update.wrestlerId },
+      });
+    } else {
+      const attribution = buildMeetStatusAttribution(user, "PARENT");
+      await db.meetWrestlerStatus.upsert({
+        where: { meetId_wrestlerId: { meetId, wrestlerId: update.wrestlerId } },
+        update: { status: update.status, ...attribution },
+        create: { meetId, wrestlerId: update.wrestlerId, status: update.status, ...attribution },
+      });
+    }
 
-  await logMeetChange(
-    meetId,
-    userId,
-    `Parent attendance: ${wrestler.first} ${wrestler.last} -> ${body.status === null ? "no reply" : body.status.replace(/_/g, " ").toLowerCase()}.`,
-  );
+    await logMeetChange(
+      meetId,
+      userId,
+      `Parent attendance: ${wrestler.first} ${wrestler.last} -> ${update.status === null ? "no reply" : update.status.replace(/_/g, " ").toLowerCase()}.`,
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }

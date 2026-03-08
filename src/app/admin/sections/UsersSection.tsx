@@ -515,6 +515,13 @@ export default function UsersSection() {
                 setQuery(next);
                 if (page !== 1) setPage(1);
               }}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                if (query.length === 0) return;
+                e.preventDefault();
+                setQuery("");
+                if (page !== 1) setPage(1);
+              }}
             />
             <select
               value={teamFilter}

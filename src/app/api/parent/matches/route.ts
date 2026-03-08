@@ -15,27 +15,53 @@ function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
 export async function GET() {
   const { userId } = await requireSession();
 
-  const children = await db.userChild.findMany({
-    where: { userId },
-    select: {
-      wrestler: {
-        select: {
-          id: true,
-          guid: true,
-          first: true,
-          last: true,
-          teamId: true,
-          birthdate: true,
-          weight: true,
-          experienceYears: true,
-          team: { select: { name: true, symbol: true, color: true } },
+  const [currentUser, children] = await Promise.all([
+    db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        role: true,
+        teamId: true,
+        staffMatNumber: true,
+      },
+    }),
+    db.userChild.findMany({
+      where: { userId },
+      select: {
+        wrestler: {
+          select: {
+            id: true,
+            guid: true,
+            first: true,
+            last: true,
+            teamId: true,
+            birthdate: true,
+            weight: true,
+            experienceYears: true,
+            team: { select: { name: true, symbol: true, color: true } },
+          },
         },
       },
-    },
-  });
+    }),
+  ]);
 
   if (children.length === 0) {
-    return NextResponse.json({ children: [], meets: [] });
+    return NextResponse.json({
+      currentUser: currentUser
+        ? {
+          id: currentUser.id,
+          name: currentUser.name,
+          username: currentUser.username,
+          role: currentUser.role,
+          teamId: currentUser.teamId,
+          staffMatNumber: currentUser.staffMatNumber ?? null,
+        }
+        : null,
+      children: [],
+      meets: [],
+    });
   }
 
   const childIds = children.map((c) => c.wrestler.id);
@@ -66,6 +92,8 @@ export async function GET() {
             location: true,
             status: true,
             attendanceDeadline: true,
+            homeTeamId: true,
+            numMats: true,
           },
         },
       },
@@ -88,6 +116,8 @@ export async function GET() {
         location: true,
         status: true,
         attendanceDeadline: true,
+        homeTeamId: true,
+        numMats: true,
         meetTeams: { select: { teamId: true } },
       },
       orderBy: [{ date: "asc" }],
@@ -133,6 +163,8 @@ export async function GET() {
       location: string | null;
       status: string | null;
       attendanceDeadline: Date | null;
+      homeTeamId: string | null;
+      numMats: number;
     };
     matches: Array<Record<string, unknown>>;
     children: Array<{
@@ -217,6 +249,16 @@ export async function GET() {
   const meets = Array.from(meetMap.values()).sort((a, b) => a.meet.date.getTime() - b.meet.date.getTime());
 
   return NextResponse.json({
+    currentUser: currentUser
+      ? {
+        id: currentUser.id,
+        name: currentUser.name,
+        username: currentUser.username,
+        role: currentUser.role,
+        teamId: currentUser.teamId,
+        staffMatNumber: currentUser.staffMatNumber ?? null,
+      }
+      : null,
     children: children.map((c) => ({
       id: c.wrestler.id,
       guid: c.wrestler.guid,
@@ -238,6 +280,8 @@ export async function GET() {
         location: entry.meet.location,
         status: normalizeMeetPhase(entry.meet.status),
         attendanceDeadline: entry.meet.attendanceDeadline,
+        homeTeamId: entry.meet.homeTeamId,
+        numMats: entry.meet.numMats,
       },
       matches: entry.matches,
       children: entry.children.length > 0

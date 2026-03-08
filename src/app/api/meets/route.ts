@@ -185,10 +185,10 @@ export async function POST(req: Request) {
     where: { id: homeTeamId },
     select: { headCoachId: true },
   });
-  if (!homeTeam?.headCoachId || homeTeam.headCoachId !== user.id) {
+  if (user.role !== "ADMIN" && (!homeTeam?.headCoachId || homeTeam.headCoachId !== user.id)) {
     return NextResponse.json({ error: "Only the home team head coach can create a meet." }, { status: 403 });
   }
-  const coordinatorId = homeTeam.headCoachId;
+  const coordinatorId = homeTeam?.headCoachId ?? null;
 
   const now = new Date();
   const meetTeams = await db.team.findMany({

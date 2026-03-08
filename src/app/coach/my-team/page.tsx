@@ -2563,6 +2563,17 @@ export default function CoachMyTeamPage() {
                 Username, email, and phone are optional. If username is blank, one will be generated automatically.
                 All imported accounts are created as parents and must reset their password at first sign-in.
               </p>
+              <details>
+                <summary>Example CSV</summary>
+                <p className="coach-import-users-note" style={{ marginTop: 8 }}>
+                  Use either a single `Kids` column with semicolon-separated names, or separate columns such as `Kid 1`, `Kid 2`.
+                </p>
+                <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>{`First Name,Last Name,Username,Email,Phone,Kids,Kid 1,Kid 2
+Sarah,Jones,sjones,sarah@example.com,555-111-2222,"Mason Jones;Ella Jones",,
+Michael,Brown,,,555-333-4444,,Noah Brown,Olivia Brown
+Ashley,Smith,asmith,ashley@example.com,,Logan Smith,,
+`}</pre>
+              </details>
               <div className="coach-import-users-grid">
                 <label className="coach-import-users-field">
                   <span>Parent file</span>

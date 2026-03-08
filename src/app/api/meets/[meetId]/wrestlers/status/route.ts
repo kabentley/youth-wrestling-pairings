@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
@@ -16,12 +17,30 @@ const BodySchema = z.object({
 export async function PATCH(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id, user.role);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      deletedAt: true,
+      status: true,
+      homeTeam: { select: { headCoachId: true } },
+    },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+  const isCoordinator = Boolean(meet.homeTeam?.headCoachId) && meet.homeTeam.headCoachId === user.id;
+  const allowCoachWithoutLock =
+    normalizeMeetPhase(meet.status) === "DRAFT" &&
+    user.role === "COACH" &&
+    Boolean(user.teamId);
+  if (!allowCoachWithoutLock) {
+    try {
+      await requireMeetLock(meetId, user.id, user.role);
+    } catch (err) {
+      const lockError = getMeetLockError(err);
+      if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+      throw err;
+    }
   }
 
   const body = BodySchema.parse(await req.json());
@@ -37,6 +56,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     select: { teamId: true },
   });
   if (!inMeet) return NextResponse.json({ error: "Wrestler not in this meet" }, { status: 400 });
+  if (allowCoachWithoutLock && !isCoordinator && wrestler.teamId !== user.teamId) {
+    return NextResponse.json(
+      { error: "Coaches may only edit attendance for their own team during Draft." },
+      { status: 403 },
+    );
+  }
 
   if (body.status === null) {
     await db.meetWrestlerStatus.deleteMany({

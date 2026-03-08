@@ -18,15 +18,16 @@ export async function POST() {
     await tx.meet.deleteMany();
     await tx.wrestler.deleteMany();
 
-    if (headCoachIds.length > 0) {
-      await tx.user.deleteMany({
-        where: {
-          id: { notIn: headCoachIds },
+    await tx.user.deleteMany({
+      where: {
+        NOT: {
+          OR: [
+            { role: "ADMIN" },
+            ...(headCoachIds.length > 0 ? [{ id: { in: headCoachIds } }] : []),
+          ],
         },
-      });
-    } else {
-      await tx.user.deleteMany();
-    }
+      },
+    });
   });
   return NextResponse.json({ ok: true });
 }

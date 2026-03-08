@@ -299,9 +299,13 @@ export default function MeetsPage() {
   }, [date, attendanceDeadlineDirty]);
 
   async function addMeet() {
-    const normalizedTeamIds = currentTeamId && !teamIds.includes(currentTeamId)
-      ? [currentTeamId, ...teamIds]
-      : teamIds;
+    const normalizedTeamIds = Array.from(
+      new Set([
+        ...(currentTeamId ? [currentTeamId] : []),
+        ...(homeTeamId ? [homeTeamId] : []),
+        ...teamIds,
+      ]),
+    );
     const res = await fetch("/api/meets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -481,17 +485,26 @@ export default function MeetsPage() {
   const otherTeams = currentTeamId
     ? teamsBySymbol.filter(t => t.id !== currentTeamId)
     : teamsBySymbol;
-  const otherTeamIds = currentTeamId
-    ? teamIds.filter(id => id !== currentTeamId)
-    : teamIds;
+  const selectedMeetTeamIds = Array.from(
+    new Set([
+      ...(currentTeamId ? [currentTeamId] : []),
+      ...(homeTeamId ? [homeTeamId] : []),
+      ...teamIds,
+    ]),
+  );
+  const otherTeamIds = homeTeamId
+    ? selectedMeetTeamIds.filter(id => id !== homeTeamId)
+    : selectedMeetTeamIds;
   const canManageMeets = role === "COACH" || role === "ADMIN";
   const canCreateMeets = Boolean(
-    currentTeamId &&
-    sessionUserId &&
-    teams.find((team) => team.id === currentTeamId)?.headCoachId === sessionUserId,
+    role === "ADMIN" || (
+      currentTeamId &&
+      sessionUserId &&
+      teams.find((team) => team.id === currentTeamId)?.headCoachId === sessionUserId
+    ),
   );
   const isTableWorker = role === "TABLE_WORKER";
-  const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
+  const selectedTeam = teams.find(t => t.id === (homeTeamId ?? currentTeamId)) ?? null;
   const headerTeamName = selectedTeam?.name ?? "Your Team";
   const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Home Meet For ${headerTeamName}`;
   const submitLabel = isEditing ? "Save Changes" : "Create Meet";

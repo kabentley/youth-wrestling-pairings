@@ -4197,7 +4197,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn={meetStatus !== "DRAFT"}
               showStatusAttribution={meetStatus === "ATTENDANCE"}
-              editableTeamId={canDraftCoachEditAttendanceWithoutLock ? currentUserTeamId : null}
+              editableTeamId={
+                canDraftCoachEditAttendanceWithoutLock && !isMeetCoordinator
+                  ? currentUserTeamId
+                  : null
+              }
               lockRequired={!canDraftCoachEditAttendanceWithoutLock}
               readOnly={meetStatus === "ATTENDANCE" || !canEditAttendance}
               onEnsureLock={ensureMeetLock}
