@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/rbac";
+import { requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).optional(),
@@ -129,12 +129,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user } = await requireAdmin();
+  const { user } = await requireRole("COACH");
   if (user.id === id) {
-    return NextResponse.json({ error: "Admins cannot delete themselves" }, { status: 400 });
+    return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
   }
-  const target = await db.user.findUnique({ where: { id }, select: { id: true, role: true } });
+  const target = await db.user.findUnique({
+    where: { id },
+    select: { id: true, role: true, teamId: true },
+  });
   if (!target) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (user.role !== "ADMIN") {
+    if (!user.teamId || !target.teamId || target.teamId !== user.teamId) {
+      return NextResponse.json({ error: "You may only delete users on your own team." }, { status: 403 });
+    }
+    if (target.role === "ADMIN") {
+      return NextResponse.json({ error: "Only admins can delete admin accounts." }, { status: 403 });
+    }
+    const team = await db.team.findUnique({
+      where: { id: user.teamId },
+      select: { headCoachId: true },
+    });
+    if (!team?.headCoachId || team.headCoachId !== user.id) {
+      return NextResponse.json({ error: "Only the head coach can delete team users." }, { status: 403 });
+    }
+  }
   if (target.role === "ADMIN") {
     const adminCount = await db.user.count({ where: { role: "ADMIN" } });
     if (adminCount <= 1) {

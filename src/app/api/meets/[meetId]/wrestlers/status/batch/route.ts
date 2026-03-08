@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
@@ -20,12 +21,25 @@ const BodySchema = z.object({
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id, user.role);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: { deletedAt: true, status: true },
+  });
+  if (!meet || meet.deletedAt) {
+    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  }
+  const allowCoachWithoutLock =
+    normalizeMeetPhase(meet.status) === "DRAFT" &&
+    user.role === "COACH" &&
+    Boolean(user.teamId);
+  if (!allowCoachWithoutLock) {
+    try {
+      await requireMeetLock(meetId, user.id, user.role);
+    } catch (err) {
+      const lockError = getMeetLockError(err);
+      if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+      throw err;
+    }
   }
 
   const body = BodySchema.parse(await req.json());
@@ -53,6 +67,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   for (const wrestler of wrestlers) {
     if (!meetTeamIds.has(wrestler.teamId)) {
       return NextResponse.json({ error: "Wrestler not in this meet" }, { status: 400 });
+    }
+  }
+  if (allowCoachWithoutLock) {
+    const unauthorizedWrestler = wrestlers.find((wrestler) => wrestler.teamId !== user.teamId);
+    if (unauthorizedWrestler) {
+      return NextResponse.json(
+        { error: "Coaches may only edit attendance for their own team during Draft." },
+        { status: 403 },
+      );
     }
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
 import ColorPicker from "@/components/ColorPicker";
@@ -67,6 +68,15 @@ type TeamMember = {
 
 type UserRole = "PARENT" | "COACH" | "TABLE_WORKER" | "ADMIN";
 type TeamWrestler = { id: string; first: string; last: string };
+type ParentImportRow = {
+  rowNumber: number;
+  firstName: string;
+  lastName: string;
+  username: string;
+  email: string;
+  phone: string;
+  kids: string[];
+};
 
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 const LAST_NAME_MATCH_THRESHOLD = 0.82;
@@ -75,11 +85,84 @@ const MAX_USERNAME_LEN = 32;
 
 const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
 const normalizeUsernameToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalizeImportKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalizeImportCellValue = (value: unknown) => (value == null ? "" : String(value).trim());
+const splitImportKids = (value: string) =>
+  value
+    .split(/[;|\n]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+const csvEscape = (value: string) => {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, "\"\"")}"`;
+  }
+  return value;
+};
 const formatLastFirstName = (first?: string | null, last?: string | null) => {
   const firstName = (first ?? "").trim();
   const lastName = (last ?? "").trim();
   if (lastName && firstName) return `${lastName}, ${firstName}`;
   return lastName || firstName;
+};
+
+const splitFullName = (fullName: string) => {
+  const tokens = fullName.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) {
+    return {
+      firstName: tokens[0] ?? "",
+      lastName: "",
+    };
+  }
+  return {
+    firstName: tokens.slice(0, -1).join(" "),
+    lastName: tokens[tokens.length - 1] ?? "",
+  };
+};
+
+const downloadParentImportResults = (
+  teamName: string,
+  rows: ParentImportRow[],
+  resultsByRow: Map<number, {
+    status: string;
+    username?: string;
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  }>,
+  password: string,
+) => {
+  const safeTeamSlug = teamName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "team";
+  const stamp = new Date().toISOString().slice(0, 10);
+  const csvRows = [
+    ["Parent Name", "Username", "Password", "Kids", "Note"],
+    ...rows.map((row) => {
+      const result = resultsByRow.get(row.rowNumber) ?? { status: "Created" };
+      const isExisting = result.status === "Existing account";
+      return [
+        result.name?.trim() || `${row.firstName} ${row.lastName}`.trim(),
+        result.username?.trim() || row.username.trim(),
+        isExisting ? "" : password,
+        row.kids.join("; "),
+        isExisting ? "Existing account" : "",
+      ];
+    }),
+  ];
+  const csvContent = csvRows
+    .map((row) => row.map((value) => csvEscape(value)).join(","))
+    .join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeTeamSlug}_parent_credentials_${stamp}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
 
 const buildGeneratedUsernameBase = (firstName: string, lastName: string) => {
@@ -239,6 +322,7 @@ export default function CoachMyTeamPage() {
   const [savingMat, setSavingMat] = useState(false);
   const [savingParent, setSavingParent] = useState<Record<string, boolean>>({});
   const [savingAssignments, setSavingAssignments] = useState<Record<string, boolean>>({});
+  const [deletingMember, setDeletingMember] = useState<Record<string, boolean>>({});
   const [logoLoading, setLogoLoading] = useState(false);
   const [teams, setTeams] = useState<{ id: string; name: string; symbol?: string | null }[]>([]);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
@@ -262,15 +346,35 @@ export default function CoachMyTeamPage() {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"COACH" | "TABLE_WORKER" | "PARENT">("PARENT");
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
+  const [importUsersModalOpen, setImportUsersModalOpen] = useState(false);
+  const [missingParentsModalOpen, setMissingParentsModalOpen] = useState(false);
+  const [editUserModalMember, setEditUserModalMember] = useState<TeamMember | null>(null);
+  const [deleteUserModalMember, setDeleteUserModalMember] = useState<TeamMember | null>(null);
   const [newUserUsernameEdited, setNewUserUsernameEdited] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
+  const [importingUsers, setImportingUsers] = useState(false);
+  const [importUsersFile, setImportUsersFile] = useState<File | null>(null);
+  const [importUsersRows, setImportUsersRows] = useState<ParentImportRow[]>([]);
+  const [importUsersPreviewRows, setImportUsersPreviewRows] = useState<ParentImportRow[]>([]);
+  const [importUsersPassword, setImportUsersPassword] = useState("");
+  const [importUsersMessage, setImportUsersMessage] = useState<string | null>(null);
+  const [importUsersMessageStatus, setImportUsersMessageStatus] = useState<"success" | "error" | null>(null);
+  const [importUsersRowErrors, setImportUsersRowErrors] = useState<string[]>([]);
   const [savingMeetDefaults, setSavingMeetDefaults] = useState(false);
+  const [savingEditedUser, setSavingEditedUser] = useState(false);
+  const [resettingEditedUserPassword, setResettingEditedUserPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "mat" | "meet" | "parents">("parents");
   const [wrestlerPickerMemberId, setWrestlerPickerMemberId] = useState<string | null>(null);
   const [wrestlerPickerSelection, setWrestlerPickerSelection] = useState<string[]>([]);
   const [matListboxMemberId, setMatListboxMemberId] = useState<string | null>(null);
   const [matListboxDirection, setMatListboxDirection] = useState<"down" | "up">("down");
   const [matListboxPosition, setMatListboxPosition] = useState({ top: 0, left: 0, width: 112 });
+  const [editUserFirstName, setEditUserFirstName] = useState("");
+  const [editUserLastName, setEditUserLastName] = useState("");
+  const [editUserUsername, setEditUserUsername] = useState("");
+  const [editUserEmail, setEditUserEmail] = useState("");
+  const [editUserPhone, setEditUserPhone] = useState("");
+  const [editUserPassword, setEditUserPassword] = useState("");
   const tabs = [
     { key: "parents", label: "Parents" },
     { key: "mat", label: "Mat Setup" },
@@ -388,17 +492,21 @@ export default function CoachMyTeamPage() {
   }, [defaultRestGap]);
 
   useEffect(() => {
-    if (!wrestlerPickerMemberId && !matListboxMemberId && !createUserModalOpen) return;
+    if (!wrestlerPickerMemberId && !matListboxMemberId && !createUserModalOpen && !importUsersModalOpen && !missingParentsModalOpen && !editUserModalMember && !deleteUserModalMember) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         closeWrestlerPicker();
         setMatListboxMemberId(null);
         setCreateUserModalOpen(false);
+        closeImportUsersModal(true);
+        setMissingParentsModalOpen(false);
+        setEditUserModalMember(null);
+        setDeleteUserModalMember(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [wrestlerPickerMemberId, matListboxMemberId, createUserModalOpen]);
+  }, [wrestlerPickerMemberId, matListboxMemberId, createUserModalOpen, importUsersModalOpen, missingParentsModalOpen, editUserModalMember, deleteUserModalMember]);
 
   useEffect(() => {
     if (!matListboxMemberId) return;
@@ -874,6 +982,40 @@ export default function CoachMyTeamPage() {
     setCreateUserModalOpen(false);
   };
 
+  const closeImportUsersModal = (force = false) => {
+    if (importingUsers && !force) return;
+    setImportUsersModalOpen(false);
+    setImportUsersFile(null);
+    setImportUsersRows([]);
+    setImportUsersPreviewRows([]);
+    setImportUsersPassword("");
+    setImportUsersMessage(null);
+    setImportUsersMessageStatus(null);
+    setImportUsersRowErrors([]);
+  };
+
+  const openEditUserModal = (member: TeamMember) => {
+    const split = splitFullName(member.name ?? "");
+    setEditUserFirstName(split.firstName);
+    setEditUserLastName(split.lastName);
+    setEditUserUsername(member.username);
+    setEditUserEmail(member.email ?? "");
+    setEditUserPhone(member.phone ?? "");
+    setEditUserPassword("");
+    setEditUserModalMember(member);
+  };
+
+  const closeEditUserModal = () => {
+    if (savingEditedUser) return;
+    setEditUserModalMember(null);
+    setEditUserFirstName("");
+    setEditUserLastName("");
+    setEditUserUsername("");
+    setEditUserEmail("");
+    setEditUserPhone("");
+    setEditUserPassword("");
+  };
+
   const isUsernameAvailable = async (candidate: string) => {
     const res = await fetch(`/api/auth/signup?username=${encodeURIComponent(candidate)}`, {
       method: "GET",
@@ -931,13 +1073,119 @@ export default function CoachMyTeamPage() {
     return () => clearTimeout(timer);
   }, [createUserModalOpen, newUserFirstName, newUserLastName, newUserUsernameEdited]);
 
-  const generateTempPassword = () => {
+  const buildTempPassword = () => {
     const digits = "0123456789";
     let next = "";
     for (let i = 0; i < 6; i += 1) {
       next += digits[Math.floor(Math.random() * digits.length)];
     }
-    setNewUserPassword(next);
+    return next;
+  };
+
+  const generateTempPassword = () => {
+    setNewUserPassword(buildTempPassword());
+  };
+
+  const generateImportPassword = () => {
+    setImportUsersPassword(buildTempPassword());
+  };
+  const generateEditUserPassword = () => {
+    setEditUserPassword(buildTempPassword());
+  };
+
+  const parseParentImportFile = async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) return [];
+    const sheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    return rawRows
+      .map((row, index) => {
+        const normalizedMap = Object.entries(row).reduce<Record<string, string>>((acc, [key, value]) => {
+          acc[normalizeImportKey(key)] = normalizeImportCellValue(value);
+          return acc;
+        }, {});
+        const get = (...keys: string[]) => {
+          for (const key of keys) {
+            const direct = normalizeImportCellValue(row[key]);
+            if (direct) return direct;
+            const normalized = normalizedMap[normalizeImportKey(key)];
+            if (normalized) return normalized;
+          }
+          return "";
+        };
+
+        let firstName = get("first", "first name", "firstname", "parent first", "guardian first");
+        let lastName = get("last", "last name", "lastname", "parent last", "guardian last");
+        if (!firstName || !lastName) {
+          const fullName = get("name", "full name", "parent name", "guardian name");
+          if (fullName) {
+            const split = splitFullName(fullName);
+            firstName ||= split.firstName;
+            lastName ||= split.lastName;
+          }
+        }
+        const username = get("username", "user name", "login", "user id");
+        const email = get("email", "e-mail", "mail");
+        const phone = get("phone", "mobile", "cell", "cell phone", "cellphone");
+        const kids = new Set<string>();
+        const combinedKids = get("kids", "kid names", "kid name", "children", "child names", "wrestlers", "wrestler names");
+        splitImportKids(combinedKids).forEach((kid) => kids.add(kid));
+        for (const [rawKey, rawValue] of Object.entries(row)) {
+          if (!rawValue) continue;
+          const normalizedKey = normalizeImportKey(rawKey);
+          if (/^(kid|child|wrestler)\d+$/.test(normalizedKey)) {
+            const normalizedValue = normalizeImportCellValue(rawValue);
+            if (normalizedValue) {
+              kids.add(normalizedValue);
+            }
+          }
+        }
+
+        if (![firstName, lastName, username, email, phone, ...kids].some(Boolean)) {
+          return null;
+        }
+
+        return {
+          rowNumber: index + 2,
+          firstName,
+          lastName,
+          username,
+          email,
+          phone,
+          kids: [...kids],
+        } satisfies ParentImportRow;
+      })
+      .filter((row): row is ParentImportRow => Boolean(row));
+  };
+
+  const chooseImportUsersFile = async (file: File | null) => {
+    setImportUsersFile(file);
+    setImportUsersRows([]);
+    setImportUsersPreviewRows([]);
+    setImportUsersMessage(null);
+    setImportUsersMessageStatus(null);
+    setImportUsersRowErrors([]);
+    if (!file) {
+      return;
+    }
+    try {
+      const parsedRows = await parseParentImportFile(file);
+      if (parsedRows.length === 0) {
+        setImportUsersMessage("No parent rows were found in that file.");
+        setImportUsersMessageStatus("error");
+        return;
+      }
+      setImportUsersRows(parsedRows);
+      setImportUsersPreviewRows(parsedRows.slice(0, 8));
+      setImportUsersMessage(`Loaded ${parsedRows.length} row${parsedRows.length === 1 ? "" : "s"} from ${file.name}.`);
+      setImportUsersMessageStatus("success");
+    } catch (error) {
+      console.error("Unable to parse parent import file", error);
+      setImportUsersMessage("Unable to read that file. Use CSV, XLS, or XLSX.");
+      setImportUsersMessageStatus("error");
+    }
   };
 
   const toggleWrestlerInPicker = (wrestlerId: string) => {
@@ -1168,9 +1416,273 @@ export default function CoachMyTeamPage() {
     }
   };
 
+  const importParentUsers = async () => {
+    if (!canEditRoles) {
+      setImportUsersMessage("Only the head coach or an admin can import parent accounts.");
+      setImportUsersMessageStatus("error");
+      return;
+    }
+    if (!teamId) return;
+    if (importUsersRows.length === 0) {
+      setImportUsersMessage("Choose a CSV, XLS, or XLSX file first.");
+      setImportUsersMessageStatus("error");
+      return;
+    }
+    if (!importUsersPassword.trim()) {
+      setImportUsersMessage("Enter the shared temporary password.");
+      setImportUsersMessageStatus("error");
+      return;
+    }
+
+    setImportingUsers(true);
+    setImportUsersMessage(null);
+    setImportUsersMessageStatus(null);
+    setImportUsersRowErrors([]);
+
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    try {
+      const importedRows = [...importUsersRows];
+      const sharedPassword = importUsersPassword.trim();
+      const res = await fetch(`/api/coach/parents/import${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: sharedPassword,
+          rows: importedRows,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const rowErrors = Array.isArray(data?.rowErrors)
+          ? data.rowErrors.filter((value: unknown): value is string => typeof value === "string")
+          : [];
+        setImportUsersRowErrors(rowErrors);
+        setImportUsersMessage(
+          typeof data?.error === "string"
+            ? data.error
+            : "Unable to import parent accounts.",
+        );
+        setImportUsersMessageStatus("error");
+        return;
+      }
+
+      await loadTeamRoles(teamId);
+      const createdCount = typeof data?.createdCount === "number" ? data.createdCount : importUsersRows.length;
+      const skippedCount = typeof data?.skippedCount === "number" ? data.skippedCount : 0;
+      const adjustedUsernameCount = typeof data?.adjustedUsernameCount === "number" ? data.adjustedUsernameCount : 0;
+      const createdRows = Array.isArray(data?.created)
+        ? data.created.filter((value: unknown): value is { rowNumber?: number; username?: string; name?: string | null; email?: string | null } => typeof value === "object" && value !== null)
+        : [];
+      const skippedRows = Array.isArray(data?.skipped)
+        ? data.skipped.filter((value: unknown): value is {
+          rowNumber?: number;
+          username?: string;
+          name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+        } => typeof value === "object" && value !== null)
+        : [];
+      const resultsByRow = new Map<number, {
+        status: string;
+        username?: string;
+        name?: string | null;
+        email?: string | null;
+        phone?: string | null;
+      }>();
+      createdRows.forEach((row) => {
+        if (typeof row.rowNumber !== "number") return;
+        resultsByRow.set(row.rowNumber, {
+          status: "Created",
+          username: row.username,
+          name: row.name,
+          email: row.email,
+        });
+      });
+      skippedRows.forEach((row) => {
+        if (typeof row.rowNumber !== "number") return;
+        resultsByRow.set(row.rowNumber, {
+          status: "Existing account",
+          username: row.username,
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+        });
+      });
+      downloadParentImportResults(teamName, importedRows, resultsByRow, sharedPassword);
+      closeImportUsersModal(true);
+      const summaryParts = [
+        `Imported ${createdCount} parent account${createdCount === 1 ? "" : "s"}`,
+      ];
+      if (skippedCount > 0) {
+        summaryParts.push(`skipped ${skippedCount} existing account${skippedCount === 1 ? "" : "s"}`);
+      }
+      if (adjustedUsernameCount > 0) {
+        summaryParts.push(`${adjustedUsernameCount} username${adjustedUsernameCount === 1 ? " was" : "s were"} adjusted to keep them unique`);
+      }
+      setRolesMessage(`${summaryParts.join(", ")}, and downloaded the username file.`);
+      setRolesMessageStatus("success");
+    } catch (error) {
+      console.error("Import parent users failed", error);
+      setImportUsersMessage("Unable to import parent accounts.");
+      setImportUsersMessageStatus("error");
+    } finally {
+      setImportingUsers(false);
+    }
+  };
+
+  const saveEditedUser = async () => {
+    const member = editUserModalMember;
+    if (!member || !teamId) return;
+    const firstName = editUserFirstName.trim();
+    const lastName = editUserLastName.trim();
+    const username = editUserUsername.trim();
+    if (!firstName || !lastName || !username) {
+      setRolesMessage("First name, last name, and username are required.");
+      setRolesMessageStatus("error");
+      return;
+    }
+
+    setSavingEditedUser(true);
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    try {
+      const res = await fetch(`/api/coach/parents/${member.id}${query}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `${firstName} ${lastName}`,
+          username,
+          email: editUserEmail,
+          phone: editUserPhone,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setRolesMessage(typeof data?.error === "string" ? data.error : "Unable to update team user.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      const updated = data?.updated;
+      if (!updated || typeof updated.id !== "string") {
+        setRolesMessage("Unable to update team user.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      const nextMember: TeamMember = {
+        id: updated.id,
+        username: typeof updated.username === "string" ? updated.username : username.toLowerCase(),
+        email: typeof updated.email === "string" ? updated.email : editUserEmail.trim().toLowerCase(),
+        phone: typeof updated.phone === "string" ? updated.phone : editUserPhone.trim(),
+        name: typeof updated.name === "string" ? updated.name : `${firstName} ${lastName}`,
+        role: updated.role === "COACH" || updated.role === "TABLE_WORKER" || updated.role === "PARENT"
+          ? updated.role
+          : member.role,
+        matNumber: typeof updated.matNumber === "number" ? updated.matNumber : member.matNumber,
+        wrestlerIds: Array.isArray(updated.wrestlerIds)
+          ? updated.wrestlerIds.filter((value: unknown): value is string => typeof value === "string")
+          : member.wrestlerIds,
+      };
+      setParents((prev) => prev.map((entry) => (entry.id === nextMember.id ? nextMember : entry)));
+      setStaff((prev) => sortStaff(prev.map((entry) => (entry.id === nextMember.id ? nextMember : entry)), headCoachId));
+      closeEditUserModal();
+      setRolesMessage("Team user updated.");
+      setRolesMessageStatus("success");
+    } catch (error) {
+      console.error("Edit team user failed", error);
+      setRolesMessage("Unable to update team user.");
+      setRolesMessageStatus("error");
+    } finally {
+      setSavingEditedUser(false);
+    }
+  };
+
+  const resetEditedUserPassword = async () => {
+    const member = editUserModalMember;
+    if (!member || !teamId) return;
+    const nextPassword = editUserPassword.trim();
+    if (!nextPassword) {
+      setRolesMessage("Enter a temporary password first.");
+      setRolesMessageStatus("error");
+      return;
+    }
+
+    setResettingEditedUserPassword(true);
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
+    const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    try {
+      const res = await fetch(`/api/coach/parents/${member.id}/password${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: nextPassword }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setRolesMessage(typeof data?.error === "string" ? data.error : "Unable to reset password.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      setRolesMessage("Temporary password set. The user will need to reset it at sign-in.");
+      setRolesMessageStatus("success");
+    } catch (error) {
+      console.error("Reset password failed", error);
+      setRolesMessage("Unable to reset password.");
+      setRolesMessageStatus("error");
+    } finally {
+      setResettingEditedUserPassword(false);
+    }
+  };
+
+  const deleteTeamUser = async (member: TeamMember) => {
+    if (!teamId) return;
+    if (member.id === currentUserId) {
+      setRolesMessage("You cannot delete your own account.");
+      setRolesMessageStatus("error");
+      return;
+    }
+    setDeleteUserModalMember(member);
+  };
+
+  const confirmDeleteTeamUser = async () => {
+    const member = deleteUserModalMember;
+    if (!teamId || !member) return;
+    setDeletingMember((prev) => ({ ...prev, [member.id]: true }));
+    setRolesMessage(null);
+    setRolesMessageStatus(null);
+    try {
+      const res = await fetch(`/api/admin/users/${member.id}`, { method: "DELETE" });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        setRolesMessage(payload?.error ?? "Unable to delete team user.");
+        setRolesMessageStatus("error");
+        return;
+      }
+      if (member.id === headCoachId) {
+        setHeadCoachId(null);
+      }
+      setParents((prev) => prev.filter((entry) => entry.id !== member.id));
+      setStaff((prev) => prev.filter((entry) => entry.id !== member.id));
+      setDeleteUserModalMember(null);
+      setRolesMessage("Team user deleted.");
+      setRolesMessageStatus("success");
+    } catch (error) {
+      console.error("Delete team user failed", error);
+      setRolesMessage("Unable to delete team user.");
+      setRolesMessageStatus("error");
+    } finally {
+      setDeletingMember((prev) => {
+        const next = { ...prev };
+        delete next[member.id];
+        return next;
+      });
+    }
+  };
+
   const isHeadCoach = (member: TeamMember) => member.role === "COACH" && member.id === headCoachId;
   const canEditRoles = role === "ADMIN" || (role === "COACH" && currentUserId !== null && currentUserId === headCoachId);
   const canEditTeamSettings = canEditRoles;
+  const canDeleteTeamUsers = canEditRoles;
   const canCreateTeamUser = Boolean(
     canEditRoles
       && !creatingUser
@@ -1179,8 +1691,18 @@ export default function CoachMyTeamPage() {
       && newUserUsername.trim()
       && newUserPassword.trim(),
   );
+  const canImportParentUsers = Boolean(
+    canEditRoles
+      && !importingUsers
+      && importUsersRows.length > 0
+      && importUsersPassword.trim(),
+  );
 
   const wrestlerById = new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler]));
+  const attendanceResponderWrestlerIds = new Set(
+    [...parents, ...staff].flatMap((member) => member.wrestlerIds),
+  );
+  const wrestlersWithoutParent = teamWrestlers.filter((wrestler) => !attendanceResponderWrestlerIds.has(wrestler.id));
   const showRolesLoading = !rolesLoaded || rolesLoading;
   const rolesFilterQuery = rolesFilter.trim();
   const sortedRolesMembers = sortStaff([...staff, ...parents], headCoachId);
@@ -1194,6 +1716,7 @@ export default function CoachMyTeamPage() {
     : null;
   const pickerSuggestedWrestlerIds = pickerMember ? getLikelyWrestlerIds(pickerMember) : [];
   const rolesMessageIsError = rolesMessageStatus === "error";
+  const importUsersMessageIsError = importUsersMessageStatus === "error";
   const formatAssignedWrestlers = (member: TeamMember, wrestlerIds: string[]) => {
     if (wrestlerIds.length === 0) return "None";
     const memberLastNameCandidates = extractLastNameCandidates(member.name);
@@ -1211,6 +1734,166 @@ export default function CoachMyTeamPage() {
       });
     if (names.length === 0) return `${wrestlerIds.length} selected`;
     return names.join(", ");
+  };
+  const renderRolesTableRows = () => {
+    if (showRolesLoading) {
+      return (
+        <tr>
+          <td colSpan={5} className="coach-empty-cell">Loading</td>
+        </tr>
+      );
+    }
+    if (sortedRolesMembers.length === 0) {
+      return (
+        <tr>
+          <td colSpan={5} className="coach-empty-cell">No parent or staff accounts found.</td>
+        </tr>
+      );
+    }
+    if (filteredRolesMembers.length === 0) {
+      return (
+        <tr>
+          <td colSpan={5} className="coach-empty-cell">No matches found.</td>
+        </tr>
+      );
+    }
+    return filteredRolesMembers.map((member) => {
+      const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
+      return (
+        <tr key={member.id}>
+          <td>
+            {member.name ? `${member.name} (@${member.username})` : `@${member.username}`}
+          </td>
+          <td>
+            <select
+              className="coach-role-select"
+              value={member.role}
+              disabled={isHeadCoach(member) || !canEditRoles || Boolean(savingParent[member.id])}
+              onChange={(event) => void updateRole(member, event.currentTarget.value as TeamMember["role"])}
+            >
+              {isHeadCoach(member) ? (
+                <option value="COACH">Head Coach</option>
+              ) : (
+                <>
+                  <option value="PARENT">Parent</option>
+                  <option value="COACH">Assistant Coach</option>
+                  <option value="TABLE_WORKER">Table Worker</option>
+                </>
+              )}
+            </select>
+          </td>
+          <td className="coach-hidden-mat-column">
+            <div className="coach-mat-picker-cell">
+              <button
+                type="button"
+                className="coach-btn-secondary coach-mat-picker-btn"
+                onClick={(event) => openMatPicker(member, event.currentTarget)}
+                disabled={Boolean(savingAssignments[member.id])}
+              >
+                {member.matNumber ? (
+                  <>
+                    <span
+                      className="coach-mat-swatch"
+                      style={{ backgroundColor: getMatColor(member.matNumber) }}
+                      aria-hidden
+                    />
+                    <span>Mat {member.matNumber}</span>
+                  </>
+                ) : (
+                  <span>No Mat</span>
+                )}
+                <span className="coach-mat-caret" aria-hidden>v</span>
+              </button>
+              {matListboxMemberId === member.id && !savingAssignments[member.id] && (
+                <div
+                  className={`coach-mat-listbox${matListboxDirection === "up" ? " open-up" : ""}`}
+                  role="listbox"
+                  aria-label={`Select mat for ${member.name ?? member.username}`}
+                  style={{
+                    top: matListboxPosition.top,
+                    left: matListboxPosition.left,
+                    minWidth: matListboxPosition.width,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={`coach-mat-option${member.matNumber === null ? " selected" : ""}`}
+                    onClick={() => assignMatToMember(member.id, null)}
+                  >
+                    <span>No Mat</span>
+                  </button>
+                  {Array.from({ length: numMats }, (_, idx) => idx + 1).map((matNumber) => (
+                    <button
+                      key={matNumber}
+                      type="button"
+                      className={`coach-mat-option${member.matNumber === matNumber ? " selected" : ""}`}
+                      onClick={() => assignMatToMember(member.id, matNumber)}
+                    >
+                      <span className="coach-mat-swatch" style={{ backgroundColor: getMatColor(matNumber) }} aria-hidden />
+                      <span>Mat {matNumber}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </td>
+          <td>
+            <div className="coach-staff-wrestlers-row">
+              <div className="coach-staff-assigned">
+                {member.wrestlerIds.length > 0
+                  ? formatAssignedWrestlers(member, member.wrestlerIds)
+                  : suggestedWrestlerIds.length > 0
+                    ? `Suggested: ${formatAssignedWrestlers(member, suggestedWrestlerIds)}`
+                    : <span className="coach-none-assigned">None</span>}
+              </div>
+              <div className="coach-staff-wrestler-actions">
+                {member.wrestlerIds.length === 0 && suggestedWrestlerIds.length > 0 && (
+                  <button
+                    type="button"
+                    className="coach-btn-secondary coach-picker-btn"
+                    disabled={Boolean(savingAssignments[member.id])}
+                    onClick={() => void saveStaffAssignments(member.id, member.matNumber, suggestedWrestlerIds)}
+                  >
+                    Use Last Name Match
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="coach-btn-secondary coach-picker-btn"
+                  disabled={Boolean(savingAssignments[member.id]) || teamWrestlers.length === 0}
+                  onClick={() => openWrestlerPicker(member)}
+                >
+                  Select Wrestlers
+                </button>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div className="coach-user-actions">
+              {canEditRoles ? (
+                <button
+                  type="button"
+                  className="coach-btn-secondary coach-picker-btn"
+                  onClick={() => openEditUserModal(member)}
+                >
+                  Edit
+                </button>
+              ) : null}
+              {canDeleteTeamUsers && member.id !== currentUserId ? (
+                <button
+                  type="button"
+                  className="coach-btn-secondary coach-delete-user-btn"
+                  disabled={Boolean(deletingMember[member.id])}
+                  onClick={() => void deleteTeamUser(member)}
+                >
+                  {deletingMember[member.id] ? "Deleting..." : "Delete"}
+                </button>
+              ) : null}
+            </div>
+          </td>
+        </tr>
+      );
+    });
   };
 
   return (
@@ -1646,161 +2329,71 @@ export default function CoachMyTeamPage() {
                 />
               </div>
               {canEditRoles && (
-                <button
-                  type="button"
-                  className="coach-btn coach-btn-primary coach-create-user-open"
-                  onClick={() => {
-                    setNewUserUsernameEdited(false);
-                    setNewUserRole("PARENT");
-                    setCreateUserModalOpen(true);
-                  }}
-                >
-                  Create New User
-                </button>
+                <div className="coach-roles-toolbar-actions">
+                  <button
+                    type="button"
+                    className="coach-btn-secondary coach-create-user-open"
+                    onClick={() => setMissingParentsModalOpen(true)}
+                  >
+                    Missing Parents ({wrestlersWithoutParent.length})
+                  </button>
+                  <button
+                    type="button"
+                    className="coach-btn-secondary coach-create-user-open"
+                    onClick={() => {
+                      closeImportUsersModal(true);
+                      setImportUsersModalOpen(true);
+                    }}
+                  >
+                    Import Parents
+                  </button>
+                  <button
+                    type="button"
+                    className="coach-btn coach-btn-primary coach-create-user-open"
+                    onClick={() => {
+                      setNewUserUsernameEdited(false);
+                      setNewUserRole("PARENT");
+                      setCreateUserModalOpen(true);
+                    }}
+                  >
+                    Create New User
+                  </button>
+                </div>
               )}
             </div>
+            <div className="coach-staff-header">
+              <table>
+                <colgroup>
+                  <col style={{ width: 320 }} />
+                  <col style={{ width: 140 }} />
+                  <col className="coach-hidden-mat-column" style={{ width: 0 }} />
+                  <col style={{ width: 320 }} />
+                  <col style={{ width: 108 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th className="coach-hidden-mat-column">Mat #</th>
+                    <th>Wrestlers</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
             <div className="coach-staff-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th className="coach-hidden-mat-column">Mat #</th>
-                  <th>Wrestlers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {showRolesLoading && (
-                  <tr>
-                    <td colSpan={4} className="coach-empty-cell">Loading</td>
-                  </tr>
-                )}
-                {!showRolesLoading && sortedRolesMembers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="coach-empty-cell">No parent or staff accounts found.</td>
-                  </tr>
-                )}
-                {!showRolesLoading && sortedRolesMembers.length > 0 && filteredRolesMembers.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="coach-empty-cell">No matches found.</td>
-                  </tr>
-                )}
-                {!showRolesLoading && filteredRolesMembers.map((member) => {
-                  const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
-                  return (
-                  <tr key={member.id}>
-                    <td>
-                      {member.name ? `${member.name} (@${member.username})` : `@${member.username}`}
-                    </td>
-                    <td>
-                      <select
-                        className="coach-role-select"
-                        value={member.role}
-                        disabled={isHeadCoach(member) || !canEditRoles || Boolean(savingParent[member.id])}
-                        onChange={(event) => void updateRole(member, event.currentTarget.value as TeamMember["role"])}
-                      >
-                        {isHeadCoach(member) ? (
-                          <option value="COACH">Head Coach</option>
-                        ) : (
-                          <>
-                            <option value="PARENT">Parent</option>
-                            <option value="COACH">Assistant Coach</option>
-                            <option value="TABLE_WORKER">Table Worker</option>
-                          </>
-                        )}
-                      </select>
-                    </td>
-                    <td className="coach-hidden-mat-column">
-                      <div className="coach-mat-picker-cell">
-                        <button
-                          type="button"
-                          className="coach-btn-secondary coach-mat-picker-btn"
-                          onClick={(event) => openMatPicker(member, event.currentTarget)}
-                          disabled={Boolean(savingAssignments[member.id])}
-                        >
-                          {member.matNumber ? (
-                            <>
-                              <span
-                                className="coach-mat-swatch"
-                                style={{ backgroundColor: getMatColor(member.matNumber) }}
-                                aria-hidden
-                              />
-                              <span>Mat {member.matNumber}</span>
-                            </>
-                          ) : (
-                            <span>No Mat</span>
-                          )}
-                          <span className="coach-mat-caret" aria-hidden>v</span>
-                        </button>
-                        {matListboxMemberId === member.id && !savingAssignments[member.id] && (
-                          <div
-                            className={`coach-mat-listbox${matListboxDirection === "up" ? " open-up" : ""}`}
-                            role="listbox"
-                            aria-label={`Select mat for ${member.name ?? member.username}`}
-                            style={{
-                              top: matListboxPosition.top,
-                              left: matListboxPosition.left,
-                              minWidth: matListboxPosition.width,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              className={`coach-mat-option${member.matNumber === null ? " selected" : ""}`}
-                              onClick={() => assignMatToMember(member.id, null)}
-                            >
-                              <span>No Mat</span>
-                            </button>
-                            {Array.from({ length: numMats }, (_, idx) => idx + 1).map((matNumber) => (
-                              <button
-                                key={matNumber}
-                                type="button"
-                                className={`coach-mat-option${member.matNumber === matNumber ? " selected" : ""}`}
-                                onClick={() => assignMatToMember(member.id, matNumber)}
-                              >
-                                <span className="coach-mat-swatch" style={{ backgroundColor: getMatColor(matNumber) }} aria-hidden />
-                                <span>Mat {matNumber}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="coach-staff-wrestlers-row">
-                        <div className="coach-staff-assigned">
-                          {member.wrestlerIds.length > 0
-                            ? formatAssignedWrestlers(member, member.wrestlerIds)
-                            : suggestedWrestlerIds.length > 0
-                              ? `Suggested: ${formatAssignedWrestlers(member, suggestedWrestlerIds)}`
-                              : <span className="coach-none-assigned">None</span>}
-                        </div>
-                        <div className="coach-staff-wrestler-actions">
-                          {member.wrestlerIds.length === 0 && suggestedWrestlerIds.length > 0 && (
-                            <button
-                              type="button"
-                              className="coach-btn-secondary coach-picker-btn"
-                              disabled={Boolean(savingAssignments[member.id])}
-                              onClick={() => void saveStaffAssignments(member.id, member.matNumber, suggestedWrestlerIds)}
-                            >
-                              Use Last Name Match
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="coach-btn-secondary coach-picker-btn"
-                            disabled={Boolean(savingAssignments[member.id]) || teamWrestlers.length === 0}
-                            onClick={() => openWrestlerPicker(member)}
-                          >
-                            Select Wrestlers
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              <table>
+                <colgroup>
+                  <col style={{ width: 320 }} />
+                  <col style={{ width: 140 }} />
+                  <col className="coach-hidden-mat-column" style={{ width: 0 }} />
+                  <col style={{ width: 320 }} />
+                  <col style={{ width: 108 }} />
+                </colgroup>
+                <tbody>
+                  {renderRolesTableRows()}
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
@@ -1952,6 +2545,320 @@ export default function CoachMyTeamPage() {
                 onClick={() => void createTeamUser()}
               >
                 {creatingUser ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {importUsersModalOpen && canEditRoles && (
+        <div className="coach-modal-backdrop" onClick={closeImportUsersModal}>
+          <div className="coach-modal coach-import-users-modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Import parent accounts for {teamName}{teamSymbol ? ` (${teamSymbol})` : ""}</h4>
+            <div className="coach-import-users-body">
+              <p className="coach-import-users-note">
+                Upload a CSV, XLS, or XLSX file with columns for first name, last name, username, email, phone, and optional kid names.
+                Kid names can go in one `Kids` column separated by semicolons, or in columns like `Kid 1`, `Kid 2`.
+                Username, email, and phone are optional. If username is blank, one will be generated automatically.
+                All imported accounts are created as parents and must reset their password at first sign-in.
+              </p>
+              <div className="coach-import-users-grid">
+                <label className="coach-import-users-field">
+                  <span>Parent file</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv,.xls,application/vnd.ms-excel,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] ?? null;
+                      void chooseImportUsersFile(file);
+                    }}
+                  />
+                </label>
+                <label className="coach-import-users-field">
+                  <span>Shared temporary password</span>
+                  <div className="coach-create-user-password">
+                    <input
+                      placeholder="Temporary Password"
+                      value={importUsersPassword}
+                      onChange={(event) => setImportUsersPassword(event.target.value)}
+                      autoCapitalize="none"
+                      spellCheck={false}
+                    />
+                    <button
+                      type="button"
+                      className="coach-btn-secondary coach-picker-btn"
+                      onClick={generateImportPassword}
+                      disabled={importingUsers}
+                    >
+                      Generate
+                    </button>
+                  </div>
+                </label>
+              </div>
+              {importUsersFile ? (
+                <div className="coach-import-users-file-name">
+                  File: {importUsersFile.name}
+                </div>
+              ) : null}
+              <p
+                className={`info-message ${importUsersMessageIsError ? "error" : "success"}${importUsersMessage ? "" : " empty"}`}
+                role={importUsersMessage ? "status" : undefined}
+              >
+                {importUsersMessage ?? "\u00A0"}
+              </p>
+              {importUsersPreviewRows.length > 0 && (
+                <div className="coach-import-preview">
+                  <div className="coach-import-preview-title">
+                    Preview ({importUsersRows.length} row{importUsersRows.length === 1 ? "" : "s"})
+                  </div>
+                  <div className="coach-import-preview-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Row</th>
+                          <th>First</th>
+                          <th>Last</th>
+                          <th>Username</th>
+                          <th>Email</th>
+                          <th>Phone</th>
+                          <th>Kids</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importUsersPreviewRows.map((row) => (
+                          <tr key={row.rowNumber}>
+                            <td>{row.rowNumber}</td>
+                            <td>{row.firstName || <span className="coach-empty-cell">-</span>}</td>
+                            <td>{row.lastName || <span className="coach-empty-cell">-</span>}</td>
+                            <td>{row.username || <span className="coach-empty-cell">Auto</span>}</td>
+                            <td>{row.email || <span className="coach-empty-cell">-</span>}</td>
+                            <td>{row.phone || <span className="coach-empty-cell">-</span>}</td>
+                            <td>{row.kids.length > 0 ? row.kids.join("; ") : <span className="coach-empty-cell">-</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {importUsersRowErrors.length > 0 && (
+                <div className="coach-import-errors">
+                  <div className="coach-import-preview-title">Fix these rows</div>
+                  <ul>
+                    {importUsersRowErrors.map((rowError) => (
+                      <li key={rowError}>{rowError}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={closeImportUsersModal}
+                disabled={importingUsers}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="coach-btn"
+                disabled={!canImportParentUsers}
+                onClick={() => void importParentUsers()}
+              >
+                {importingUsers ? "Importing..." : "Import Parents"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {missingParentsModalOpen && (canEditRoles || role === "ADMIN") && (
+        <div className="coach-modal-backdrop" onClick={() => setMissingParentsModalOpen(false)}>
+          <div className="coach-modal coach-missing-parents-modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Wrestlers without a parent account</h4>
+            <div className="coach-import-users-body">
+              <div className="coach-parent-gap-summary">
+                {showRolesLoading
+                  ? "Loading"
+                  : `${wrestlersWithoutParent.length} active wrestler${wrestlersWithoutParent.length === 1 ? "" : "s"} without a linked parent account.`}
+              </div>
+              <div className="coach-missing-parents-table">
+                <table>
+                  <colgroup>
+                    <col style={{ width: 160 }} />
+                    <col style={{ width: 160 }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Last</th>
+                      <th>First</th>
+                    </tr>
+                  </thead>
+                </table>
+                <div className="coach-missing-parents-table-body">
+                  <table>
+                    <colgroup>
+                      <col style={{ width: 160 }} />
+                      <col style={{ width: 160 }} />
+                    </colgroup>
+                    <tbody>
+                      {showRolesLoading ? (
+                        <tr>
+                          <td colSpan={2} className="coach-empty-cell">Loading</td>
+                        </tr>
+                      ) : wrestlersWithoutParent.length === 0 ? (
+                        <tr>
+                          <td colSpan={2} className="coach-empty-cell">Every active wrestler has a parent account.</td>
+                        </tr>
+                      ) : (
+                        wrestlersWithoutParent.map((wrestler) => (
+                          <tr key={wrestler.id}>
+                            <td>{wrestler.last}</td>
+                            <td>{wrestler.first}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setMissingParentsModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editUserModalMember && canEditRoles && (
+        <div className="coach-modal-backdrop" onClick={closeEditUserModal}>
+          <div className="coach-modal coach-create-user-modal" onClick={(event) => event.stopPropagation()}>
+            <h4 className="coach-create-user-modal-heading">
+              <span>Edit user for {teamName}{teamSymbol ? ` (${teamSymbol})` : ""}</span>
+              {teamId && teamHasLogo ? (
+                <img
+                  className="coach-create-user-modal-logo"
+                  src={`/api/teams/${teamId}/logo/file?v=${logoVersion}`}
+                  alt={`${teamName} logo`}
+                />
+              ) : null}
+            </h4>
+            <div className="coach-create-user-modal-grid">
+              <input
+                placeholder="First Name"
+                value={editUserFirstName}
+                onChange={(event) => setEditUserFirstName(event.target.value)}
+              />
+              <input
+                placeholder="Last Name"
+                value={editUserLastName}
+                onChange={(event) => setEditUserLastName(event.target.value)}
+              />
+              <input
+                placeholder="Username"
+                value={editUserUsername}
+                onChange={(event) => setEditUserUsername(event.target.value)}
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+              <input
+                placeholder="Email (optional)"
+                value={editUserEmail}
+                onChange={(event) => setEditUserEmail(event.target.value)}
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+              <input
+                placeholder="Phone (optional)"
+                value={editUserPhone}
+                onChange={(event) => setEditUserPhone(event.target.value)}
+              />
+              <div className="coach-create-user-password coach-edit-user-password">
+                <input
+                  placeholder="Temporary Password"
+                  value={editUserPassword}
+                  onChange={(event) => setEditUserPassword(event.target.value)}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="coach-btn-secondary coach-picker-btn"
+                  onClick={generateEditUserPassword}
+                  disabled={savingEditedUser || resettingEditedUserPassword}
+                >
+                  Generate
+                </button>
+                <button
+                  type="button"
+                  className="coach-btn-secondary coach-picker-btn"
+                  onClick={() => void resetEditedUserPassword()}
+                  disabled={savingEditedUser || resettingEditedUserPassword}
+                >
+                  {resettingEditedUserPassword ? "Resetting..." : "Reset Password"}
+                </button>
+              </div>
+            </div>
+            <p
+              className={`info-message ${rolesMessageIsError ? "error" : "success"}${rolesMessage ? "" : " empty"}`}
+              role={rolesMessage ? "status" : undefined}
+            >
+              {rolesMessage ?? "\u00A0"}
+            </p>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={closeEditUserModal}
+                disabled={savingEditedUser || resettingEditedUserPassword}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="coach-btn"
+                onClick={() => void saveEditedUser()}
+                disabled={savingEditedUser || resettingEditedUserPassword}
+              >
+                {savingEditedUser ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteUserModalMember && (
+        <div className="coach-modal-backdrop" onClick={() => setDeleteUserModalMember(null)}>
+          <div className="coach-modal" onClick={(event) => event.stopPropagation()}>
+            <h4>Delete team user</h4>
+            <div style={{ padding: "14px 16px", display: "grid", gap: 8 }}>
+              <div>
+                Delete {deleteUserModalMember.name ? `${deleteUserModalMember.name} (@${deleteUserModalMember.username})` : `@${deleteUserModalMember.username}`}?
+              </div>
+              <div style={{ fontSize: 14, color: "#6b1f1f" }}>
+                This cannot be undone.
+              </div>
+            </div>
+            <div className="coach-modal-actions">
+              <button
+                type="button"
+                className="coach-btn-secondary"
+                onClick={() => setDeleteUserModalMember(null)}
+                disabled={Boolean(deletingMember[deleteUserModalMember.id])}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="coach-btn-secondary coach-delete-user-btn"
+                onClick={() => void confirmDeleteTeamUser()}
+                disabled={Boolean(deletingMember[deleteUserModalMember.id])}
+              >
+                {deletingMember[deleteUserModalMember.id] ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>
@@ -2109,17 +3016,24 @@ const coachStyles = `
     width: fit-content;
     max-width: 100%;
   }
+  .coach-roles-card .coach-staff-header {
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+  }
   .coach-roles-card .coach-staff-scroll {
     display: block;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    max-height: calc(100dvh - 360px);
     width: fit-content;
     max-width: 100%;
   }
+  .coach-roles-card .coach-staff-header table,
   .coach-roles-card .coach-staff-scroll table {
-    min-height: 100%;
     width: max-content;
+    table-layout: fixed;
   }
   .coach-roles-table-toolbar {
     width: 100%;
@@ -2137,6 +3051,52 @@ const coachStyles = `
   .coach-roles-card > .info-message.empty {
     display: none;
   }
+  .coach-parent-gap-summary {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .coach-missing-parents-modal {
+    width: min(520px, 100%);
+  }
+  .coach-missing-parents-table {
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .coach-missing-parents-table table {
+    width: 320px;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .coach-missing-parents-table-body {
+    max-height: 620px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-top: 1px solid var(--line);
+  }
+  .coach-missing-parents-table th,
+  .coach-missing-parents-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .coach-missing-parents-table th {
+    background: #f7f9fb;
+    font-weight: 600;
+  }
+  .coach-missing-parents-table thead th {
+    border-bottom: none;
+  }
+  .coach-missing-parents-table tbody tr:last-child td {
+    border-bottom: none;
+  }
   .coach-roles-header-left {
     display: flex;
     align-items: center;
@@ -2148,6 +3108,12 @@ const coachStyles = `
   .coach-roles-header-left h3 {
     margin: 0;
     white-space: nowrap;
+  }
+  .coach-roles-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
   }
   .coach-roles-filter-input {
     width: 280px;
@@ -2521,6 +3487,9 @@ const coachStyles = `
   .coach-create-user-modal {
     width: min(520px, 100%);
   }
+  .coach-import-users-modal {
+    width: min(760px, 100%);
+  }
   .coach-create-user-modal-heading {
     display: flex;
     align-items: center;
@@ -2555,6 +3524,88 @@ const coachStyles = `
     margin: 0 16px;
     min-height: 20px;
   }
+  .coach-import-users-body {
+    padding: 12px 16px;
+    display: grid;
+    gap: 10px;
+  }
+  .coach-import-users-note {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .coach-import-users-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    gap: 10px;
+  }
+  .coach-import-users-field {
+    display: grid;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .coach-import-users-field input[type="file"] {
+    font-size: 12px;
+  }
+  .coach-import-users-field input[type="file"],
+  .coach-import-users-field input[type="text"],
+  .coach-import-users-field input[type="password"] {
+    min-width: 0;
+  }
+  .coach-import-users-file-name {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .coach-import-preview {
+    display: grid;
+    gap: 6px;
+  }
+  .coach-import-preview-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .coach-import-preview-scroll {
+    max-height: 240px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .coach-import-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .coach-import-preview th,
+  .coach-import-preview td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+  .coach-import-preview th {
+    position: sticky;
+    top: 0;
+    background: #f7f9fb;
+    z-index: 1;
+  }
+  .coach-import-preview tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .coach-import-errors {
+    display: grid;
+    gap: 6px;
+    color: #8a1c1c;
+  }
+  .coach-import-errors ul {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+  }
   .coach-create-user-password {
     display: flex;
     gap: 6px;
@@ -2565,20 +3616,34 @@ const coachStyles = `
     flex: 1 1 auto;
     min-width: 0;
   }
+  .coach-edit-user-password {
+    grid-column: 1 / -1;
+  }
   .coach-staff-table {
     overflow: visible;
   }
+  .coach-staff-header {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
   .coach-staff-scroll {
     overflow-x: auto;
-    overflow-y: visible;
+    overflow-y: auto;
   }
+  .coach-staff-header table,
   .coach-staff-scroll table {
-    min-width: 920px;
+    min-width: 888px;
   }
   .coach-staff-table th,
   .coach-staff-table td {
     padding: 2px 4px;
     line-height: 1.1;
+  }
+  .coach-staff-table th:first-child,
+  .coach-staff-table td:first-child {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .coach-hidden-mat-column {
     display: none;
@@ -2660,6 +3725,14 @@ const coachStyles = `
     gap: 5px;
     flex-wrap: nowrap;
     margin-left: auto;
+  }
+  .coach-user-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    width: fit-content;
   }
   .coach-modal-backdrop {
     position: fixed;
@@ -2772,6 +3845,15 @@ const coachStyles = `
     line-height: 1.1;
     white-space: nowrap;
   }
+  .coach-btn-secondary.coach-delete-user-btn {
+    padding: 2px 6px;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
+    background: #fff5f5;
+    color: #8a1c1c;
+    border-color: #dfc1c1;
+  }
   .coach-btn-primary:disabled,
   .coach-btn:disabled {
     opacity: 0.35;
@@ -2798,6 +3880,9 @@ const coachStyles = `
       grid-template-columns: 1fr;
     }
     .coach-create-user-modal-grid {
+      grid-template-columns: 1fr;
+    }
+    .coach-import-users-grid {
       grid-template-columns: 1fr;
     }
     .coach-toolbar {

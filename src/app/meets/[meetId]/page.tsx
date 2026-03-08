@@ -1361,6 +1361,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
   const canEditThisPhase = meetStatus === "DRAFT" || isMeetCoordinator || currentUserRole === "ADMIN";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase && canEditThisPhase;
+  const canDraftCoachEditAttendanceWithoutLock = Boolean(
+    meetStatus === "DRAFT" &&
+    currentUserRole === "COACH" &&
+    currentUserTeamId &&
+    teams.some((team) => team.id === currentUserTeamId),
+  );
+  const canEditAttendance = canEdit || canDraftCoachEditAttendanceWithoutLock;
   const canApplyCheckpoint = canEdit && isMeetCoordinator;
   const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
   const isCoachOnMeetTeam = Boolean(
@@ -4190,7 +4197,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn={meetStatus !== "DRAFT"}
               showStatusAttribution={meetStatus === "ATTENDANCE"}
-              readOnly={meetStatus === "ATTENDANCE" || !canEdit}
+              editableTeamId={canDraftCoachEditAttendanceWithoutLock ? currentUserTeamId : null}
+              lockRequired={!canDraftCoachEditAttendanceWithoutLock}
+              readOnly={meetStatus === "ATTENDANCE" || !canEditAttendance}
               onEnsureLock={ensureMeetLock}
               onRefresh={load}
               onRegisterSaveHandler={(handler) => {

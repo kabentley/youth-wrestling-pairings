@@ -33,6 +33,8 @@ type AttendanceTabProps = {
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
   showStatusAttribution?: boolean;
+  editableTeamId?: string | null;
+  lockRequired?: boolean;
   readOnly?: boolean;
   onEnsureLock?: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
@@ -90,6 +92,8 @@ export default function AttendanceTab({
   showRefresh = false,
   showNoReplyColumn = true,
   showStatusAttribution = false,
+  editableTeamId = null,
+  lockRequired = true,
   readOnly = false,
   onEnsureLock,
   onRefresh,
@@ -154,6 +158,7 @@ export default function AttendanceTab({
   );
 
   const activeTeam = teams.find(t => t.id === activeTeamId);
+  const canEditActiveTeam = !readOnly && (!editableTeamId || activeTeamId === editableTeamId);
   const teamWrestlers = wrestlers
     .filter(w => w.teamId === activeTeamId)
     .map((wrestler) => ({ ...wrestler, status: effectiveStatus(wrestler) }));
@@ -216,13 +221,13 @@ export default function AttendanceTab({
   }
 
   const runManagedAttendanceRequest = async (makeRequest: () => Promise<Response>, fallbackError: string) => {
-    if (onEnsureLock) {
+    if (lockRequired && onEnsureLock) {
       const hasLock = await onEnsureLock();
       if (!hasLock) throw new Error("Meet lock required");
     }
     let response = await makeRequest();
     let payload = response.ok ? null : await response.clone().json().catch(() => null);
-    if (!response.ok && payload?.error === "Meet lock required" && onEnsureLock) {
+    if (!response.ok && payload?.error === "Meet lock required" && lockRequired && onEnsureLock) {
       const hasLock = await onEnsureLock(true);
       if (!hasLock) throw new Error("Meet lock required");
       response = await makeRequest();
@@ -320,14 +325,14 @@ export default function AttendanceTab({
 
   const handleDrop = async (e: React.DragEvent, newStatus: "COMING" | "NOT_COMING" | null) => {
     e.preventDefault();
-    if (readOnly) return;
+    if (!canEditActiveTeam) return;
     if (!draggedWrestler) return;
     queueStatusChange(draggedWrestler.id, newStatus);
     setDraggedWrestler(null);
   };
 
   const handleDragStart = (wrestler: Wrestler) => {
-    if (readOnly) return;
+    if (!canEditActiveTeam) return;
     setDraggedWrestler(wrestler);
   };
 
@@ -336,6 +341,7 @@ export default function AttendanceTab({
   };
 
   const toggleComingStatus = async (wrestler: Wrestler, nextStatus: "NOT_COMING" | "LATE" | "EARLY") => {
+    if (!canEditActiveTeam) return;
     const updatedStatus = wrestler.status === nextStatus ? "COMING" : nextStatus;
     queueStatusChange(wrestler.id, updatedStatus);
   };
@@ -456,7 +462,7 @@ export default function AttendanceTab({
                 </button>
               );
             })}
-            {!readOnly && (
+            {canEditActiveTeam && (
               <div style={{ display: "flex", alignItems: "center", paddingLeft: 32, transform: "translateY(-6px)" }}>
                 <button
                   type="button"
@@ -504,7 +510,7 @@ export default function AttendanceTab({
                     <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
                       {column.label}
                     </h3>
-                    {!readOnly && isDev && column.key === "not-coming" && (
+                    {canEditActiveTeam && isDev && column.key === "not-coming" && (
                       <button
                         type="button"
                         className="nav-btn secondary"
@@ -522,7 +528,7 @@ export default function AttendanceTab({
                         {bulkUpdatingColumn === column.key ? "Saving..." : "All Coming"}
                       </button>
                     )}
-                    {!readOnly && column.key === "no-reply" && (
+                    {canEditActiveTeam && column.key === "no-reply" && (
                       <button
                         type="button"
                         className="nav-btn secondary"
@@ -566,8 +572,8 @@ export default function AttendanceTab({
                       overflowY: "auto",
                       background: column.panelBackground,
                     }}
-                    onDrop={readOnly ? undefined : (e) => void handleDrop(e, column.dropStatus)}
-                    onDragOver={readOnly ? undefined : handleDragOver}
+                    onDrop={canEditActiveTeam ? (e) => void handleDrop(e, column.dropStatus) : undefined}
+                    onDragOver={canEditActiveTeam ? handleDragOver : undefined}
                   >
                     {filteredWrestlers.map(w => (
                       (() => {
@@ -594,16 +600,16 @@ export default function AttendanceTab({
                         return (
                       <div
                         key={w.id}
-                        draggable={!readOnly}
+                        draggable={canEditActiveTeam}
                         onDragStart={() => handleDragStart(w)}
-                        onClick={readOnly ? undefined : () => queueStatusChange(w.id, column.clickStatus)}
+                        onClick={canEditActiveTeam ? () => queueStatusChange(w.id, column.clickStatus) : undefined}
                         style={{
                           padding: "3px 4px",
                           margin: "0 0 4px",
                           background: rowBackground,
                           border: `1px solid ${rowBorder}`,
                           borderRadius: 4,
-                          cursor: readOnly ? "default" : "pointer",
+                          cursor: canEditActiveTeam ? "pointer" : "default",
                           fontSize: 14,
                         }}
                       >
@@ -638,7 +644,7 @@ export default function AttendanceTab({
                               </div>
                             )}
                           </div>
-                        {!readOnly && column.key === "coming" && (
+                        {canEditActiveTeam && column.key === "coming" && (
                           <div
                             style={{ display: "flex", gap: 8, fontSize: 12, flex: "0 0 auto", whiteSpace: "nowrap" }}
                             onClick={(event) => event.stopPropagation()}
