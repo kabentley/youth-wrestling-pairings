@@ -40,10 +40,10 @@ function formatMatList(mats: number[]) {
   return mats.map((mat) => `Mat ${mat}`).join(", ");
 }
 
-function restConflictSeverityLabel(minGap: number, restGap: number) {
-  if (minGap <= 1) return "severe";
-  if (minGap <= Math.max(2, Math.floor(restGap / 2))) return "high";
-  return "moderate";
+function restConflictSeverityLabel(minGap: number, _restGap: number) {
+  if (minGap <= 1) return "Severe";
+  if (minGap <= 4) return "Major";
+  return "Minor";
 }
 
 export async function buildReadyForCheckinChecklist(
@@ -59,12 +59,26 @@ export async function buildReadyForCheckinChecklist(
       homeTeamId: true,
       numMats: true,
       restGap: true,
-      meetTeams: { select: { teamId: true } },
+      meetTeams: {
+        select: {
+          teamId: true,
+          checkinCompletedAt: true,
+          team: {
+            select: {
+              name: true,
+              symbol: true,
+            },
+          },
+        },
+      },
     },
   });
   if (!meet || meet.deletedAt) return null;
 
   const teamIds = meet.meetTeams.map((entry) => entry.teamId);
+  const teamsMissingScratchCompletion = meet.meetTeams
+    .filter((entry) => !entry.checkinCompletedAt)
+    .map((entry) => entry.team.symbol || entry.team.name || entry.teamId);
   const [wrestlers, statuses, bouts, volunteers] = await Promise.all([
     client.wrestler.findMany({
       where: { teamId: { in: teamIds } },
@@ -231,7 +245,7 @@ export async function buildReadyForCheckinChecklist(
     .sort((a, b) => a[0] - b[0])
     .map(([mat, stats]) => {
       const severity = restConflictSeverityLabel(stats.minGap, restGap);
-      return `Mat ${mat}: ${stats.count} conflict${stats.count === 1 ? "" : "s"}, ${severity} severity (closest gap ${stats.minGap}).`;
+      return `Mat ${mat}: ${stats.count} conflict${stats.count === 1 ? "" : "s"}, ${severity} (closest gap ${stats.minGap}).`;
     });
 
   const allItems: ReadyForCheckinChecklistItem[] = [
@@ -299,6 +313,15 @@ export async function buildReadyForCheckinChecklist(
     ? [
         {
           ...allItems[0],
+        },
+        {
+          id: "scratches-complete",
+          label: "Scratches are complete for every team",
+          ok: teamsMissingScratchCompletion.length === 0,
+          severity: "error",
+          detail: teamsMissingScratchCompletion.length === 0
+            ? "Every team has finished scratches/check-in."
+            : `Still waiting on scratches/check-in for: ${teamsMissingScratchCompletion.join(", ")}.`,
         },
         {
           ...allItems[1],

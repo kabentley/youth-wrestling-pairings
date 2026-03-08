@@ -24,7 +24,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const dryRun = bodyResult.data.dryRun === true;
   if (!dryRun) {
     try {
-      await requireMeetLock(meetId, user.id);
+      await requireMeetLock(meetId, user.id, user.role);
     } catch (err) {
       const lockError = getMeetLockError(err);
       if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });

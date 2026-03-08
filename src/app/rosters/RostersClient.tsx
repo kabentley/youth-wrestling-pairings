@@ -768,7 +768,7 @@ export default function RostersClient() {
     const first = row.first.trim();
     const last = row.last.trim();
     const hasOriginal = originalRowsRef.current[row.id] !== undefined;
-    const isNewRecord = row.isNew ?? !hasOriginal;
+    const isNewRecord = !hasOriginal || Boolean(row.isNew);
     if (isNewRecord) {
       // Avoid duplicate names within the team.
       const key = `${first.toLowerCase()}|${last.toLowerCase()}`;
@@ -897,7 +897,7 @@ export default function RostersClient() {
     setSavingAll(true);
     try {
       const rowsToSave = editableRows.filter(row => dirtyRowIds.has(row.id));
-      const hasNewRows = rowsToSave.some(row => row.isNew);
+      const hasNewRows = rowsToSave.some(row => row.isNew ?? originalRowsRef.current[row.id] === undefined);
       const updatedRowsById = new Map(rowsToSave.map(row => [row.id, row]));
       // Save each dirty row sequentially to surface server errors.
       for (const row of rowsToSave) {
@@ -1089,6 +1089,7 @@ export default function RostersClient() {
 
   const isCoachEditingOwnTeam = role === "COACH" && selectedTeamId && sessionTeamId && selectedTeamId === sessionTeamId;
   const canEditRoster = role === "ADMIN" || isCoachEditingOwnTeam;
+  const canDeleteWrestler = role === "ADMIN";
   const hideSkillAndStatus = role === "PARENT" || role === "TABLE_WORKER";
   const allowInactiveView = !hideSkillAndStatus;
   const newRows = editableRows.filter(r => r.isNew);
@@ -1554,7 +1555,7 @@ export default function RostersClient() {
           )}
         </td>
         <td className="action-cell">
-          {!isNewRow && canEditRoster ? (
+          {!isNewRow && canDeleteWrestler ? (
             <button
               type="button"
               className="btn btn-ghost btn-small delete-row-btn"

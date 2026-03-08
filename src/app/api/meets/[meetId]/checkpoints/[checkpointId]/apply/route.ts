@@ -42,7 +42,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   const { meetId, checkpointId } = await params;
   const { user } = await requireRole("COACH");
   try {
-    await requireMeetLock(meetId, user.id);
+    await requireMeetLock(meetId, user.id, user.role);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });

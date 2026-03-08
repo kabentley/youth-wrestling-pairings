@@ -1,0 +1,1 @@
+ALTER TABLE "MeetTeam" ADD COLUMN IF NOT EXISTS "checkinCompletedAt" TIMESTAMP(3);

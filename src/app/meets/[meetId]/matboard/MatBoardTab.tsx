@@ -3,9 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
-import { isEditableMeetPhase, type MeetPhase } from "@/lib/meetPhase";
-import type { LockState } from "@/lib/useMeetLock";
-
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
   id: string;
@@ -15,7 +12,7 @@ type Wrestler = {
   teamId: string;
   birthdate?: string | null;
   experienceYears?: number | null;
-  status?: "LATE" | "EARLY" | "NOT_COMING" | "ABSENT" | null;
+  status?: "COMING" | "LATE" | "EARLY" | "NOT_COMING" | "ABSENT" | null;
 };
 type Bout = {
   id: string;
@@ -47,10 +44,12 @@ const MAX_MATS = 6;
 
 interface MatBoardTabProps {
   meetId: string;
-  onMatAssignmentsChange?: () => void;
-  meetStatus: MeetPhase;
-  lockState: LockState;
+  onMatAssignmentsChange?: (opts?: { includeWrestlers?: boolean }) => Promise<void> | void;
   refreshIndex?: number;
+  canEdit: boolean;
+  allowNotAttendingStatus?: boolean;
+  showTeamSymbols: boolean;
+  onShowTeamSymbolsChange: (value: boolean) => void;
 }
 
 type WrestlerEntry = {
@@ -142,9 +141,11 @@ function MatBoardWrestlerLabel({
 export default function MatBoardTab({
   meetId,
   onMatAssignmentsChange,
-  meetStatus,
-  lockState,
   refreshIndex,
+  canEdit,
+  allowNotAttendingStatus = false,
+  showTeamSymbols,
+  onShowTeamSymbolsChange,
 }: MatBoardTabProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
@@ -161,7 +162,6 @@ export default function MatBoardTab({
     homeTeamId?: string | null;
     date?: string | null;
   } | null>(null);
-  const [showTeamSymbols, setShowTeamSymbols] = useState(false);
   const [highlightWrestlerId, setHighlightWrestlerId] = useState<string | null>(null);
   const [lockedBoutIds, setLockedBoutIds] = useState<Set<string>>(new Set());
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
@@ -170,6 +170,7 @@ export default function MatBoardTab({
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
+  const orderVersionRef = useRef(0);
   const lastLockAnchorRef = useRef<{ matNum: number; index: number } | null>(null);
   const lockDragRef = useRef<{ matNum: number; shouldLock: boolean; touched: Set<string> } | null>(null);
   const [dragging, setDragging] = useState<{ boutId: string; fromMat: number } | null>(null);
@@ -194,7 +195,6 @@ export default function MatBoardTab({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
   const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
-  const canEdit = lockState.status === "acquired" && isEditableMeetPhase(meetStatus);
   useEffect(() => {
     void load();
   }, [meetId, refreshIndex]);
@@ -388,6 +388,12 @@ export default function MatBoardTab({
     };
   }, [statusContext]);
 
+  function markDirty() {
+    orderVersionRef.current += 1;
+    setDirty(true);
+    dirtyRef.current = true;
+  }
+
   /**
    * Load the meet pairings and associated wrestlers, then stash them in state.
    * Also resets error messaging and dirty tracking after a successful refresh.
@@ -420,6 +426,7 @@ export default function MatBoardTab({
 
     setDirty(false);
     dirtyRef.current = false;
+    orderVersionRef.current = 0;
     lastLockAnchorRef.current = null;
 
   }
@@ -601,8 +608,7 @@ export default function MatBoardTab({
         return { ...x, mat: u.mat, order: u.order };
       });
     });
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
   }
 
   /**
@@ -899,8 +905,37 @@ export default function MatBoardTab({
         return { ...x, mat: u.mat, order: u.order };
       });
     });
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
+  }
+
+  function reorderAllMats() {
+    if (!canEdit) return;
+    setBouts(prev => {
+      const next = prev.map((bout) => ({ ...bout }));
+      const matKeys = Array.from({ length: numMats }, (_, i) => i + 1);
+      const matLists = matKeys.map((key) =>
+        next
+          .filter((bout) => (bout.mat ?? 1) === key)
+          .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999)),
+      );
+      for (let matIndex = 0; matIndex < matLists.length; matIndex++) {
+        const targetList = matLists[matIndex];
+        matLists[matIndex] = reorderBoutsForMat(targetList, matLists, matIndex, conflictGap);
+      }
+      const updated = new Map<string, { mat: number; order: number }>();
+      matLists.forEach((list, matIndex) => {
+        const matNum = matKeys[matIndex];
+        list.forEach((bout, idx) => {
+          updated.set(bout.id, { mat: matNum, order: idx + 1 });
+        });
+      });
+      return next.map((bout) => {
+        const update = updated.get(bout.id);
+        if (!update) return bout;
+        return { ...bout, mat: update.mat, order: update.order };
+      });
+    });
+    markDirty();
   }
 
   function toggleBoutLock(
@@ -942,8 +977,7 @@ export default function MatBoardTab({
     if (matNum !== undefined && index !== undefined) {
       lastLockAnchorRef.current = { matNum, index };
     }
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
   }
 
   function setBoutLockState(boutId: string, shouldLock: boolean) {
@@ -959,8 +993,7 @@ export default function MatBoardTab({
       }
       return next;
     });
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
   }
 
   function startLockDrag(boutId: string, matNum: number, index: number, shouldLock: boolean) {
@@ -989,8 +1022,7 @@ export default function MatBoardTab({
       return next;
     });
     lastLockAnchorRef.current = null;
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
   }
 
   function unlockAllOnMat(matNum: number) {
@@ -1003,11 +1035,10 @@ export default function MatBoardTab({
       return next;
     });
     lastLockAnchorRef.current = null;
-    setDirty(true);
-    dirtyRef.current = true;
+    markDirty();
   }
 
-  async function updateWrestlerStatus(wrestlerId: string, status: "EARLY" | "LATE" | null) {
+  async function updateWrestlerStatus(wrestlerId: string, status: "COMING" | "EARLY" | "LATE" | "NOT_COMING" | null) {
     const res = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1019,7 +1050,7 @@ export default function MatBoardTab({
     }
   }
 
-  async function handleStatusContextSelection(status: "EARLY" | "LATE" | null) {
+  async function handleStatusContextSelection(status: "COMING" | "EARLY" | "LATE" | "NOT_COMING" | null) {
     if (!statusContext || statusSaving || !canEdit) return;
     const wrestlerId = statusContext.wrestlerId;
     setStatusSaving(true);
@@ -1034,7 +1065,7 @@ export default function MatBoardTab({
         };
       });
       setStatusContext(null);
-      onMatAssignmentsChange?.();
+      await onMatAssignmentsChange?.({ includeWrestlers: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to update wrestler status.";
       setMsg(message);
@@ -1050,6 +1081,7 @@ export default function MatBoardTab({
     if (!canEdit) return;
     const silent = Boolean(opts?.silent);
     if (!silent) setMsg("Saving...");
+    const saveVersion = orderVersionRef.current;
     const payload: Record<string, string[]> = {};
     const originalMatByBoutId: Record<string, number | null> = {};
     for (let m = 1; m <= numMats; m++) payload[keyMat(m)] = [];
@@ -1069,7 +1101,7 @@ export default function MatBoardTab({
       payload[k] = list.map(x => x.id);
     }
 
-    await fetch(`/api/meets/${meetId}/bouts/reorder`, {
+    const response = await fetch(`/api/meets/${meetId}/bouts/reorder`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1079,6 +1111,13 @@ export default function MatBoardTab({
       }),
       keepalive: Boolean(opts?.keepalive),
     });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      if (!silent) {
+        setMsg(payload?.error ?? "Unable to save mat assignments.");
+      }
+      throw new Error(payload?.error ?? "Unable to save mat assignments.");
+    }
 
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
@@ -1086,14 +1125,31 @@ export default function MatBoardTab({
     }
     autoSavingRef.current = false;
 
+    if (orderVersionRef.current !== saveVersion) {
+      void window.setTimeout(() => {
+        if (!dirtyRef.current) return;
+        const saveOrder = saveOrderRef.current;
+        if (!saveOrder || autoSavingRef.current) return;
+        autoSavingRef.current = true;
+        void (async () => {
+          try {
+            await saveOrder({ silent: true, keepalive: opts?.keepalive });
+          } finally {
+            autoSavingRef.current = false;
+          }
+        })();
+      }, 0);
+      return;
+    }
+
     setDirty(false);
     dirtyRef.current = false;
     if (!silent) {
       setMsg("Saved.");
       await load();
-      setTimeout(() => setMsg(""), 1200);
+      void setTimeout(() => setMsg(""), 1200);
     }
-    onMatAssignmentsChange?.();
+    void onMatAssignmentsChange?.();
   }
 
   useEffect(() => {
@@ -1663,8 +1719,9 @@ export default function MatBoardTab({
           border-color: #b6defc;
         }
         .matboard-status-item.clear {
-          background: #eef6ee;
-          border-color: #c6e2ba;
+          background: #f1f3f5;
+          border-color: #cfd5dc;
+          color: #4b5563;
         }
         .matboard-status-item[disabled] {
           opacity: 0.5;
@@ -1695,11 +1752,19 @@ export default function MatBoardTab({
         <div className="matboard-header">
           <div className="matboard-header-left">
             <h3>Mat Assignments</h3>
+            <button
+              type="button"
+              className="nav-btn secondary"
+              onClick={reorderAllMats}
+              disabled={!canEdit || bouts.length === 0}
+            >
+              Reorder all
+            </button>
             <label className="matboard-italic-control">
               <input
                 type="checkbox"
                 checked={showTeamSymbols}
-                onChange={e => setShowTeamSymbols(e.target.checked)}
+                onChange={e => onShowTeamSymbolsChange(e.target.checked)}
               />
               <span>Show team</span>
             </label>
@@ -2151,8 +2216,9 @@ export default function MatBoardTab({
         const wrestler = wMap[statusContext.wrestlerId];
         const label = wrestler ? `${wrestler.first} ${wrestler.last}` : statusContext.wrestlerId;
         const currentStatus = wrestler?.status === "EARLY" || wrestler?.status === "LATE" ? wrestler.status : null;
+        const currentNotAttending = wrestler?.status === "NOT_COMING";
         const menuWidth = 210;
-        const menuHeight = 142;
+        const menuHeight = allowNotAttendingStatus ? 182 : 142;
         const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
         const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
         const left = viewportWidth ? Math.min(statusContext.x, viewportWidth - menuWidth - 8) : statusContext.x;
@@ -2172,7 +2238,7 @@ export default function MatBoardTab({
                 className="matboard-status-item late"
                 disabled={!canEdit || statusSaving}
                 onClick={() => {
-                  void handleStatusContextSelection("LATE");
+                  void handleStatusContextSelection(currentStatus === "LATE" ? "COMING" : "LATE");
                 }}
               >
                 <span>Arrive Late</span>
@@ -2183,23 +2249,25 @@ export default function MatBoardTab({
                 className="matboard-status-item early"
                 disabled={!canEdit || statusSaving}
                 onClick={() => {
-                  void handleStatusContextSelection("EARLY");
+                  void handleStatusContextSelection(currentStatus === "EARLY" ? "COMING" : "EARLY");
                 }}
               >
                 <span>Leave Early</span>
                 <span className="check">{currentStatus === "EARLY" ? "✓" : ""}</span>
               </button>
-              <button
-                type="button"
-                className="matboard-status-item clear"
-                disabled={!canEdit || statusSaving}
-                onClick={() => {
-                  void handleStatusContextSelection(null);
-                }}
-              >
-                <span>Clear Early/Late</span>
-                <span className="check">{currentStatus === null ? "✓" : ""}</span>
-              </button>
+              {allowNotAttendingStatus && (
+                <button
+                  type="button"
+                  className="matboard-status-item clear"
+                  disabled={!canEdit || statusSaving}
+                  onClick={() => {
+                    void handleStatusContextSelection("NOT_COMING");
+                  }}
+                >
+                  <span>Not Attending</span>
+                  <span className="check">{currentNotAttending ? "\u2713" : ""}</span>
+                </button>
+              )}
             </div>
           </>
         );

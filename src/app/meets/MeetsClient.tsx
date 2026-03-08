@@ -1,5 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
@@ -7,7 +8,15 @@ import NumberInput from "@/components/NumberInput";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { meetPhaseLabel, normalizeMeetPhase, type MeetPhase } from "@/lib/meetPhase";
 
-type Team = { id: string; name: string; symbol: string; color: string; address?: string | null; hasLogo?: boolean };
+type Team = {
+  id: string;
+  name: string;
+  symbol: string;
+  color: string;
+  address?: string | null;
+  hasLogo?: boolean;
+  headCoachId?: string | null;
+};
 type RestartDefaults = {
   name?: string;
   date?: string;
@@ -138,15 +147,10 @@ type Meet = {
   canDelete?: boolean;
 };
 
-type DeletedMeet = Meet & {
-  deletedAt?: string | null;
-  deletedBy?: { username?: string | null } | null;
-};
-
 export default function MeetsPage() {
+  const { data: session } = useSession();
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
-  const [deletedMeets, setDeletedMeets] = useState<DeletedMeet[]>([]);
   const [isLoadingMeets, setIsLoadingMeets] = useState(true);
   const [name, setName] = useState("");
   const [date, setDate] = useState(DEFAULT_DATE);
@@ -173,9 +177,9 @@ export default function MeetsPage() {
     name: string;
     date: string;
   } | null>(null);
-  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sessionUserId = (session?.user as any)?.id as string | undefined;
   const hasCreateQuery = searchParams.get("create") === "1";
   const restartDefaultsParam = searchParams.get("defaults");
   const hasRestartDefaults = Boolean(restartDefaultsParam);
@@ -266,24 +270,8 @@ export default function MeetsPage() {
       const nextRole = meJson?.role ?? null;
       setCurrentTeamId(meJson?.teamId ?? null);
       setRole(nextRole);
-
-      const canManage = nextRole === "COACH" || nextRole === "ADMIN";
-      if (canManage) {
-        const deletedRes = await fetch("/api/meets/deleted");
-        if (deletedRes.ok) {
-          const deletedJson = await deletedRes.json().catch(() => []);
-          const nextDeleted = Array.isArray(deletedJson) ? deletedJson : [];
-        setDeletedMeets(nextDeleted);
-        if (nextDeleted.length === 0) setRestoreDialogOpen(false);
-        } else {
-          setDeletedMeets([]);
-        }
-      } else {
-        setDeletedMeets([]);
-      }
-    } else {
-      setDeletedMeets([]);
     }
+
     setIsLoadingMeets(false);
   }
 
@@ -325,9 +313,6 @@ export default function MeetsPage() {
           teamIds: normalizedTeamIds,
           homeTeamId: homeTeamId ?? currentTeamId ?? null,
           numMats,
-          allowSameTeamMatches,
-          girlsWrestleGirls,
-          matchesPerWrestler,
           maxMatchesPerWrestler,
           restGap,
           autoPairings: true,
@@ -406,36 +391,6 @@ export default function MeetsPage() {
       window.alert(err instanceof Error ? err.message : "Delete failed.");
     } finally {
       setDeletingMeetId(null);
-    }
-  };
-
-  const restoreMeet = async (id: string) => {
-    if (!canManageMeets) return;
-    try {
-      const res = await fetch(`/api/meets/${id}/restore`, { method: "POST" });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        throw new Error(payload?.error ?? "Unable to restore meet.");
-      }
-      await load();
-    } catch (err) {
-      console.error(err);
-      window.alert(err instanceof Error ? err.message : "Restore failed.");
-    }
-  };
-
-  const purgeMeet = async (id: string) => {
-    if (!canManageMeets) return;
-    try {
-      const res = await fetch(`/api/meets/${id}/purge`, { method: "DELETE" });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        throw new Error(payload?.error ?? "Unable to purge meet.");
-      }
-      await load();
-    } catch (err) {
-      console.error(err);
-      window.alert(err instanceof Error ? err.message : "Purge failed.");
     }
   };
 
@@ -529,24 +484,16 @@ export default function MeetsPage() {
   const otherTeamIds = currentTeamId
     ? teamIds.filter(id => id !== currentTeamId)
     : teamIds;
-  const teamIdsBySymbol = useMemo(() => {
-    const byId = new Map(teams.map(team => [team.id, team]));
-    return [...teamIds].sort((a, b) => {
-      const aTeam = byId.get(a);
-      const bTeam = byId.get(b);
-      const aLabel = (aTeam?.symbol ?? aTeam?.name ?? a).toLowerCase();
-      const bLabel = (bTeam?.symbol ?? bTeam?.name ?? b).toLowerCase();
-      if (aLabel < bLabel) return -1;
-      if (aLabel > bLabel) return 1;
-      return 0;
-    });
-  }, [teamIds, teams]);
   const canManageMeets = role === "COACH" || role === "ADMIN";
+  const canCreateMeets = Boolean(
+    currentTeamId &&
+    sessionUserId &&
+    teams.find((team) => team.id === currentTeamId)?.headCoachId === sessionUserId,
+  );
   const isTableWorker = role === "TABLE_WORKER";
-  const isAdmin = role === "ADMIN";
   const selectedTeam = teams.find(t => t.id === currentTeamId) ?? null;
   const headerTeamName = selectedTeam?.name ?? "Your Team";
-  const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Meet For ${headerTeamName}`;
+  const modalTitle = isEditing ? `Edit Meet: ${editingMeet?.name ?? ""}` : `Create New Home Meet For ${headerTeamName}`;
   const submitLabel = isEditing ? "Save Changes" : "Create Meet";
   const visibleMeets = useMemo(() => {
     if (role === "COACH") {
@@ -561,6 +508,105 @@ export default function MeetsPage() {
     }
     return meets;
   }, [meets, role, currentTeamId]);
+  const activeMeets = useMemo(
+    () => visibleMeets.filter(m => normalizeMeetPhase(m.status) !== "PUBLISHED"),
+    [visibleMeets],
+  );
+  const publishedMeets = useMemo(
+    () => visibleMeets.filter(m => normalizeMeetPhase(m.status) === "PUBLISHED"),
+    [visibleMeets],
+  );
+
+  const renderMeetList = (meetList: typeof visibleMeets, emptyText: string) => (
+    <div className="meet-list">
+      {meetList.map(m => {
+        const coachCannotEdit =
+          role === "COACH" && m.canStartEditing === false;
+        const isPublishedMeet = normalizeMeetPhase(m.status) === "PUBLISHED";
+        const homeTeam =
+          m.homeTeamId
+            ? m.meetTeams.find(mt => mt.team.id === m.homeTeamId)?.team
+              ?? teams.find(team => team.id === m.homeTeamId)
+            : null;
+        const homeTeamLabel = homeTeam?.name ?? "";
+        return (
+          <div key={m.id} className="meet-item">
+            <div className="meet-item-header">
+              <div>
+                <div className="meet-title-row">
+                  {isTableWorker ? (
+                    <span>{m.name}</span>
+                  ) : (
+                    <a href={`/meets/${m.id}`}>{m.name}</a>
+                  )}
+                  <span className={`badge ${normalizeMeetPhase(m.status).toLowerCase()}`}>
+                    {meetPhaseLabel(m.status)}
+                  </span>
+                </div>
+                <div className="muted">
+                  {new Date(m.date).toISOString().slice(0, 10)}
+                  {homeTeamLabel ? ` - ${homeTeamLabel}` : ""}
+                  {m.location ? ` - ${m.location}` : ""}
+                </div>
+              </div>
+              {(canManageMeets || isTableWorker) && (
+                <div className="meet-item-actions">
+                  {normalizeMeetPhase(m.status) === "PUBLISHED" && (
+                    <span className="meet-action-results-wrap meet-action-results">
+                      <button
+                        className="nav-btn primary"
+                        onClick={() => router.push(`/results/${m.id}`)}
+                      >
+                        Results
+                      </button>
+                    </span>
+                  )}
+                  {canManageMeets && (
+                    <>
+                      <button
+                        className="nav-btn meet-action-view"
+                        onClick={() => router.push(`/meets/${m.id}`)}
+                      >
+                        View
+                      </button>
+                      {!coachCannotEdit && !isPublishedMeet && (
+                        <button
+                          className="nav-btn meet-action-edit"
+                          onClick={() => router.push(`/meets/${m.id}?edit=1`)}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {m.canDelete && (
+                        <button
+                          className="nav-btn delete-btn meet-action-delete"
+                          onClick={() => openDeleteDialog(m)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            {(m.lastChangeAt ?? m.updatedAt) && (
+              <div className="muted" style={{ marginTop: 6 }}>
+                Last edited {new Date(m.lastChangeAt ?? m.updatedAt ?? "").toLocaleString()} by{" "}
+                {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {meetList.length === 0 && (
+        <div className="muted">
+          {isLoadingMeets ? "Loading..." : emptyText}
+        </div>
+      )}
+    </div>
+  );
+
   useEffect(() => {
     if (!homeTeamId || hasRestartDefaults) return;
     if (location.trim()) return;
@@ -818,7 +864,7 @@ export default function MeetsPage() {
           width: 100%;
         }
         .input-sm {
-          width: 80px;
+          width: 56px;
         }
         .btn {
           border: 0;
@@ -848,7 +894,7 @@ export default function MeetsPage() {
         .team-box {
           border: 1px solid var(--line);
           border-radius: 8px;
-          padding: 8px;
+          padding: 6px;
           background: #fff;
           max-height: 340px;
           overflow-y: auto;
@@ -869,8 +915,9 @@ export default function MeetsPage() {
         .team-option {
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 2px 0;
+          gap: 5px;
+          padding: 1px 0;
+          line-height: 1.15;
           font-size: 13px;
         }
         .meet-list {
@@ -985,45 +1032,6 @@ export default function MeetsPage() {
           min-height: 0;
           padding: 22px;
         }
-        .restore-modal {
-          width: min(760px, 100%);
-          min-height: 0;
-          padding: 22px;
-        }
-        .restore-list {
-          display: grid;
-          gap: 12px;
-        }
-        .restore-item {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          align-items: center;
-          border: 1px solid #eee;
-          border-radius: 8px;
-          padding: 12px;
-          background: #fff;
-        }
-        .restore-title {
-          font-weight: 700;
-        }
-        .restore-actions {        .restore-btn {
-          background: #1e88e5;
-          border-color: #1e88e5;
-          color: #fff;
-        }
-
-          display: inline-flex;
-          gap: 8px;
-          align-items: center;
-        }
-        .modal-home-team {
-          flex: 1;
-          min-width: 220px;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
         .modal-action-buttons {
           display: flex;
           gap: 10px;
@@ -1126,107 +1134,22 @@ export default function MeetsPage() {
       <div className="grid">
         <section className="card">
           <div className="card-header-row">
-            <h2 className="card-title">Existing Meets</h2>
+            <h2 className="card-title">Active Meets</h2>
             <div className="card-header-actions">
-              {canManageMeets && deletedMeets.length > 0 && (
-                <button className="btn btn-secondary" type="button" onClick={() => setRestoreDialogOpen(true)}>
-                  Restore Deleted
-                </button>
-              )}
-              {canManageMeets && (
+              {canCreateMeets && (
                 <button className="btn" type="button" onClick={() => setIsCreateModalOpen(true)}>
                   Create New Meet
                 </button>
               )}
             </div>
           </div>
-          <div className="meet-list">
-            {visibleMeets.map(m => {
-              const coachCannotEdit =
-                role === "COACH" && m.canStartEditing === false;
-              const isPublishedMeet = normalizeMeetPhase(m.status) === "PUBLISHED";
-              const homeTeam =
-                m.homeTeamId
-                  ? m.meetTeams.find(mt => mt.team.id === m.homeTeamId)?.team
-                    ?? teams.find(team => team.id === m.homeTeamId)
-                  : null;
-              const homeTeamLabel = homeTeam?.name ?? "";
-              return (
-                <div key={m.id} className="meet-item">
-                  <div className="meet-item-header">
-                  <div>
-                    <div className="meet-title-row">
-                      {isTableWorker ? (
-                        <span>{m.name}</span>
-                      ) : (
-                        <a href={`/meets/${m.id}`}>{m.name}</a>
-                      )}
-                      <span className={`badge ${normalizeMeetPhase(m.status).toLowerCase()}`}>
-                        {meetPhaseLabel(m.status)}
-                      </span>
-                    </div>
-                    <div className="muted">
-                      {new Date(m.date).toISOString().slice(0, 10)}
-                      {homeTeamLabel ? ` - ${homeTeamLabel}` : ""}
-                      {m.location ? ` - ${m.location}` : ""}
-                    </div>
-                  </div>
-                {(canManageMeets || isTableWorker) && (
-                  <div className="meet-item-actions">
-                    {normalizeMeetPhase(m.status) === "PUBLISHED" && (
-                      <span className="meet-action-results-wrap meet-action-results">
-                        <button
-                          className="nav-btn primary"
-                          onClick={() => router.push(`/results/${m.id}`)}
-                        >
-                          Results
-                        </button>
-                      </span>
-                    )}
-                    {canManageMeets && (
-                      <>
-                        <button
-                          className="nav-btn meet-action-view"
-                          onClick={() => router.push(`/meets/${m.id}`)}
-                        >
-                          View
-                        </button>
-                        {!coachCannotEdit && !isPublishedMeet && (
-                          <button
-                            className="nav-btn meet-action-edit"
-                            onClick={() => router.push(`/meets/${m.id}?edit=1`)}
-                          >
-                            Edit
-                          </button>
-                        )}
-                        {m.canDelete && (
-                          <button
-                            className="nav-btn delete-btn meet-action-delete"
-                            onClick={() => openDeleteDialog(m)}
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-                </div>
-                {(m.lastChangeAt ?? m.updatedAt) && (
-                  <div className="muted" style={{ marginTop: 6 }}>
-                    Last edited {new Date(m.lastChangeAt ?? m.updatedAt ?? "").toLocaleString()} by{" "}
-                      {m.lastChangeBy ?? m.updatedBy?.username ?? "unknown"}
-                  </div>
-                )}
-                </div>
-              );
-            })}
-            {meets.length === 0 && (
-              <div className="muted">
-                {isLoadingMeets ? "Loading..." : "No meets yet."}
-              </div>
-            )}
+          {renderMeetList(activeMeets, "No active meets.")}
+        </section>
+        <section className="card">
+          <div className="card-header-row">
+            <h2 className="card-title">Published Meets</h2>
           </div>
+          {renderMeetList(publishedMeets, "No published meets.")}
         </section>
       </div>
       {isCreateModalOpen && (
@@ -1264,7 +1187,7 @@ export default function MeetsPage() {
                   <input className="input" placeholder="Location" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
                 </label>
               </div>
-              <div className="row">
+              <div className="row" style={{ marginTop: 8 }}>
                 <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
                   <span className="muted">Attendance deadline</span>
                   <input
@@ -1277,12 +1200,9 @@ export default function MeetsPage() {
                     }}
                     disabled={!canManageMeets}
                   />
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    Default: 6:00 PM on the Wednesday before the meet.
-                  </span>
                 </label>
               </div>
-              <div className="row" style={{ marginTop: 10 }}>
+              <div className="row" style={{ marginTop: 10, alignItems: "center" }}>
                 <label className="row">
                   <span className="muted">Number of mats</span>
                   <NumberInput
@@ -1295,48 +1215,54 @@ export default function MeetsPage() {
                     disabled={!canManageMeets}
                   />
                 </label>
-                  <label className="row">
-                    <span className="muted">Target matches per wrestler</span>
-                    <NumberInput
-                      className="input input-sm"
-                      min={1}
-                      max={5}
-                      value={matchesPerWrestler}
-                      onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
-                      normalize={(value) => Math.round(value)}
-                      disabled={!canManageMeets}
-                    />
-                  </label>
-                </div>
-                <div className="row" style={{ marginTop: 6, gap: 18 }}>
-                  <label className="row" style={{ margin: 0 }}>
+                {!isEditing && (
+                  <label className="row" style={{ margin: 0, alignSelf: "center", marginLeft: 8 }}>
                     <input
                       type="checkbox"
-                      checked={allowSameTeamMatches}
-                      onChange={e => setAllowSameTeamMatches(e.target.checked)}
+                      checked={allCoachesHaveLockAccess}
+                      onChange={e => setAllCoachesHaveLockAccess(e.target.checked)}
                       disabled={!canManageMeets}
                     />
-                    <span className="muted">Find matches from same team</span>
+                    <span className="muted">Allow other coaches to edit while the meet is in Draft phase</span>
                   </label>
-                  <label className="row" style={{ margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={girlsWrestleGirls}
-                      onChange={e => setGirlsWrestleGirls(e.target.checked)}
-                      disabled={!canManageMeets}
-                    />
-                    <span className="muted">Girls wrestle girls</span>
-                  </label>
-                  {!isEditing && (
-                    <label className="row" style={{ margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={allCoachesHaveLockAccess}
-                        onChange={e => setAllCoachesHaveLockAccess(e.target.checked)}
+                )}
+                  {isEditing && (
+                    <label className="row">
+                      <span className="muted">Target matches per wrestler</span>
+                      <NumberInput
+                        className="input input-sm"
+                        min={1}
+                        max={5}
+                        value={matchesPerWrestler}
+                        onValueChange={(value) => setMatchesPerWrestler(Math.round(value))}
+                        normalize={(value) => Math.round(value)}
                         disabled={!canManageMeets}
                       />
-                      <span className="muted">Allow all coaches to edit this meet</span>
                     </label>
+                  )}
+                </div>
+                <div className="row" style={{ marginTop: 6, gap: 18 }}>
+                  {isEditing && (
+                    <>
+                      <label className="row" style={{ margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={allowSameTeamMatches}
+                          onChange={e => setAllowSameTeamMatches(e.target.checked)}
+                          disabled={!canManageMeets}
+                        />
+                        <span className="muted">Find matches from same team</span>
+                      </label>
+                      <label className="row" style={{ margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={girlsWrestleGirls}
+                          onChange={e => setGirlsWrestleGirls(e.target.checked)}
+                          disabled={!canManageMeets}
+                        />
+                        <span className="muted">Girls wrestle girls</span>
+                      </label>
+                    </>
                   )}
               </div>
 
@@ -1363,29 +1289,7 @@ export default function MeetsPage() {
               </div>
 
             </div>
-            <div className="modal-actions">
-              <label className="modal-home-team">
-                <span className="muted">Home team</span>
-                <select
-                  className="select"
-                  value={homeTeamId ?? ""}
-                  onChange={e => {
-                    const next = e.target.value.trim() || null;
-                    setHomeTeamId(next);
-                    const t = next ? teams.find(team => team.id === next) : null;
-                    if (t?.address) setLocation(t.address);
-                  }}
-                  disabled={!canManageMeets || (!isAdmin && isEditing)}
-                >
-                  {teamIdsBySymbol.length === 0 && <option value="">Select teams first</option>}
-                  {teamIdsBySymbol.map(id => {
-                    const t = teams.find(team => team.id === id);
-                    return (
-                      <option key={id} value={id}>{t ? formatTeamName(t) : id}</option>
-                    );
-                  })}
-                </select>
-              </label>
+            <div className="modal-actions" style={{ justifyContent: "flex-end" }}>
               <div className="modal-action-buttons">
                 <button
                   className="btn"
@@ -1412,68 +1316,20 @@ export default function MeetsPage() {
           <div className="modal delete-modal" role="document" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                Recycle meet: {deleteDialog.name} (
+                Delete meet: {deleteDialog.name} (
                 {formatMeetDisplayDate(deleteDialog.date)}
                 )
               </h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to move this meet to the recycle bin? You can restore it later if needed.</p>
+              <p>Are you sure you want to delete this meet? This cannot be undone.</p>
             </div>
             <div className="modal-actions">
               <button className="nav-btn" onClick={() => setDeleteDialog(null)} disabled={Boolean(deletingMeetId)}>
                 Cancel
               </button>
               <button className="nav-btn delete-confirm" onClick={confirmDeleteMeet} disabled={Boolean(deletingMeetId)}>
-                Move to recycle bin
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {restoreDialogOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setRestoreDialogOpen(false)}>
-          <div className="modal restore-modal" role="document" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Restore deleted meets</h3>
-            </div>
-            <div className="modal-body">
-              {deletedMeets.length === 0 && <div className="muted">No deleted meets.</div>}
-              {deletedMeets.length > 0 && (
-                <div className="restore-list">
-                  {deletedMeets.map(m => (
-                    <div key={m.id} className="restore-item">
-                      <div>
-                        <div className="restore-title">
-                          {m.name} ({formatMeetDisplayDate(m.date)})
-                        </div>
-                        <div className="muted">
-                          Deleted {m.deletedAt ? new Date(m.deletedAt).toLocaleString() : "recently"}
-                          {m.deletedBy?.username ? ` by ${m.deletedBy.username}` : ""}
-                        </div>
-                      </div>
-                      <div className="restore-actions">
-                        <button
-                          className="nav-btn delete-btn"
-                          onClick={() => {
-                            const ok = window.confirm(`Permanently delete ${m.name}? This cannot be undone.`);
-                            if (ok) void purgeMeet(m.id);
-                          }}
-                        >
-                          Purge
-                        </button>
-                        <button className="nav-btn restore-btn" onClick={() => restoreMeet(m.id)}>
-                          Restore
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="modal-actions">
-              <button className="nav-btn" onClick={() => setRestoreDialogOpen(false)}>
-                Close
+                Delete meet
               </button>
             </div>
           </div>

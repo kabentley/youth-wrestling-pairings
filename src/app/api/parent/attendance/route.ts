@@ -86,7 +86,7 @@ export async function GET() {
         select: { headCoach: { select: { name: true, username: true } } },
       })
     : null;
-  const headCoachName = parentTeam?.headCoach?.name?.trim() || parentTeam?.headCoach?.username || null;
+  const headCoachName = parentTeam?.headCoach?.name?.trim() ?? parentTeam?.headCoach?.username ?? null;
 
   return NextResponse.json({
     meets: meets.map((meet) => {

@@ -23,7 +23,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ bout
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
 
   try {
-    await requireMeetLock(bout.meetId, user.id);
+    await requireMeetLock(bout.meetId, user.id, user.role);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });

@@ -4,10 +4,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import MatBoardTab from "./matboard/MatBoardTab";
 import AttendanceTab from "./attendance/AttendanceTab";
-import VolunteersTab from "./volunteers/VolunteersTab";
+import MatBoardTab from "./matboard/MatBoardTab";
 import ScratchesTab from "./scratches/ScratchesTab";
+import VolunteersTab from "./volunteers/VolunteersTab";
 import ScoringSheetTab from "./wall/ScoringSheetTab";
 import ScratchSheetTab from "./wall/ScratchSheetTab";
 import WallChartTab from "./wall/WallChartTab";
@@ -45,6 +45,11 @@ type Team = {
   address?: string | null;
   defaultRestGap?: number | null;
   defaultMaxMatchesPerWrestler?: number | null;
+};
+type TeamCheckin = {
+  teamId: string;
+  checkinCompletedAt?: string | null;
+  completedByUsername?: string | null;
 };
 type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT";
 type Wrestler = {
@@ -286,6 +291,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const daysPerYear = DAYS_PER_YEAR;
 
   const [teams, setTeams] = useState<Team[]>([]);
+  const [teamCheckins, setTeamCheckins] = useState<TeamCheckin[]>([]);
   const [wrestlers, setWrestlers] = useState<Wrestler[]>([]);
   const [bouts, setBouts] = useState<Bout[]>([]);
   const [wMap, setWMap] = useState<Record<string, Wrestler | undefined>>({});
@@ -316,7 +322,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [commentBody, setCommentBody] = useState("");
   const [showChangeLog, setShowChangeLog] = useState(false);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
-  const [attendanceColWidths, setAttendanceColWidths] = useState([90, 90]);
+  const [, setAttendanceColWidths] = useState([90, 90]);
   const [pairingsColWidths, setPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70]);
   const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70, 70]);
@@ -374,7 +380,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [isEditingName, setIsEditingName] = useState(false);
   const [pairingsTeamId, setPairingsTeamId] = useState<string | null>(null);
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
-  const [attendanceSort, setAttendanceSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const [pairingsSort, setPairingsSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
   const currentSort = useMemo(() => ({ key: "score", dir: "asc" as const }), []);
   const [availableSort, setAvailableSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "score", dir: "asc" });
@@ -422,12 +427,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [autoMatchesPerWrestler, setAutoMatchesPerWrestler] = useState<number | null>(null);
   const [autoMaxMatchesPerWrestler, setAutoMaxMatchesPerWrestler] = useState<number | null>(null);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
-  const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
+  const [, setAutoPairingsError] = useState<string | null>(null);
   const [autoPairingsSummary, setAutoPairingsSummary] = useState<string | null>(null);
   const [autoPairingsSlow, setAutoPairingsSlow] = useState(false);
   const autoPairingsSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [exportingMeet, setExportingMeet] = useState(false);
   const [showCloseAttendanceWarningModal, setShowCloseAttendanceWarningModal] = useState(false);
+  const [showReopenDraftWarningModal, setShowReopenDraftWarningModal] = useState(false);
   const [showPublishWarningModal, setShowPublishWarningModal] = useState(false);
   const pairingsInitRef = useRef(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -523,6 +529,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [matRefreshIndex, setMatRefreshIndex] = useState(0);
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
+  const [matBoardShowTeamSymbols, setMatBoardShowTeamSymbols] = useState(false);
   // Keep the home team first in the pairings tab order.
   const orderedPairingsTeams = useMemo(() => {
     if (!homeTeamId) return teams;
@@ -532,6 +539,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [teams, homeTeamId]);
 
   const [target, setTarget] = useState<Wrestler | null>(null);
+  const attendanceSaveHandlerRef = useRef<(() => Promise<boolean>) | null>(null);
   const pairingMenuRef = useRef<HTMLDivElement | null>(null);
   const [pairingMenuSize, setPairingMenuSize] = useState({ width: 210, height: 150 });
   const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
@@ -684,6 +692,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (res.status === 403) {
       const json = await res.json().catch(() => ({}));
       if (json?.code === "LOCK_ACCESS_DENIED") {
+        if (typeof json?.error === "string" && json.error.includes("Only the Meet Coordinator or an admin")) {
+          setLockActionError(json.error);
+          updateLockState({ status: "locked", lockedByUsername: null });
+          await refreshLockStatus();
+          return false;
+        }
         const coordinatorHintName = typeof json?.coordinatorName === "string" ? json.coordinatorName.trim() : "";
         const coordinatorHintUsername = typeof json?.coordinatorUsername === "string" ? json.coordinatorUsername : "";
         let coordinatorHintDisplayName = coordinatorHintUsername;
@@ -1003,30 +1017,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     ABSENT: "Scratched",
     NO_REPLY: "No Reply",
   };
-  // Normalize attendance status labels for UI chips.
-  function statusLabel(status: AttendanceStatus | null | undefined) {
-    if (!status) return "No Reply";
-    return STATUS_LABELS[status];
-  }
   // Format the remaining lock timeout as M:SS.
   function formatInactivityCountdown(ms: number) {
     const totalSeconds = Math.ceil(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  }
-  const STATUS_COLORS: Record<AttendanceStatus, string> = {
-    COMING: "#e6f6ea",
-    NOT_COMING: "#f0f0f0",
-    EARLY: "#f3eadf",
-    LATE: "#dff1ff",
-    ABSENT: "#f4ecec",
-  };
-
-  // Color encode attendance status in roster lists.
-  function statusColor(status: AttendanceStatus | null | undefined) {
-    if (!status) return "#f0f0f0";
-    return STATUS_COLORS[status];
   }
 
   function isAttending(status: AttendanceStatus | null | undefined) {
@@ -1080,6 +1076,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   function sortIndicator(sort: { key: string; dir: "asc" | "desc" }, key: string) {
     if (sort.key !== key) return null;
     return <span style={{ fontSize: 10, marginLeft: 4 }}>{sort.dir === "asc" ? "▲" : "▼"}</span>;
+  }
+
+  function renderChecklistDetail(detail: string) {
+    const parts = detail.split(/(Mat \d+:)/g);
+    if (parts.length === 1) return detail;
+    return parts.map((part, index) => (
+      /^Mat \d+:$/.test(part)
+        ? <strong key={`${part}-${index}`}>{part}</strong>
+        : <span key={`${part}-${index}`}>{part}</span>
+    ));
   }
 
   const loadLockAccess = useCallback(async () => {
@@ -1189,6 +1195,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           girlsWrestleGirls: Boolean(meetJson.girlsWrestleGirls),
         }));
         setMeetStatus(normalizeMeetPhase(meetJson.status));
+        setTeamCheckins(Array.isArray(meetJson.teamCheckins) ? meetJson.teamCheckins : []);
         setLastUpdatedAt(meetJson.lastChangeAt ?? null);
         setLastUpdatedBy(meetJson.lastChangeBy ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
@@ -1346,13 +1353,32 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canViewCheckinSheet = meetStatus === "READY_FOR_CHECKIN";
   const isEditablePhase = isEditableMeetPhase(meetStatus);
   const lockAccessDenied = lockAccessLoaded && !canManageLockAccess && !canAcquireMeetLock;
-  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase;
   const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
+  const canEditThisPhase = meetStatus === "DRAFT" || isMeetCoordinator || currentUserRole === "ADMIN";
+  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase && canEditThisPhase;
   const canApplyCheckpoint = canEdit && isMeetCoordinator;
   const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
-  const canViewScratches = meetStatus === "READY_FOR_CHECKIN" && (isMeetCoordinator || currentUserRole === "ADMIN");
-  const canManageScratches = canViewScratches && canEdit;
+  const isCoachOnMeetTeam = Boolean(
+    currentUserRole === "COACH" &&
+    currentUserTeamId &&
+    teams.some((team) => team.id === currentUserTeamId),
+  );
+  const canViewScratches =
+    meetStatus === "READY_FOR_CHECKIN" &&
+    (isMeetCoordinator || currentUserRole === "ADMIN" || isCoachOnMeetTeam);
+  const scratchManageTeamIds =
+    currentUserRole === "ADMIN" || isMeetCoordinator
+      ? teams.map((team) => team.id)
+      : isCoachOnMeetTeam && currentUserTeamId
+        ? [currentUserTeamId]
+        : [];
+  const canManageScratchEntry = canViewScratches && scratchManageTeamIds.length > 0;
+  const canManageScratchMatches =
+    meetStatus === "READY_FOR_CHECKIN" &&
+    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    canEdit;
   const canSetPairingNotComing = meetStatus === "DRAFT";
+  const canRunPairingsAutoPair = canEdit && meetStatus === "DRAFT";
   const defaultTabForPhase = meetStatus === "ATTENDANCE" ? "attendance" : "pairings";
   const canChangeStatus =
     (isMeetCoordinator || currentUserRole === "ADMIN") &&
@@ -1719,19 +1745,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return () => clearInterval(interval);
   }, [wantsEdit, lockState.status]);
 
-  // Stable roster sort for attendance modal (last/first/team).
-  const sortAttendanceRoster = useCallback((roster: Wrestler[]) => {
-    return [...roster].sort((a, b) => {
-      const getValue = (w: Wrestler) => {
-        if (attendanceSort.key === "last") return w.last;
-        if (attendanceSort.key === "first") return w.first;
-        if (attendanceSort.key === "status") return statusLabel(w.status ?? null);
-        return "";
-      };
-      return sortValueCompare(getValue(a), getValue(b), attendanceSort.dir);
-    });
-  }, [attendanceSort]);
-
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
   // Cache team labels for quick lookup in tables.
@@ -1987,12 +2000,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   // Refresh meet + activity after mat changes.
-  async function refreshAfterMatAssignments() {
+  async function refreshAfterMatAssignments(opts?: { includeWrestlers?: boolean }) {
     try {
-      const pairingsRes = await fetch(`/api/meets/${meetId}/pairings`, { cache: "no-store" });
+      const requests = [
+        fetch(`/api/meets/${meetId}/pairings`, { cache: "no-store" }),
+        opts?.includeWrestlers
+          ? fetch(`/api/meets/${meetId}/wrestlers`, { cache: "no-store" })
+          : Promise.resolve(null),
+      ] as const;
+      const [pairingsRes, wrestlersRes] = await Promise.all(requests);
       if (pairingsRes.ok) {
         const pairingsJson = await pairingsRes.json().catch(() => []);
         setBouts(Array.isArray(pairingsJson) ? pairingsJson : []);
+      }
+      if (wrestlersRes?.ok) {
+        const wrestlersJson = await wrestlersRes.json().catch(() => null);
+        const nextTeams = Array.isArray(wrestlersJson?.teams) ? wrestlersJson.teams : [];
+        const nextWrestlers = Array.isArray(wrestlersJson?.wrestlers) ? wrestlersJson.wrestlers : [];
+        setTeams(nextTeams);
+        setWrestlers(nextWrestlers);
+        const nextMap: Record<string, Wrestler | undefined> = {};
+        for (const wrestler of nextWrestlers as Wrestler[]) nextMap[wrestler.id] = wrestler;
+        setWMap(nextMap);
+        setCandidateRefreshVersion((prev) => prev + 1);
       }
     } catch {
       // Keep current view if lightweight refresh fails.
@@ -2299,7 +2329,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const currentStatus = pairingContext.wrestler.status ?? null;
     const nextStatus =
       (status === "LATE" || status === "EARLY") && currentStatus === status
-        ? null
+        ? "COMING"
         : status;
     try {
       await updateWrestlerStatus(pairingContext.wrestler.id, nextStatus);
@@ -2347,8 +2377,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (target) await loadCandidates(target.id);
   }
 
-  async function ensureMeetLock() {
-    if (lockState.status === "acquired") return true;
+  async function ensureMeetLock(force = false) {
+    if (!force && lockState.status === "acquired") return true;
     const ok = await acquireLock();
     if (!ok) {
       triggerNoticeFlash();
@@ -2357,9 +2387,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return true;
   }
 
+  async function flushPendingAttendanceChanges() {
+    if (activeTab !== "attendance" || !attendanceSaveHandlerRef.current) return true;
+    return attendanceSaveHandlerRef.current();
+  }
+
   // Change meet status while ensuring lock ownership.
   async function updateMeetStatus(nextStatus: MeetPhase) {
     if (!canChangeStatus) return false;
+    if (!(await flushPendingAttendanceChanges())) return false;
     if (!(await ensureMeetLock())) return false;
     const sendStatusUpdate = () => fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
@@ -2390,15 +2426,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     await load();
     await loadCheckpoints();
     await loadActivity();
+    setMatRefreshIndex((idx) => idx + 1);
+    setWallRefreshIndex((idx) => idx + 1);
     return true;
   }
 
   async function confirmReopenAsDraft() {
-    const confirmed = window.confirm(
-      "Are you sure you want to reopen this meet as Draft? This will discard all scratches and new matches added to accommodate them."
-    );
-    if (!confirmed) return false;
-    return updateMeetStatus("DRAFT");
+    setShowReopenDraftWarningModal(true);
+    return false;
   }
 
   async function confirmReopenAttendance() {
@@ -2421,6 +2456,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function openReadyForCheckinChecklist(targetStatus: "READY_FOR_CHECKIN" | "PUBLISHED" = "READY_FOR_CHECKIN") {
+    if (!(await flushPendingAttendanceChanges())) return;
     setReadyForCheckinTargetStatus(targetStatus);
     setShowReadyForCheckinModal(true);
     setReadyForCheckinLoading(true);
@@ -3759,40 +3795,60 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           position: fixed;
           z-index: 1201;
           width: 210px;
-          padding: 8px;
-          border: 1px solid var(--line);
-          border-radius: 10px;
+          padding: 6px;
+          border: 1px solid #d5dbe2;
+          border-radius: 8px;
           background: #ffffff;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-          display: grid;
-          gap: 6px;
+          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
         }
         .pairings-context-menu.readonly {
           opacity: 0.92;
         }
         .pairings-context-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--ink);
+          font-size: 12px;
+          font-weight: 700;
+          color: #384656;
+          padding: 4px 6px;
+          border-bottom: 1px solid #edf1f5;
+          margin-bottom: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .pairings-context-item {
-          border: none;
+          border: 1px solid #d5dbe2;
           border-radius: 6px;
           padding: 6px 8px;
           text-align: left;
           cursor: pointer;
-          font-size: 13px;
+          font-size: 12px;
           transition: transform 0.1s ease, box-shadow 0.1s ease;
-          display: inline-flex;
+          display: flex;
           align-items: center;
-          gap: 6px;
+          justify-content: space-between;
+          color: #1f2933;
+          background: #fff;
         }
         .pairings-context-check {
-          display: inline-flex;
-          align-items: center;
+          width: 14px;
+          text-align: center;
+          font-weight: 700;
         }
-        .pairings-context-check input {
-          pointer-events: none;
+        .pairings-context-item.early {
+          background: #f3eadf;
+          border-color: #e2c8ad;
+        }
+        .pairings-context-item.late {
+          background: #dff1ff;
+          border-color: #b6defc;
+        }
+        .pairings-context-item.clear {
+          background: #f1f3f5;
+          border-color: #cfd5dc;
+          color: #4b5563;
         }
         .pairings-context-item:focus-visible {
           outline: 2px solid var(--accent);
@@ -4055,7 +4111,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
-      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
+      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !(activeTab === "scratches" && canManageScratchEntry) && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
           {"Read-only mode. Click Start Editing to make changes."}
           {lockState.lockedByUsername ? (
@@ -4065,9 +4121,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           ) : ""}
         </div>
       )}
-      {isEditablePhase && lockAccessDenied && !lockActionError && (
+      {isEditablePhase && lockAccessDenied && !lockActionError && !(activeTab === "scratches" && canManageScratchEntry) && (
         <div className="notice" style={{ marginTop: 10 }}>
-          You do not have edit access yet. Meet Coordinator {coordinatorDisplay ? `${coordinatorDisplay} ` : ""}has not granted you edit access.
+          {meetStatus === "DRAFT"
+            ? `You do not have edit access yet. Meet Coordinator ${coordinatorDisplay ? `${coordinatorDisplay} ` : ""}has not granted you edit access.`
+            : "Only the Meet Coordinator or an admin can edit this meet after Draft."}
         </div>
       )}
       {lockActionError && (
@@ -4100,10 +4158,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             key={tab.key}
             className={`tab-button${activeTab === tab.key ? " active" : ""}`}
             onClick={() => {
+              void (async () => {
+                if (tab.key === activeTab) return;
+                if (activeTab === "attendance" && attendanceSaveHandlerRef.current) {
+                  const ok = await attendanceSaveHandlerRef.current();
+                  if (!ok) return;
+                }
               setActiveTab(tab.key as typeof activeTab);
-              if (tab.key === "wallMat" || tab.key === "wallTeam" || tab.key === "scratch" || tab.key === "scoring") {
-                setWallRefreshIndex(idx => idx + 1);
-              }
+                if (tab.key === "wallMat" || tab.key === "wallTeam" || tab.key === "scratch" || tab.key === "scoring") {
+                  setWallRefreshIndex(idx => idx + 1);
+                }
+              })();
             }}
           >
             {tab.label}
@@ -4122,8 +4187,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               attendanceDeadline={attendanceDeadline}
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn={meetStatus !== "DRAFT"}
-              readOnly={meetStatus === "ATTENDANCE"}
+              readOnly={meetStatus === "ATTENDANCE" || !canEdit}
+              onEnsureLock={ensureMeetLock}
               onRefresh={load}
+              onRegisterSaveHandler={(handler) => {
+                attendanceSaveHandlerRef.current = handler;
+              }}
             />
           </section>
         )}
@@ -4192,7 +4261,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   setAllowRejectedMatchups(false);
                   setShowAutoPairingsConfirm(true);
                 }}
-                disabled={!canEdit || autoPairingsLoading}
+                disabled={!canRunPairingsAutoPair || autoPairingsLoading}
               >
                 {autoPairingsLoading ? "Running..." : "Run Auto Pairings"}
               </button>
@@ -5155,7 +5224,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       await rerunAutoPairings({ clearExisting: clearAutoPairingsBeforeRun });
                     })();
                   }}
-                  disabled={!canEdit || autoPairingsLoading}
+                  disabled={!canRunPairingsAutoPair || autoPairingsLoading}
                 >
                   {autoPairingsLoading ? "Running..." : "Run Auto Pairings"}
                 </button>
@@ -5202,50 +5271,32 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               )}
               {!isShowMatches && (
                 <>
+                  <button
+                    className="pairings-context-item late"
+                    onClick={() => handlePairingContextStatus("LATE")}
+                    disabled={!canEdit}
+                  >
+                    <span>Arrive Late</span>
+                    <span className="pairings-context-check" aria-hidden="true">{currentStatus === "LATE" ? "\u2713" : ""}</span>
+                  </button>
+                  <button
+                    className="pairings-context-item early"
+                    onClick={() => handlePairingContextStatus("EARLY")}
+                    disabled={!canEdit}
+                  >
+                    <span>Leave Early</span>
+                    <span className="pairings-context-check" aria-hidden="true">{currentStatus === "EARLY" ? "\u2713" : ""}</span>
+                  </button>
                   {canSetPairingNotComing && (
                     <button
-                      className="pairings-context-item"
-                      style={{
-                        background: attendanceStatusStyles.NOT_COMING.background,
-                        border: `1px solid ${attendanceStatusStyles.NOT_COMING.borderColor}`,
-                      }}
+                      className="pairings-context-item clear"
                       onClick={() => handlePairingContextStatus("NOT_COMING")}
                       disabled={!canEdit}
                     >
-                      <span className="pairings-context-check" aria-hidden="true">
-                        <input type="checkbox" checked={currentStatus === "NOT_COMING"} readOnly />
-                      </span>
-                      Not Coming
+                      <span>Not Attending</span>
+                      <span className="pairings-context-check" aria-hidden="true">{currentStatus === "NOT_COMING" ? "\u2713" : ""}</span>
                     </button>
                   )}
-                <button
-                  className="pairings-context-item"
-                  style={{
-                    background: attendanceStatusStyles.LATE.background,
-                    border: `1px solid ${attendanceStatusStyles.LATE.borderColor}`,
-                  }}
-                  onClick={() => handlePairingContextStatus("LATE")}
-                  disabled={!canEdit}
-                >
-                  <span className="pairings-context-check" aria-hidden="true">
-                    <input type="checkbox" checked={currentStatus === "LATE"} readOnly />
-                  </span>
-                  Arrive Late
-                </button>
-                  <button
-                    className="pairings-context-item"
-                    style={{
-                      background: attendanceStatusStyles.EARLY.background,
-                    border: `1px solid ${attendanceStatusStyles.EARLY.borderColor}`,
-                  }}
-                  onClick={() => handlePairingContextStatus("EARLY")}
-                  disabled={!canEdit}
-                >
-                  <span className="pairings-context-check" aria-hidden="true">
-                    <input type="checkbox" checked={currentStatus === "EARLY"} readOnly />
-                  </span>
-                    Leave Early
-                  </button>
                 </>
               )}
             </div>
@@ -5463,9 +5514,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <MatBoardTab
               meetId={meetId}
               onMatAssignmentsChange={refreshAfterMatAssignments}
-              meetStatus={meetStatus}
-              lockState={lockState}
               refreshIndex={matRefreshIndex}
+              canEdit={canEdit}
+              allowNotAttendingStatus={meetStatus === "DRAFT"}
+              showTeamSymbols={matBoardShowTeamSymbols}
+              onShowTeamSymbolsChange={setMatBoardShowTeamSymbols}
             />
           </section>
         )}
@@ -5513,7 +5566,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             homeTeamId={homeTeamId}
             checkpoints={checkpoints}
             targetMatchesPerWrestler={matchesPerWrestler ?? savedMatchesPerWrestler}
-            canManage={canManageScratches}
+            teamCheckins={teamCheckins}
+            canManageScratchEntry={canManageScratchEntry}
+            canManageScratchMatches={canManageScratchMatches}
+            manageableTeamIds={scratchManageTeamIds}
             onEnsureLock={ensureMeetLock}
             onRefresh={async () => {
               await load();
@@ -5706,7 +5762,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                             <span>{item.label}</span>
                             <span className="ready-checkin-item-state">{stateLabel}</span>
                           </div>
-                          <div className="ready-checkin-item-detail">{item.detail}</div>
+                          <div className="ready-checkin-item-detail">{renderChecklistDetail(item.detail)}</div>
                           {!item.ok && item.action && item.actionLabel && (
                             <div className="ready-checkin-item-actions">
                               <button
@@ -5770,7 +5826,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             }}
           >
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ margin: 0 }}>Publish Meet?</h3>
+              <h3 style={{ margin: 0 }}>Publish Meet {meetName || ""}?</h3>
               <div>
                 Publishing will prepare the wall charts and scoring sheet, and notify parents of their wrestlers' bout numbers and opponents.
               </div>
@@ -5829,6 +5885,40 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   }}
                 >
                   Close Attendance
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showReopenDraftWarningModal && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowReopenDraftWarningModal(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Reopen as Draft?</h3>
+              <div>
+                Are you sure you want to reopen this meet as Draft?
+              </div>
+              <div className="ready-checkin-summary" style={{ fontSize: 15 }}>
+                This will discard all scratches and new matches added to accommodate them.
+              </div>
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => setShowReopenDraftWarningModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => {
+                    setShowReopenDraftWarningModal(false);
+                    void updateMeetStatus("DRAFT");
+                  }}
+                >
+                  Reopen as Draft
                 </button>
               </div>
             </div>

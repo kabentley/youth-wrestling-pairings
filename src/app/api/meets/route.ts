@@ -150,8 +150,9 @@ export async function GET() {
         Boolean(user.teamId) &&
         meetWithoutAccessMeta.meetTeams.some((entry) => entry.teamId === user.teamId);
       const hasCoordinatorGrant = lockAccesses.length > 0;
+      const isDraft = normalizeMeetPhase(meetWithoutAccessMeta.status) === "DRAFT";
       const canStartEditing =
-        user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+        user.role === "ADMIN" || isCoordinator || (isDraft && isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
       const isPublished = normalizeMeetPhase(meetWithoutAccessMeta.status) === "PUBLISHED";
       const canDelete = user.role === "ADMIN" || (!isPublished && isCoordinator);
       return {
@@ -184,7 +185,10 @@ export async function POST(req: Request) {
     where: { id: homeTeamId },
     select: { headCoachId: true },
   });
-  const coordinatorId = homeTeam?.headCoachId ?? null;
+  if (!homeTeam?.headCoachId || homeTeam.headCoachId !== user.id) {
+    return NextResponse.json({ error: "Only the home team head coach can create a meet." }, { status: 403 });
+  }
+  const coordinatorId = homeTeam.headCoachId;
 
   const now = new Date();
   const meetTeams = await db.team.findMany({

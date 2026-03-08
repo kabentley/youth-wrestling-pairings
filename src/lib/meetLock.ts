@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 
 /** Server-side lock lifetime for a meet (milliseconds). */
 export const MEET_LOCK_TTL_MS = 2 * 60 * 1000;
@@ -22,7 +23,7 @@ type MeetLockErrorPayload = {
  *
  * Callers typically map these errors to `409` responses via `getMeetLockError`.
  */
-export async function requireMeetLock(meetId: string, userId: string) {
+export async function requireMeetLock(meetId: string, userId: string, userRole?: string) {
   const now = new Date();
   const meet = await db.meet.findUnique({
     where: { id: meetId },
@@ -31,11 +32,25 @@ export async function requireMeetLock(meetId: string, userId: string) {
       lockExpiresAt: true,
       lockedBy: { select: { username: true } },
       deletedAt: true,
+      status: true,
+      homeTeam: { select: { headCoachId: true } },
     },
   });
 
   if (!meet || meet.deletedAt) {
     const err = new Error("MEET_NOT_FOUND");
+    throw err;
+  }
+
+  const meetStatus = normalizeMeetPhase(meet.status);
+  const coordinatorId = meet.homeTeam?.headCoachId ?? null;
+  const canEditThisPhase =
+    meetStatus === "DRAFT" ||
+    userRole === "ADMIN" ||
+    (Boolean(coordinatorId) && coordinatorId === userId);
+
+  if (userRole && !canEditThisPhase) {
+    const err = new Error("MEET_EDIT_FORBIDDEN");
     throw err;
   }
 
@@ -89,6 +104,12 @@ export function getMeetLockError(err: unknown): MeetLockErrorPayload | null {
         lockedByUsername: info.lockedByUsername ?? null,
         lockExpiresAt: info.lockExpiresAt ?? null,
       },
+    };
+  }
+  if (err.message === "MEET_EDIT_FORBIDDEN") {
+    return {
+      status: 403,
+      body: { error: "Only the Meet Coordinator or an admin can edit this meet after Draft." },
     };
   }
   return null;

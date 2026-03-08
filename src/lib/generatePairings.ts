@@ -64,10 +64,6 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     },
   });
   const scoreOptions = league ?? undefined;
-  const meet = await db.meet.findUnique({
-    where: { id: meetId },
-    select: { status: true },
-  });
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
     include: { team: { include: { wrestlers: true } } },

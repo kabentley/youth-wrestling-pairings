@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireAnyRole } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -61,6 +62,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     where: { id: meetId },
     select: {
       deletedAt: true,
+      status: true,
       meetTeams: { select: { teamId: true } },
       homeTeam: {
         select: {
@@ -84,8 +86,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
   const isCoachOnMeetTeam = user.role === "COACH" && Boolean(user.teamId) && meetTeamIds.has(user.teamId ?? "");
   const hasCoordinatorGrant = meetForAccess.lockAccesses.length > 0;
+  const isDraft = normalizeMeetPhase(meetForAccess.status) === "DRAFT";
   const canAcquire =
-    user.role === "ADMIN" || isCoordinator || (isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
+    user.role === "ADMIN" || isCoordinator || (isDraft && isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
 
   if (!canAcquire) {
     if (user.role !== "COACH") {
@@ -93,6 +96,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
         {
           code: "LOCK_ACCESS_DENIED",
           error: "Only coaches can start editing this meet.",
+          coordinatorName,
+          coordinatorUsername,
+        },
+        { status: 403 },
+      );
+    }
+    if (!isDraft) {
+      return NextResponse.json(
+        {
+          code: "LOCK_ACCESS_DENIED",
+          error: "Only the Meet Coordinator or an admin can edit this meet after Draft.",
           coordinatorName,
           coordinatorUsername,
         },

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 
 import { db } from "@/lib/db";
-import { requireTeamCoach } from "@/lib/rbac";
+import { requireAdmin, requireTeamCoach } from "@/lib/rbac";
 
 const BodySchema = z.object({
   first: z.string().trim().min(1).optional(),
@@ -82,7 +82,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ teamId
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ teamId: string; wrestlerId: string }> }) {
   const { teamId, wrestlerId } = await params;
-  await requireTeamCoach(teamId);
+  try {
+    await requireAdmin();
+  } catch (error) {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      return NextResponse.json({ error: "Only admins can delete wrestlers." }, { status: 403 });
+    }
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+    }
+    throw error;
+  }
   const wrestler = await db.wrestler.findUnique({
     where: { id: wrestlerId },
     select: { id: true, teamId: true },

@@ -244,13 +244,17 @@ model TeamMatRule {
 }
 
 model MeetTeam {
-  meetId String
-  teamId String
+  meetId             String
+  teamId             String
+  checkinCompletedAt DateTime?
+  checkinCompletedById String?
 
   meet   Meet @relation(fields: [meetId], references: [id], onDelete: Cascade)
   team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  checkinCompletedBy User? @relation("MeetTeamCheckinCompletedBy", fields: [checkinCompletedById], references: [id], onDelete: SetNull)
 
   @@id([meetId, teamId])
+  @@index([checkinCompletedById])
 }
 
 model MeetLockAccess {
@@ -329,6 +333,7 @@ model User {
   rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
   meetStatusHistory MeetWrestlerStatusHistory[] @relation("MeetStatusChangedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
+  completedTeamCheckins MeetTeam[] @relation("MeetTeamCheckinCompletedBy")
   children      UserChild[]
   headCoachTeam Team?   @relation("TeamHeadCoach")
   resetCodes    PasswordResetCode[]

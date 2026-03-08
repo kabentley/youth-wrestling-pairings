@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
 
 const BodySchema = z.object({
@@ -17,6 +18,7 @@ async function loadMeetContext(meetId: string) {
     select: {
       id: true,
       deletedAt: true,
+      status: true,
       homeTeamId: true,
       meetTeams: {
         select: {
@@ -118,8 +120,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;
   const canManageEditAccess = isCoordinator || user.role === "ADMIN";
   const isMeetCoach = user.role === "COACH" && Boolean(user.teamId) && teamIds.includes(user.teamId ?? "");
+  const isDraft = normalizeMeetPhase(meet.status) === "DRAFT";
   const canAcquireLock =
-    user.role === "ADMIN" || isCoordinator || (isMeetCoach && (!coordinatorId || grantedSet.has(user.id)));
+    user.role === "ADMIN" || isCoordinator || (isDraft && isMeetCoach && (!coordinatorId || grantedSet.has(user.id)));
 
   return NextResponse.json({
     coordinator: meet.homeTeam?.headCoach

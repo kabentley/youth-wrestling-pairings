@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
@@ -29,7 +29,9 @@ type AttendanceTabProps = {
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
   readOnly?: boolean;
+  onEnsureLock?: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
+  onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
 };
 
 function contrastText(color?: string | null) {
@@ -44,6 +46,14 @@ function contrastText(color?: string | null) {
   return luminance > 0.6 ? "#111111" : "#ffffff";
 }
 
+function sortRosterRows(rows: Wrestler[]) {
+  return [...rows].sort((a, b) => {
+    const lastCompare = a.last.localeCompare(b.last, undefined, { sensitivity: "base" });
+    if (lastCompare !== 0) return lastCompare;
+    return a.first.localeCompare(b.first, undefined, { sensitivity: "base" });
+  });
+}
+
 export default function AttendanceTab({
   meetId,
   teams,
@@ -53,7 +63,9 @@ export default function AttendanceTab({
   showRefresh = false,
   showNoReplyColumn = true,
   readOnly = false,
+  onEnsureLock,
   onRefresh,
+  onRegisterSaveHandler,
 }: AttendanceTabProps) {
   const isDev = process.env.NODE_ENV !== "production";
   const orderedTeams = homeTeamId
@@ -62,15 +74,49 @@ export default function AttendanceTab({
   const [activeTeamId, setActiveTeamId] = useState<string | null>(orderedTeams[0]?.id || null);
   const [draggedWrestler, setDraggedWrestler] = useState<Wrestler | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [bulkUpdatingColumn, setBulkUpdatingColumn] = useState<string | null>(null);
+  const [pendingStatusChanges, setPendingStatusChanges] = useState<Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>>(new Map());
   const [columnSearch, setColumnSearch] = useState<Record<string, string>>({
     coming: "",
     "not-coming": "",
     "no-reply": "",
   });
+  const pendingStatusChangesRef = useRef(pendingStatusChanges);
+  const savingRef = useRef(false);
+  const savePendingChangesRef = useRef<(opts?: { silent?: boolean; keepalive?: boolean }) => Promise<boolean>>(async () => true);
+
+  useEffect(() => {
+    pendingStatusChangesRef.current = pendingStatusChanges;
+  }, [pendingStatusChanges]);
+
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+
+  useEffect(() => {
+    setPendingStatusChanges((current) => {
+      if (current.size === 0) return current;
+      const wrestlerStatusById = new Map(wrestlers.map((wrestler) => [wrestler.id, wrestler.status ?? null]));
+      const next = new Map(current);
+      for (const [wrestlerId, pendingStatus] of current.entries()) {
+        if (wrestlerStatusById.get(wrestlerId) === pendingStatus) {
+          next.delete(wrestlerId);
+        }
+      }
+      pendingStatusChangesRef.current = next;
+      return next;
+    });
+  }, [wrestlers]);
+
+  const effectiveStatus = (wrestler: Wrestler) => (
+    pendingStatusChanges.get(wrestler.id) ?? wrestler.status ?? null
+  );
 
   const activeTeam = teams.find(t => t.id === activeTeamId);
-  const teamWrestlers = wrestlers.filter(w => w.teamId === activeTeamId);
+  const teamWrestlers = wrestlers
+    .filter(w => w.teamId === activeTeamId)
+    .map((wrestler) => ({ ...wrestler, status: effectiveStatus(wrestler) }));
   const attendanceDeadlineLabel = (() => {
     if (!attendanceDeadline) return null;
     const deadline = new Date(attendanceDeadline);
@@ -78,9 +124,13 @@ export default function AttendanceTab({
     return deadline.toLocaleString();
   })();
 
-  const coming = teamWrestlers.filter(w => w.status === "COMING" || w.status === "LATE" || w.status === "EARLY");
-  const notComing = teamWrestlers.filter(w => w.status === "NOT_COMING" || w.status === "ABSENT");
-  const noReply = teamWrestlers.filter(w => w.status == null);
+  const coming = sortRosterRows(teamWrestlers.filter(w => w.status === "COMING" || w.status === "LATE" || w.status === "EARLY"));
+  const notComing = sortRosterRows(
+    teamWrestlers.filter(
+      w => w.status === "NOT_COMING" || w.status === "ABSENT" || (!showNoReplyColumn && w.status == null),
+    ),
+  );
+  const noReply = sortRosterRows(teamWrestlers.filter(w => w.status == null));
   const columns: Array<{
     key: string;
     label: string;
@@ -107,42 +157,132 @@ export default function AttendanceTab({
       wrestlers: notComing,
       dropStatus: "NOT_COMING",
       clickStatus: "COMING",
-      panelBackground: "#fff7f7",
-      itemBackground: "#f7e6e6",
-      itemBorder: "#e0c5c5",
+      panelBackground: "#f4f5f7",
+      itemBackground: "#eceef1",
+      itemBorder: "#cfd5dc",
     },
-    ...(showNoReplyColumn
-      ? [{
-          key: "no-reply",
-          label: "No Reply",
-          wrestlers: noReply,
-          dropStatus: null,
-          clickStatus: "COMING",
-          panelBackground: "#f7f8fa",
-          itemBackground: "#f0f0f0",
-          itemBorder: "#d7dbe1",
-        }]
-      : []),
   ];
-
-  const updateStatus = async (wrestlerId: string, status: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null) => {
-    const response = await fetch(`/api/meets/${meetId}/wrestlers/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wrestlerId, status }),
+  if (showNoReplyColumn) {
+    columns.push({
+      key: "no-reply",
+      label: "No Reply",
+      wrestlers: noReply,
+      dropStatus: null,
+      clickStatus: "COMING",
+      panelBackground: "#f7f8fa",
+      itemBackground: "#f0f0f0",
+      itemBorder: "#d7dbe1",
     });
-    if (response.ok) {
+  }
+
+  const runManagedAttendanceRequest = async (makeRequest: () => Promise<Response>, fallbackError: string) => {
+    if (onEnsureLock) {
+      const hasLock = await onEnsureLock();
+      if (!hasLock) throw new Error("Meet lock required");
+    }
+    let response = await makeRequest();
+    let payload = response.ok ? null : await response.clone().json().catch(() => null);
+    if (!response.ok && payload?.error === "Meet lock required" && onEnsureLock) {
+      const hasLock = await onEnsureLock(true);
+      if (!hasLock) throw new Error("Meet lock required");
+      response = await makeRequest();
+      payload = response.ok ? null : await response.clone().json().catch(() => null);
+    }
+    if (!response.ok) {
+      throw new Error(payload?.error ?? fallbackError);
+    }
+    return response;
+  };
+
+  const queueStatusChange = (wrestlerId: string, status: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null) => {
+    const wrestler = wrestlers.find((entry) => entry.id === wrestlerId);
+    const persistedStatus = wrestler?.status ?? null;
+    setPendingStatusChanges((current) => {
+      const next = new Map(current);
+      if (status === persistedStatus) {
+        next.delete(wrestlerId);
+      } else {
+        next.set(wrestlerId, status);
+      }
+      pendingStatusChangesRef.current = next;
+      return next;
+    });
+  };
+
+  const savePendingChanges = async (opts?: { silent?: boolean; keepalive?: boolean }) => {
+    const changes = [...pendingStatusChangesRef.current.entries()].map(([wrestlerId, status]) => ({ wrestlerId, status }));
+    if (changes.length === 0) return true;
+    if (savingRef.current) return false;
+    setSaving(true);
+    savingRef.current = true;
+    try {
+      await runManagedAttendanceRequest(
+        () => fetch(`/api/meets/${meetId}/wrestlers/status/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ changes }),
+          keepalive: Boolean(opts?.keepalive),
+        }),
+        "Failed to update attendance",
+      );
       await onRefresh();
-    } else {
-      alert("Failed to update status");
+      return true;
+    } catch (error) {
+      if (!opts?.silent) {
+        alert(error instanceof Error ? error.message : "Failed to update attendance");
+      }
+      return false;
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
     }
   };
+
+  useEffect(() => {
+    savePendingChangesRef.current = savePendingChanges;
+  });
+
+  const switchActiveTeam = async (teamId: string) => {
+    if (teamId === activeTeamId) return;
+    if (!readOnly && pendingStatusChangesRef.current.size > 0) {
+      const ok = await savePendingChangesRef.current();
+      if (!ok) return;
+    }
+    setActiveTeamId(teamId);
+  };
+
+  useEffect(() => {
+    if (!onRegisterSaveHandler) return undefined;
+    const handler = () => savePendingChangesRef.current();
+    onRegisterSaveHandler(handler);
+    return () => onRegisterSaveHandler(null);
+  }, [onRegisterSaveHandler]);
+
+  useEffect(() => {
+    if (readOnly) return undefined;
+    const autoSave = () => {
+      if (pendingStatusChangesRef.current.size === 0 || savingRef.current) return;
+      void savePendingChangesRef.current({ silent: true, keepalive: true });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") autoSave();
+    };
+    window.addEventListener("blur", autoSave);
+    window.addEventListener("pagehide", autoSave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      autoSave();
+      window.removeEventListener("blur", autoSave);
+      window.removeEventListener("pagehide", autoSave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [readOnly]);
 
   const handleDrop = async (e: React.DragEvent, newStatus: "COMING" | "NOT_COMING" | null) => {
     e.preventDefault();
     if (readOnly) return;
     if (!draggedWrestler) return;
-    await updateStatus(draggedWrestler.id, newStatus);
+    queueStatusChange(draggedWrestler.id, newStatus);
     setDraggedWrestler(null);
   };
 
@@ -157,7 +297,7 @@ export default function AttendanceTab({
 
   const toggleComingStatus = async (wrestler: Wrestler, nextStatus: "NOT_COMING" | "LATE" | "EARLY") => {
     const updatedStatus = wrestler.status === nextStatus ? "COMING" : nextStatus;
-    await updateStatus(wrestler.id, updatedStatus);
+    queueStatusChange(wrestler.id, updatedStatus);
   };
 
   const handleRefresh = async () => {
@@ -177,18 +317,20 @@ export default function AttendanceTab({
     if (wrestlerIds.length === 0) return;
     setBulkUpdatingColumn(columnKey);
     try {
-      const response = await fetch(`/api/meets/${meetId}/wrestlers/status/batch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          changes: wrestlerIds.map((wrestlerId) => ({ wrestlerId, status })),
-        }),
+      setPendingStatusChanges((current) => {
+        const next = new Map(current);
+        for (const wrestlerId of wrestlerIds) {
+          const wrestler = wrestlers.find((entry) => entry.id === wrestlerId);
+          const persistedStatus = wrestler?.status ?? null;
+          if (status === persistedStatus) {
+            next.delete(wrestlerId);
+          } else {
+            next.set(wrestlerId, status);
+          }
+        }
+        pendingStatusChangesRef.current = next;
+        return next;
       });
-      if (!response.ok) {
-        alert("Failed to update attendance");
-        return;
-      }
-      await onRefresh();
     } finally {
       setBulkUpdatingColumn(null);
     }
@@ -253,7 +395,9 @@ export default function AttendanceTab({
               return (
                 <button
                   key={team.id}
-                  onClick={() => setActiveTeamId(team.id)}
+                  onClick={() => {
+                    void switchActiveTeam(team.id);
+                  }}
                   className={`pairing-tab ${isActive ? "active" : ""}`}
                   style={{
                     background: isActive
@@ -272,6 +416,18 @@ export default function AttendanceTab({
                 </button>
               );
             })}
+            {!readOnly && (
+              <div style={{ display: "flex", alignItems: "center", paddingLeft: 32, transform: "translateY(-6px)" }}>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => void savePendingChanges()}
+                  disabled={pendingStatusChanges.size === 0 || saving}
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            )}
             {showRefresh && (
               <div style={{ display: "flex", alignItems: "center", paddingLeft: 40, transform: "translateY(-6px)" }}>
                 <button
@@ -289,7 +445,7 @@ export default function AttendanceTab({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: columns.length === 3 ? "420px 280px 340px" : "420px 280px",
+                gridTemplateColumns: columns.length === 3 ? "360px 360px 340px" : "360px 360px",
                 gap: 8,
                 width: "fit-content",
                 alignItems: "start",
@@ -392,7 +548,7 @@ export default function AttendanceTab({
                         key={w.id}
                         draggable={!readOnly}
                         onDragStart={() => handleDragStart(w)}
-                        onClick={readOnly ? undefined : () => void updateStatus(w.id, column.clickStatus)}
+                        onClick={readOnly ? undefined : () => queueStatusChange(w.id, column.clickStatus)}
                         style={{
                           padding: "3px 4px",
                           margin: "0 0 4px",
@@ -421,26 +577,6 @@ export default function AttendanceTab({
                             style={{ display: "flex", gap: 8, fontSize: 12, flex: "0 0 auto", whiteSpace: "nowrap" }}
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void toggleComingStatus(w, "NOT_COMING");
-                              }}
-                              style={{
-                                border: "1px solid #d0b2b2",
-                                borderRadius: 4,
-                                background: "#fff7f7",
-                                color: "#7a3d3d",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Mark Not Coming"
-                            >
-                              Not Coming
-                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -480,77 +616,6 @@ export default function AttendanceTab({
                               title="Toggle Early"
                             >
                               Early
-                            </button>
-                          </div>
-                        )}
-                        {!readOnly && column.key === "no-reply" && (
-                          <div style={{ display: "flex", gap: 6, flex: "0 0 auto", whiteSpace: "nowrap" }}>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void updateStatus(w.id, "COMING");
-                              }}
-                              style={{
-                                border: "1px solid #bcd8c1",
-                                borderRadius: 4,
-                                background: "#e6f6ea",
-                                color: "#1d5b2a",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Mark Coming"
-                            >
-                              Coming
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void updateStatus(w.id, "NOT_COMING");
-                              }}
-                              style={{
-                                border: "1px solid #d0b2b2",
-                                borderRadius: 4,
-                                background: "#fff7f7",
-                                color: "#7a3d3d",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Mark Not Coming"
-                            >
-                              Not Coming
-                            </button>
-                          </div>
-                        )}
-                        {!readOnly && column.key === "not-coming" && (
-                          <div style={{ display: "flex", gap: 6, flex: "0 0 auto", whiteSpace: "nowrap" }}>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void updateStatus(w.id, "COMING");
-                              }}
-                              style={{
-                                border: "1px solid #bcd8c1",
-                                borderRadius: 4,
-                                background: "#e6f6ea",
-                                color: "#1d5b2a",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Mark Coming"
-                            >
-                              Coming
                             </button>
                           </div>
                         )}

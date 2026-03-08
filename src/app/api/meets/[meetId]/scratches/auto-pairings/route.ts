@@ -9,6 +9,7 @@ import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireAnyRole } from "@/lib/rbac";
 
 type CheckpointPayload = {
+  attendance?: Array<{ wrestlerId?: string; status?: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null }>;
   bouts?: Array<{ redId?: string; greenId?: string }>;
 };
 
@@ -26,7 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   try {
-    await requireMeetLock(meetId, user.id);
+    await requireMeetLock(meetId, user.id, user.role);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
@@ -83,9 +84,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   const baselineMatchCounts = new Map<string, number>();
+  const baselineAttendance = new Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>();
   const payload = (checkpoint.payload ?? {}) as CheckpointPayload;
+  for (const attendance of Array.isArray(payload.attendance) ? payload.attendance : []) {
+    if (typeof attendance.wrestlerId !== "string") continue;
+    baselineAttendance.set(attendance.wrestlerId, attendance.status ?? null);
+  }
   for (const bout of Array.isArray(payload.bouts) ? payload.bouts : []) {
-    if (typeof bout?.redId !== "string" || typeof bout?.greenId !== "string") continue;
+    if (typeof bout.redId !== "string" || typeof bout.greenId !== "string") continue;
     baselineMatchCounts.set(bout.redId, (baselineMatchCounts.get(bout.redId) ?? 0) + 1);
     baselineMatchCounts.set(bout.greenId, (baselineMatchCounts.get(bout.greenId) ?? 0) + 1);
   }
@@ -129,6 +135,19 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
       targetDeficits[wrestlerId] = deficit;
     }
   }
+  if (targetMatches !== null) {
+    for (const wrestlerId of attendingIds) {
+      if (targetDeficits[wrestlerId]) continue;
+      const baselineStatus = baselineAttendance.get(wrestlerId);
+      const wasUnexpectedAtCheckin = baselineStatus == null || baselineStatus === "NOT_COMING";
+      if (!wasUnexpectedAtCheckin) continue;
+      const currentMatches = currentMatchCounts.get(wrestlerId) ?? 0;
+      const shortfall = Math.max(0, targetMatches - currentMatches);
+      if (shortfall > 0) {
+        targetDeficits[wrestlerId] = shortfall;
+      }
+    }
+  }
 
   const maxAgeGapDays = Math.round((league?.maxAgeGapYears ?? 1) * 365);
   const maxWeightDiffPct = league?.maxWeightDiffPct ?? 10;
@@ -146,7 +165,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
 
   const changeMessages: string[] = [];
   if (result.created > 0) {
-    const generatedMessage = `Generated scratch auto-pairings (${result.created} bout${result.created === 1 ? "" : "s"} for ${result.targetedWrestlers} wrestler${result.targetedWrestlers === 1 ? "" : "s"} who lost matches).`;
+    const generatedMessage = `Generated scratch auto-pairings (${result.created} bout${result.created === 1 ? "" : "s"} for ${result.targetedWrestlers} wrestler${result.targetedWrestlers === 1 ? "" : "s"} needing matches).`;
     await logMeetChange(meetId, user.id, generatedMessage);
     changeMessages.push(generatedMessage);
 
@@ -160,8 +179,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   const noChangesMessage = result.targetedWrestlers > 0
-    ? "No replacement matches could be found for wrestlers who lost matches."
-    : "No wrestlers currently need replacement matches.";
+    ? "No replacement matches could be found for wrestlers needing matches."
+    : "No wrestlers currently need matches.";
   return NextResponse.json({
     ...result,
     assigned: 0,

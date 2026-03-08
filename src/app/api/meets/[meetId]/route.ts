@@ -109,6 +109,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       updatedAt: true,
       deletedAt: true,
       updatedBy: { select: { username: true } },
+      meetTeams: {
+        select: {
+          teamId: true,
+          checkinCompletedAt: true,
+          checkinCompletedBy: {
+            select: {
+              username: true,
+            },
+          },
+        },
+      },
     },
   });
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
@@ -121,6 +132,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
   const lastChangeBy = lastChange?.actor ? lastChange.actor.username : null;
   return NextResponse.json({
     ...meet,
+    teamCheckins: meet.meetTeams.map((entry) => ({
+      teamId: entry.teamId,
+      checkinCompletedAt: entry.checkinCompletedAt?.toISOString() ?? null,
+      completedByUsername: entry.checkinCompletedBy?.username ?? null,
+    })),
     lastChangeAt,
     lastChangeBy,
   });
@@ -130,7 +146,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
   try {
-    await requireMeetLock(meetId, user.id);
+    await requireMeetLock(meetId, user.id, user.role);
   } catch (err) {
     const lockError = getMeetLockError(err);
     if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
@@ -248,7 +264,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const parsedReopenCheckpointPayload = reopenCheckpoint
     ? MeetCheckpointPayloadSchema.safeParse(reopenCheckpoint.payload)
     : null;
-  if ((reopeningFromCheckin || reopeningAttendance) && (!parsedReopenCheckpointPayload || !parsedReopenCheckpointPayload.success)) {
+  if ((reopeningFromCheckin || reopeningAttendance) && (!parsedReopenCheckpointPayload?.success)) {
     return NextResponse.json(
       {
         error: reopeningFromCheckin
@@ -306,7 +322,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       )
     : "";
   let autoMarkedNoReplyCount = 0;
-  let restoredFromCheckpointName: string | null = null;
   const updated = await db.$transaction(async (tx) => {
     if (closingAttendance) {
       const payload = await buildMeetCheckpointPayload(meetId, autoCheckpointName, tx);
@@ -498,8 +513,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
           })),
         });
       }
+    }
 
-      restoredFromCheckpointName = checkpoint.name;
+    if ((currentStatus !== "READY_FOR_CHECKIN" && nextStatus === "READY_FOR_CHECKIN") || reopeningFromCheckin) {
+      await tx.meetTeam.updateMany({
+        where: { meetId },
+        data: { checkinCompletedAt: null, checkinCompletedById: null },
+      });
     }
 
     const updatedMeet = await tx.meet.update({
@@ -588,13 +608,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       `Attendance: marked ${autoMarkedNoReplyCount} no-reply wrestler${autoMarkedNoReplyCount === 1 ? "" : "s"} as not coming when closing attendance.`,
     );
   }
-  if (restoredFromCheckpointName) {
+  if (reopenCheckpoint && (reopeningFromCheckin || reopeningAttendance)) {
     await logMeetChange(
       meetId,
       user.id,
       reopeningFromCheckin
-        ? `Reopened as Draft and restored checkpoint: ${restoredFromCheckpointName}.`
-        : `Reopened attendance and restored checkpoint: ${restoredFromCheckpointName}.`,
+        ? `Reopened as Draft and restored checkpoint: ${reopenCheckpoint.name}.`
+        : `Reopened attendance and restored checkpoint: ${reopenCheckpoint.name}.`,
     );
   }
 
@@ -650,16 +670,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
     );
   }
 
-  await db.meet.update({
+  await db.meet.delete({
     where: { id: meetId },
-    data: {
-      deletedAt: now,
-      deletedById: user.id,
-      lockedById: null,
-      lockedAt: null,
-      lockExpiresAt: null,
-      updatedById: user.id,
-    },
   });
 
   revalidatePath("/meets");
