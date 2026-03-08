@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -24,6 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
 
   const body = BodySchema.parse(await req.json());
+  const attribution = buildMeetStatusAttribution(user, "COACH");
 
   const wrestler = await db.wrestler.findUnique({
     where: { id: body.wrestlerId },
@@ -43,8 +45,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   } else {
     await db.meetWrestlerStatus.upsert({
       where: { meetId_wrestlerId: { meetId, wrestlerId: body.wrestlerId } },
-      update: { status: body.status },
-      create: { meetId, wrestlerId: body.wrestlerId, status: body.status },
+      update: { status: body.status, ...attribution },
+      create: { meetId, wrestlerId: body.wrestlerId, status: body.status, ...attribution },
     });
   }
 

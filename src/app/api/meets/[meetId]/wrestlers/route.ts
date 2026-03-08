@@ -28,9 +28,16 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
 
   const statuses = await db.meetWrestlerStatus.findMany({
     where: { meetId },
-    select: { wrestlerId: true, status: true },
+    select: {
+      wrestlerId: true,
+      status: true,
+      lastChangedByUsername: true,
+      lastChangedByRole: true,
+      lastChangedSource: true,
+      lastChangedAt: true,
+    },
   });
-  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s.status]));
+  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s]));
 
   const teams = meetTeams.map(mt => ({
     id: mt.team.id,
@@ -52,7 +59,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
       experienceYears: w.experienceYears,
       skill: w.skill,
       isGirl: w.isGirl,
-      status: statusMap.get(w.id) ?? null,
+      status: statusMap.get(w.id)?.status ?? null,
+      statusChangedByUsername: statusMap.get(w.id)?.lastChangedByUsername ?? null,
+      statusChangedByRole: statusMap.get(w.id)?.lastChangedByRole ?? null,
+      statusChangedSource: statusMap.get(w.id)?.lastChangedSource ?? null,
+      statusChangedAt: statusMap.get(w.id)?.lastChangedAt?.toISOString() ?? null,
       active: w.active,
     }))
   ).filter(w => (w.active ? true : boutWrestlerIds.has(w.id)));

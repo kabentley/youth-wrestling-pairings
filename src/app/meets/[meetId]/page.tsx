@@ -63,6 +63,10 @@ type Wrestler = {
   isGirl: boolean;
   birthdate?: string;
   status?: AttendanceStatus | null;
+  statusChangedByUsername?: string | null;
+  statusChangedByRole?: string | null;
+  statusChangedSource?: string | null;
+  statusChangedAt?: string | null;
 };
 type Bout = {
   id: string;
@@ -433,6 +437,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const autoPairingsSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [exportingMeet, setExportingMeet] = useState(false);
   const [showCloseAttendanceWarningModal, setShowCloseAttendanceWarningModal] = useState(false);
+  const [showReopenAttendanceWarningModal, setShowReopenAttendanceWarningModal] = useState(false);
   const [showReopenDraftWarningModal, setShowReopenDraftWarningModal] = useState(false);
   const [showPublishWarningModal, setShowPublishWarningModal] = useState(false);
   const pairingsInitRef = useRef(false);
@@ -2437,11 +2442,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function confirmReopenAttendance() {
-    const confirmed = window.confirm(
-      "Are you sure you want to reopen attendance? Any attendance changes made since the close will be lost."
-    );
-    if (!confirmed) return false;
-    return updateMeetStatus("ATTENDANCE");
+    setShowReopenAttendanceWarningModal(true);
+    return false;
   }
 
   async function confirmCloseAttendance() {
@@ -4187,6 +4189,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               attendanceDeadline={attendanceDeadline}
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn={meetStatus !== "DRAFT"}
+              showStatusAttribution={meetStatus === "ATTENDANCE"}
               readOnly={meetStatus === "ATTENDANCE" || !canEdit}
               onEnsureLock={ensureMeetLock}
               onRefresh={load}
@@ -5885,6 +5888,40 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   }}
                 >
                   Close Attendance
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showReopenAttendanceWarningModal && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setShowReopenAttendanceWarningModal(false)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Reopen Attendance?</h3>
+              <div>
+                Are you sure you want to reopen attendance?
+              </div>
+              <div style={{ fontSize: 16 }}>
+                Any attendance changes made since the close will be lost.
+              </div>
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => setShowReopenAttendanceWarningModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => {
+                    setShowReopenAttendanceWarningModal(false);
+                    void updateMeetStatus("ATTENDANCE");
+                  }}
+                >
+                  Reopen Attendance
                 </button>
               </div>
             </div>

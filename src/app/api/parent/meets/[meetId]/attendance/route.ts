@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
+import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireSession } from "@/lib/rbac";
 
 const BodySchema = z.object({
@@ -16,7 +17,7 @@ export async function PATCH(
   { params }: { params: Promise<{ meetId: string }> },
 ) {
   const { meetId } = await params;
-  const { userId } = await requireSession();
+  const { userId, user } = await requireSession();
   const body = BodySchema.parse(await req.json());
 
   const [link, meet, wrestler] = await Promise.all([
@@ -71,10 +72,11 @@ export async function PATCH(
       where: { meetId, wrestlerId: body.wrestlerId },
     });
   } else {
+    const attribution = buildMeetStatusAttribution(user, "PARENT");
     await db.meetWrestlerStatus.upsert({
       where: { meetId_wrestlerId: { meetId, wrestlerId: body.wrestlerId } },
-      update: { status: body.status },
-      create: { meetId, wrestlerId: body.wrestlerId, status: body.status },
+      update: { status: body.status, ...attribution },
+      create: { meetId, wrestlerId: body.wrestlerId, status: body.status, ...attribution },
     });
   }
 

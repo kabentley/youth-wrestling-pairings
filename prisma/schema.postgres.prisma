@@ -150,6 +150,11 @@ model MeetWrestlerStatus {
   meetId     String
   wrestlerId String
   status     MeetWrestlerStatusType
+  lastChangedById       String?
+  lastChangedByUsername String?
+  lastChangedByRole     String?
+  lastChangedSource     String?
+  lastChangedAt         DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

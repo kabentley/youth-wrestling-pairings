@@ -15,7 +15,14 @@ export type MeetCheckpointPayload = {
   meetName: string;
   meetDate: string;
   teamIds: string[];
-  attendance: { wrestlerId: string; status: CheckpointAttendanceStatus }[];
+  attendance: {
+    wrestlerId: string;
+    status: CheckpointAttendanceStatus;
+    lastChangedByUsername?: string | null;
+    lastChangedByRole?: string | null;
+    lastChangedSource?: string | null;
+    lastChangedAt?: string | null;
+  }[];
   bouts: {
     redId: string;
     greenId: string;
@@ -68,7 +75,14 @@ export async function buildMeetCheckpointPayload(
     }),
     client.meetWrestlerStatus.findMany({
       where: { meetId },
-      select: { wrestlerId: true, status: true },
+      select: {
+        wrestlerId: true,
+        status: true,
+        lastChangedByUsername: true,
+        lastChangedByRole: true,
+        lastChangedSource: true,
+        lastChangedAt: true,
+      },
     }),
     client.bout.findMany({
       where: { meetId },
@@ -88,7 +102,7 @@ export async function buildMeetCheckpointPayload(
     }),
   ]);
 
-  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s.status]));
+  const statusMap = new Map(statuses.map(s => [s.wrestlerId, s]));
   const sortedWrestlers = wrestlers.slice().sort((a, b) => {
     if (a.teamId !== b.teamId) return a.teamId.localeCompare(b.teamId);
     if (a.last !== b.last) return a.last.localeCompare(b.last);
@@ -97,7 +111,11 @@ export async function buildMeetCheckpointPayload(
 
   const attendance = sortedWrestlers.map(w => ({
     wrestlerId: w.id,
-    status: normalizeAttendanceStatus(statusMap.get(w.id)),
+    status: normalizeAttendanceStatus(statusMap.get(w.id)?.status),
+    lastChangedByUsername: statusMap.get(w.id)?.lastChangedByUsername ?? null,
+    lastChangedByRole: statusMap.get(w.id)?.lastChangedByRole ?? null,
+    lastChangedSource: statusMap.get(w.id)?.lastChangedSource ?? null,
+    lastChangedAt: statusMap.get(w.id)?.lastChangedAt?.toISOString() ?? null,
   }));
 
   return {

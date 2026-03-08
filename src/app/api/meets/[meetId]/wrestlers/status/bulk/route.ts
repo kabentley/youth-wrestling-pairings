@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -25,6 +26,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
 
   const body = BodySchema.parse(await req.json());
+  const changedAt = new Date();
+  const attribution = buildMeetStatusAttribution(user, "COACH", changedAt);
 
   const meetTeams = await db.meetTeam.findMany({
     where: { meetId },
@@ -69,6 +72,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
         meetId,
         wrestlerId,
         status,
+        ...attribution,
       })),
     });
   }

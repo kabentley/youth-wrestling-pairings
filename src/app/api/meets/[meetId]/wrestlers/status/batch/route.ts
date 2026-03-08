@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
+import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -56,6 +57,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
 
   await db.$transaction(async tx => {
+    const changedAt = new Date();
+    const attribution = buildMeetStatusAttribution(user, "COACH", changedAt);
     const historyEntries = changes.map(change => ({
       meetId,
       wrestlerId: change.wrestlerId,
@@ -71,8 +74,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       } else {
         await tx.meetWrestlerStatus.upsert({
           where: { meetId_wrestlerId: { meetId, wrestlerId: change.wrestlerId } },
-          update: { status: change.status },
-          create: { meetId, wrestlerId: change.wrestlerId, status: change.status },
+          update: { status: change.status, ...attribution },
+          create: { meetId, wrestlerId: change.wrestlerId, status: change.status, ...attribution },
         });
       }
     }

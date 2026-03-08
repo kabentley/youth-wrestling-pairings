@@ -344,7 +344,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     const teamWrestlers = wrestlersByTeam.get(team.id) ?? [];
     for (const wrestler of teamWrestlers) {
       const status = wrestler.status ?? null;
-      const attending = status !== "NOT_COMING" && status !== "ABSENT";
+      const attending = status === "COMING" || status === "LATE" || status === "EARLY";
       const early = status === "EARLY";
       const late = status === "LATE";
       wrsLines.push(

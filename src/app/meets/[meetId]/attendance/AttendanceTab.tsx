@@ -18,6 +18,10 @@ type Wrestler = {
   first: string;
   last: string;
   status?: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT" | null;
+  statusChangedByUsername?: string | null;
+  statusChangedByRole?: string | null;
+  statusChangedSource?: string | null;
+  statusChangedAt?: string | null;
 };
 
 type AttendanceTabProps = {
@@ -28,10 +32,17 @@ type AttendanceTabProps = {
   attendanceDeadline?: string | null;
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
+  showStatusAttribution?: boolean;
   readOnly?: boolean;
   onEnsureLock?: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
   onRegisterSaveHandler?: (handler: (() => Promise<boolean>) | null) => void;
+};
+
+type AttributionTooltip = {
+  message: string;
+  x: number;
+  y: number;
 };
 
 function contrastText(color?: string | null) {
@@ -54,6 +65,22 @@ function sortRosterRows(rows: Wrestler[]) {
   });
 }
 
+function formatStatusAttribution(wrestler: Wrestler) {
+  if (!wrestler.statusChangedByUsername || !wrestler.statusChangedAt) return null;
+  const changedAt = new Date(wrestler.statusChangedAt);
+  if (Number.isNaN(changedAt.getTime())) return null;
+  const sourceLabel = wrestler.statusChangedSource === "PARENT"
+    ? "Parent"
+    : wrestler.statusChangedSource === "CHECKIN"
+      ? "Check-in"
+      : wrestler.statusChangedSource === "SYSTEM"
+        ? "System"
+        : wrestler.statusChangedByRole === "ADMIN"
+          ? "Admin"
+          : "Coach";
+  return `${sourceLabel}: ${wrestler.statusChangedByUsername} on ${changedAt.toLocaleString()}`;
+}
+
 export default function AttendanceTab({
   meetId,
   teams,
@@ -62,6 +89,7 @@ export default function AttendanceTab({
   attendanceDeadline = null,
   showRefresh = false,
   showNoReplyColumn = true,
+  showStatusAttribution = false,
   readOnly = false,
   onEnsureLock,
   onRefresh,
@@ -77,6 +105,7 @@ export default function AttendanceTab({
   const [saving, setSaving] = useState(false);
   const [bulkUpdatingColumn, setBulkUpdatingColumn] = useState<string | null>(null);
   const [pendingStatusChanges, setPendingStatusChanges] = useState<Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>>(new Map());
+  const [attributionTooltip, setAttributionTooltip] = useState<AttributionTooltip | null>(null);
   const [columnSearch, setColumnSearch] = useState<Record<string, string>>({
     coming: "",
     "not-coming": "",
@@ -93,6 +122,17 @@ export default function AttendanceTab({
   useEffect(() => {
     savingRef.current = saving;
   }, [saving]);
+
+  useEffect(() => {
+    if (!attributionTooltip) return;
+    const hideTooltip = () => setAttributionTooltip(null);
+    document.addEventListener("pointerdown", hideTooltip);
+    document.addEventListener("touchstart", hideTooltip);
+    return () => {
+      document.removeEventListener("pointerdown", hideTooltip);
+      document.removeEventListener("touchstart", hideTooltip);
+    };
+  }, [attributionTooltip]);
 
   useEffect(() => {
     setPendingStatusChanges((current) => {
@@ -533,6 +573,14 @@ export default function AttendanceTab({
                       (() => {
                         const isLate = w.status === "LATE";
                         const isEarly = w.status === "EARLY";
+                        const attribution = showStatusAttribution && !pendingStatusChanges.has(w.id)
+                          ? formatStatusAttribution(w)
+                          : !showStatusAttribution && !pendingStatusChanges.has(w.id)
+                            ? formatStatusAttribution(w)
+                            : null;
+                        const tooltipMessage = !showStatusAttribution
+                          ? (attribution ?? (column.key === "not-coming" ? "No response" : null))
+                          : null;
                         const rowBackground = isLate
                           ? "#dff1ff"
                           : isEarly
@@ -558,19 +606,37 @@ export default function AttendanceTab({
                           cursor: readOnly ? "default" : "pointer",
                           fontSize: 14,
                         }}
-                        title={readOnly
-                          ? undefined
-                          : (
-                          column.clickStatus === "COMING"
-                            ? "Click to mark Coming"
-                            : column.clickStatus === "NOT_COMING"
-                              ? "Click to mark Not Coming"
-                              : "Click to clear attendance"
-                          )}
                       >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                          <div style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {w.first} {w.last}
+                          <div
+                            style={{ minWidth: 0 }}
+                            onMouseMove={tooltipMessage ? (event) => {
+                              setAttributionTooltip({
+                                message: tooltipMessage,
+                                x: event.clientX,
+                                y: event.clientY,
+                              });
+                            } : undefined}
+                            onMouseLeave={tooltipMessage ? () => setAttributionTooltip(null) : undefined}
+                          >
+                            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {w.first} {w.last}
+                            </div>
+                            {showStatusAttribution && attribution && (
+                              <div
+                                style={{
+                                  marginTop: 1,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  fontSize: 11,
+                                  color: "#5f6b79",
+                                }}
+                                title={attribution}
+                              >
+                                {attribution}
+                              </div>
+                            )}
                           </div>
                         {!readOnly && column.key === "coming" && (
                           <div
@@ -634,6 +700,36 @@ export default function AttendanceTab({
           </div>
         </div>
       )}
+      {attributionTooltip && (() => {
+        const tooltipWidth = 320;
+        const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+        const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+        const left = viewportWidth ? Math.min(attributionTooltip.x + 14, viewportWidth - tooltipWidth - 8) : attributionTooltip.x;
+        const top = viewportHeight ? Math.min(attributionTooltip.y + 14, viewportHeight - 120) : attributionTooltip.y;
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left,
+              top,
+              width: tooltipWidth,
+              zIndex: 1000,
+              background: "#fff",
+              border: "1px solid rgba(0,0,0,0.15)",
+              borderRadius: 10,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+              padding: "10px 12px",
+              pointerEvents: "none",
+              fontSize: 13,
+            }}
+            aria-hidden="true"
+          >
+            <div style={{ fontWeight: 800, color: "#4a5568" }}>
+              {attributionTooltip.message}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

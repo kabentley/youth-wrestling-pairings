@@ -39,6 +39,10 @@ const PatchSchema = z.object({
 const CheckpointAttendanceSchema = z.object({
   wrestlerId: z.string().min(1),
   status: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable(),
+  lastChangedByUsername: z.string().nullable().optional(),
+  lastChangedByRole: z.string().nullable().optional(),
+  lastChangedSource: z.string().nullable().optional(),
+  lastChangedAt: z.string().nullable().optional(),
 });
 
 const CheckpointBoutSchema = z.object({
@@ -321,7 +325,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
           : buildAutoPhaseCheckpointName(nextStatus, now)
       )
     : "";
-  let autoMarkedNoReplyCount = 0;
   const updated = await db.$transaction(async (tx) => {
     if (closingAttendance) {
       const payload = await buildMeetCheckpointPayload(meetId, autoCheckpointName, tx);
@@ -339,68 +342,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       });
     }
 
-    if (currentStatus === "ATTENDANCE" && nextStatus === "DRAFT") {
-      const meetTeams = await tx.meetTeam.findMany({
-        where: { meetId },
-        select: { teamId: true },
-      });
-      const teamIds = meetTeams.map((team) => team.teamId);
-
-      if (teamIds.length > 0) {
-        const [existingStatuses, bouts] = await Promise.all([
-          tx.meetWrestlerStatus.findMany({
-            where: { meetId },
-            select: { wrestlerId: true },
-          }),
-          tx.bout.findMany({
-            where: { meetId },
-            select: { redId: true, greenId: true },
-          }),
-        ]);
-        const existingStatusIds = existingStatuses.map((entry) => entry.wrestlerId);
-        const boutWrestlerIds = [...new Set(bouts.flatMap((bout) => [bout.redId, bout.greenId]))];
-
-        const noReplyWrestlers = await tx.wrestler.findMany({
-          where: {
-            teamId: { in: teamIds },
-            id: { notIn: existingStatusIds },
-            ...(boutWrestlerIds.length > 0
-              ? { OR: [{ active: true }, { id: { in: boutWrestlerIds } }] }
-              : { active: true }),
-          },
-          select: { id: true },
-        });
-
-        if (noReplyWrestlers.length > 0) {
-          const noReplyIds = noReplyWrestlers.map((wrestler) => wrestler.id);
-          autoMarkedNoReplyCount = noReplyIds.length;
-
-          await tx.meetWrestlerStatus.createMany({
-            data: noReplyIds.map((wrestlerId) => ({
-              meetId,
-              wrestlerId,
-              status: "NOT_COMING",
-            })),
-          });
-
-          await tx.meetWrestlerStatusHistory.createMany({
-            data: noReplyIds.map((wrestlerId) => ({
-              meetId,
-              wrestlerId,
-              status: "NOT_COMING",
-              changedById: user.id,
-            })),
-          });
-
-          await deleteBoutsAndRenumber(tx, meetId, {
-            OR: [
-              { redId: { in: noReplyIds } },
-              { greenId: { in: noReplyIds } },
-            ],
-          });
-        }
-      }
-    }
     if ((reopeningFromCheckin || reopeningAttendance) && reopenCheckpoint && parsedReopenCheckpointPayload?.success) {
       const checkpoint = reopenCheckpoint;
       const payload = parsedReopenCheckpointPayload.data;
@@ -482,6 +423,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
             meetId,
             wrestlerId: entry.wrestlerId,
             status: entry.status,
+            lastChangedByUsername: entry.lastChangedByUsername ?? null,
+            lastChangedByRole: entry.lastChangedByRole ?? null,
+            lastChangedSource: entry.lastChangedSource ?? null,
+            lastChangedAt: entry.lastChangedAt ? new Date(entry.lastChangedAt) : null,
           })),
         });
         await tx.meetWrestlerStatusHistory.createMany({
@@ -599,13 +544,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
             ? "check-in"
             : "publish"
       }: ${autoCheckpointName}.`,
-    );
-  }
-  if (autoMarkedNoReplyCount > 0) {
-    await logMeetChange(
-      meetId,
-      user.id,
-      `Attendance: marked ${autoMarkedNoReplyCount} no-reply wrestler${autoMarkedNoReplyCount === 1 ? "" : "s"} as not coming when closing attendance.`,
     );
   }
   if (reopenCheckpoint && (reopeningFromCheckin || reopeningAttendance)) {

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import type { MeetCheckpointPayload } from "@/lib/meetCheckpoints";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
+import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireAnyRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -138,6 +139,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     ? meet.meetTeams.find((entry) => entry.teamId === completeTeamId)?.team ?? null
     : null;
   const completionTimestamp = completeTeamId ? new Date() : null;
+  const changedAt = completionTimestamp ?? new Date();
   const readyCheckpoint = restoreIds.length > 0
     ? await db.meetCheckpoint.findFirst({
         where: {
@@ -153,6 +155,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     : null;
 
   const mutationSummary = await db.$transaction(async (tx) => {
+    const attribution = buildMeetStatusAttribution(user, "CHECKIN", changedAt);
     if (completeTeamId) {
       await tx.meetTeam.update({
         where: { meetId_teamId: { meetId, teamId: completeTeamId } },
@@ -166,8 +169,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     await Promise.all(changes.map((change) => (
       tx.meetWrestlerStatus.upsert({
         where: { meetId_wrestlerId: { meetId, wrestlerId: change.wrestlerId } },
-        update: { status: change.absent ? "ABSENT" : "COMING" },
-        create: { meetId, wrestlerId: change.wrestlerId, status: change.absent ? "ABSENT" : "COMING" },
+        update: { status: change.absent ? "ABSENT" : "COMING", ...attribution },
+        create: { meetId, wrestlerId: change.wrestlerId, status: change.absent ? "ABSENT" : "COMING", ...attribution },
       })
     )));
 
