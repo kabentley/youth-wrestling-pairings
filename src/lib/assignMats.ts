@@ -130,6 +130,13 @@ function pickLeastLoadedMat(mats: { boutIds: string[]; rule: MatRule }[]) {
   );
 }
 
+/**
+ * Loads home-team volunteer mat preferences keyed by wrestler id.
+ *
+ * Each wrestler can have multiple linked adults and therefore multiple preferred
+ * mats. The returned candidate lists are sorted deterministically so downstream
+ * assignment code can make stable choices.
+ */
 export async function loadPeopleRuleMatMap(teamIds: string[], numMats: number): Promise<PeopleRuleMatMap> {
   if (teamIds.length === 0 || numMats < 1) return new Map<string, PeopleRuleCandidate[]>();
   const links = await db.userChild.findMany({
@@ -211,6 +218,12 @@ function collectPeopleRuleCandidates(
   return out;
 }
 
+/**
+ * Picks the winning people-rule assignment for a bout, if one exists.
+ *
+ * The candidate order is deterministic so the same inputs always choose the
+ * same volunteer/mat pair.
+ */
 export function pickPeopleRuleMatIndex(
   bout: { redId: string; greenId: string },
   peopleRuleMats: PeopleRuleMatMap,
@@ -231,6 +244,12 @@ export type SyncPeopleRuleAssignmentsResult = {
   affectedMats: number[];
 };
 
+/**
+ * Reconciles existing bout mats with volunteer-driven people rules for a meet.
+ *
+ * This pass does not generate new bouts. It only updates ownership metadata and
+ * moves already-created bouts when a linked volunteer mat preference requires it.
+ */
 export async function syncPeopleRuleAssignmentsForMeet(
   meetId: string,
   options: { dryRun?: boolean } = {},
@@ -294,7 +313,8 @@ export async function syncPeopleRuleAssignmentsForMeet(
         (greenMatSet.size > 1 && greenMatSet.has(bout.mat))
       );
 
-    // Preserve current owner when still eligible; otherwise clear. For unowned bouts, assign deterministic top candidate.
+    // Preserve current owner when still eligible; otherwise clear. For unowned
+    // bouts, assign the deterministic top candidate so repeated syncs stay stable.
     const defaultPick = currentUserId
       ? candidates.find((candidate) => candidate.userId === currentUserId) ?? null
       : (candidates[0] ?? null);
@@ -473,6 +493,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     if (eligible) {
       p += (expPenalty + agePenalty) * RANGE_PENALTY_SCALE;
     } else {
+      // Keep ineligible mats as a last resort so every bout can still be placed
+      // even when rule coverage is incomplete.
       p += INELIGIBLE_PENALTY;
     }
 
@@ -547,6 +569,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
       const green = getWrestler(b.greenId);
       const bothHome = red?.teamId === homeTeamId && green?.teamId === homeTeamId;
       if (bothHome && peopleRulePick.wrestlerId === b.greenId) {
+        // Flip red/green so the people-rule-linked wrestler is treated as the
+        // "home-side" wrestler everywhere downstream, including printouts.
         redId = b.greenId;
         greenId = b.redId;
         pairingScore = -b.pairingScore;
@@ -557,6 +581,8 @@ export async function assignMatsForMeet(meetId: string, s: MatSettings = {}) {
     const order = insertAtHead ? 1 : mats[bestMat].boutIds.length + 1;
     if (insertAtHead) {
       mats[bestMat].boutIds.unshift(b.id);
+      // Reassigning an EARLY bout to the front shifts every existing bout on the
+      // mat down by one so persisted order values stay contiguous.
       await db.bout.updateMany({
         where: { meetId, mat: bestMat + 1, order: { not: null } },
         data: { order: { increment: 1 } },

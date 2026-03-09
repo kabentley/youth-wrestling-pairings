@@ -6,6 +6,7 @@ type StatusActor = {
   role: string;
 };
 
+/** Builds audit metadata for meet attendance and status changes. */
 export function buildMeetStatusAttribution(
   user: StatusActor,
   source: MeetStatusAttributionSource,

@@ -177,6 +177,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     return a.id.localeCompare(b.id);
   }
   function orderBout(a: typeof pool[number], b: typeof pool[number], scoreFromA: number) {
+    // Red/green ordering is deterministic so repeated generations and exports
+    // do not churn matchup direction when the pairing is otherwise identical.
     const compare = compareWrestlers(a, b);
     if (compare <= 0) {
       return { redId: a.id, greenId: b.id, pairingScore: scoreFromA };

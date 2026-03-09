@@ -10,6 +10,7 @@ function normalizeMats(mats: Iterable<number>) {
   return [...unique].sort((a, b) => a - b);
 }
 
+/** Rewrites bout orders on the given mats so they become contiguous starting at 1. */
 export async function renumberBoutOrdersOnMats(
   client: BoutClient,
   meetId: string,
@@ -51,6 +52,11 @@ export async function renumberBoutOrdersOnMats(
   return { mats: matList, renumbered };
 }
 
+/**
+ * Deletes a set of bouts and then compacts ordering on every affected mat.
+ *
+ * Callers pass a Prisma `where` fragment scoped to the target subset of bouts.
+ */
 export async function deleteBoutsAndRenumber(
   client: BoutClient,
   meetId: string,

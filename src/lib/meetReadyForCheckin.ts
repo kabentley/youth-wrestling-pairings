@@ -46,6 +46,12 @@ function restConflictSeverityLabel(minGap: number, _restGap: number) {
   return "Minor";
 }
 
+/**
+ * Builds the gating checklist used before moving a meet to Check-in or Published.
+ *
+ * Each item is computed from current meet state rather than cached flags so the
+ * UI can always explain exactly what is still blocking progression.
+ */
 export async function buildReadyForCheckinChecklist(
   meetId: string,
   client: ChecklistClient = db,
@@ -187,6 +193,8 @@ export async function buildReadyForCheckinChecklist(
 
   let wrongVolunteerBoutCount = 0;
   for (const [wrestlerId, acceptableMats] of acceptableVolunteerMatsByKidId.entries()) {
+    // A wrestler is considered aligned when every assigned bout lands on at least
+    // one of the mats covered by their linked volunteer(s).
     for (const bout of boutsByKidId.get(wrestlerId) ?? []) {
       if (bout.mat !== null && !acceptableMats.has(bout.mat)) {
         wrongVolunteerBoutCount += 1;
@@ -219,6 +227,8 @@ export async function buildReadyForCheckinChecklist(
         const gap = entries[nextIndex].order - entries[index].order;
         if (gap > restGap) break;
         for (const boutId of [entries[index].boutId, entries[nextIndex].boutId]) {
+          // Keying by bout plus pair indexes lets us count each conflicting
+          // wrestler-path separately while still keeping only the closest gap.
           const key = `${boutId}:${index}:${nextIndex}`;
           const current = conflictByBoutWrestler.get(key);
           conflictByBoutWrestler.set(key, current === undefined ? gap : Math.min(current, gap));

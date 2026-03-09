@@ -4,6 +4,7 @@ type WrestlerLabelInput = {
   team?: { symbol: string | null } | null;
 };
 
+/** Formats a wrestler label for meet change logs and activity feeds. */
 export function formatWrestlerLabel(wrestler?: WrestlerLabelInput | null) {
   if (!wrestler) return null;
   const name = `${wrestler.first} ${wrestler.last}`.trim();

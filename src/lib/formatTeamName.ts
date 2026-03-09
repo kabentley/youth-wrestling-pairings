@@ -3,6 +3,7 @@ export type TeamLabel = {
   symbol?: string | null;
 };
 
+/** Formats a team label for compact UI display. */
 export function formatTeamName(team?: TeamLabel | null) {
   const name = (team?.name ?? "").trim();
   const symbol = (team?.symbol ?? "").trim();

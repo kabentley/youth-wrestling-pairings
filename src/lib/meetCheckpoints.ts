@@ -40,6 +40,7 @@ export type MeetCheckpointPayload = {
 
 type CheckpointClient = Prisma.TransactionClient | PrismaClient;
 
+/** Builds a stable team-set signature for checkpoint validation and restoration. */
 export function buildTeamSignature(teamIds: string[]) {
   return teamIds.slice().sort().join("|");
 }
@@ -51,6 +52,12 @@ function normalizeAttendanceStatus(status?: string | null): CheckpointAttendance
   return null;
 }
 
+/**
+ * Serializes the current meet state into a checkpoint payload.
+ *
+ * The payload is intentionally self-contained so it can be stored, downloaded,
+ * and later reapplied without additional database lookups.
+ */
 export async function buildMeetCheckpointPayload(
   meetId: string,
   name: string,

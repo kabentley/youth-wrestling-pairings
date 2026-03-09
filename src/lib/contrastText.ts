@@ -11,6 +11,12 @@ function darkenHex(color: string, amount: number) {
   return `#${nr.toString(16).padStart(2, "0")}${ng.toString(16).padStart(2, "0")}${nb.toString(16).padStart(2, "0")}`;
 }
 
+/**
+ * Tweaks very light team colors so text remains readable on white backgrounds.
+ *
+ * Non-hex inputs are returned unchanged because they may already be a semantic
+ * CSS token or browser-supported color name.
+ */
 export function adjustTeamTextColor(color?: string | null) {
   if (!color) return "#000000";
   if (!color.startsWith("#") || color.length !== 7) return color;

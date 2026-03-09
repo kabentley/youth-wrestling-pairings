@@ -12,6 +12,12 @@ function daysBetween(a: Date, b: Date) {
   return Math.abs(Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+/**
+ * Generates replacement bouts for wrestlers who lost matches after scratches.
+ *
+ * Unlike the full pairing generator, this routine focuses on filling explicit
+ * per-wrestler deficits and prefers candidates who also still need matches.
+ */
 export async function generateScratchPairingsForMeet(meetId: string, settings: ScratchPairingSettings) {
   const league = await db.league.findFirst({
     select: {
@@ -182,6 +188,8 @@ export async function generateScratchPairingsForMeet(meetId: string, settings: S
         if (!eligible(wrestler, candidate)) continue;
         const score = pairingScore(wrestler, candidate, scoreOptions).score;
         const next = { wrestler: candidate, score };
+        // Favor candidates who also have an outstanding deficit before falling
+        // back to closeness of matchup and then deterministic roster ordering.
         if (compareCandidates(best, next) > 0) continue;
         best = next;
       }

@@ -196,7 +196,7 @@ function listRespectsLockedPositions(list: BoutLite[], lockedPositions: Map<stri
   return true;
 }
 
-/** Builds a map of wrestler ids → set of orders used on other mats. */
+/** Builds a map of wrestler ids to the set of orders they occupy on other mats. */
 function buildOtherMatOrders(allMats: BoutLite[][], matIndex: number) {
   const map = new Map<string, Set<number>>();
   allMats.forEach((list, idx) => {
@@ -461,6 +461,8 @@ function reorderBoutsMatboardStyle(
 
   for (let matIndex = 0; matIndex < matLists.length; matIndex += 1) {
     if (matsToReorder && !matsToReorder.has(matIndex + 1)) continue;
+    // Each mat is reordered against the current full-meet snapshot so later mats
+    // can react to changes made by earlier mat passes, matching the UI behavior.
     const ordered = reorderBoutsForMatMatboardStyle(
       matLists[matIndex],
       matLists,
