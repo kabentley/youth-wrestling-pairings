@@ -161,6 +161,7 @@ export async function POST(req: Request) {
       name: body.name,
       passwordHash,
       role: body.role,
+      emailVerified: new Date(),
       ...(body.teamId ? { team: { connect: { id: body.teamId } } } : {}),
       mustResetPassword: true,
     },
