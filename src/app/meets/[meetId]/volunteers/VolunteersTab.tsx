@@ -6,6 +6,7 @@ import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
 type VolunteerRole = "COACH" | "TABLE_WORKER" | "PARENT";
 
+
 type KidBout = {
   id: string;
   mat: number | null;
