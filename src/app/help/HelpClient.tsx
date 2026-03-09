@@ -1,0 +1,229 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+import type { HelpPage } from "@/lib/helpContent";
+
+const renderParagraph = (paragraph: string) => {
+  const parts = paragraph.split(/(\([^)]*\)|\[[^\]]*\]|\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("[") && part.endsWith("]")) {
+      return <strong key={`${part}-${index}`}>{part}</strong>;
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+};
+
+type HelpClientProps = {
+  pages: HelpPage[];
+};
+
+export default function HelpClient({ pages }: HelpClientProps) {
+  const [activePageId, setActivePageId] = useState(pages[0]?.id ?? "");
+  const activePage = useMemo(
+    () => pages.find((page) => page.id === activePageId) ?? pages[0],
+    [activePageId, pages],
+  );
+
+  const showTabs = pages.length > 1;
+
+  return (
+    <main className="help-page">
+      <style>{`
+        .help-page {
+          min-height: 100vh;
+          padding: 34px 22px 60px;
+          background: radial-gradient(circle at top right, #f2f6fb 0%, #eef1f4 55%, #e6edf5 100%);
+          color: #1d232b;
+        }
+        .help-shell {
+          width: min(1100px, 100%);
+          margin: 0 auto;
+        }
+        .help-hero {
+          margin-bottom: 20px;
+        }
+        .help-hero h1 {
+          margin: 0;
+          font-size: clamp(32px, 3.6vw, 44px);
+          font-weight: 700;
+          letter-spacing: 0.4px;
+        }
+        .help-hero p {
+          margin: 10px 0 0;
+          color: #516072;
+          font-size: 19px;
+          line-height: 1.6;
+        }
+        .help-tab-bar {
+          margin-top: 22px;
+          display: flex;
+          justify-content: flex-start;
+          gap: 4px;
+          padding: 0 8px;
+          background: #f1f3f7;
+          border: 1px solid #d0d5df;
+          border-bottom: none;
+          border-radius: 16px 16px 0 0;
+          box-shadow: inset 0 -1px 0 rgba(13, 23, 66, 0.08);
+        }
+        .help-tab-button {
+          flex: none;
+          padding: 10px 18px;
+          font-size: 16px;
+          font-weight: 600;
+          color: #5f6772;
+          background: transparent;
+          border: 1px solid transparent;
+          border-bottom: 1px solid transparent;
+          border-radius: 12px 12px 0 0;
+          cursor: pointer;
+          transition: background 0.2s, color 0.2s, border-color 0.2s;
+          text-align: left;
+        }
+        .help-tab-button + .help-tab-button {
+          margin-left: 4px;
+        }
+        .help-tab-button:hover:not(.active) {
+          background: #e5e9f0;
+          color: #1e3a82;
+        }
+        .help-tab-button.active {
+          background: #fff;
+          color: #1e2a4b;
+          border-color: #d0d5df;
+          border-bottom-color: #fff;
+          box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.08);
+        }
+        .help-tab-button:focus-visible {
+          outline: 2px solid #1e88e5;
+          outline-offset: -2px;
+        }
+        .help-tab-body {
+          margin-top: ${showTabs ? "-1px" : "22px"};
+          padding-top: 0;
+          border: 1px solid #d0d5df;
+          border-top: ${showTabs ? "none" : "1px solid #d0d5df"};
+          border-radius: ${showTabs ? "0 0 16px 16px" : "16px"};
+          background: #fff;
+        }
+        .help-section {
+          background: transparent;
+          border: none;
+          border-radius: 0;
+          padding: 18px 20px 22px;
+          margin-bottom: 16px;
+          box-shadow: none;
+        }
+        .help-section h3 {
+          margin: 0 0 4px;
+          font-size: 24px;
+        }
+        .help-columns {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .help-card {
+          border: 1px solid #e3e7ee;
+          border-radius: 12px;
+          padding: 12px 14px;
+          background: #f7f9fc;
+        }
+        .help-card h4 {
+          margin: 0 0 6px;
+          font-size: 18px;
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+          color: #243247;
+        }
+        .help-card h5 {
+          margin: 2px 0 8px;
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          color: #5a6673;
+        }
+        .help-card p {
+          margin: 0 0 10px;
+          color: #2d3642;
+          font-size: 17px;
+          line-height: 1.65;
+        }
+        .help-card ol {
+          margin: 0 0 12px 22px;
+          padding: 0;
+          color: #2d3642;
+          font-size: 17px;
+          line-height: 1.65;
+        }
+        .help-card li {
+          margin: 0 0 8px;
+        }
+        .help-card li:last-child {
+          margin-bottom: 0;
+        }
+        .help-card p:last-child {
+          margin-bottom: 0;
+        }
+        @media (max-width: 900px) {
+          .help-hero {
+            margin-bottom: 16px;
+          }
+        }
+      `}</style>
+      <div className="help-shell">
+        <div className="help-hero">
+          <div>
+            <h1>Help Center</h1>
+            <p>
+              These guides explain how to use this program to run Madison style meets for a youth wrestling league.
+            </p>
+          </div>
+        </div>
+
+        {showTabs ? (
+          <div className="help-tab-bar">
+            {pages.map((page) => (
+              <button
+                key={page.id}
+                type="button"
+                className={`help-tab-button${page.id === activePage.id ? " active" : ""}`}
+                onClick={() => setActivePageId(page.id)}
+              >
+                {page.title}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="help-tab-body">
+          <section id={activePage.id} className="help-section">
+            <h3>{activePage.title}</h3>
+            <div className="help-columns">
+              {activePage.sections.map((section) => (
+                <div key={section.title} className="help-card">
+                  <h4>{section.title}</h4>
+                  {section.orderedItems?.length ? (
+                    <ol>
+                      {section.orderedItems.map((item) => (
+                        <li key={item}>{renderParagraph(item)}</li>
+                      ))}
+                    </ol>
+                  ) : null}
+                  {section.paragraphsHeading ? <h5>{section.paragraphsHeading}</h5> : null}
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{renderParagraph(paragraph)}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
