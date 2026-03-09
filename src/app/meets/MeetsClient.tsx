@@ -27,6 +27,31 @@ type RestartDefaults = {
   restGap?: number;
   maxMatchesPerWrestler?: number;
 };
+type NotificationTeamSummary = {
+  teamId: string;
+  teamLabel: string;
+  recipients: number;
+  emailCount: number;
+  smsCount: number;
+  successfulCount: number;
+  failedCount: number;
+  skippedCount: number;
+};
+type CreateNotificationSummary = {
+  transport: "off" | "log" | "live";
+  recipients: number;
+  attempted: number;
+  sent: number;
+  logged: number;
+  successful: number;
+  failed: number;
+  skipped: number;
+  teams: NotificationTeamSummary[];
+};
+type CreateMeetResponse = Meet & {
+  notificationSummary?: CreateNotificationSummary | null;
+};
+
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -145,6 +170,7 @@ type Meet = {
   lastChangeBy?: string | null;
   canStartEditing?: boolean;
   canDelete?: boolean;
+  sendNotificationsToParents?: boolean;
 };
 
 export default function MeetsPage() {
@@ -169,7 +195,14 @@ export default function MeetsPage() {
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
   const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(true);
+  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createResultDialog, setCreateResultDialog] = useState<{
+    meetId: string;
+    meetName: string;
+    sendNotificationsToParents: boolean;
+    notificationSummary: CreateNotificationSummary | null;
+  } | null>(null);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{
@@ -218,6 +251,7 @@ export default function MeetsPage() {
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
     setAllCoachesHaveLockAccess(true);
+    setSendNotificationsToParents(true);
     setEditingMeet(null);
   }, []);
 
@@ -321,6 +355,7 @@ export default function MeetsPage() {
           restGap,
           autoPairings: true,
           allCoachesHaveLockAccess,
+          sendNotificationsToParents,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -329,7 +364,7 @@ export default function MeetsPage() {
       throw new Error(err);
     }
     await load();
-    return payload;
+    return payload as CreateMeetResponse;
   }
 
   async function updateMeet(meetId: string) {
@@ -359,17 +394,28 @@ export default function MeetsPage() {
     return payload;
   }
 
+  const openCreatedMeet = useCallback(() => {
+    if (!createResultDialog?.meetId) return;
+    router.push(`/meets/${createResultDialog.meetId}?edit=1&autopair=1&autogen=1`);
+  }, [createResultDialog, router]);
+
   const handleModalSubmit = async () => {
     try {
       if (editingMeet) {
         await updateMeet(editingMeet.id);
+        closeCreateModal({ skipCreateQueryCleanup: true });
       } else {
         const created = await addMeet();
-        if (created?.id) {
-          router.push(`/meets/${created.id}?edit=1&autopair=1&autogen=1`);
+        closeCreateModal({ skipCreateQueryCleanup: true });
+        if (created.id) {
+          setCreateResultDialog({
+            meetId: created.id,
+            meetName: created.name,
+            sendNotificationsToParents: created.sendNotificationsToParents !== false,
+            notificationSummary: created.notificationSummary ?? null,
+          });
         }
       }
-      closeCreateModal({ skipCreateQueryCleanup: true });
     } catch (error) {
       console.error(error);
     }
@@ -1045,10 +1091,33 @@ export default function MeetsPage() {
           min-height: 0;
           padding: 22px;
         }
+        .create-result-modal {
+          width: min(560px, 100%);
+          min-height: 0;
+          padding: 22px;
+        }
         .modal-action-buttons {
           display: flex;
           gap: 10px;
           flex-wrap: wrap;
+        }
+        .notification-team-list {
+          display: grid;
+          gap: 10px;
+          margin-top: 14px;
+        }
+        .notification-team-card {
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          padding: 12px 14px;
+          background: #f8fafc;
+        }
+        .notification-team-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 4px;
         }
         .delete-confirm {
           background: #d32f2f;
@@ -1229,15 +1298,26 @@ export default function MeetsPage() {
                   />
                 </label>
                 {!isEditing && (
-                  <label className="row" style={{ margin: 0, alignSelf: "center", marginLeft: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={allCoachesHaveLockAccess}
-                      onChange={e => setAllCoachesHaveLockAccess(e.target.checked)}
-                      disabled={!canManageMeets}
-                    />
-                    <span className="muted">Allow other coaches to edit while the meet is in Draft phase</span>
-                  </label>
+                  <>
+                    <label className="row" style={{ margin: 0, alignSelf: "center", marginLeft: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={allCoachesHaveLockAccess}
+                        onChange={e => setAllCoachesHaveLockAccess(e.target.checked)}
+                        disabled={!canManageMeets}
+                      />
+                      <span className="muted">Allow other coaches to edit while the meet is in Draft phase</span>
+                    </label>
+                    <label className="row" style={{ margin: 0, alignSelf: "center", marginLeft: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={sendNotificationsToParents}
+                        onChange={e => setSendNotificationsToParents(e.target.checked)}
+                        disabled={!canManageMeets}
+                      />
+                      <span className="muted">Send notifications to parents</span>
+                    </label>
+                  </>
                 )}
                   {isEditing && (
                     <label className="row">
@@ -1343,6 +1423,67 @@ export default function MeetsPage() {
               </button>
               <button className="nav-btn delete-confirm" onClick={confirmDeleteMeet} disabled={Boolean(deletingMeetId)}>
                 Delete meet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {createResultDialog && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setCreateResultDialog(null)}>
+          <div className="modal create-result-modal" role="document" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Meet created: {createResultDialog.meetName}</h3>
+            </div>
+            <div className="modal-body">
+              {createResultDialog.notificationSummary ? (
+                <>
+                  <p>
+                    {createResultDialog.notificationSummary.transport === "log"
+                      ? `Attendance notifications were logged for ${createResultDialog.notificationSummary.successful} deliveries.`
+                      : `Attendance notifications were sent for ${createResultDialog.notificationSummary.successful} deliveries.`}
+                  </p>
+                  {createResultDialog.notificationSummary.transport === "log" && (
+                    <p className="muted">This environment is using log mode, so messages were recorded instead of delivered.</p>
+                  )}
+                  {createResultDialog.notificationSummary.failed > 0 && (
+                    <p className="muted">
+                      Failed deliveries: {createResultDialog.notificationSummary.failed}
+                    </p>
+                  )}
+                  <div className="notification-team-list">
+                    {createResultDialog.notificationSummary.teams.map((team) => (
+                      <div key={team.teamId} className="notification-team-card">
+                        <div className="notification-team-header">
+                          <strong>{team.teamLabel}</strong>
+                          <span>
+                            {team.successfulCount} {createResultDialog.notificationSummary.transport === "log" ? "logged" : "sent"}
+                          </span>
+                        </div>
+                        <div className="muted">
+                          Parents notified: {team.recipients}
+                        </div>
+                        <div className="muted">
+                          Email: {team.emailCount} | SMS: {team.smsCount}
+                        </div>
+                        {team.failedCount > 0 && (
+                          <div className="muted">Failed: {team.failedCount}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : createResultDialog.sendNotificationsToParents ? (
+                <p>Meet created. Notification summary was not available.</p>
+              ) : (
+                <p>Meet created. Parent notifications are disabled for this meet.</p>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button className="nav-btn" onClick={() => setCreateResultDialog(null)}>
+                Stay on Meets
+              </button>
+              <button className="nav-btn meet-action-edit" onClick={openCreatedMeet}>
+                Open Meet
               </button>
             </div>
           </div>

@@ -460,6 +460,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [readyForCheckinError, setReadyForCheckinError] = useState<string | null>(null);
   const [readyForCheckinActionId, setReadyForCheckinActionId] = useState<string | null>(null);
   const [readyForCheckinTargetStatus, setReadyForCheckinTargetStatus] = useState<"READY_FOR_CHECKIN" | "PUBLISHED">("READY_FOR_CHECKIN");
+  const [sendReadyForCheckinNotification, setSendReadyForCheckinNotification] = useState(true);
+  const [readyForCheckinNotificationSent, setReadyForCheckinNotificationSent] = useState(false);
+  const [sendPublishedNotification, setSendPublishedNotification] = useState(true);
+  const [sendNotificationsToParentsForMeet, setSendNotificationsToParentsForMeet] = useState(true);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -1205,6 +1209,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setLastUpdatedBy(meetJson.lastChangeBy ?? null);
         setHomeTeamId(meetJson.homeTeamId ?? null);
         setMeetLocation(meetJson.location ?? null);
+        setReadyForCheckinNotificationSent(Boolean(meetJson.readyForCheckinNotificationSent));
+        setSendNotificationsToParentsForMeet(Boolean(meetJson.sendNotificationsToParents));
         setMatchesPerWrestler(
           typeof meetJson.matchesPerWrestler === "number" ? meetJson.matchesPerWrestler : null,
         );
@@ -2405,14 +2411,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   // Change meet status while ensuring lock ownership.
-  async function updateMeetStatus(nextStatus: MeetPhase) {
+  async function updateMeetStatus(
+    nextStatus: MeetPhase,
+    options?: { sendReadyForCheckinNotification?: boolean; sendPublishedNotification?: boolean },
+  ) {
     if (!canChangeStatus) return false;
     if (!(await flushPendingAttendanceChanges())) return false;
     if (!(await ensureMeetLock())) return false;
     const sendStatusUpdate = () => fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({
+        status: nextStatus,
+        ...(nextStatus === "READY_FOR_CHECKIN"
+          ? { sendReadyForCheckinNotification: options?.sendReadyForCheckinNotification ?? false }
+          : {}),
+        ...(nextStatus === "PUBLISHED"
+          ? { sendPublishedNotification: options?.sendPublishedNotification ?? false }
+          : {}),
+      }),
     });
     let res = await sendStatusUpdate();
     let payload = res.ok ? null : await res.json().catch(() => null);
@@ -2429,6 +2446,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         setShowReadyForCheckinModal(true);
         setReadyForCheckinError(payload?.error ?? null);
         setReadyForCheckinTargetStatus(nextStatus);
+        if (nextStatus === "READY_FOR_CHECKIN") {
+          setSendReadyForCheckinNotification(sendNotificationsToParentsForMeet && !readyForCheckinNotificationSent);
+        } else {
+          setSendPublishedNotification(sendNotificationsToParentsForMeet);
+        }
         return false;
       }
       const message = payload?.error ?? `Unable to update status (${res.status}).`;
@@ -2467,6 +2489,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function openReadyForCheckinChecklist(targetStatus: "READY_FOR_CHECKIN" | "PUBLISHED" = "READY_FOR_CHECKIN") {
     if (!(await flushPendingAttendanceChanges())) return;
     setReadyForCheckinTargetStatus(targetStatus);
+    setSendReadyForCheckinNotification(
+      sendNotificationsToParentsForMeet &&
+      targetStatus === "READY_FOR_CHECKIN" &&
+      !readyForCheckinNotificationSent,
+    );
+    setSendPublishedNotification(sendNotificationsToParentsForMeet && targetStatus === "PUBLISHED");
     setShowReadyForCheckinModal(true);
     setReadyForCheckinLoading(true);
     setReadyForCheckinError(null);
@@ -2495,11 +2523,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     setReadyForCheckinSubmitting(true);
     try {
-      const ok = await updateMeetStatus(readyForCheckinTargetStatus);
+      const ok = await updateMeetStatus(readyForCheckinTargetStatus, {
+        sendReadyForCheckinNotification,
+        sendPublishedNotification,
+      });
       if (ok) {
         setShowReadyForCheckinModal(false);
         setReadyForCheckinChecklist(null);
         setReadyForCheckinError(null);
+        setSendReadyForCheckinNotification(true);
+        setSendPublishedNotification(true);
       }
     } finally {
       setReadyForCheckinSubmitting(false);
@@ -2509,7 +2542,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function confirmPublishAfterWarning() {
     setReadyForCheckinSubmitting(true);
     try {
-      const ok = await updateMeetStatus("PUBLISHED");
+      const ok = await updateMeetStatus("PUBLISHED", {
+        sendPublishedNotification,
+      });
       if (ok) {
         setShowPublishWarningModal(false);
         setShowReadyForCheckinModal(false);
@@ -5810,6 +5845,33 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 </>
               )}
               <div className="ready-checkin-footer">
+                {sendNotificationsToParentsForMeet && readyForCheckinTargetStatus === "READY_FOR_CHECKIN" && (
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 14,
+                      marginRight: "auto",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sendReadyForCheckinNotification}
+                      onChange={(e) => setSendReadyForCheckinNotification(e.target.checked)}
+                      disabled={
+                        readyForCheckinNotificationSent ||
+                        readyForCheckinSubmitting ||
+                        Boolean(readyForCheckinActionId)
+                      }
+                    />
+                    <span>
+                      {readyForCheckinNotificationSent
+                        ? "Check-in notification already sent for this meet"
+                        : "Send check-in notification to parents with wrestlers marked coming"}
+                    </span>
+                  </label>
+                )}
                 <button
                   type="button"
                   className="nav-btn"
@@ -5847,11 +5909,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: 0 }}>Publish Meet {meetName || ""}?</h3>
               <div>
-                Publishing will prepare the wall charts and scoring sheet, and notify parents of their wrestlers' bout numbers and opponents.
+                {sendNotificationsToParentsForMeet && sendPublishedNotification
+                  ? "Publishing will prepare the wall charts and scoring sheet, and notify parents of their wrestlers' bout numbers and opponents."
+                  : "Publishing will prepare the wall charts and scoring sheet."}
               </div>
               <div>
                 For that reason, publishing is irreversible.
               </div>
+              {sendNotificationsToParentsForMeet && (
+                <label
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontSize: 14,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={sendPublishedNotification}
+                    onChange={(e) => setSendPublishedNotification(e.target.checked)}
+                    disabled={readyForCheckinSubmitting}
+                  />
+                  <span>Send notification to parents of wrestlers with bouts for this meet</span>
+                </label>
+              )}
               <div className="ready-checkin-footer">
                 <button
                   type="button"

@@ -15,6 +15,7 @@ import {
   shouldCreateAutoCheckpoint,
 } from "@/lib/meetPhase";
 import { buildReadyForCheckinChecklist } from "@/lib/meetReadyForCheckin";
+import { notifyMeetPublished, notifyMeetReadyForCheckin } from "@/lib/notifications";
 import { requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
@@ -33,6 +34,8 @@ const PatchSchema = z.object({
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   restGap: z.number().int().min(0).max(20).optional(),
   status: z.enum(MEET_PHASES).optional(),
+  sendReadyForCheckinNotification: z.boolean().optional(),
+  sendPublishedNotification: z.boolean().optional(),
 });
 
 const CheckpointAttendanceSchema = z.object({
@@ -104,6 +107,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       homeTeamId: true,
       numMats: true,
       allowSameTeamMatches: true,
+      sendNotificationsToParents: true,
       girlsWrestleGirls: true,
       matchesPerWrestler: true,
       maxMatchesPerWrestler: true,
@@ -126,6 +130,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     },
   });
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  const notificationFlags = await db.notificationLog.findMany({
+    where: {
+      dedupeKey: {
+        in: [
+          `meet_ready_for_checkin:${meetId}`,
+        ],
+      },
+    },
+    select: { dedupeKey: true },
+  });
+  const dedupeKeys = new Set(notificationFlags.map((entry) => entry.dedupeKey).filter((key): key is string => Boolean(key)));
   const lastChange = await db.meetChange.findFirst({
     where: { meetId },
     orderBy: { createdAt: "desc" },
@@ -140,6 +155,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       checkinCompletedAt: entry.checkinCompletedAt?.toISOString() ?? null,
       completedByUsername: entry.checkinCompletedBy?.username ?? null,
     })),
+    readyForCheckinNotificationSent: dedupeKeys.has(`meet_ready_for_checkin:${meetId}`),
+    sendNotificationsToParents: Boolean(meet.sendNotificationsToParents),
     lastChangeAt,
     lastChangeBy,
   });
@@ -168,6 +185,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     select: {
       name: true,
       status: true,
+      sendNotificationsToParents: true,
       homeTeamId: true,
       homeTeam: { select: { headCoachId: true } },
     },
@@ -309,6 +327,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
 
   const now = new Date();
   const closingAttendance = currentStatus === "ATTENDANCE" && nextStatus === "DRAFT";
+  const enteringReadyForCheckin = currentStatus === "DRAFT" && nextStatus === "READY_FOR_CHECKIN";
+  const publishingMeet = currentStatus === "READY_FOR_CHECKIN" && nextStatus === "PUBLISHED";
   const shouldCreateCheckpoint = closingAttendance || shouldCreateAutoCheckpoint(currentStatus, nextStatus);
   const autoCheckpointName = shouldCreateCheckpoint
     ? (
@@ -553,9 +573,32 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     );
   }
 
+  let notificationSummary = null;
+  if (current.sendNotificationsToParents && enteringReadyForCheckin && body.sendReadyForCheckinNotification) {
+    try {
+      notificationSummary = await notifyMeetReadyForCheckin(meetId, {
+        origin: req.headers.get("origin"),
+      });
+    } catch (error) {
+      console.error("Failed to send meet_ready_for_checkin notifications", error);
+    }
+  }
+  if (current.sendNotificationsToParents && publishingMeet && body.sendPublishedNotification) {
+    try {
+      notificationSummary = await notifyMeetPublished(meetId, {
+        origin: req.headers.get("origin"),
+      });
+    } catch (error) {
+      console.error("Failed to send meet_published notifications", error);
+    }
+  }
+
   revalidatePath(`/meets/${meetId}`);
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updated,
+    notificationSummary,
+  });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {

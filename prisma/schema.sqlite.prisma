@@ -85,6 +85,7 @@ model Meet {
   homeTeam   Team?     @relation("MeetHomeTeam", fields: [homeTeamId], references: [id])
   numMats   Int        @default(4)
   allowSameTeamMatches Boolean @default(false)
+  sendNotificationsToParents Boolean @default(true)
   girlsWrestleGirls Boolean @default(true)
   matchesPerWrestler Int @default(2)
   maxMatchesPerWrestler Int @default(5)
@@ -111,6 +112,7 @@ model Meet {
   rejectedPairs MeetRejectedPair[]
   checkpoints MeetCheckpoint[]
   lockAccesses MeetLockAccess[]
+  notificationLogs NotificationLog[]
 }
 
 model MeetCheckpoint {
@@ -306,6 +308,7 @@ model User {
   rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   completedTeamCheckins MeetTeam[] @relation("MeetTeamCheckinCompletedBy")
+  notificationLogs NotificationLog[]
   children      UserChild[]
   resetCodes    PasswordResetCode[]
   twoFactorCodes TwoFactorCode[]
@@ -342,6 +345,35 @@ model TwoFactorCode {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model NotificationLog {
+  id                String   @id @default(cuid())
+  event             String
+  channel           String
+  status            String
+  recipient         String
+  dedupeKey         String?  @unique
+  subject           String?
+  message           String
+  provider          String?
+  providerMessageId String?
+  errorMessage      String?
+  payload           Json?
+  userId            String?
+  meetId            String?
+  createdAt         DateTime @default(now())
+  deliveredAt       DateTime?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  meet Meet? @relation(fields: [meetId], references: [id], onDelete: SetNull)
+
+  @@index([event])
+  @@index([channel])
+  @@index([status])
+  @@index([userId])
+  @@index([meetId])
+  @@index([createdAt])
 }
 
 model UserChild {

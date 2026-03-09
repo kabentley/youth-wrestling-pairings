@@ -1,0 +1,2 @@
+ALTER TABLE "Meet"
+ADD COLUMN IF NOT EXISTS "sendNotificationsToParents" BOOLEAN NOT NULL DEFAULT true;

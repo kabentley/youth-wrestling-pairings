@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
+import { notifyMeetReadyForAttendance } from "@/lib/notifications";
 import { requireRole, requireSession } from "@/lib/rbac";
 
 const MeetSchema = z.object({
@@ -19,6 +20,7 @@ const MeetSchema = z.object({
   homeTeamId: z.string().optional(),
   numMats: z.number().int().min(1).max(6).default(4),
   allowSameTeamMatches: z.boolean().default(false),
+  sendNotificationsToParents: z.boolean().default(true),
   girlsWrestleGirls: z.boolean().default(true),
   matchesPerWrestler: z.number().int().min(1).max(5).default(2),
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
@@ -216,6 +218,7 @@ export async function POST(req: Request) {
       homeTeamId,
       numMats: parsed.numMats,
       allowSameTeamMatches: parsed.allowSameTeamMatches,
+      sendNotificationsToParents: parsed.sendNotificationsToParents,
       girlsWrestleGirls: parsed.girlsWrestleGirls,
       matchesPerWrestler: parsed.matchesPerWrestler,
       maxMatchesPerWrestler: parsed.maxMatchesPerWrestler,
@@ -250,17 +253,31 @@ export async function POST(req: Request) {
   await logMeetChange(meet.id, user.id, "Meet created.");
   // Auto pairings and initial checkpoint are handled client-side after attendance.
 
+  let finalMeet = meet;
   if (!meet.location && meet.homeTeamId) {
     const home = await db.team.findUnique({ where: { id: meet.homeTeamId }, select: { address: true } });
     if (home?.address) {
-      const updated = await db.meet.update({
+      finalMeet = await db.meet.update({
         where: { id: meet.id },
         data: { location: home.address },
         include: { meetTeams: { include: { team: true } } },
       });
-      return NextResponse.json(updated);
     }
   }
 
-  return NextResponse.json(meet);
+  let notificationSummary = null;
+  if (parsed.sendNotificationsToParents) {
+    try {
+      notificationSummary = await notifyMeetReadyForAttendance(meet.id, {
+        origin: req.headers.get("origin"),
+      });
+    } catch (error) {
+      console.error("Failed to send meet_ready_for_attendance notifications", error);
+    }
+  }
+
+  return NextResponse.json({
+    ...finalMeet,
+    notificationSummary,
+  });
 }
