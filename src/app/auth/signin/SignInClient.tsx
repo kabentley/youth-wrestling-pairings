@@ -8,9 +8,15 @@ import { useEffect, useState } from "react";
 export default function SignInClient() {
   const sp = useSearchParams();
   const rawCallbackUrl = sp.get("callbackUrl") ?? "/";
-  const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
-    ? rawCallbackUrl
-    : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;
+  const resolvedCallbackUrl = (() => {
+    if (rawCallbackUrl.startsWith("/auth/post-login")) {
+      const [, query = ""] = rawCallbackUrl.split("?");
+      const params = new URLSearchParams(query);
+      const nestedCallbackUrl = params.get("callbackUrl") ?? "/";
+      return nestedCallbackUrl.startsWith("/") ? nestedCallbackUrl : "/";
+    }
+    return rawCallbackUrl.startsWith("/") ? rawCallbackUrl : "/";
+  })();
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -19,6 +25,7 @@ export default function SignInClient() {
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [err, setErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   type OauthProviderKey = "google" | "apple" | "facebook";
   const providerKeys: OauthProviderKey[] = ["google", "apple", "facebook"];
   const [oauthProviders, setOauthProviders] = useState<Partial<Record<OauthProviderKey, { id: string }>>>({});
@@ -52,43 +59,48 @@ export default function SignInClient() {
 
   async function submit() {
     setErr("");
+    setSubmitting(true);
     const base = window.location.origin;
-    const callbackUrl = postLoginUrl.startsWith("http") ? postLoginUrl : `${base}${postLoginUrl}`;
-    const res = await signIn("credentials", {
-      redirect: false,
-      username,
-      password,
-      twoFactorMethod,
-      twoFactorCode: twoFactorRequired ? twoFactorCode : "",
-      callbackUrl,
-    });
+    const callbackUrl = resolvedCallbackUrl.startsWith("http") ? resolvedCallbackUrl : `${base}${resolvedCallbackUrl}`;
+    try {
+      const res = await signIn("credentials", {
+        redirect: false,
+        username,
+        password,
+        twoFactorMethod,
+        twoFactorCode: twoFactorRequired ? twoFactorCode : "",
+        callbackUrl,
+      });
 
-    if (res?.error) {
-      if (res.error === "2FA_REQUIRED") {
-        setTwoFactorRequired(true);
-        setErr("Enter the code that was sent to you.");
+      if (res?.error) {
+        if (res.error === "2FA_REQUIRED") {
+          setTwoFactorRequired(true);
+          setErr("Enter the code that was sent to you.");
+          return;
+        }
+        if (res.error === "2FA_INVALID") {
+          setErr("Invalid code. Try again.");
+          return;
+        }
+        if (res.error === "PHONE_REQUIRED") {
+          setErr("A phone number is required for SMS codes.");
+          return;
+        }
+        if (res.error === "2FA_DELIVERY_FAILED") {
+          setErr("Unable to send a verification code. Try again later.");
+          return;
+        }
+        if (res.error === "2FA_RATE_LIMITED") {
+          setErr("Too many verification codes requested. Please wait a bit.");
+          return;
+        }
+        setErr("Sign-in failed. Check username/password.");
         return;
       }
-      if (res.error === "2FA_INVALID") {
-        setErr("Invalid code. Try again.");
-        return;
-      }
-      if (res.error === "PHONE_REQUIRED") {
-        setErr("A phone number is required for SMS codes.");
-        return;
-      }
-      if (res.error === "2FA_DELIVERY_FAILED") {
-        setErr("Unable to send a verification code. Try again later.");
-        return;
-      }
-      if (res.error === "2FA_RATE_LIMITED") {
-        setErr("Too many verification codes requested. Please wait a bit.");
-        return;
-      }
-      setErr("Sign-in failed. Check username/password.");
-      return;
+      window.location.href = res?.url ?? resolvedCallbackUrl;
+    } finally {
+      setSubmitting(false);
     }
-    window.location.href = res?.url ?? postLoginUrl;
   }
 
   return (
@@ -197,8 +209,14 @@ export default function SignInClient() {
           border-radius: 4px;
           text-transform: uppercase;
           letter-spacing: 0.6px;
+          cursor: pointer;
+        }
+        .btn-full:disabled {
+          opacity: 0.7;
+          cursor: wait;
         }
         .error { color: #b00020; font-size: 12px; margin-top: 6px; }
+        .status-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
         @media (max-width: 900px) {
           .signin-card { grid-template-columns: 1fr; }
           .signin-left { border-right: none; border-bottom: 1px solid var(--line); }
@@ -235,6 +253,7 @@ export default function SignInClient() {
                   spellCheck={false}
                   autoComplete="username"
                   autoFocus
+                  disabled={submitting}
                 />
               </div>
               <div className="form-group">
@@ -244,6 +263,7 @@ export default function SignInClient() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={submitting}
                 />
               </div>
               {twoFactorRequired && (
@@ -254,6 +274,7 @@ export default function SignInClient() {
                     type="text"
                     value={twoFactorCode}
                     onChange={(e) => setTwoFactorCode(e.target.value)}
+                    disabled={submitting}
                   />
                 </div>
               )}
@@ -263,13 +284,15 @@ export default function SignInClient() {
                     type="checkbox"
                     checked={showPassword}
                     onChange={(e) => setShowPassword(e.target.checked)}
+                    disabled={submitting}
                   />
                   Show password
                 </label>
               </div>
-              <button className="btn-full" onClick={submit}>
-                {twoFactorRequired ? "Verify" : "Login"}
+              <button className="btn-full" type="submit" disabled={submitting}>
+                {submitting ? (twoFactorRequired ? "Verifying..." : "Logging in...") : (twoFactorRequired ? "Verify" : "Login")}
               </button>
+              {submitting && <div className="status-note">Please wait...</div>}
               {err && <div className="error">{err}</div>}
             {hasOauthProviders && (
                 <div className="center-links" style={{ marginTop: 12 }}>
@@ -280,7 +303,8 @@ export default function SignInClient() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#ffffff", color: "#1d232b", border: "1px solid #d5dbe2" }}
-                        onClick={() => void signIn("google", { callbackUrl: postLoginUrl })}
+                        onClick={() => void signIn("google", { callbackUrl: resolvedCallbackUrl })}
+                        disabled={submitting}
                       >
                         Google
                       </button>
@@ -290,7 +314,8 @@ export default function SignInClient() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#000000" }}
-                        onClick={() => void signIn("apple", { callbackUrl: postLoginUrl })}
+                        onClick={() => void signIn("apple", { callbackUrl: resolvedCallbackUrl })}
+                        disabled={submitting}
                       >
                         Apple
                       </button>
@@ -300,7 +325,8 @@ export default function SignInClient() {
                         className="btn-full"
                         type="button"
                         style={{ background: "#1877f2" }}
-                        onClick={() => void signIn("facebook", { callbackUrl: postLoginUrl })}
+                        onClick={() => void signIn("facebook", { callbackUrl: resolvedCallbackUrl })}
+                        disabled={submitting}
                       >
                         Facebook
                       </button>

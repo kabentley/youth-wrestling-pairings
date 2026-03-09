@@ -8,9 +8,15 @@ export default function ChooseUsernameClient() {
   const router = useRouter();
   const sp = useSearchParams();
   const rawCallbackUrl = sp.get("callbackUrl") ?? "/";
-  const postLoginUrl = rawCallbackUrl.startsWith("/auth/post-login")
-    ? rawCallbackUrl
-    : `/auth/post-login?callbackUrl=${encodeURIComponent(rawCallbackUrl)}`;
+  const resolvedCallbackUrl = (() => {
+    if (rawCallbackUrl.startsWith("/auth/post-login")) {
+      const [, query = ""] = rawCallbackUrl.split("?");
+      const params = new URLSearchParams(query);
+      const nestedCallbackUrl = params.get("callbackUrl") ?? "/";
+      return nestedCallbackUrl.startsWith("/") ? nestedCallbackUrl : "/";
+    }
+    return rawCallbackUrl.startsWith("/") ? rawCallbackUrl : "/";
+  })();
   const { status, data: session } = useSession();
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
   const [teams, setTeams] = useState<Array<{ id: string; name: string; symbol: string }>>([]);
@@ -41,9 +47,9 @@ export default function ChooseUsernameClient() {
     const role = session?.user?.role;
     const hasTeam = Boolean(session?.user?.teamId);
     if (status === "authenticated" && current && !current.startsWith("oauth-") && (role === "ADMIN" || hasTeam)) {
-      router.replace(postLoginUrl);
+      router.replace(resolvedCallbackUrl);
     }
-  }, [status, session, router, postLoginUrl]);
+  }, [status, session, router, resolvedCallbackUrl]);
 
   useEffect(() => {
     let active = true;
@@ -80,7 +86,7 @@ export default function ChooseUsernameClient() {
         setErr(json?.error ?? "Unable to save username.");
         return;
       }
-      router.replace(postLoginUrl);
+      router.replace(resolvedCallbackUrl);
     } finally {
       setSaving(false);
     }

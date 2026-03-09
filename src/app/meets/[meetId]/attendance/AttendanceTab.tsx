@@ -99,7 +99,6 @@ export default function AttendanceTab({
   onRefresh,
   onRegisterSaveHandler,
 }: AttendanceTabProps) {
-  const isDev = process.env.NODE_ENV !== "production";
   const orderedTeams = homeTeamId
     ? [teams.find(t => t.id === homeTeamId), ...teams.filter(t => t.id !== homeTeamId)].filter((team): team is Team => Boolean(team))
     : teams;
@@ -510,7 +509,7 @@ export default function AttendanceTab({
                     <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
                       {column.label}
                     </h3>
-                    {canEditActiveTeam && isDev && column.key === "not-coming" && (
+                    {canEditActiveTeam && column.key === "not-coming" && (
                       <button
                         type="button"
                         className="nav-btn secondary"

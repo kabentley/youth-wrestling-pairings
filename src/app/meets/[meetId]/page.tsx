@@ -487,7 +487,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           matchesPerWrestler: autoMatchesPerWrestler ?? matchesPerWrestler ?? undefined,
           pruneTargetMatches: effectivePruneTarget,
           maxMatchesPerWrestler: autoMaxMatchesPerWrestler ?? maxMatchesPerWrestler ?? undefined,
-          preserveMats: !clearExisting,
+          preserveMats: !clearExisting && bouts.length > 0,
           allowRejectedMatchups: allowRejectedMatchups && rejectedPairs.size > 0,
         };
         const generateRes = await fetch(`/api/meets/${meetId}/pairings/generate`, {
