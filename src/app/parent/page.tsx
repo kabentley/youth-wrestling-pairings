@@ -1,10 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
-import { normalizeMeetPhase } from "@/lib/meetPhase";
+import ParentAttendancePanel from "@/components/parent/ParentAttendancePanel";
+import ParentTodayMeetCards, {
+  type ParentTodayCurrentUser,
+  type ParentTodayMeetGroup,
+} from "@/components/parent/ParentTodayMeetCards";
 
 type Child = {
   id: string;
@@ -155,6 +158,7 @@ const lastNameSimilarity = (a: string, b: string) => {
 export default function ParentPage() {
   const [children, setChildren] = useState<Child[]>([]);
   const [meetGroups, setMeetGroups] = useState<MeetGroup[]>([]);
+  const [currentUser, setCurrentUser] = useState<ParentTodayCurrentUser | null>(null);
   const [teamWrestlers, setTeamWrestlers] = useState<TeamWrestler[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -172,6 +176,7 @@ export default function ParentPage() {
     const matchesJson = await matchesRes.json().catch(() => null);
     const teamWrestlersJson = await teamWrestlersRes.json().catch(() => []);
     setProfile(profileRes.ok ? profileJson : null);
+    setCurrentUser(matchesRes.ok ? matchesJson?.currentUser ?? null : null);
     setChildren(matchesJson?.children ?? []);
     setMeetGroups(matchesJson?.meets ?? []);
     setTeamWrestlers(teamWrestlersRes.ok && Array.isArray(teamWrestlersJson) ? teamWrestlersJson : []);
@@ -262,27 +267,11 @@ export default function ParentPage() {
 
   useEffect(() => { void load(); }, []);
 
-  const childMap = useMemo(() => new Map(children.map(c => [c.id, c])), [children]);
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-  const attendanceLabel = (status: AttendanceStatus) => {
-    if (status === null) return "No Reply";
-    if (status === "NOT_COMING") return "Not Coming";
-    return "Coming";
-  };
-  const canEditAttendance = (group: MeetGroup) => {
-    if (normalizeMeetPhase(group.meet.status) !== "ATTENDANCE") return false;
-    if (!group.meet.attendanceDeadline) return true;
-    return new Date(group.meet.attendanceDeadline) > new Date();
-  };
-  const upcomingMeets = meetGroups.filter((g) => {
-    const meetDate = new Date(g.meet.date);
-    const phase = normalizeMeetPhase(g.meet.status);
-    return meetDate >= today && (phase === "ATTENDANCE" || phase === "PUBLISHED");
-  });
   const daysPerYear = 365;
   const sortedChildren = useMemo(() => {
     return [...children].sort((a, b) => {
@@ -327,7 +316,7 @@ export default function ParentPage() {
   function nameChip(label: string, team: string | undefined, color?: string) {
     const teamLabel = team ? ` (${team})` : "";
     return (
-      <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15 }}>
+      <span style={{ color: "#111111", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 15, flexWrap: "wrap", maxWidth: "100%", justifyContent: "flex-end" }}>
         <span>{label}{teamLabel}</span>
         <span style={{ width: 12, height: 12, background: color ?? "#000000", display: "inline-block" }} />
       </span>
@@ -342,11 +331,6 @@ export default function ParentPage() {
     return days / daysPerYear;
   }
 
-  function boutNumber(mat?: number | null, order?: number | null) {
-    if (!mat || !order) return "";
-    const suffix = String(order).padStart(2, "0");
-    return `${mat}${suffix}`;
-  }
   function formatMatchResult(match: Match) {
     const result = match.result;
     const outcome = result.winnerId
@@ -622,8 +606,159 @@ export default function ParentPage() {
         .suggestion-names {
           font-weight: 800;
         }
+        .today-upcoming-list {
+          display: grid;
+          gap: 18px;
+        }
+        .today-card {
+          background: #ffffff;
+          border: 1px solid #d9e1e8;
+          border-radius: 18px;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+          padding: 18px;
+          display: grid;
+          gap: 16px;
+          max-width: 960px;
+        }
+        .today-assignment-card {
+          background: linear-gradient(180deg, #eef7ff 0%, #f8fbff 100%);
+          border: 1px solid #bfd6ee;
+          border-radius: 18px;
+          box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+          padding: 16px 18px;
+          font-size: 18px;
+          font-weight: 600;
+          color: #14324d;
+        }
+        .today-assignment-mat {
+          font-weight: 800;
+        }
+        .today-meet-header {
+          display: grid;
+          gap: 6px;
+        }
+        .today-meet-label {
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #586473;
+        }
+        .today-meet-name {
+          margin: 0;
+          font-family: "Oswald", Arial, sans-serif;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          font-size: 28px;
+          line-height: 1;
+        }
+        .today-meta {
+          color: #586473;
+          font-size: 17px;
+        }
+        .meet-actions {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .today-wrestler-list {
+          display: grid;
+          gap: 12px;
+        }
+        .today-wrestler-card {
+          border: 1px solid #d9e1e8;
+          border-radius: 14px;
+          background: #fbfdff;
+          padding: 14px;
+          display: grid;
+          gap: 10px;
+        }
+        .today-wrestler-name {
+          font-size: 24px;
+          font-weight: 800;
+          line-height: 1.1;
+        }
+        .today-bouts {
+          display: grid;
+          gap: 8px;
+        }
+        .today-bouts-card {
+          background: #ffffff;
+          border: 1px solid #dfe5eb;
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        .today-bout-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: nowrap;
+          padding: 10px;
+        }
+        .today-bout-row + .today-bout-row {
+          border-top: 1px solid #dfe5eb;
+        }
+        .today-bout-number {
+          font-weight: 800;
+          min-width: 64px;
+          white-space: nowrap;
+        }
+        .today-bout-opponent {
+          flex: 1 1 auto;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .today-bout-opponent-name {
+          font-weight: 700;
+        }
+        @media (max-width: 640px) {
+          .parent {
+            padding: 20px 14px 32px;
+          }
+          .attendance-summary-card {
+            padding: 10px;
+            gap: 6px;
+          }
+          .attendance-summary-status {
+            width: 100%;
+          }
+          .meet-actions {
+            align-items: stretch;
+          }
+          .attendance-link {
+            width: 100%;
+          }
+          .today-card {
+            padding: 16px 14px;
+          }
+          .today-bout-row {
+            gap: 8px;
+            padding: 9px 8px;
+          }
+          .today-bout-number {
+            min-width: 58px;
+            font-size: 15px;
+          }
+          .today-bout-opponent {
+            font-size: 15px;
+          }
+        }
       `}</style>
       <AppHeader links={headerLinks} />
+
+      <ParentTodayMeetCards
+        meetGroups={meetGroups as ParentTodayMeetGroup[]}
+        currentUser={currentUser}
+        title="Today's Meet"
+        showEmptyState={false}
+      />
+
+      <div style={{ marginTop: 24 }}>
+        <ParentAttendancePanel embedded />
+      </div>
 
       <h2>{dashboardTitle}</h2>
 
@@ -679,88 +814,6 @@ export default function ParentPage() {
         {msg && <div style={{ color: "crimson" }}>{msg}</div>}
       </div>
 
-      <h2 style={{ marginTop: 24 }}>Upcoming Meets</h2>
-      {upcomingMeets.length === 0 && <div>No upcoming meets yet.</div>}
-      {upcomingMeets.map(group => (
-        <div key={group.meet.id} className="panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <h3 style={{ margin: 0 }}>{group.meet.name}</h3>
-          </div>
-          <div className="muted" style={{ marginBottom: 8 }}>
-            {new Date(group.meet.date).toISOString().slice(0, 10)}{" "}
-            {group.meet.location ? `• ${group.meet.location}` : "• Location TBD"}
-          </div>
-          {normalizeMeetPhase(group.meet.status) === "ATTENDANCE" && (
-            <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
-              <div className="muted">
-                Attendance deadline:{" "}
-                {group.meet.attendanceDeadline
-                  ? new Date(group.meet.attendanceDeadline).toLocaleString()
-                  : "Not set"}
-              </div>
-              <div className="attendance-summary">
-                {group.children.map((child) => (
-                  <div key={`${group.meet.id}-${child.childId}`} className="attendance-summary-card">
-                    <div>
-                      <div className="attendance-summary-name">
-                        {child.first} {child.last}
-                        {child.teamSymbol ? ` (${child.teamSymbol})` : child.teamName ? ` (${child.teamName})` : ""}
-                      </div>
-                    </div>
-                    <div className="attendance-summary-status">{attendanceLabel(child.attendanceStatus)}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <Link
-                  href="/parent/attendance"
-                  className={`attendance-link${canEditAttendance(group) ? "" : " secondary"}`}
-                >
-                  {canEditAttendance(group) ? "Reply for Attendance" : "View Attendance"}
-                </Link>
-                {!canEditAttendance(group) && (
-                  <span className="muted">Attendance entry is closed for this meet.</span>
-                )}
-              </div>
-            </div>
-          )}
-          {group.matches.length === 0 && <div>No scheduled matches yet.</div>}
-          {group.matches.length > 0 && (
-          <table cellPadding={10} style={{ borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Wrestler</th>
-                <th align="left">Bout #</th>
-                <th align="left">Opponent</th>
-                <th align="left">Result</th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.matches.map(match => {
-                const child = childMap.get(match.childId);
-                return (
-                  <tr key={match.boutId} style={{ borderTop: "1px solid #ddd" }}>
-                      <td>
-                        {nameChip(
-                          `${child?.first ?? ""} ${child?.last ?? ""}`.trim(),
-                          child?.teamSymbol ?? child?.teamName,
-                          child?.teamColor ?? "#000000"
-                        )}
-                      </td>
-                      <td>{boutNumber(match.mat, match.order)}</td>
-                      <td>
-                        {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
-                      </td>
-                      <td>{formatMatchResult(match)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ))}
-
       <h2 style={{ marginTop: 24 }}>Match History</h2>
       <div className="match-history">
         {sortedChildren.map(child => {
@@ -770,11 +823,6 @@ export default function ParentPage() {
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
               <div>
                 <h3 style={{ margin: 0 }}>{child.first} {child.last}</h3>
-                {child.teamSymbol || child.teamName ? (
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    {child.teamSymbol ?? child.teamName}
-                  </div>
-                ) : null}
               </div>
               <div className="muted" style={{ fontSize: 13 }}>
                 {history.length === 0 ? "No past matches yet" : `${history.length} match${history.length === 1 ? "" : "es"}`}

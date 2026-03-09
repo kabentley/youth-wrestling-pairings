@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
@@ -14,14 +16,13 @@ const ImportParentRowSchema = z.object({
   rowNumber: z.number().int().positive(),
   firstName: z.string().trim().max(50).optional().default(""),
   lastName: z.string().trim().max(50).optional().default(""),
-  username: z.string().trim().optional().default(""),
   email: z.string().trim().optional().default(""),
   phone: z.string().trim().optional().default(""),
   kids: z.array(z.string().trim().min(1)).max(20).optional().default([]),
 });
 
 const ImportParentsSchema = z.object({
-  password: z.string().trim().min(1),
+  password: z.string().trim().optional().default(""),
   rows: z.array(ImportParentRowSchema).min(1).max(500),
 });
 
@@ -55,16 +56,6 @@ const withUsernameSuffix = (base: string, suffix: number) => {
   return `${base.slice(0, maxBaseLen)}${suffixText}`;
 };
 
-const validateExplicitUsername = (username: string) => {
-  const normalized = username.trim().toLowerCase();
-  if (!normalized) return "Username is required.";
-  if (normalized.includes("@")) return "Username may not contain @.";
-  if (normalized.startsWith("oauth-")) return "Choose a different username.";
-  if (normalized.length < MIN_USERNAME_LEN) return `Username must be at least ${MIN_USERNAME_LEN} characters.`;
-  if (normalized.length > MAX_USERNAME_LEN) return `Username must be at most ${MAX_USERNAME_LEN} characters.`;
-  return null;
-};
-
 const validateOptionalEmail = (email: string) => {
   const trimmed = email.trim();
   if (!trimmed) return null;
@@ -95,32 +86,30 @@ const validateOptionalPhone = (phone: string) => {
   return PHONE_PATTERN.test(trimmed) ? null : "Phone must be a valid international number.";
 };
 
+const generateTemporaryPassword = () => {
+  const digits = randomBytes(6);
+  let password = "";
+  for (let index = 0; index < 6; index += 1) {
+    password += String(digits[index] % 10);
+  }
+  return password;
+};
+
 const resolveUsername = async (
   row: ImportParentRow,
-  usedUsernames: Set<string>,
+  reservedUsernames: Set<string>,
 ) => {
-  const explicitUsername = row.username.trim().toLowerCase();
-  if (explicitUsername) {
-    const explicitError = validateExplicitUsername(explicitUsername);
-    if (explicitError) return { error: explicitError };
-  }
-
-  const base = explicitUsername || buildGeneratedUsernameBase(row.firstName, row.lastName);
+  const base = buildGeneratedUsernameBase(row.firstName, row.lastName);
   if (!base) {
     return { error: "Unable to generate a username from the provided name." };
   }
 
   for (let suffix = 0; suffix <= 500; suffix += 1) {
     const candidate = withUsernameSuffix(base, suffix);
-    if (usedUsernames.has(candidate)) continue;
-    const existing = await db.user.findUnique({
-      where: { username: candidate },
-      select: { id: true },
-    });
-    if (existing) continue;
+    if (reservedUsernames.has(candidate)) continue;
     return {
       username: candidate,
-      adjusted: explicitUsername ? candidate !== explicitUsername : suffix > 0,
+      adjusted: suffix > 0,
     };
   }
 
@@ -158,12 +147,15 @@ export async function POST(request: Request) {
   }
 
   const payload = parsed.data;
+  const sharedPassword = payload.password.trim();
+  const useSharedPassword = sharedPassword.length > 0;
   const rowErrors: string[] = [];
   const plannedRows: Array<{
     rowNumber: number;
     firstName: string;
     lastName: string;
     username: string;
+    temporaryPassword: string;
     email: string;
     phone: string;
     adjustedUsername: boolean;
@@ -177,17 +169,22 @@ export async function POST(request: Request) {
     phone: string;
     reason: string;
   }> = [];
-  const usedUsernames = new Set<string>();
-  const existingTeamUsers = await db.user.findMany({
-    where: { teamId },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      email: true,
-      phone: true,
-    },
-  });
+  const [existingTeamUsers, existingUsers] = await Promise.all([
+    db.user.findMany({
+      where: { teamId },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        phone: true,
+      },
+    }),
+    db.user.findMany({
+      select: { username: true },
+    }),
+  ]);
+  const reservedUsernames = new Set(existingUsers.map((entry) => entry.username));
   const existingByName = new Map(
     existingTeamUsers
       .filter((user) => user.name && user.name.trim().length > 0)
@@ -260,18 +257,22 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const resolved = await resolveUsername(row, usedUsernames);
+    const resolved = await resolveUsername(row, reservedUsernames);
     if (!resolved.username) {
       rowErrors.push(`Row ${row.rowNumber}: ${resolved.error ?? "Unable to determine username."}`);
       continue;
     }
 
-    usedUsernames.add(resolved.username);
+    reservedUsernames.add(resolved.username);
+      const temporaryPassword = useSharedPassword
+        ? sharedPassword
+        : generateTemporaryPassword();
       plannedRows.push({
         rowNumber: row.rowNumber,
         firstName,
         lastName,
         username: resolved.username,
+        temporaryPassword,
         email: row.email.trim().toLowerCase(),
         phone: normalizedPhone,
         adjustedUsername: Boolean(resolved.adjusted),
@@ -286,7 +287,20 @@ export async function POST(request: Request) {
     }, { status: 400 });
   }
 
-  const passwordHash = await bcrypt.hash(payload.password.trim(), 10);
+  const passwordHashByRow = new Map<number, string>();
+  if (useSharedPassword) {
+    const sharedPasswordHash = await bcrypt.hash(sharedPassword, 10);
+    for (const row of plannedRows) {
+      passwordHashByRow.set(row.rowNumber, sharedPasswordHash);
+    }
+  } else {
+    const hashes = await Promise.all(
+      plannedRows.map(async (row) => [row.rowNumber, await bcrypt.hash(row.temporaryPassword, 10)] as const),
+    );
+    for (const [rowNumber, hash] of hashes) {
+      passwordHashByRow.set(rowNumber, hash);
+    }
+  }
 
   try {
     const created = await db.$transaction(async (tx) => {
@@ -296,8 +310,13 @@ export async function POST(request: Request) {
         username: string;
         email: string;
         name: string | null;
+        temporaryPassword: string;
       }> = [];
       for (const row of plannedRows) {
+        const passwordHash = passwordHashByRow.get(row.rowNumber);
+        if (!passwordHash) {
+          throw new Error(`Missing password hash for import row ${row.rowNumber}.`);
+        }
         const createdUser = await tx.user.create({
           data: {
             username: row.username,
@@ -307,7 +326,7 @@ export async function POST(request: Request) {
             role: "PARENT",
             teamId,
             passwordHash,
-            mustResetPassword: true,
+            mustResetPassword: useSharedPassword,
           },
           select: {
             id: true,
@@ -331,6 +350,7 @@ export async function POST(request: Request) {
         createdUsers.push({
           rowNumber: row.rowNumber,
           ...createdUser,
+          temporaryPassword: row.temporaryPassword,
         });
       }
       return createdUsers;
@@ -346,6 +366,7 @@ export async function POST(request: Request) {
         username: entry.username,
         email: entry.email,
         name: entry.name,
+        temporaryPassword: entry.temporaryPassword,
       })),
       skipped: skippedRows,
     });

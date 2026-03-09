@@ -4,16 +4,22 @@ import { db } from "@/lib/db";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireSession } from "@/lib/rbac";
 
-type AttendanceStatus = "COMING" | "NOT_COMING" | null;
+type AttendanceStatus = "COMING" | "NOT_COMING" | "ABSENT" | null;
 
 function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
-  if (status === "ABSENT" || status === "NOT_COMING") return "NOT_COMING";
+  if (status === "ABSENT") return "ABSENT";
+  if (status === "NOT_COMING") return "NOT_COMING";
   if (status === "COMING" || status === "LATE" || status === "EARLY") return "COMING";
   return null;
 }
 
 export async function GET() {
-  const { userId } = await requireSession();
+  let userId: string;
+  try {
+    ({ userId } = await requireSession());
+  } catch {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
 
   const [currentUser, children] = await Promise.all([
     db.user.findUnique({
@@ -94,6 +100,7 @@ export async function GET() {
             attendanceDeadline: true,
             homeTeamId: true,
             numMats: true,
+            meetTeams: { select: { teamId: true, checkinCompletedAt: true } },
           },
         },
       },
@@ -106,7 +113,7 @@ export async function GET() {
     db.meet.findMany({
       where: {
         deletedAt: null,
-        status: { in: ["ATTENDANCE", "CREATED", "PUBLISHED"] },
+        status: { in: ["ATTENDANCE", "CREATED", "READY_FOR_CHECKIN", "PUBLISHED"] },
         meetTeams: { some: { teamId: { in: childTeamIds } } },
       },
       select: {
@@ -118,7 +125,7 @@ export async function GET() {
         attendanceDeadline: true,
         homeTeamId: true,
         numMats: true,
-        meetTeams: { select: { teamId: true } },
+        meetTeams: { select: { teamId: true, checkinCompletedAt: true } },
       },
       orderBy: [{ date: "asc" }],
     }),
@@ -165,6 +172,10 @@ export async function GET() {
       attendanceDeadline: Date | null;
       homeTeamId: string | null;
       numMats: number;
+      meetTeams: Array<{
+        teamId: string;
+        checkinCompletedAt: Date | null;
+      }>;
     };
     matches: Array<Record<string, unknown>>;
     children: Array<{
@@ -175,6 +186,7 @@ export async function GET() {
       teamName: string;
       teamColor?: string | null;
       attendanceStatus: AttendanceStatus;
+      teamCheckinCompleted: boolean;
     }>;
   }>();
 
@@ -190,6 +202,7 @@ export async function GET() {
         teamName: wrestler.team.name,
         teamColor: wrestler.team.color,
         attendanceStatus: statusMap.get(`${meet.id}:${wrestler.id}`) ?? null,
+        teamCheckinCompleted: meet.meetTeams.some((team) => team.teamId === wrestler.teamId && team.checkinCompletedAt != null),
       }));
     meetMap.set(meet.id, { meet, matches: [], children: linkedChildren });
   }
@@ -298,6 +311,7 @@ export async function GET() {
               teamName: child.team.name,
               teamColor: child.team.color,
               attendanceStatus: statusMap.get(`${entry.meet.id}:${child.id}`) ?? null,
+              teamCheckinCompleted: entry.meet.meetTeams.some((team) => team.teamId === child.teamId && team.checkinCompletedAt != null),
             };
           }),
     })),

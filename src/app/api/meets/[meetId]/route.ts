@@ -576,11 +576,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ meet
   });
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   const coordinatorId = meet.homeTeam?.headCoachId ?? null;
-  const isPublished = normalizeMeetPhase(meet.status) === "PUBLISHED";
-  const canDelete = user.role === "ADMIN" || (!isPublished && Boolean(coordinatorId) && coordinatorId === user.id);
+  const isCoordinator = Boolean(coordinatorId) && coordinatorId === user.id;
+  const canDelete = user.role === "ADMIN" || isCoordinator;
   if (!canDelete) {
     return NextResponse.json(
-      { error: isPublished ? "Only admins can delete a published meet." : "Only the Meet Coordinator or an admin can delete this meet." },
+      { error: "Only the Meet Coordinator or an admin can delete this meet." },
       { status: 403 },
     );
   }

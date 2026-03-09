@@ -88,6 +88,28 @@ function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) 
   return true;
 }
 
+function setVolunteerDragImage(event: React.DragEvent<HTMLDivElement>) {
+  const source = event.currentTarget;
+  const rect = source.getBoundingClientRect();
+  const preview = source.cloneNode(true) as HTMLDivElement;
+  preview.style.position = "fixed";
+  preview.style.top = "-10000px";
+  preview.style.left = "-10000px";
+  preview.style.width = `${rect.width}px`;
+  preview.style.maxWidth = `${rect.width}px`;
+  preview.style.margin = "0";
+  preview.style.pointerEvents = "none";
+  preview.style.boxSizing = "border-box";
+  preview.style.zIndex = "9999";
+  document.body.appendChild(preview);
+  const offsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+  const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+  event.dataTransfer.setDragImage(preview, offsetX, offsetY);
+  setTimeout(() => {
+    preview.remove();
+  }, 0);
+}
+
 export default function VolunteersTab({
   meetId,
   canEdit,
@@ -705,6 +727,7 @@ export default function VolunteersTab({
                       onDragStart={(event) => {
                         if (!canEdit) return;
                         event.dataTransfer.effectAllowed = "move";
+                        setVolunteerDragImage(event);
                         setDragVolunteerId(volunteer.id);
                       }}
                       onDragEnd={() => setDragVolunteerId(null)}
@@ -803,6 +826,7 @@ export default function VolunteersTab({
                 onDragStart={(event) => {
                   if (!canEdit) return;
                   event.dataTransfer.effectAllowed = "move";
+                  setVolunteerDragImage(event);
                   setDragVolunteerId(volunteer.id);
                 }}
                 onDragEnd={() => setDragVolunteerId(null)}

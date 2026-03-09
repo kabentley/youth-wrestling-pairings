@@ -97,6 +97,7 @@ type ScratchesTabProps = {
   canManageScratchEntry: boolean;
   canManageScratchMatches: boolean;
   manageableTeamIds: string[];
+  currentUserTeamId: string | null;
   onEnsureLock: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
@@ -217,6 +218,7 @@ export default function ScratchesTab({
   canManageScratchEntry,
   canManageScratchMatches,
   manageableTeamIds,
+  currentUserTeamId,
   onEnsureLock,
   onRefresh,
 }: ScratchesTabProps) {
@@ -227,7 +229,14 @@ export default function ScratchesTab({
       )
     : visibleScratchTeams;
   const orderedTeams = orderedTeamsSource;
-  const [activeTeamId, setActiveTeamId] = useState<string | null>(orderedTeams[0]?.id ?? null);
+  const checkinTeams = canManageScratchMatches
+    ? orderedTeams
+    : orderedTeams.filter((team) => team.id === currentUserTeamId);
+  const fallbackCheckinTeams = !canManageScratchMatches && checkinTeams.length === 0
+    ? orderedTeams.slice(0, 1)
+    : checkinTeams;
+  const initialActiveTeam = fallbackCheckinTeams.length > 0 ? fallbackCheckinTeams[0] : orderedTeams[0];
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(initialActiveTeam.id);
   const [selectedDetailWrestlerId, setSelectedDetailWrestlerId] = useState<string | null>(null);
   const [candidateRows, setCandidateRows] = useState<Candidate[]>([]);
   const [candidateError, setCandidateError] = useState<string | null>(null);
@@ -244,6 +253,7 @@ export default function ScratchesTab({
   const [scratchSaveLoading, setScratchSaveLoading] = useState(false);
   const [showScratchModal, setShowScratchModal] = useState(false);
   const [showUnexpectedArrivalsModal, setShowUnexpectedArrivalsModal] = useState(false);
+  const [showCompleteCheckinConfirmModal, setShowCompleteCheckinConfirmModal] = useState(false);
   const [localTeamCheckins, setLocalTeamCheckins] = useState<Map<string, TeamCheckinInfo>>(
     new Map(
       teamCheckins.map((entry) => [
@@ -271,6 +281,7 @@ export default function ScratchesTab({
     allowSameTeamMatches: false,
     girlsWrestleGirls: true,
   });
+  const [isPhoneLayout, setIsPhoneLayout] = useState(false);
   const pendingScratchChangesRef = useRef(pendingScratchChanges);
   const pendingArrivalAddsRef = useRef(pendingArrivalAdds);
   const scratchSaveLoadingRef = useRef(scratchSaveLoading);
@@ -288,6 +299,19 @@ export default function ScratchesTab({
   }, [scratchSaveLoading]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 700px)");
+    const updateLayout = () => setIsPhoneLayout(mediaQuery.matches);
+    updateLayout();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", updateLayout);
+      return () => mediaQuery.removeEventListener("change", updateLayout);
+    }
+    mediaQuery.addListener(updateLayout);
+    return () => mediaQuery.removeListener(updateLayout);
+  }, []);
+
+  useEffect(() => {
     setLocalTeamCheckins((current) => {
       const next = new Map(current);
       for (const entry of teamCheckins) {
@@ -303,9 +327,10 @@ export default function ScratchesTab({
   }, [teamCheckins]);
 
   useEffect(() => {
-    if (!activeTeamId || orderedTeams.some((team) => team.id === activeTeamId)) return;
-    setActiveTeamId(orderedTeams[0]?.id ?? null);
-  }, [activeTeamId, orderedTeams]);
+    const allowedTeams = canManageScratchMatches ? orderedTeams : fallbackCheckinTeams;
+    if (!activeTeamId || allowedTeams.some((team) => team.id === activeTeamId)) return;
+    setActiveTeamId(allowedTeams[0]?.id ?? null);
+  }, [activeTeamId, canManageScratchMatches, fallbackCheckinTeams, orderedTeams]);
 
   const teamMap = new Map(teams.map((team) => [team.id, team]));
   const teamCheckinMap = localTeamCheckins;
@@ -746,13 +771,28 @@ export default function ScratchesTab({
     setScratchSearch("");
     setUnexpectedArrivalSearch("");
     setShowUnexpectedArrivalsModal(false);
+    setShowCompleteCheckinConfirmModal(false);
     setShowScratchModal(true);
   }
 
   function cancelScratchModal() {
     clearPendingScratchChanges();
     setShowUnexpectedArrivalsModal(false);
+    setShowCompleteCheckinConfirmModal(false);
     setShowScratchModal(false);
+  }
+
+  async function completeScratchModal() {
+    if (!activeTeamId) {
+      setShowScratchModal(false);
+      return;
+    }
+    const ok = await saveScratchChanges({ completeTeamId: activeTeamId });
+    if (ok) {
+      setShowCompleteCheckinConfirmModal(false);
+      setShowUnexpectedArrivalsModal(false);
+      setShowScratchModal(false);
+    }
   }
 
   async function confirmScratchModal() {
@@ -760,11 +800,12 @@ export default function ScratchesTab({
       setShowScratchModal(false);
       return;
     }
-    const ok = await saveScratchChanges({ completeTeamId: activeTeamId });
-    if (ok) {
-      setShowUnexpectedArrivalsModal(false);
-      setShowScratchModal(false);
+    const teamAlreadyCompleted = Boolean(teamCheckinMap.get(activeTeamId)?.checkinCompletedAt);
+    if (!teamAlreadyCompleted) {
+      setShowCompleteCheckinConfirmModal(true);
+      return;
     }
+    await completeScratchModal();
   }
 
   function openUnexpectedArrivalsModal() {
@@ -920,19 +961,286 @@ export default function ScratchesTab({
     width: "fit-content",
     maxWidth: "100%",
     tableLayout: "fixed" as const,
-    fontSize: 14,
+    fontSize: isPhoneLayout ? 12 : 14,
   };
   const pairingsHeaderCellStyle = {
-    padding: "3px 18px 3px 6px",
+    padding: isPhoneLayout ? "2px 10px 2px 4px" : "3px 18px 3px 6px",
     borderBottom: "1px solid #e1e7ef",
     fontWeight: 700,
     whiteSpace: "nowrap" as const,
     position: "relative" as const,
+    lineHeight: isPhoneLayout ? 1.05 : 1.15,
   };
   const pairingsBodyCellStyle = {
-    padding: "3px 6px",
-    lineHeight: 1.2,
+    padding: isPhoneLayout ? "2px 4px" : "3px 6px",
+    lineHeight: isPhoneLayout ? 1.05 : 1.2,
   };
+  const modalCardStyle = {
+    width: isPhoneLayout ? "100%" : "min(760px, 100%)",
+    maxHeight: isPhoneLayout ? "100dvh" : "calc(100vh - 24px)",
+    height: isPhoneLayout ? "100dvh" : undefined,
+    background: "#ffffff",
+    borderRadius: isPhoneLayout ? 0 : 16,
+    border: "1px solid #d5dbe2",
+    boxShadow: isPhoneLayout ? "none" : "0 18px 60px rgba(15, 23, 42, 0.28)",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    overflow: "hidden",
+  } as const;
+  const modalBodyPadding = isPhoneLayout ? 10 : 14;
+  const modalFooterPadding = isPhoneLayout ? "10px 10px calc(10px + env(safe-area-inset-bottom, 0px))" : "12px 18px 16px";
+  const mobileActionButtonStyle = {
+    minHeight: 28,
+    padding: "3px 8px",
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: 1.1,
+    whiteSpace: "nowrap" as const,
+  };
+
+  function renderScratchRosterContent() {
+    if (!isPhoneLayout) {
+      return (
+        <>
+          {filteredTeamRoster.length === 0 && (
+            <div style={{ color: "#5a6673", fontSize: 13, padding: "6px 4px" }}>
+              {teamRoster.length === 0 ? "No scheduled wrestlers on this team." : "No wrestlers match this search."}
+            </div>
+          )}
+          {filteredTeamRoster.length > 0 && (
+            <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%" }}>
+              <colgroup>
+                <col style={{ width: 220 }} />
+                <col />
+              </colgroup>
+              <tbody>
+                {filteredTeamRoster.map((wrestler) => {
+                  const effectiveStatus = effectiveScratchStatus(wrestler);
+                  const absent = effectiveStatus === "ABSENT";
+                  const beforeOpponents = baselineOpponentsText(wrestler.id);
+                  const rowBackground = absent ? "#f8eded" : "#e6f7e6";
+                  const rowBorder = absent ? "#dfc1c1" : "#c7ddc7";
+                  return (
+                    <tr
+                      key={wrestler.id}
+                      style={{
+                        background: rowBackground,
+                        borderTop: `1px solid ${rowBorder}`,
+                      }}
+                    >
+                      <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(wrestler.teamId) }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {wrestler.first} {wrestler.last}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => queueScratchChange(wrestler.id, !absent)}
+                            disabled={!canManageScratchEntry || scratchSaveLoading}
+                            style={{
+                              border: `1px solid ${absent ? "#bcd8c1" : "#d0b2b2"}`,
+                              borderRadius: 4,
+                              background: absent ? "#e6f6ea" : "#fff7f7",
+                              color: absent ? "#1d5b2a" : "#7a3d3d",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: "1px 6px",
+                              cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
+                              whiteSpace: "nowrap",
+                              flex: "0 0 auto",
+                            }}
+                            title={absent ? "Un-scratch wrestler" : "Scratch wrestler"}
+                          >
+                            {absent ? "Un-scratch" : "Scratch"}
+                          </button>
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          ...pairingsBodyCellStyle,
+                          color: "#5a6673",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        title={beforeOpponents}
+                      >
+                        {beforeOpponents}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <div style={{ display: "grid", gap: 4 }}>
+        {filteredTeamRoster.length === 0 && (
+          <div style={{ color: "#5a6673", fontSize: 14, padding: "6px 4px", lineHeight: 1.15 }}>
+            {teamRoster.length === 0 ? "No scheduled wrestlers on this team." : "No wrestlers match this search."}
+          </div>
+        )}
+        {filteredTeamRoster.map((wrestler) => {
+          const effectiveStatus = effectiveScratchStatus(wrestler);
+          const absent = effectiveStatus === "ABSENT";
+          return (
+            <div
+              key={wrestler.id}
+              style={{
+                border: `1px solid ${absent ? "#dfc1c1" : "#c7ddc7"}`,
+                borderRadius: 8,
+                background: absent ? "#f8eded" : "#e6f7e6",
+                padding: "6px 8px",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                alignItems: "center",
+                lineHeight: 1.05,
+              }}
+            >
+              <div style={{ minWidth: 0, color: teamTextColor(wrestler.teamId), fontSize: 14, fontWeight: 700, lineHeight: 1.02 }}>
+                {wrestler.first} {wrestler.last}
+              </div>
+              <button
+                type="button"
+                onClick={() => queueScratchChange(wrestler.id, !absent)}
+                disabled={!canManageScratchEntry || scratchSaveLoading}
+                style={{
+                  ...mobileActionButtonStyle,
+                  border: `1px solid ${absent ? "#bcd8c1" : "#d0b2b2"}`,
+                  background: absent ? "#e6f6ea" : "#fff7f7",
+                  color: absent ? "#1d5b2a" : "#7a3d3d",
+                  cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
+                  flex: "0 0 auto",
+                }}
+                title={absent ? "Un-scratch wrestler" : "Scratch wrestler"}
+              >
+                {absent ? "Un-scratch" : "Scratch"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderUnexpectedArrivalsContent() {
+    if (!isPhoneLayout) {
+      return (
+        <>
+          {filteredUnexpectedArrivalsRoster.length === 0 && (
+            <div style={{ color: "#5a6673", fontSize: 13, padding: "6px 4px" }}>
+              {unexpectedArrivalsRoster.length === 0 ? "No unexpected-arrival candidates for this team." : "No wrestlers match this search."}
+            </div>
+          )}
+          {filteredUnexpectedArrivalsRoster.length > 0 && (
+            <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%" }}>
+              <colgroup>
+                <col style={{ width: 260 }} />
+                <col />
+              </colgroup>
+              <thead>
+                <tr style={{ background: "#f7f9fc" }}>
+                  <th align="left" style={pairingsHeaderCellStyle}>Name</th>
+                  <th align="left" style={pairingsHeaderCellStyle}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUnexpectedArrivalsRoster.map((wrestler) => {
+                  const pendingAdd = pendingArrivalAdds.has(wrestler.id);
+                  return (
+                    <tr key={wrestler.id} style={{ borderTop: "1px solid #e5e8ee", background: "#ffffff" }}>
+                      <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(wrestler.teamId) }}>
+                        <div style={{ display: "flex", alignItems: "center", minHeight: 20 }}>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {wrestler.first} {wrestler.last}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={pairingsBodyCellStyle}>
+                        <button
+                          type="button"
+                          onClick={() => queueUnexpectedArrival(wrestler.id)}
+                          disabled={!canManageScratchEntry || scratchSaveLoading}
+                          style={{
+                            border: `1px solid ${pendingAdd ? "#d0b2b2" : "#bcd8c1"}`,
+                            borderRadius: 4,
+                            background: pendingAdd ? "#fff7f7" : "#e6f6ea",
+                            color: pendingAdd ? "#7a3d3d" : "#1d5b2a",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            padding: "1px 6px",
+                            cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
+                            whiteSpace: "nowrap",
+                            flex: "0 0 auto",
+                          }}
+                        >
+                          {pendingAdd ? "Undo" : "Add to meet"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <div style={{ display: "grid", gap: 4 }}>
+        {filteredUnexpectedArrivalsRoster.length === 0 && (
+          <div style={{ color: "#5a6673", fontSize: 14, padding: "6px 4px", lineHeight: 1.15 }}>
+            {unexpectedArrivalsRoster.length === 0 ? "No unexpected-arrival candidates for this team." : "No wrestlers match this search."}
+          </div>
+        )}
+        {filteredUnexpectedArrivalsRoster.map((wrestler) => {
+          const pendingAdd = pendingArrivalAdds.has(wrestler.id);
+          return (
+            <div
+              key={wrestler.id}
+              style={{
+                border: "1px solid #d5dbe2",
+                borderRadius: 8,
+                background: "#ffffff",
+                padding: "6px 8px",
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                alignItems: "center",
+                lineHeight: 1.05,
+              }}
+            >
+              <div style={{ minWidth: 0, color: teamTextColor(wrestler.teamId), fontSize: 14, fontWeight: 700, lineHeight: 1.02 }}>
+                {wrestler.first} {wrestler.last}
+              </div>
+              <button
+                type="button"
+                onClick={() => queueUnexpectedArrival(wrestler.id)}
+                disabled={!canManageScratchEntry || scratchSaveLoading}
+                style={{
+                  ...mobileActionButtonStyle,
+                  border: `1px solid ${pendingAdd ? "#d0b2b2" : "#bcd8c1"}`,
+                  background: pendingAdd ? "#fff7f7" : "#e6f6ea",
+                  color: pendingAdd ? "#7a3d3d" : "#1d5b2a",
+                  cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
+                  flex: "0 0 auto",
+                }}
+              >
+                {pendingAdd ? "Undo" : "Add to meet"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <section
@@ -940,16 +1248,16 @@ export default function ScratchesTab({
       style={{
         display: "grid",
         gap: 14,
-        padding: 16,
+        padding: isPhoneLayout ? 8 : 16,
         height: "auto",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#243041", marginRight: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: isPhoneLayout ? 8 : 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: isPhoneLayout ? 8 : 10 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#243041", marginRight: 4, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
             Enter Scratches For:
           </div>
-          {orderedTeams.map((team) => {
+          {fallbackCheckinTeams.map((team) => {
             const teamColorValue = team.color ?? "#7a1738";
             const textColor = adjustTeamTextColor(teamColorValue);
             const completedInfo = teamCheckinMap.get(team.id) ?? { checkinCompletedAt: null, completedByUsername: null };
@@ -975,8 +1283,8 @@ export default function ScratchesTab({
                   color: textColor,
                   border: `1px solid ${teamColorValue}`,
                   borderWidth: 2,
-                  padding: "8px 14px",
-                  borderRadius: 10,
+                  padding: isPhoneLayout ? "6px 10px" : "8px 14px",
+                  borderRadius: isPhoneLayout ? 8 : 10,
                   fontWeight: 700,
                   boxShadow: "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)",
                   cursor: canManageScratchEntry ? "pointer" : "default",
@@ -1002,7 +1310,7 @@ export default function ScratchesTab({
                     )}
                   </span>
                   {completedAt && completedByUsername && (
-                    <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
                       by {completedByUsername}
                     </span>
                   )}
@@ -1010,15 +1318,17 @@ export default function ScratchesTab({
               </button>
             );
           })}
-          <button
-            type="button"
-            className="nav-btn"
-            onClick={() => void refreshTeamCheckins()}
-            disabled={refreshingTeamCheckins}
-            style={{ padding: "8px 14px", borderRadius: 10 }}
-          >
-            {refreshingTeamCheckins ? "Refreshing..." : "Refresh"}
-          </button>
+          {canManageScratchMatches && (
+            <button
+              type="button"
+              className="nav-btn"
+              onClick={() => void refreshTeamCheckins()}
+              disabled={refreshingTeamCheckins}
+              style={{ padding: "8px 14px", borderRadius: 10 }}
+            >
+              {refreshingTeamCheckins ? "Refreshing..." : "Refresh"}
+            </button>
+          )}
         </div>
         {!canManageScratchEntry && (
           <div className="notice" style={{ margin: 0 }}>
@@ -1027,17 +1337,18 @@ export default function ScratchesTab({
         )}
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(260px, 320px) minmax(0, 1fr)",
-          gridTemplateRows: "minmax(260px, 38dvh) minmax(0, 1fr)",
-          gap: 12,
-          alignSelf: "stretch",
-          height: "calc(100dvh - 220px)",
-          minHeight: 0,
-        }}
-      >
+      {canManageScratchMatches ? (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isPhoneLayout ? "minmax(0, 1fr)" : "minmax(260px, 320px) minmax(0, 1fr)",
+            gridTemplateRows: isPhoneLayout ? "auto auto auto" : "minmax(260px, 38dvh) minmax(0, 1fr)",
+            gap: isPhoneLayout ? 8 : 12,
+            alignSelf: "stretch",
+            height: isPhoneLayout ? "auto" : "calc(100dvh - 220px)",
+            minHeight: 0,
+          }}
+        >
           <div
             style={{
               border: "1px solid #d5dbe2",
@@ -1057,7 +1368,7 @@ export default function ScratchesTab({
                 type="button"
                 className="nav-btn primary"
                 onClick={() => void runAutoPairings()}
-                disabled={!canManageScratchMatches || baselineLoading || Boolean(baselineError) || replacementRows.length === 0 || autoPairingLoading}
+                disabled={baselineLoading || Boolean(baselineError) || replacementRows.length === 0 || autoPairingLoading}
               >
                 {autoPairingLoading ? "Running..." : "Auto pair for scratches"}
               </button>
@@ -1240,15 +1551,15 @@ export default function ScratchesTab({
                                   <tr
                                     key={bout.id}
                                     onClick={() => {
-                                      if (!canManageScratchMatches || removeLoadingId === bout.id) return;
+                                      if (removeLoadingId === bout.id) return;
                                       void removeReplacementMatch(bout.id);
                                     }}
                                     style={{
                                       borderTop: "1px solid #eee",
-                                      cursor: canManageScratchMatches ? "pointer" : "default",
+                                      cursor: "pointer",
                                       background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
                                     }}
-                                    title={canManageScratchMatches ? "Click to remove this match." : undefined}
+                                    title="Click to remove this match."
                                   >
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
@@ -1351,19 +1662,19 @@ export default function ScratchesTab({
                               {!candidateLoading && !candidateError && availableDisplay.map(({ opponent, score }) => {
                                 const matches = matchCounts.get(opponent.id) ?? 0;
                                 const loading = addLoadingId === opponent.id;
-                                return (
-                                  <tr
-                                    key={opponent.id}
-                                    onClick={() => {
-                                      if (!canManageScratchMatches || loading) return;
+                              return (
+                                <tr
+                                  key={opponent.id}
+                                  onClick={() => {
+                                      if (loading) return;
                                       void addReplacementMatch(opponent.id);
                                     }}
                                     style={{
                                       borderTop: "1px solid #eee",
-                                      cursor: canManageScratchMatches ? "pointer" : "default",
+                                      cursor: "pointer",
                                       background: loading ? "#eef6ff" : "#ffffff",
                                     }}
-                                    title={canManageScratchMatches ? "Click to add this match." : undefined}
+                                    title="Click to add this match."
                                   >
                                     <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.last}</td>
                                     <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.first}</td>
@@ -1468,8 +1779,8 @@ export default function ScratchesTab({
               display: "flex",
               flexDirection: "column",
               minHeight: 0,
-              gridColumn: "1 / span 2",
-              gridRow: 2,
+              gridColumn: isPhoneLayout ? 1 : "1 / span 2",
+              gridRow: isPhoneLayout ? 3 : 2,
             }}
           >
               <div
@@ -1498,7 +1809,7 @@ export default function ScratchesTab({
                 <div style={{ color: "#5a6673", fontSize: 13 }}>No new matches have been added.</div>
               )}
               {!baselineLoading && !baselineError && newMatches.length > 0 && (
-                <div style={{ border: "1px solid #d5dbe2", borderRadius: 8, overflow: "hidden", background: "#ffffff" }}>
+                <div style={{ border: "1px solid #d5dbe2", borderRadius: 8, overflow: isPhoneLayout ? "auto" : "hidden", background: "#ffffff" }}>
                   <table cellPadding={4} style={pairingsTableStyle}>
                     <colgroup>
                       {newMatchesColumnWidths.map((width, index) => (
@@ -1652,8 +1963,8 @@ export default function ScratchesTab({
               display: "flex",
               flexDirection: "column",
               minHeight: 0,
-              gridColumn: 2,
-              gridRow: 1,
+              gridColumn: isPhoneLayout ? 1 : 2,
+              gridRow: isPhoneLayout ? 2 : 1,
             }}
           >
             <div style={{ flex: 1, minHeight: 0, padding: 12, display: "grid", gap: 6, alignContent: "start" }}>
@@ -1761,15 +2072,15 @@ export default function ScratchesTab({
                                 <tr
                                   key={bout.id}
                                   onClick={() => {
-                                    if (!canManageScratchMatches || removeLoadingId === bout.id) return;
+                                    if (removeLoadingId === bout.id) return;
                                     void removeReplacementMatch(bout.id);
                                   }}
                                   style={{
                                     borderTop: "1px solid #eee",
-                                    cursor: canManageScratchMatches ? "pointer" : "default",
+                                    cursor: "pointer",
                                     background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
                                   }}
-                                  title={canManageScratchMatches ? "Click to remove this match." : undefined}
+                                  title="Click to remove this match."
                                 >
                                   <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
                                   <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
@@ -1876,15 +2187,15 @@ export default function ScratchesTab({
                                 <tr
                                   key={opponent.id}
                                   onClick={() => {
-                                    if (!canManageScratchMatches || loading) return;
+                                    if (loading) return;
                                     void addReplacementMatch(opponent.id);
                                   }}
                                   style={{
                                     borderTop: "1px solid #eee",
-                                    cursor: canManageScratchMatches ? "pointer" : "default",
+                                    cursor: "pointer",
                                     background: loading ? "#eef6ff" : "#ffffff",
                                   }}
-                                  title={canManageScratchMatches ? "Click to add this match." : undefined}
+                                  title="Click to add this match."
                                 >
                                   <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.last}</td>
                                   <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.first}</td>
@@ -1978,7 +2289,23 @@ export default function ScratchesTab({
               )}
             </div>
           </div>
-      </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            border: "1px solid #d5dbe2",
+            borderRadius: 12,
+            background: "#ffffff",
+            padding: isPhoneLayout ? 12 : 16,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div style={{ color: "#5a6673", fontSize: 14, lineHeight: 1.25 }}>
+            Open your team and finish check-in when your wrestlers are accounted for.
+          </div>
+        </div>
+      )}
 
       {showScratchModal && (
         <div
@@ -1988,35 +2315,25 @@ export default function ScratchesTab({
             inset: 0,
             background: "rgba(20, 26, 36, 0.48)",
             display: "flex",
-            alignItems: "center",
+            alignItems: isPhoneLayout ? "stretch" : "center",
             justifyContent: "center",
-            padding: 20,
+            padding: isPhoneLayout ? 0 : 20,
             zIndex: 1000,
           }}
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            style={{
-              width: "min(760px, 100%)",
-              maxHeight: "min(760px, calc(100vh - 40px))",
-              background: "#ffffff",
-              borderRadius: 16,
-              border: "1px solid #d5dbe2",
-              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.28)",
-              display: "grid",
-              gridTemplateRows: "auto minmax(0, 1fr) auto",
-              overflow: "hidden",
-            }}
+            style={modalCardStyle}
           >
-            <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#243041", display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ padding: isPhoneLayout ? "12px 10px 8px" : "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
+              <div style={{ fontSize: isPhoneLayout ? 18 : 22, fontWeight: 800, color: "#243041", display: "flex", alignItems: "center", flexWrap: "wrap", lineHeight: isPhoneLayout ? 1.05 : undefined }}>
                 <span>Enter scratches for:</span>
                 {teamTitleLabel(activeTeam)}
               </div>
             </div>
 
-            <div style={{ padding: 18, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+            <div style={{ padding: modalBodyPadding, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ display: "flex", gap: isPhoneLayout ? 8 : 10, alignItems: "center", marginBottom: isPhoneLayout ? 8 : 10 }}>
                 <input
                   type="text"
                   value={scratchSearch}
@@ -2028,7 +2345,7 @@ export default function ScratchesTab({
                   }}
                   placeholder="Search"
                   aria-label="Scratch roster search"
-                  style={{ flex: 1, minWidth: 0, padding: "6px 8px", fontSize: 13 }}
+                  style={{ flex: 1, minWidth: 0, padding: isPhoneLayout ? "8px 10px" : "6px 8px", fontSize: isPhoneLayout ? 16 : 13 }}
                 />
               </div>
               <div
@@ -2043,101 +2360,31 @@ export default function ScratchesTab({
                   flexDirection: "column",
                 }}
               >
-                <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%", flex: "0 0 auto" }}>
-                  <colgroup>
-                    <col style={{ width: 220 }} />
-                    <col />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ background: "#f7f9fc" }}>
-                      <th align="left" style={pairingsHeaderCellStyle}>Name</th>
-                      <th align="left" style={pairingsHeaderCellStyle}>Opponents</th>
-                    </tr>
-                  </thead>
-                </table>
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 4 }}>
-                  {filteredTeamRoster.length === 0 && (
-                    <div style={{ color: "#5a6673", fontSize: 13, padding: "6px 4px" }}>
-                      {teamRoster.length === 0 ? "No scheduled wrestlers on this team." : "No wrestlers match this search."}
-                    </div>
-                  )}
-                  {filteredTeamRoster.length > 0 && (
-                    <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%" }}>
-                      <colgroup>
-                        <col style={{ width: 220 }} />
-                        <col />
-                      </colgroup>
-                      <tbody>
-                        {filteredTeamRoster.map((wrestler) => {
-                          const effectiveStatus = effectiveScratchStatus(wrestler);
-                          const absent = effectiveStatus === "ABSENT";
-                          const beforeOpponents = baselineOpponentsText(wrestler.id);
-                          const rowBackground = absent ? "#f8eded" : "#e6f7e6";
-                          const rowBorder = absent ? "#dfc1c1" : "#c7ddc7";
-                          return (
-                            <tr
-                              key={wrestler.id}
-                              style={{
-                                background: rowBackground,
-                                borderTop: `1px solid ${rowBorder}`,
-                              }}
-                            >
-                              <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(wrestler.teamId) }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {wrestler.first} {wrestler.last}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => queueScratchChange(wrestler.id, !absent)}
-                                    disabled={!canManageScratchEntry || scratchSaveLoading}
-                                    style={{
-                                      border: `1px solid ${absent ? "#bcd8c1" : "#d0b2b2"}`,
-                                      borderRadius: 4,
-                                      background: absent ? "#e6f6ea" : "#fff7f7",
-                                      color: absent ? "#1d5b2a" : "#7a3d3d",
-                                      fontSize: 11,
-                                      fontWeight: 600,
-                                      padding: "1px 6px",
-                                      cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
-                                      whiteSpace: "nowrap",
-                                      flex: "0 0 auto",
-                                    }}
-                                    title={absent ? "Un-scratch wrestler" : "Scratch wrestler"}
-                                  >
-                                    {absent ? "Un-scratch" : "Scratch"}
-                                  </button>
-                                </div>
-                              </td>
-                              <td
-                                style={{
-                                  ...pairingsBodyCellStyle,
-                                  color: "#5a6673",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
-                                title={beforeOpponents}
-                              >
-                                {beforeOpponents}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
+                {!isPhoneLayout && (
+                  <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%", flex: "0 0 auto" }}>
+                    <colgroup>
+                      <col style={{ width: 220 }} />
+                      <col />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ background: "#f7f9fc" }}>
+                        <th align="left" style={pairingsHeaderCellStyle}>Name</th>
+                        <th align="left" style={pairingsHeaderCellStyle}>Opponents</th>
+                      </tr>
+                    </thead>
+                  </table>
+                )}
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isPhoneLayout ? 6 : 4 }}>
+                  {renderScratchRosterContent()}
                 </div>
               </div>
             </div>
 
             <div
               style={{
-                padding: "12px 18px 16px",
+                padding: modalFooterPadding,
                 borderTop: "1px solid #e5e8ee",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
+                display: "grid",
                 gap: 10,
               }}
             >
@@ -2146,15 +2393,17 @@ export default function ScratchesTab({
                 className="nav-btn secondary"
                 onClick={openUnexpectedArrivalsModal}
                 disabled={!canManageScratchEntry || scratchSaveLoading}
+                style={isPhoneLayout ? { width: "100%" } : undefined}
               >
                 Unexpected arrivals
               </button>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                 <button
                   type="button"
                   className="nav-btn"
                   onClick={cancelScratchModal}
                   disabled={scratchSaveLoading}
+                  style={isPhoneLayout ? { width: "100%" } : undefined}
                 >
                   Cancel
                 </button>
@@ -2163,6 +2412,7 @@ export default function ScratchesTab({
                   className="nav-btn primary"
                   onClick={() => void confirmScratchModal()}
                   disabled={!canManageScratchEntry || scratchSaveLoading}
+                  style={isPhoneLayout ? { width: "100%" } : undefined}
                 >
                   {scratchSaveLoading ? "Saving..." : "Done"}
                 </button>
@@ -2179,35 +2429,25 @@ export default function ScratchesTab({
             inset: 0,
             background: "rgba(20, 26, 36, 0.4)",
             display: "flex",
-            alignItems: "center",
+            alignItems: isPhoneLayout ? "stretch" : "center",
             justifyContent: "center",
-            padding: 20,
+            padding: isPhoneLayout ? 0 : 20,
             zIndex: 1001,
           }}
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            style={{
-              width: "min(720px, 100%)",
-              maxHeight: "min(720px, calc(100vh - 40px))",
-              background: "#ffffff",
-              borderRadius: 16,
-              border: "1px solid #d5dbe2",
-              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.28)",
-              display: "grid",
-              gridTemplateRows: "auto minmax(0, 1fr) auto",
-              overflow: "hidden",
-            }}
+            style={modalCardStyle}
           >
-            <div style={{ padding: "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#243041", display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ padding: isPhoneLayout ? "12px 10px 8px" : "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
+              <div style={{ fontSize: isPhoneLayout ? 18 : 22, fontWeight: 800, color: "#243041", display: "flex", alignItems: "center", flexWrap: "wrap", lineHeight: isPhoneLayout ? 1.05 : undefined }}>
                 <span>Unexpected arrivals for:</span>
                 {teamTitleLabel(activeTeam)}
               </div>
             </div>
 
-            <div style={{ padding: 18, display: "flex", flexDirection: "column", minHeight: 0 }}>
-              <div style={{ color: "#5a6673", fontSize: 15, marginBottom: 10 }}>
+            <div style={{ padding: modalBodyPadding, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ color: "#5a6673", fontSize: 15, marginBottom: 10, lineHeight: isPhoneLayout ? 1.15 : undefined }}>
                 Add wrestlers who showed up unexpectedly but weren&apos;t scheduled.
               </div>
               <input
@@ -2221,7 +2461,7 @@ export default function ScratchesTab({
                 }}
                 placeholder="Search"
                 aria-label="Unexpected arrivals search"
-                style={{ width: "100%", marginBottom: 8, padding: "6px 8px", fontSize: 13 }}
+                style={{ width: "100%", marginBottom: isPhoneLayout ? 6 : 8, padding: isPhoneLayout ? "8px 10px" : "6px 8px", fontSize: isPhoneLayout ? 16 : 13 }}
               />
               <div
                 style={{
@@ -2235,73 +2475,17 @@ export default function ScratchesTab({
                   flexDirection: "column",
                 }}
               >
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 4 }}>
-                  {filteredUnexpectedArrivalsRoster.length === 0 && (
-                    <div style={{ color: "#5a6673", fontSize: 13, padding: "6px 4px" }}>
-                      {unexpectedArrivalsRoster.length === 0 ? "No unexpected-arrival candidates for this team." : "No wrestlers match this search."}
-                    </div>
-                  )}
-                  {filteredUnexpectedArrivalsRoster.length > 0 && (
-                    <table cellPadding={4} style={{ ...pairingsTableStyle, width: "100%" }}>
-                      <colgroup>
-                        <col style={{ width: 260 }} />
-                        <col />
-                      </colgroup>
-                      <thead>
-                        <tr style={{ background: "#f7f9fc" }}>
-                          <th align="left" style={pairingsHeaderCellStyle}>Name</th>
-                          <th align="left" style={pairingsHeaderCellStyle}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredUnexpectedArrivalsRoster.map((wrestler) => {
-                          const pendingAdd = pendingArrivalAdds.has(wrestler.id);
-                          return (
-                            <tr key={wrestler.id} style={{ borderTop: "1px solid #e5e8ee", background: "#ffffff" }}>
-                              <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(wrestler.teamId) }}>
-                                <div style={{ display: "flex", alignItems: "center", minHeight: 20 }}>
-                                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {wrestler.first} {wrestler.last}
-                                  </span>
-                                </div>
-                              </td>
-                              <td style={pairingsBodyCellStyle}>
-                                <button
-                                  type="button"
-                                  onClick={() => queueUnexpectedArrival(wrestler.id)}
-                                  disabled={!canManageScratchEntry || scratchSaveLoading}
-                                  style={{
-                                    border: `1px solid ${pendingAdd ? "#d0b2b2" : "#bcd8c1"}`,
-                                    borderRadius: 4,
-                                    background: pendingAdd ? "#fff7f7" : "#e6f6ea",
-                                    color: pendingAdd ? "#7a3d3d" : "#1d5b2a",
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    padding: "1px 6px",
-                                    cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
-                                    whiteSpace: "nowrap",
-                                    flex: "0 0 auto",
-                                  }}
-                                >
-                                  {pendingAdd ? "Undo" : "Add to meet"}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isPhoneLayout ? 6 : 4 }}>
+                  {renderUnexpectedArrivalsContent()}
                 </div>
               </div>
             </div>
 
             <div
               style={{
-                padding: "12px 18px 16px",
+                padding: modalFooterPadding,
                 borderTop: "1px solid #e5e8ee",
-                display: "flex",
-                justifyContent: "flex-end",
+                display: "grid",
                 gap: 10,
               }}
             >
@@ -2310,8 +2494,77 @@ export default function ScratchesTab({
                 className="nav-btn primary"
                 onClick={closeUnexpectedArrivalsModal}
                 disabled={scratchSaveLoading}
+                style={isPhoneLayout ? { width: "100%" } : { justifySelf: "end" }}
               >
-                Done
+                Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showScratchModal && showCompleteCheckinConfirmModal && (
+        <div
+          onClick={() => {
+            if (scratchSaveLoading) return;
+            setShowCompleteCheckinConfirmModal(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(20, 26, 36, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: isPhoneLayout ? 12 : 20,
+            zIndex: 1002,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: isPhoneLayout ? "100%" : "min(520px, 100%)",
+              background: "#ffffff",
+              borderRadius: 16,
+              border: "1px solid #d5dbe2",
+              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.28)",
+              display: "grid",
+              gap: 0,
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: isPhoneLayout ? "14px 14px 10px" : "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
+              <div style={{ fontSize: isPhoneLayout ? 18 : 20, fontWeight: 800, color: "#243041" }}>
+                Finish check-in?
+              </div>
+            </div>
+            <div style={{ padding: isPhoneLayout ? 14 : 18, color: "#425066", fontSize: 15, lineHeight: 1.3 }}>
+              Are you sure you're done checking in? Parents of scratches will be notified and the Meet Coordinator will start working on scratches for your team.
+            </div>
+            <div
+              style={{
+                padding: isPhoneLayout ? "0 14px 14px" : "0 18px 18px",
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                className="nav-btn"
+                onClick={() => setShowCompleteCheckinConfirmModal(false)}
+                disabled={scratchSaveLoading}
+                style={{ width: "100%" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="nav-btn primary"
+                onClick={() => void completeScratchModal()}
+                disabled={scratchSaveLoading}
+                style={{ width: "100%" }}
+              >
+                {scratchSaveLoading ? "Saving..." : "Yes, I'm done"}
               </button>
             </div>
           </div>

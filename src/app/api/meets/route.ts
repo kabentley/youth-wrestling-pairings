@@ -153,8 +153,7 @@ export async function GET() {
       const isDraft = normalizeMeetPhase(meetWithoutAccessMeta.status) === "DRAFT";
       const canStartEditing =
         user.role === "ADMIN" || isCoordinator || (isDraft && isCoachOnMeetTeam && (!coordinatorId || hasCoordinatorGrant));
-      const isPublished = normalizeMeetPhase(meetWithoutAccessMeta.status) === "PUBLISHED";
-      const canDelete = user.role === "ADMIN" || (!isPublished && isCoordinator);
+      const canDelete = user.role === "ADMIN" || isCoordinator;
       return {
         ...meetWithoutAccessMeta,
         canStartEditing,

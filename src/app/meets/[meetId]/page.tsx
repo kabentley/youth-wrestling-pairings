@@ -1387,7 +1387,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canManageScratchEntry = canViewScratches && scratchManageTeamIds.length > 0;
   const canManageScratchMatches =
     meetStatus === "READY_FOR_CHECKIN" &&
-    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    isMeetCoordinator &&
     canEdit;
   const canSetPairingNotComing = meetStatus === "DRAFT";
   const canRunPairingsAutoPair = canEdit && meetStatus === "DRAFT";
@@ -4025,7 +4025,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   onClick={() => void openReadyForCheckinChecklist()}
                   title="Run the ready-for-check-in checklist, then save an automatic checkpoint."
                 >
-                  Ready for Meet day
+                  Ready for check-in
                 </button>
                 {canReopenAttendance && (
                   <button
@@ -4104,19 +4104,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Release Lock
               </button>
             )}
-            <button
-              type="button"
-              className="nav-btn primary checkpoint-btn"
-              onClick={() => {
-                setCheckpointError(null);
-                setShowCheckpointModal(true);
-                if (!checkpointsLoaded) {
-                  void loadCheckpoints();
-                }
-              }}
-            >
-              Checkpoints
-            </button>
+            {!isPublished && (
+              <button
+                type="button"
+                className="nav-btn primary checkpoint-btn"
+                onClick={() => {
+                  setCheckpointError(null);
+                  setShowCheckpointModal(true);
+                  if (!checkpointsLoaded) {
+                    void loadCheckpoints();
+                  }
+                }}
+              >
+                Checkpoints
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -5586,6 +5588,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             canManageScratchEntry={canManageScratchEntry}
             canManageScratchMatches={canManageScratchMatches}
             manageableTeamIds={scratchManageTeamIds}
+            currentUserTeamId={currentUserTeamId}
             onEnsureLock={ensureMeetLock}
             onRefresh={async () => {
               await load();
@@ -5824,7 +5827,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   >
                     {readyForCheckinSubmitting
                       ? (readyForCheckinTargetStatus === "PUBLISHED" ? "Publishing..." : "Saving...")
-                      : (readyForCheckinTargetStatus === "PUBLISHED" ? "Continue" : "Mark ready for meet day")}
+                      : (readyForCheckinTargetStatus === "PUBLISHED" ? "Continue" : "Mark ready for check-in")}
                   </button>
                 )}
               </div>

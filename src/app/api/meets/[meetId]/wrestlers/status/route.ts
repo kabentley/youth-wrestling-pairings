@@ -28,7 +28,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
-  const isCoordinator = Boolean(meet.homeTeam?.headCoachId) && meet.homeTeam.headCoachId === user.id;
+  const isCoordinator = meet.homeTeam?.headCoachId === user.id;
   const allowCoachWithoutLock =
     normalizeMeetPhase(meet.status) === "DRAFT" &&
     user.role === "COACH" &&

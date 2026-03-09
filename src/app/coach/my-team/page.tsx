@@ -72,7 +72,6 @@ type ParentImportRow = {
   rowNumber: number;
   firstName: string;
   lastName: string;
-  username: string;
   email: string;
   phone: string;
   kids: string[];
@@ -83,6 +82,7 @@ type ParentImportCreatedRow = {
   username?: string;
   name?: string | null;
   email?: string | null;
+  temporaryPassword?: string | null;
 };
 
 type ParentImportSkippedRow = ParentImportCreatedRow & {
@@ -95,6 +95,7 @@ type ParentImportResult = {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
+  temporaryPassword?: string | null;
 };
 
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
@@ -142,7 +143,6 @@ const downloadParentImportResults = (
   teamName: string,
   rows: ParentImportRow[],
   resultsByRow: Map<number, ParentImportResult>,
-  password: string,
 ) => {
   const rawTeamSlug = teamName
     .trim()
@@ -158,8 +158,8 @@ const downloadParentImportResults = (
       const isExisting = result.status === "Existing account";
       return [
         result.name?.trim() ?? `${row.firstName} ${row.lastName}`.trim(),
-        result.username?.trim() ?? row.username.trim(),
-        isExisting ? "" : password,
+        result.username?.trim() ?? "",
+        isExisting ? "" : result.temporaryPassword?.trim() ?? "",
         row.kids.join("; "),
         isExisting ? "Existing account" : "",
       ];
@@ -1100,9 +1100,6 @@ export default function CoachMyTeamPage() {
     setNewUserPassword(buildTempPassword());
   };
 
-  const generateImportPassword = () => {
-    setImportUsersPassword(buildTempPassword());
-  };
   const generateEditUserPassword = () => {
     setEditUserPassword(buildTempPassword());
   };
@@ -1140,7 +1137,6 @@ export default function CoachMyTeamPage() {
             lastName ||= split.lastName;
           }
         }
-        const username = get("username", "user name", "login", "user id");
         const email = get("email", "e-mail", "mail");
         const phone = get("phone", "mobile", "cell", "cell phone", "cellphone");
         const kids = new Set<string>();
@@ -1157,7 +1153,7 @@ export default function CoachMyTeamPage() {
           }
         }
 
-        if (![firstName, lastName, username, email, phone, ...kids].some(Boolean)) {
+        if (![firstName, lastName, email, phone, ...kids].some(Boolean)) {
           return null;
         }
 
@@ -1165,7 +1161,6 @@ export default function CoachMyTeamPage() {
           rowNumber: index + 2,
           firstName,
           lastName,
-          username,
           email,
           phone,
           kids: [...kids],
@@ -1442,12 +1437,6 @@ export default function CoachMyTeamPage() {
       setImportUsersMessageStatus("error");
       return;
     }
-    if (!importUsersPassword.trim()) {
-      setImportUsersMessage("Enter the shared temporary password.");
-      setImportUsersMessageStatus("error");
-      return;
-    }
-
     setImportingUsers(true);
     setImportUsersMessage(null);
     setImportUsersMessageStatus(null);
@@ -1498,6 +1487,7 @@ export default function CoachMyTeamPage() {
           username: row.username,
           name: row.name,
           email: row.email,
+          temporaryPassword: row.temporaryPassword,
         });
       });
       skippedRows.forEach((row: ParentImportSkippedRow) => {
@@ -1510,7 +1500,7 @@ export default function CoachMyTeamPage() {
           phone: row.phone,
         });
       });
-      downloadParentImportResults(teamName, importedRows, resultsByRow, sharedPassword);
+      downloadParentImportResults(teamName, importedRows, resultsByRow);
       closeImportUsersModal(true);
       const summaryParts = [
         `Imported ${createdCount} parent account${createdCount === 1 ? "" : "s"}`,
@@ -1521,7 +1511,7 @@ export default function CoachMyTeamPage() {
       if (adjustedUsernameCount > 0) {
         summaryParts.push(`${adjustedUsernameCount} username${adjustedUsernameCount === 1 ? " was" : "s were"} adjusted to keep them unique`);
       }
-      setRolesMessage(`${summaryParts.join(", ")}, and downloaded the username file.`);
+      setRolesMessage(`${summaryParts.join(", ")}, and downloaded the credentials file.`);
       setRolesMessageStatus("success");
     } catch (error) {
       console.error("Import parent users failed", error);
@@ -1697,7 +1687,6 @@ export default function CoachMyTeamPage() {
     canEditRoles
       && !importingUsers
       && importUsersRows.length > 0
-      && importUsersPassword.trim(),
   );
 
   const wrestlerById = new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler]));
@@ -2558,20 +2547,21 @@ export default function CoachMyTeamPage() {
             <h4>Import parent accounts for {teamName}{teamSymbol ? ` (${teamSymbol})` : ""}</h4>
             <div className="coach-import-users-body">
               <p className="coach-import-users-note">
-                Upload a CSV, XLS, or XLSX file with columns for first name, last name, username, email, phone, and optional kid names.
+                Upload a CSV, XLS, or XLSX file with columns for first name, last name, email, phone, and optional kid names.
                 Kid names can go in one `Kids` column separated by semicolons, or in columns like `Kid 1`, `Kid 2`.
-                Username, email, and phone are optional. If username is blank, one will be generated automatically.
-                All imported accounts are created as parents and must reset their password at first sign-in.
+                Email and phone are optional. Usernames are generated automatically.
+                Enter a shared temporary password if you want everyone to use the same one. Leave it blank to generate a different temporary password for each parent.
+                If you enter a shared temporary password, imported parents must reset it at first sign-in.
               </p>
               <details>
                 <summary>Example CSV</summary>
                 <p className="coach-import-users-note" style={{ marginTop: 8 }}>
                   Use either a single `Kids` column with semicolon-separated names, or separate columns such as `Kid 1`, `Kid 2`.
                 </p>
-                <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>{`First Name,Last Name,Username,Email,Phone,Kids,Kid 1,Kid 2
-Sarah,Jones,sjones,sarah@example.com,555-111-2222,"Mason Jones;Ella Jones",,
-Michael,Brown,,,555-333-4444,,Noah Brown,Olivia Brown
-Ashley,Smith,asmith,ashley@example.com,,Logan Smith,,
+                <pre style={{ whiteSpace: "pre-wrap", margin: "8px 0 0" }}>{`First Name,Last Name,Email,Phone,Kids,Kid 1,Kid 2
+Sarah,Jones,sarah@example.com,555-111-2222,"Mason Jones;Ella Jones",,
+Michael,Brown,,555-333-4444,,Noah Brown,Olivia Brown
+Ashley,Smith,ashley@example.com,,Logan Smith,,
 `}</pre>
               </details>
               <div className="coach-import-users-grid">
@@ -2587,24 +2577,14 @@ Ashley,Smith,asmith,ashley@example.com,,Logan Smith,,
                   />
                 </label>
                 <label className="coach-import-users-field">
-                  <span>Shared temporary password</span>
-                  <div className="coach-create-user-password">
-                    <input
-                      placeholder="Temporary Password"
-                      value={importUsersPassword}
-                      onChange={(event) => setImportUsersPassword(event.target.value)}
-                      autoCapitalize="none"
-                      spellCheck={false}
-                    />
-                    <button
-                      type="button"
-                      className="coach-btn-secondary coach-picker-btn"
-                      onClick={generateImportPassword}
-                      disabled={importingUsers}
-                    >
-                      Generate
-                    </button>
-                  </div>
+                  <span>Shared temporary password (optional)</span>
+                  <input
+                    placeholder="Leave blank to auto-generate per parent"
+                    value={importUsersPassword}
+                    onChange={(event) => setImportUsersPassword(event.target.value)}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
                 </label>
               </div>
               {importUsersFile ? (
@@ -2630,7 +2610,6 @@ Ashley,Smith,asmith,ashley@example.com,,Logan Smith,,
                           <th>Row</th>
                           <th>First</th>
                           <th>Last</th>
-                          <th>Username</th>
                           <th>Email</th>
                           <th>Phone</th>
                           <th>Kids</th>
@@ -2642,7 +2621,6 @@ Ashley,Smith,asmith,ashley@example.com,,Logan Smith,,
                             <td>{row.rowNumber}</td>
                             <td>{row.firstName || <span className="coach-empty-cell">-</span>}</td>
                             <td>{row.lastName || <span className="coach-empty-cell">-</span>}</td>
-                            <td>{row.username || <span className="coach-empty-cell">Auto</span>}</td>
                             <td>{row.email || <span className="coach-empty-cell">-</span>}</td>
                             <td>{row.phone || <span className="coach-empty-cell">-</span>}</td>
                             <td>{row.kids.length > 0 ? row.kids.join("; ") : <span className="coach-empty-cell">-</span>}</td>
@@ -3500,8 +3478,8 @@ const coachStyles = `
   .coach-create-user-modal {
     width: min(520px, 100%);
   }
-  .coach-import-users-modal {
-    width: min(760px, 100%);
+  .coach-modal.coach-import-users-modal {
+    width: min(980px, calc(100vw - 32px));
   }
   .coach-create-user-modal-heading {
     display: flex;
@@ -3597,6 +3575,7 @@ const coachStyles = `
     border-bottom: 1px solid var(--line);
     text-align: left;
     vertical-align: top;
+    white-space: nowrap;
   }
   .coach-import-preview th {
     position: sticky;
