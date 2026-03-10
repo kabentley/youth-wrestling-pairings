@@ -36,6 +36,7 @@ export default function NumberInput({
         return;
       }
       const normalizedValue = normalize ? normalize(parsed) : parsed;
+      setInputValue(String(normalizedValue));
       onValueChange(normalizedValue);
       if (event) {
         onBlur?.(event);

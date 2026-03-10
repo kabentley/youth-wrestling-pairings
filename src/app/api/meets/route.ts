@@ -18,7 +18,7 @@ const MeetSchema = z.object({
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(5),
   homeTeamId: z.string().optional(),
-  numMats: z.number().int().min(1).max(6).default(4),
+  numMats: z.number().int().min(1).max(8).default(4),
   allowSameTeamMatches: z.boolean().default(false),
   sendNotificationsToParents: z.boolean().default(true),
   girlsWrestleGirls: z.boolean().default(true),

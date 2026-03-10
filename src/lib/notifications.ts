@@ -188,6 +188,27 @@ function buildTeamLabel(team: { symbol?: string | null; name?: string | null }) 
   return (team.symbol ?? team.name ?? "Team").trim() || "Team";
 }
 
+export function dedupeMeetRecipients(recipients: MeetReadyRecipient[]): MeetReadyRecipient[] {
+  const byUserId = new Map<string, MeetReadyRecipient>();
+
+  for (const recipient of recipients) {
+    const existing = byUserId.get(recipient.userId);
+    if (!existing) {
+      byUserId.set(recipient.userId, {
+        ...recipient,
+        childNames: uniqueSortedNames(recipient.childNames),
+      });
+      continue;
+    }
+
+    existing.childNames = uniqueSortedNames([...existing.childNames, ...recipient.childNames]);
+    if (!existing.email && recipient.email) existing.email = recipient.email;
+    if (!existing.phone && recipient.phone) existing.phone = recipient.phone;
+  }
+
+  return Array.from(byUserId.values());
+}
+
 export function buildMeetReadyForAttendanceContent(
   context: MeetReadyContext,
 ): MeetReadyContent {
@@ -527,7 +548,7 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     orderBy: [{ username: "asc" }],
   });
 
-  return parents.map((parent) => ({
+  return dedupeMeetRecipients(parents.map((parent) => ({
     // Prefer the full name when present, otherwise fall back to username.
     userId: parent.id,
     teamId: parent.teamId ?? "",
@@ -538,7 +559,7 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
-  }));
+  })));
 }
 
 async function getMeetReadyForCheckinRecipients(meetId: string, teamIds: string[]): Promise<MeetReadyRecipient[]> {
@@ -602,7 +623,7 @@ async function getMeetReadyForCheckinRecipients(meetId: string, teamIds: string[
     orderBy: [{ username: "asc" }],
   });
 
-  return parents.map((parent) => ({
+  return dedupeMeetRecipients(parents.map((parent) => ({
     userId: parent.id,
     teamId: parent.teamId ?? "",
     teamLabel: buildTeamLabel(parent.team ?? {}),
@@ -614,7 +635,7 @@ async function getMeetReadyForCheckinRecipients(meetId: string, teamIds: string[
         .filter((entry) => entry.wrestler.meetStatuses.some((status) => isAttendingStatus(status.status)))
         .map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
-  }));
+  })));
 }
 
 async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Promise<MeetReadyRecipient[]> {
@@ -674,7 +695,7 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
     orderBy: [{ username: "asc" }],
   });
 
-  return parents.map((parent) => ({
+  return dedupeMeetRecipients(parents.map((parent) => ({
     userId: parent.id,
     teamId: parent.teamId ?? "",
     teamLabel: buildTeamLabel(parent.team ?? {}),
@@ -684,7 +705,7 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
-  })).filter((recipient) => recipient.childNames.length > 0);
+  }))).filter((recipient) => recipient.childNames.length > 0);
 }
 
 export async function notifyMeetReadyForAttendance(

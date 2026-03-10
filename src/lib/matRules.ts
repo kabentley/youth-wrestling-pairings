@@ -27,4 +27,6 @@ export const DEFAULT_MAT_RULES: MatRuleBase[] = [
   { color: "#A52A2A", minExperience: 4, maxExperience: 10, minAge: 12.5, maxAge: 20 },
   { color: "#FFA500", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
   { color: "#2e7d32", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
+  { color: "#8E44AD", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
+  { color: "#00ACC1", minExperience: 0, maxExperience: 10, minAge: 0, maxAge: 20 },
 ];

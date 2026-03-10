@@ -9,7 +9,7 @@ import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
 
 const BodySchema = z.object({
-  matsToReorder: z.array(z.number().int().min(1).max(6)).max(6).optional(),
+  matsToReorder: z.array(z.number().int().min(1).max(8)).max(8).optional(),
   dryRun: z.boolean().optional(),
 });
 
@@ -74,7 +74,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       reorderedMats: [],
     });
   }
-  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const maxMat = Math.max(1, Math.min(8, meet.numMats));
   const allMats = Array.from({ length: maxMat }, (_, idx) => idx + 1);
   const shouldReorderAllMats = result.moved > 0 || requestedMats.length > 0;
   const reorderResult =

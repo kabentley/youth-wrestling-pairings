@@ -118,6 +118,36 @@ describe("buildPreferredMessages", () => {
   });
 });
 
+describe("dedupeMeetRecipients", () => {
+  it("merges duplicate parent recipients into one delivery target", async () => {
+    process.env.DATABASE_URL = "file:./dev.db";
+    const { dedupeMeetRecipients } = await import("./notifications");
+    const recipients = dedupeMeetRecipients([
+      {
+        userId: "parent_1",
+        teamId: "team_1",
+        teamLabel: "Tigers",
+        displayName: "Pat Parent",
+        email: "parent@example.com",
+        phone: null,
+        childNames: ["Ben Smith"],
+      },
+      {
+        userId: "parent_1",
+        teamId: "team_1",
+        teamLabel: "Tigers",
+        displayName: "Pat Parent",
+        email: "parent@example.com",
+        phone: null,
+        childNames: ["Ava Smith", "Ben Smith"],
+      },
+    ]);
+
+    expect(recipients).toHaveLength(1);
+    expect(recipients[0]?.childNames).toEqual(["Ava Smith", "Ben Smith"]);
+  });
+});
+
 describe("buildMeetReadyForCheckinContent", () => {
   it("builds check-in content with parent routes", async () => {
     process.env.DATABASE_URL = "file:./dev.db";

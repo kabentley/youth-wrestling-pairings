@@ -153,7 +153,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     }
   }
 
-  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const maxMat = Math.max(1, Math.min(8, meet.numMats));
   const mapped = volunteers
     .map((entry) => {
       const rawMat = entry.staffMatNumber;
@@ -255,7 +255,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ error: "Only home team coaches or admins assigned to the home team can manage volunteers for this meet." }, { status: 403 });
   }
 
-  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const maxMat = Math.max(1, Math.min(8, meet.numMats));
   for (const assignment of body.assignments) {
     if (assignment.matNumber !== null && (assignment.matNumber < 1 || assignment.matNumber > maxMat)) {
       return NextResponse.json({ error: `Mat number must be between 1 and ${maxMat}.` }, { status: 400 });

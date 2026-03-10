@@ -47,7 +47,18 @@ export default async function AdminHome({ searchParams }: Props) {
   }
 
   const resolvedSearchParams = await searchParams;
-  const requestedTab = (resolvedSearchParams?.tab === "league" ? "league" : "users") as AdminTabKey;
+  const requestedTab = ((): AdminTabKey => {
+    switch (resolvedSearchParams?.tab) {
+      case "teams":
+      case "league":
+      case "pairings":
+      case "notifications":
+      case "users":
+        return resolvedSearchParams.tab;
+      default:
+        return "users";
+    }
+  })();
 
   return (
     <main className="admin">

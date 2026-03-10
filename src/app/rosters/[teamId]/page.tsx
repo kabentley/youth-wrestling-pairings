@@ -18,7 +18,7 @@ type Wrestler = {
   isGirl: boolean;
   active: boolean;
 };
-const CONFIGURED_MATS = 6;
+const CONFIGURED_MATS = 8;
 const MIN_MATS = 1;
 const MAX_MATS = CONFIGURED_MATS;
 

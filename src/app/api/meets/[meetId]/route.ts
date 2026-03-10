@@ -27,7 +27,7 @@ const PatchSchema = z.object({
   ),
   location: z.string().optional().nullable(),
   homeTeamId: z.string().nullable().optional(),
-  numMats: z.number().int().min(1).max(6).optional(),
+  numMats: z.number().int().min(1).max(8).optional(),
   allowSameTeamMatches: z.boolean().optional(),
   girlsWrestleGirls: z.boolean().optional(),
   matchesPerWrestler: z.number().int().min(1).max(5).optional(),

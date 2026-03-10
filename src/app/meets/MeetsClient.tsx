@@ -146,7 +146,7 @@ function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | n
 const DEFAULT_DATE = getNextSaturday();
 
 const MIN_MATS = 1;
-const MAX_MATS = 6;
+const MAX_MATS = 8;
 const DEFAULT_NUM_MATS = 3;
 
 type Meet = {

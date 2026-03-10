@@ -183,7 +183,7 @@ export default function VolunteersTab({
 
   const volunteers = payload?.volunteers ?? [];
   const meet = payload?.meet ?? null;
-  const numMats = Math.max(1, Math.min(6, meet?.numMats ?? 4));
+  const numMats = Math.max(1, Math.min(8, meet?.numMats ?? 4));
   const homeTeamId = meet?.homeTeamId ?? null;
   const matSwatchColor = (matNumber: number) => {
     const configured = matColors[matNumber];

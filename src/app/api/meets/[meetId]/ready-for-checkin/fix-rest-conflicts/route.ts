@@ -38,7 +38,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   const result = await reorderBoutsForMeetUntilStable(meetId, {
-    numMats: Math.max(1, Math.min(6, meet.numMats)),
+    numMats: Math.max(1, Math.min(8, meet.numMats)),
     maxPasses: 8,
   });
 

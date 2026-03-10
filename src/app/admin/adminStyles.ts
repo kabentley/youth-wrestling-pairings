@@ -295,10 +295,61 @@ export const adminStyles = `
     border-top-left-radius: 0;
     border-top-right-radius: 0;
   }
+  .admin-users-controls + .admin-notifications-table {
+    margin-top: 0;
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
   .admin-users-table table {
     table-layout: fixed;
     width: 100%;
     min-width: 1200px;
+  }
+  .admin-notifications-table {
+    width: min(1700px, 100%);
+    overflow-x: auto;
+  }
+  .admin-notifications-table table {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 1600px;
+  }
+  .admin-notifications-table th:nth-child(1),
+  .admin-notifications-table td:nth-child(1) {
+    width: 14%;
+  }
+  .admin-notifications-table th:nth-child(2),
+  .admin-notifications-table td:nth-child(2) {
+    width: 10%;
+  }
+  .admin-notifications-table th:nth-child(3),
+  .admin-notifications-table td:nth-child(3) {
+    width: 16%;
+  }
+  .admin-notifications-table th:nth-child(4),
+  .admin-notifications-table td:nth-child(4) {
+    width: 6%;
+  }
+  .admin-notifications-table th:nth-child(5),
+  .admin-notifications-table td:nth-child(5) {
+    width: 8%;
+  }
+  .admin-notifications-table th:nth-child(6),
+  .admin-notifications-table td:nth-child(6) {
+    width: 12%;
+  }
+  .admin-notifications-table th:nth-child(7),
+  .admin-notifications-table td:nth-child(7) {
+    width: 12%;
+  }
+  .admin-notifications-table th:nth-child(8),
+  .admin-notifications-table td:nth-child(8) {
+    width: 10%;
+  }
+  .admin-notifications-table th:nth-child(9),
+  .admin-notifications-table td:nth-child(9) {
+    width: 22%;
   }
   .admin-users-table th:nth-child(1),
   .admin-users-table td:nth-child(1) {
@@ -392,6 +443,48 @@ export const adminStyles = `
     white-space: nowrap;
     color: var(--muted);
     font-size: inherit;
+  }
+  .admin-code {
+    font-family: "Courier New", Courier, monospace;
+    word-break: break-all;
+  }
+  .admin-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #f7f9fb;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .admin-status-sent {
+    background: #e8f5e9;
+    border-color: #a5d6a7;
+    color: #256029;
+  }
+  .admin-status-logged {
+    background: #e3f2fd;
+    border-color: #90caf9;
+    color: #0d47a1;
+  }
+  .admin-status-failed {
+    background: #ffebee;
+    border-color: #ef9a9a;
+    color: #b71c1c;
+  }
+  .admin-status-skipped {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #4b5563;
+  }
+  .admin-notification-message-cell {
+    white-space: normal;
+  }
+  .admin-notification-message {
+    white-space: pre-wrap;
+    line-height: 1.25;
   }
   .color-cell {
     position: relative;
@@ -588,14 +681,30 @@ export const adminStyles = `
       width: 100%;
       overflow: visible;
     }
+    .admin-notifications-table {
+      width: 100%;
+      overflow: visible;
+    }
     .admin-users-table table {
+      min-width: 0;
+      table-layout: auto;
+    }
+    .admin-notifications-table table {
       min-width: 0;
       table-layout: auto;
     }
     .admin-users-table thead {
       display: none;
     }
+    .admin-notifications-table thead {
+      display: none;
+    }
     .admin-users-table tbody {
+      display: grid;
+      gap: 10px;
+      padding: 8px;
+    }
+    .admin-notifications-table tbody {
       display: grid;
       gap: 10px;
       padding: 8px;
@@ -607,7 +716,28 @@ export const adminStyles = `
       padding: 8px;
       background: #fff;
     }
+    .admin-notifications-table tbody tr {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+    }
     .admin-users-table tbody tr td {
+      width: 100% !important;
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 8px;
+      padding: 6px 4px;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      border-bottom: 1px dashed #e4e9f0;
+      line-height: 1.25;
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+    .admin-notifications-table tbody tr td {
       width: 100% !important;
       display: grid;
       grid-template-columns: 96px minmax(0, 1fr);
@@ -640,10 +770,42 @@ export const adminStyles = `
       width: auto;
       max-width: none;
     }
+    .admin-notifications-table th:nth-child(1),
+    .admin-notifications-table td:nth-child(1),
+    .admin-notifications-table th:nth-child(2),
+    .admin-notifications-table td:nth-child(2),
+    .admin-notifications-table th:nth-child(3),
+    .admin-notifications-table td:nth-child(3),
+    .admin-notifications-table th:nth-child(4),
+    .admin-notifications-table td:nth-child(4),
+    .admin-notifications-table th:nth-child(5),
+    .admin-notifications-table td:nth-child(5),
+    .admin-notifications-table th:nth-child(6),
+    .admin-notifications-table td:nth-child(6),
+    .admin-notifications-table th:nth-child(7),
+    .admin-notifications-table td:nth-child(7),
+    .admin-notifications-table th:nth-child(8),
+    .admin-notifications-table td:nth-child(8),
+    .admin-notifications-table th:nth-child(9),
+    .admin-notifications-table td:nth-child(9) {
+      width: auto;
+      max-width: none;
+    }
     .admin-users-table tbody tr td:last-child {
       border-bottom: 0;
     }
+    .admin-notifications-table tbody tr td:last-child {
+      border-bottom: 0;
+    }
     .admin-users-table tbody tr td::before {
+      content: attr(data-label);
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .admin-notifications-table tbody tr td::before {
       content: attr(data-label);
       color: var(--muted);
       font-weight: 700;

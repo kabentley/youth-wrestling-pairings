@@ -93,7 +93,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     return NextResponse.json({ error: "Volunteer not found for this home team." }, { status: 404 });
   }
   const targetMat = volunteer.staffMatNumber;
-  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const maxMat = Math.max(1, Math.min(8, meet.numMats));
   if (typeof targetMat !== "number" || targetMat < 1 || targetMat > maxMat) {
     return NextResponse.json({ error: "Volunteer must be assigned to a mat before moving matches." }, { status: 400 });
   }

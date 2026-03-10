@@ -10,10 +10,11 @@ import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { DEFAULT_MAT_RULES, type MatRule } from "@/lib/matRules";
 
-const CONFIGURED_MATS = 6;
+const CONFIGURED_MATS = 8;
 const MIN_MATS = 1;
 const DEFAULT_NUM_MATS = 3;
 const MAX_MATS = CONFIGURED_MATS;
+const roundToTenth = (value: number) => Math.round(value * 10) / 10;
 
 const createMatRule = (matIndex: number): MatRule => {
   const fallback: MatRule = {
@@ -2093,7 +2094,7 @@ export default function CoachMyTeamPage() {
                   onValueChange={(value) => adjustMatCount(value)}
                   normalize={(value) => Math.round(value)}
                 />
-                <div className="mat-summary-note">The table below always lists six mats; use this input to indicate the number of mats you actually have.</div>
+                <div className="mat-summary-note">The table below always lists eight mats; use this input to indicate the number of mats you actually have.</div>
               </div>
             </div>
           </div>
@@ -2162,20 +2163,22 @@ export default function CoachMyTeamPage() {
                       <NumberInput
                         min={0}
                         max={100}
+                        step={0.1}
                         value={rule.minAge}
                         disabled={!canEditTeamSettings}
-                        onValueChange={(value) => updateRule(idx, "minAge", Math.round(value))}
-                        normalize={(value) => Math.round(value)}
+                        onValueChange={(value) => updateRule(idx, "minAge", roundToTenth(value))}
+                        normalize={roundToTenth}
                       />
                     </td>
                     <td>
                       <NumberInput
                         min={0}
                         max={100}
+                        step={0.1}
                         value={rule.maxAge}
                         disabled={!canEditTeamSettings}
-                        onValueChange={(value) => updateRule(idx, "maxAge", Math.round(value))}
-                        normalize={(value) => Math.round(value)}
+                        onValueChange={(value) => updateRule(idx, "maxAge", roundToTenth(value))}
+                        normalize={roundToTenth}
                       />
                     </td>
                   </tr>

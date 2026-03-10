@@ -5,13 +5,13 @@ import { db } from "@/lib/db";
 import { requireRole, requireTeamCoach } from "@/lib/rbac";
 
 const MIN_MATS = 1;
-const MAX_MATS = 6;
+const MAX_MATS = 8;
 
 const RuleSchema = z.object({
   matIndex: z.number().int().min(1).max(MAX_MATS),
   color: z.string().trim().max(20).optional(),
-  minExperience: z.number().int().min(0).max(50),
-  maxExperience: z.number().int().min(0).max(50),
+  minExperience: z.number().min(0).max(50).transform((value) => Math.round(value)),
+  maxExperience: z.number().min(0).max(50).transform((value) => Math.round(value)),
   minAge: z.number().min(0).max(100),
   maxAge: z.number().min(0).max(100),
 })

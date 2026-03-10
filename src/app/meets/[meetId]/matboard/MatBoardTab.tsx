@@ -40,7 +40,7 @@ type MatRuleRange = {
   maxAge: number;
 };
 const keyMat = (m: number) => String(m);
-const MAX_MATS = 6;
+const MAX_MATS = 8;
 
 interface MatBoardTabProps {
   meetId: string;

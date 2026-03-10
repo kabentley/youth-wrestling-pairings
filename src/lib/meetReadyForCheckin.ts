@@ -134,7 +134,7 @@ export async function buildReadyForCheckinChecklist(
     }),
   ]);
 
-  const maxMat = Math.max(1, Math.min(6, meet.numMats));
+  const maxMat = Math.max(1, Math.min(8, meet.numMats));
   const restGap = Math.max(1, meet.restGap);
   const statusByWrestler = new Map(
     statuses.map((entry) => [entry.wrestlerId, normalizeAttendanceStatus(entry.status)]),

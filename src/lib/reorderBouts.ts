@@ -17,6 +17,15 @@ type OrderConstraint = {
 };
 
 type WrestlerStatusMap = Map<string, string>;
+const SINGLE_MATCH_EARLY_STATUS = "SINGLE_MATCH_EARLY";
+
+function isEarlyStatus(status?: string | null) {
+  return status === "EARLY" || status === SINGLE_MATCH_EARLY_STATUS;
+}
+
+function isLateStatus(status?: string | null) {
+  return status === "LATE";
+}
 
 function buildEffectiveStatusMap(
   bouts: BoutLite[],
@@ -35,8 +44,8 @@ function buildEffectiveStatusMap(
   }
   for (const [wrestlerId, count] of matchCounts.entries()) {
     const explicit = effective.get(wrestlerId);
-    if (!explicit && count === 1) {
-      effective.set(wrestlerId, "EARLY");
+    if (count === 1 && explicit !== "LATE") {
+      effective.set(wrestlerId, SINGLE_MATCH_EARLY_STATUS);
     }
   }
   return effective;
@@ -71,7 +80,7 @@ function computeConflictSummary(
   }
   for (const [wrestlerId, orders] of byWrestler.entries()) {
     const status = statusByWrestler?.get(wrestlerId);
-    const weight = status === "EARLY" || status === "LATE" ? 3 : 1;
+    const weight = status === SINGLE_MATCH_EARLY_STATUS ? 5 : (isEarlyStatus(status) || isLateStatus(status) ? 3 : 1);
     orders.sort((a, b) => a - b);
     for (let i = 0; i < orders.length; i++) {
       for (let j = i + 1; j < orders.length; j++) {
@@ -105,14 +114,14 @@ function totalConflictCount(summary: number[]) {
 function allowConflictIncreaseForConstraintFix(
   baseScore: number[],
   candidateScore: number[],
-  fixedViolations: number,
+  fixedViolationWeight: number,
 ) {
-  if (fixedViolations <= 0) return false;
+  if (fixedViolationWeight <= 0) return false;
   const baseTotal = totalConflictCount(baseScore);
   const candidateTotal = totalConflictCount(candidateScore);
   const increase = candidateTotal - baseTotal;
   // Permit a small increase in conflicts when it fixes early/late range violations.
-  return increase <= Math.max(2, fixedViolations * 2);
+  return increase <= Math.max(2, fixedViolationWeight * 2);
 }
 
 function buildOrderConstraints(list: BoutLite[], statusByWrestler?: WrestlerStatusMap) {
@@ -131,8 +140,8 @@ function buildOrderConstraints(list: BoutLite[], statusByWrestler?: WrestlerStat
     if (statusByWrestler) {
       const redStatus = statusByWrestler.get(bout.redId);
       const greenStatus = statusByWrestler.get(bout.greenId);
-      const hasEarly = redStatus === "EARLY" || greenStatus === "EARLY";
-      const hasLate = redStatus === "LATE" || greenStatus === "LATE";
+      const hasEarly = isEarlyStatus(redStatus) || isEarlyStatus(greenStatus);
+      const hasLate = isLateStatus(redStatus) || isLateStatus(greenStatus);
       if (hasEarly && hasLate) {
         // Mixed EARLY/LATE bouts are forced into the middle band.
         minOrder = middleThirdMin <= middleThirdMax ? middleThirdMin : fallbackMiddleMin;
@@ -160,19 +169,28 @@ function orderAllowed(order: number, constraint?: OrderConstraint) {
   return order >= constraint.minOrder && order <= constraint.maxOrder;
 }
 
-function listRespectsConstraints(list: BoutLite[], constraints: Map<string, OrderConstraint>) {
-  for (let idx = 0; idx < list.length; idx++) {
-    const constraint = constraints.get(list[idx].id);
-    if (!orderAllowed(idx + 1, constraint)) return false;
-  }
-  return true;
+function getBoutConstraintPriority(bout: BoutLite, statusByWrestler?: WrestlerStatusMap) {
+  const redStatus = statusByWrestler?.get(bout.redId);
+  const greenStatus = statusByWrestler?.get(bout.greenId);
+  const hasSingleMatchEarly =
+    redStatus === SINGLE_MATCH_EARLY_STATUS || greenStatus === SINGLE_MATCH_EARLY_STATUS;
+  const hasEarly = isEarlyStatus(redStatus) || isEarlyStatus(greenStatus);
+  const hasLate = isLateStatus(redStatus) || isLateStatus(greenStatus);
+  if (hasEarly && hasLate) return 1;
+  if (hasSingleMatchEarly) return 3;
+  if (hasEarly || hasLate) return 1;
+  return 1;
 }
 
-function countOrderConstraintViolations(list: BoutLite[], constraints: Map<string, OrderConstraint>) {
+function countOrderConstraintViolations(
+  list: BoutLite[],
+  constraints: Map<string, OrderConstraint>,
+  statusByWrestler?: WrestlerStatusMap,
+) {
   let violations = 0;
   for (let idx = 0; idx < list.length; idx++) {
     if (!orderAllowed(idx + 1, constraints.get(list[idx].id))) {
-      violations += 1;
+      violations += getBoutConstraintPriority(list[idx], statusByWrestler);
     }
   }
   return violations;
@@ -210,11 +228,6 @@ function buildOtherMatOrders(allMats: BoutLite[][], matIndex: number) {
     });
   });
   return map;
-}
-
-function hasZeroConflict(bout: BoutLite, order: number, otherOrders: Map<string, Set<number>>) {
-  const check = (id: string): boolean => otherOrders.get(id)?.has(order) ?? false;
-  return check(bout.redId) || check(bout.greenId);
 }
 
 /**
@@ -257,122 +270,13 @@ function hasSameMatConflictAt(list: BoutLite[], idx: number, gap: number) {
   return false;
 }
 
-function trySlide(
-  list: BoutLite[],
-  idx: number,
-  direction: -1 | 1,
-  otherOrders: Map<string, Set<number>>,
-  constraints: Map<string, OrderConstraint>,
-  lockedPositions: Map<string, number>,
-) {
-  const target = idx + direction;
-  if (target < 0 || target >= list.length) return false;
-  const current = list[idx];
-  const neighbor = list[target];
-  if (current.locked || neighbor.locked) return false;
-  const newCurrentOrder = target + 1;
-  const newNeighborOrder = idx + 1;
-  if (!orderAllowed(newCurrentOrder, constraints.get(current.id))) return false;
-  if (!orderAllowed(newNeighborOrder, constraints.get(neighbor.id))) return false;
-  if (hasZeroConflict(current, newCurrentOrder, otherOrders)) return false;
-  if (hasZeroConflict(neighbor, newNeighborOrder, otherOrders)) return false;
-  [list[idx], list[target]] = [list[target], list[idx]];
-  if (!listRespectsLockedPositions(list, lockedPositions)) {
-    [list[idx], list[target]] = [list[target], list[idx]];
-    return false;
-  }
-  return true;
-}
-
-function resolveZeroGapConflicts(
-  list: BoutLite[],
-  allMats: BoutLite[][],
-  matIndex: number,
-  constraints: Map<string, OrderConstraint>,
-  lockedPositions: Map<string, number>,
-) {
-  const otherOrders = buildOtherMatOrders(allMats, matIndex);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let idx = list.length - 1; idx >= 0; idx--) {
-      const order = idx + 1;
-      if (!hasZeroConflict(list[idx], order, otherOrders)) continue;
-      if (
-        trySlide(list, idx, -1, otherOrders, constraints, lockedPositions) ||
-        trySlide(list, idx, 1, otherOrders, constraints, lockedPositions)
-      ) {
-        changed = true;
-        break;
-      }
-    }
-  }
-  return list;
-}
-
-function closestPowerOfTwo(value: number) {
-  let power = 1;
-  while (power < value) power <<= 1;
-  return power;
-}
-
-/**
- * Attempts to locally reorder bouts on a single mat so conflicts shrink.
- *
- * The heuristics keep sliding bouts and accept moves that lower the conflict
- * summary while occasionally trying random swaps.
- */
-function reorderBoutsForMat(
-  list: BoutLite[],
-  allMats: BoutLite[][],
-  matIndex: number,
-  gap: number,
-  statusByWrestler?: WrestlerStatusMap,
-) {
-  const base = list.slice();
-  if (gap <= 0) return base;
-  const constraints = buildOrderConstraints(base, statusByWrestler);
-  const lockedPositions = buildLockedPositions(base);
-  if (lockedPositions.size >= base.length) return base;
-
-  function scoreCandidate(candidate: BoutLite[]) {
-    const matsCopy = allMats.map(m => m.slice());
-    if (matIndex >= 0) matsCopy[matIndex] = candidate;
-    return computeConflictSummary(matsCopy, gap, statusByWrestler);
-  }
-
-  let best = base.slice();
-  let bestScore = scoreCandidate(best);
-  const attempts = Math.max(25, closestPowerOfTwo(base.length * 4));
-  for (let iter = 0; iter < attempts; iter++) {
-    if (best.length < 2) break;
-    const next = best.slice();
-    const idx = Math.floor(Math.random() * (next.length - 1));
-    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-    if (
-      !listRespectsConstraints(next, constraints) ||
-      !listRespectsLockedPositions(next, lockedPositions)
-    ) continue;
-    const score = scoreCandidate(next);
-    const delta = compareConflictSummary(score, bestScore);
-    const accept = delta < 0 || Math.random() < 0.05;
-    if (accept) {
-      best = next;
-      bestScore = score;
-    }
-  }
-  const resolved = resolveZeroGapConflicts(best, allMats, matIndex, constraints, lockedPositions);
-  allMats[matIndex] = resolved.slice();
-  return resolved;
-}
-
 /**
  * Mirrors the Mat Assignments tab's per-mat "Reorder" button behavior.
  *
  * This local pass is intentionally mat-focused and may accept a small conflict
  * increase when it meaningfully improves early/late constraint placement.
  */
-function reorderBoutsForMatMatboardStyle(
+function reorderBoutsForMat(
   list: BoutLite[],
   allMats: BoutLite[][],
   matIndex: number,
@@ -401,7 +305,7 @@ function reorderBoutsForMatMatboardStyle(
 
       // Match MatBoard behavior: score conflicts unweighted by EARLY/LATE status.
       const baseScore = computeConflictSummary(allMats, gap);
-      const baseViolations = countOrderConstraintViolations(working, constraints);
+      const baseViolations = countOrderConstraintViolations(working, constraints, statusByWrestler);
       const attempts = Math.min(8, Math.max(1, working.length - 1));
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         let target = Math.floor(Math.random() * working.length);
@@ -421,7 +325,7 @@ function reorderBoutsForMatMatboardStyle(
           continue;
         }
         const candidateScore = computeConflictSummary(allMats, gap);
-        const candidateViolations = countOrderConstraintViolations(working, constraints);
+        const candidateViolations = countOrderConstraintViolations(working, constraints, statusByWrestler);
         const scoreCompare = compareConflictSummary(candidateScore, baseScore);
         const fixedViolations = baseViolations - candidateViolations;
         if (
@@ -442,7 +346,7 @@ function reorderBoutsForMatMatboardStyle(
   return working;
 }
 
-function reorderBoutsMatboardStyle(
+function reorderBoutsByMat(
   bouts: BoutLite[],
   numMats: number,
   conflictGap = 4,
@@ -463,7 +367,7 @@ function reorderBoutsMatboardStyle(
     if (matsToReorder && !matsToReorder.has(matIndex + 1)) continue;
     // Each mat is reordered against the current full-meet snapshot so later mats
     // can react to changes made by earlier mat passes, matching the UI behavior.
-    const ordered = reorderBoutsForMatMatboardStyle(
+    const ordered = reorderBoutsForMat(
       matLists[matIndex],
       matLists,
       matIndex,
@@ -471,44 +375,6 @@ function reorderBoutsMatboardStyle(
       effectiveStatusByWrestler,
     );
     matLists[matIndex] = ordered.slice();
-  }
-
-  const updates: Array<{ id: string; mat: number; order: number }> = [];
-  matLists.forEach((list, matIndex) => {
-    list.forEach((bout, idx) => {
-      updates.push({ id: bout.id, mat: matIndex + 1, order: idx + 1 });
-    });
-  });
-  return updates;
-}
-
-/**
- * Reorders bouts independently within each mat to reduce cross-mat conflicts.
- *
- * A "conflict" is when the same wrestler is scheduled at the same order on
- * different mats, or too close together across mats (within `conflictGap`).
- *
- * Returns an update list of `{id, mat, order}` for persistence.
- */
-export function reorderBoutsByMat(
-  bouts: BoutLite[],
-  numMats: number,
-  conflictGap = 4,
-  statusByWrestler?: WrestlerStatusMap,
-) {
-  const effectiveStatusByWrestler = buildEffectiveStatusMap(bouts, statusByWrestler);
-  const matLists: BoutLite[][] = Array.from({ length: numMats }, () => []);
-  for (const bout of bouts) {
-    const mat = Math.min(Math.max(1, bout.mat ?? 1), numMats);
-    matLists[mat - 1].push({ ...bout, mat });
-  }
-  for (const list of matLists) {
-    list.sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999));
-  }
-
-  for (let idx = 0; idx < matLists.length; idx++) {
-    const ordered = reorderBoutsForMat(matLists[idx], matLists, idx, conflictGap, effectiveStatusByWrestler);
-    matLists[idx] = ordered.slice();
   }
 
   const updates: Array<{ id: string; mat: number; order: number }> = [];
@@ -563,7 +429,7 @@ export async function reorderBoutsForMeet(
     ),
   );
   const matsFilter = matsToReorder.length > 0 ? new Set(matsToReorder) : undefined;
-  const updates = reorderBoutsMatboardStyle(
+  const updates = reorderBoutsByMat(
     bouts,
     numMats,
     conflictGap,

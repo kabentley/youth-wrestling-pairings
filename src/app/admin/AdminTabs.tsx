@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import LeagueSection from "./sections/LeagueSection";
+import NotificationsSection from "./sections/NotificationsSection";
 import UsersSection from "./sections/UsersSection";
 
 import AppHeader from "@/components/AppHeader";
@@ -16,7 +17,7 @@ const headerLinks = [
   { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
 ];
 
-export type AdminTabKey = "users" | "teams" | "league" | "pairings";
+export type AdminTabKey = "users" | "teams" | "league" | "pairings" | "notifications";
 
 export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) {
   const searchParams = useSearchParams();
@@ -75,12 +76,22 @@ export default function AdminTabs({ initialTab }: { initialTab?: AdminTabKey }) 
         >
           Pairings Settings
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "notifications"}
+          className={`admin-tab-button${activeTab === "notifications" ? " active" : ""}`}
+          onClick={() => handleTabClick("notifications")}
+        >
+          Notifications
+        </button>
       </div>
       <div role="tabpanel">
         {activeTab === "users" && <UsersSection />}
         {activeTab === "teams" && <LeagueSection view="teams" />}
         {activeTab === "league" && <LeagueSection view="league" />}
         {activeTab === "pairings" && <LeagueSection view="pairings" />}
+        {activeTab === "notifications" && <NotificationsSection />}
       </div>
     </>
   );
