@@ -121,7 +121,7 @@ export const HELP_PAGES: HelpPage[] = [
           "Attendance phase is review-only for coaches. Parents should be responding for their kids, and the Attendance tab shows what parents have entered so far. Early and late are not set in this phase. The Pairings, Mat Assignments, and Volunteers tabs are hidden in this phase [Meet > Attendance].",
           "Draft is the working phase. Use Attendance to finish status changes, Pairings to build bouts, Mat Assignments to order bouts on mats, and Volunteers to place home-team staff on mats. Run automatic pairings only in Draft [Meet > Attendance, Meet > Pairings, Meet > Mat Assignments, Meet > Volunteers].",
           "Check-in is the live meet-day adjustment phase. The default tab is Scratches. Only the Meet Coordinator may make any changes to the meet during this phase. Team coaches with coordinator-granted edit access can still record scratches for their own team, and the coordinator handles replacement matches and any cross-team changes. Volunteers is hidden in this phase, and the published wall-chart and scoring-sheet tabs are not shown until publishing [Meet > Scratches].",
-          "Published is final. Publishing prepares the wall charts and scoring sheets, notifies parents of bout numbers and opponents, and makes the meet read-only. A published meet cannot be reopened [Meet > Publish, Meet > Check-in Sheets, Meet > Scoring Sheets].",
+          "Published is final. Publishing prepares the wall charts and scoring sheets and makes the meet read-only. A published meet cannot be reopened [Meet > Publish, Meet > Check-in Sheets, Meet > Scoring Sheets].",
         ],
       },
       {

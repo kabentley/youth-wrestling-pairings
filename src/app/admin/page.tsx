@@ -52,7 +52,6 @@ export default async function AdminHome({ searchParams }: Props) {
       case "teams":
       case "league":
       case "pairings":
-      case "notifications":
       case "users":
         return resolvedSearchParams.tab;
       default:

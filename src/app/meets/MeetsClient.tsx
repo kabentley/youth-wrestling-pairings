@@ -172,7 +172,6 @@ export default function MeetsPage() {
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
   const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(true);
-  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -222,7 +221,6 @@ export default function MeetsPage() {
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
     setAllCoachesHaveLockAccess(true);
-    setSendNotificationsToParents(true);
     setEditingMeet(null);
   }, []);
 
@@ -326,7 +324,7 @@ export default function MeetsPage() {
           restGap,
           autoPairings: true,
           allCoachesHaveLockAccess,
-          sendNotificationsToParents,
+          sendNotificationsToParents: false,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -1245,15 +1243,6 @@ export default function MeetsPage() {
                         disabled={!canManageMeets}
                       />
                       <span className="muted">Allow other coaches to edit while the meet is in Draft phase</span>
-                    </label>
-                    <label className="row" style={{ margin: 0, alignSelf: "center", marginLeft: 8 }}>
-                      <input
-                        type="checkbox"
-                        checked={sendNotificationsToParents}
-                        onChange={e => setSendNotificationsToParents(e.target.checked)}
-                        disabled={!canManageMeets}
-                      />
-                      <span className="muted">Send notifications to parents</span>
                     </label>
                   </>
                 )}
