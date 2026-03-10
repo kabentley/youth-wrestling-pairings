@@ -40,7 +40,7 @@ type NotificationLogInput = {
   provider?: string | null;
   providerMessageId?: string | null;
   errorMessage?: string | null;
-  payload?: Record<string, unknown>;
+  payload?: Prisma.InputJsonValue;
   userId?: string | null;
   meetId?: string | null;
   deliveredAt?: Date | null;
@@ -53,7 +53,7 @@ type DeliveryMessage = {
   message: string;
   userId?: string | null;
   meetId?: string | null;
-  payload: Record<string, unknown>;
+  payload: Prisma.InputJsonValue;
 };
 
 type DeliveryResult = {
@@ -303,7 +303,7 @@ export function buildMeetPublishedContent(
 }
 
 function getNotificationLogDelegate() {
-  const delegate = (db as Record<string, unknown>).notificationLog;
+  const delegate = (db as unknown as { notificationLog?: unknown }).notificationLog;
   if (!delegate || typeof delegate !== "object" || !("create" in delegate)) {
     throw new Error(
       "Prisma client is missing NotificationLog. Run `npm run db:sqlite`, `npx prisma db push --accept-data-loss`, `npx prisma generate`, then restart the dev server.",
@@ -333,7 +333,7 @@ export function buildPreferredMessages(
     emailSubject: string;
     emailText: string;
     smsText: string;
-    extraPayload: Record<string, unknown>;
+    extraPayload: Prisma.InputJsonObject;
   },
 ): DeliveryMessage[] {
   if (recipient.phone) {

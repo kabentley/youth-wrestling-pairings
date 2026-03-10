@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import { reorderBoutsByMat, type WrestlerStatusMap } from "@/lib/reorderBoutsCore";
 type Team = { id: string; name: string; symbol?: string; color?: string };
 type Wrestler = {
   id: string;
@@ -218,7 +219,7 @@ export default function MatBoardTab({
   const dragPreviewFrameRef = useRef<number | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSavingRef = useRef(false);
-  const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean }) => Promise<void>) | null>(null);
+  const saveOrderRef = useRef<((opts?: { silent?: boolean; keepalive?: boolean; boutsOverride?: Bout[] }) => Promise<void>) | null>(null);
   useEffect(() => {
     void load();
   }, [meetId, refreshIndex]);
@@ -658,273 +659,40 @@ export default function MatBoardTab({
     markDirty();
   }
 
-  /**
-   * Build a histogram of conflict distances for all wrestlers across the mats given the target gap.
-   */
-  function computeConflictSummary(matLists: Bout[][], gap: number) {
-    const counts = Array(gap + 1).fill(0);
-    if (gap < 0) return counts;
-    const byWrestler = new Map<string, number[]>();
-    for (const list of matLists) {
-      list.forEach((b, idx) => {
-        const o = idx + 1;
-        const red = byWrestler.get(b.redId) ?? [];
-        red.push(o);
-        byWrestler.set(b.redId, red);
-        const green = byWrestler.get(b.greenId) ?? [];
-        green.push(o);
-        byWrestler.set(b.greenId, green);
-      });
-    }
-    for (const orders of byWrestler.values()) {
-      orders.sort((a, b) => a - b);
-      for (let i = 0; i < orders.length; i++) {
-        for (let j = i + 1; j < orders.length; j++) {
-          const diff = orders[j] - orders[i];
-          if (diff > gap) break;
-          counts[diff] += 1;
-        }
+  function buildExplicitOrderingStatusMap() {
+    const statusByWrestler: WrestlerStatusMap = new Map();
+    for (const wrestler of Object.values(wMap)) {
+      if (!wrestler) continue;
+      if (wrestler.status === "EARLY" || wrestler.status === "LATE") {
+        statusByWrestler.set(wrestler.id, wrestler.status);
       }
     }
-    return counts;
+    return statusByWrestler;
   }
 
-  /**
-   * Compare two conflict histograms so that lower values and shorter sequences are preferred.
-   */
-  function compareConflictSummary(a: number[], b: number[]) {
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i++) {
-      if (a[i] !== b[i]) {
-        return a[i] - b[i];
-      }
-    }
-    return a.length - b.length;
-  }
-
-  function totalConflictCount(summary: number[]) {
-    return summary.reduce((sum, value) => sum + value, 0);
-  }
-
-  function allowConflictIncreaseForConstraintFix(
-    baseScore: number[],
-    candidateScore: number[],
-    fixedViolations: number,
-  ) {
-    if (fixedViolations <= 0) return false;
-    const baseTotal = totalConflictCount(baseScore);
-    const candidateTotal = totalConflictCount(candidateScore);
-    const increase = candidateTotal - baseTotal;
-    // Permit a small increase in conflicts when it fixes early/late range violations.
-    return increase <= Math.max(2, fixedViolations * 2);
-  }
-
-  type OrderConstraint = { minOrder: number; maxOrder: number };
-
-  function buildOrderConstraints(list: Bout[]) {
-    const constraints = new Map<string, OrderConstraint>();
-    const wrestlerMatchCounts = new Map<string, number>();
-    for (const bout of bouts) {
-      wrestlerMatchCounts.set(bout.redId, (wrestlerMatchCounts.get(bout.redId) ?? 0) + 1);
-      wrestlerMatchCounts.set(bout.greenId, (wrestlerMatchCounts.get(bout.greenId) ?? 0) + 1);
-    }
-    const effectiveOrderingStatus = (wrestlerId: string) => {
-      const explicit = wMap[wrestlerId]?.status;
-      if (explicit === "EARLY" || explicit === "LATE") return explicit;
-      return (wrestlerMatchCounts.get(wrestlerId) ?? 0) === 1 ? "EARLY" : null;
-    };
-    const listSize = Math.max(1, list.length);
-    const earlyMaxOrder = Math.max(1, Math.ceil(listSize / 3));
-    const lateMinOrder = Math.max(1, Math.floor((2 * listSize) / 3) + 1);
-    const middleThirdMin = earlyMaxOrder + 1;
-    const middleThirdMax = lateMinOrder - 1;
-    const fallbackMiddleMin = Math.floor((listSize + 1) / 2);
-    const fallbackMiddleMax = Math.ceil((listSize + 1) / 2);
-    for (let idx = 0; idx < list.length; idx++) {
-      const bout = list[idx];
-      const redStatus = effectiveOrderingStatus(bout.redId);
-      const greenStatus = effectiveOrderingStatus(bout.greenId);
-      let minOrder = 1;
-      let maxOrder = listSize;
-      const hasEarly = redStatus === "EARLY" || greenStatus === "EARLY";
-      const hasLate = redStatus === "LATE" || greenStatus === "LATE";
-      if (hasEarly && hasLate) {
-        minOrder = middleThirdMin <= middleThirdMax ? middleThirdMin : fallbackMiddleMin;
-        maxOrder = middleThirdMin <= middleThirdMax ? middleThirdMax : fallbackMiddleMax;
-      } else {
-        if (hasEarly) {
-          maxOrder = Math.min(maxOrder, earlyMaxOrder);
-        }
-        if (hasLate) {
-          minOrder = Math.max(minOrder, lateMinOrder);
-        }
-      }
-      if (minOrder > maxOrder) {
-        minOrder = fallbackMiddleMin;
-        maxOrder = fallbackMiddleMax;
-      }
-      constraints.set(bout.id, { minOrder, maxOrder });
-    }
-    return constraints;
-  }
-
-  function orderAllowed(order: number, constraint?: OrderConstraint) {
-    if (!constraint) return true;
-    return order >= constraint.minOrder && order <= constraint.maxOrder;
-  }
-
-  function buildLockedPositions(list: Bout[]) {
-    const positions = new Map<string, number>();
-    for (let idx = 0; idx < list.length; idx++) {
-      if (lockedBoutIds.has(list[idx].id)) {
-        positions.set(list[idx].id, idx);
-      }
-    }
-    return positions;
-  }
-
-  function listRespectsLockedPositions(list: Bout[], lockedPositions: Map<string, number>) {
-    for (const [boutId, index] of lockedPositions.entries()) {
-      if (index < 0 || index >= list.length) return false;
-      if (list[index]?.id !== boutId) return false;
-    }
-    return true;
-  }
-
-  /**
-   * Collect all bout orders from mats other than the provided index to check cross-mat conflicts.
-   */
-  function buildOtherMatOrders(allMats: Bout[][], matIndex: number) {
-    const map = new Map<string, Set<number>>();
-    allMats.forEach((list, idx) => {
-      if (idx === matIndex) return;
-      list.forEach((b, pos) => {
-        const order = pos + 1;
-        for (const id of [b.redId, b.greenId]) {
-          if (!map.has(id)) map.set(id, new Set());
-          map.get(id)!.add(order);
-        }
-      });
+  function applyOrderUpdates(source: Bout[], updates: Array<{ id: string; mat: number; order: number }>) {
+    const updated = new Map<string, { mat: number; order: number }>();
+    updates.forEach((update) => {
+      updated.set(update.id, { mat: update.mat, order: update.order });
     });
-    return map;
+    return source.map((bout) => {
+      const update = updated.get(bout.id);
+      if (!update) return bout;
+      return { ...bout, mat: update.mat, order: update.order };
+    });
   }
 
-  /**
-   * Determine if moving a bout to the supplied order would create a conflict with other mats.
-   */
-  function hasConflict(
-    bout: Bout,
-    order: number,
-    otherOrders: Map<string, Set<number>>,
-    gap: number,
-  ) {
-    const conflictsAt = (id: string) => {
-      const orders = otherOrders.get(id);
-      if (!orders) return false;
-      for (let delta = 0; delta <= gap; delta += 1) {
-        if (orders.has(order - delta) || orders.has(order + delta)) {
-          return true;
-        }
+  function saveSnapshot(nextBouts: Bout[]) {
+    const saveOrder = saveOrderRef.current;
+    if (!saveOrder || autoSavingRef.current) return;
+    autoSavingRef.current = true;
+    void (async () => {
+      try {
+        await saveOrder({ silent: true, boutsOverride: nextBouts });
+      } finally {
+        autoSavingRef.current = false;
       }
-      return false;
-    };
-    return Boolean(conflictsAt(bout.redId) || conflictsAt(bout.greenId));
-  }
-
-  /**
-   * Check whether the bout at the given index conflicts with any nearby bout on the same mat.
-   */
-  function hasSameMatConflictAt(list: Bout[], idx: number, gap: number) {
-    const bout = list[idx];
-    const start = Math.max(0, idx - gap);
-    const end = Math.min(list.length - 1, idx + gap);
-    for (let i = start; i <= end; i++) {
-      if (i === idx) continue;
-      const other = list[i];
-      if (other.redId === bout.redId || other.greenId === bout.redId) return true;
-      if (other.redId === bout.greenId || other.greenId === bout.greenId) return true;
-    }
-    return false;
-  }
-
-  function countOrderConstraintViolations(
-    list: Bout[],
-    constraints: Map<string, OrderConstraint>,
-  ) {
-    let violations = 0;
-    for (let idx = 0; idx < list.length; idx++) {
-      const bout = list[idx];
-      const order = idx + 1;
-      if (!orderAllowed(order, constraints.get(bout.id))) {
-        violations += 1;
-      }
-    }
-    return violations;
-  }
-
-  /**
-   * Attempt to reorder a single mat to reduce conflicts by swapping bouts within the local list.
-   */
-  function reorderBoutsForMat(list: Bout[], allMats: Bout[][], matIndex: number, gap: number) {
-    const working = list.slice();
-    if (working.length < 2) return working;
-    allMats[matIndex] = working;
-    const otherOrders = buildOtherMatOrders(allMats, matIndex);
-    const constraints = buildOrderConstraints(working);
-    const lockedPositions = buildLockedPositions(working);
-    if (lockedPositions.size >= working.length) return working;
-
-    for (let pass = 0; pass < 10; pass++) {
-      for (let idx = 0; idx < working.length; idx++) {
-        const bout = working[idx];
-        if (lockedPositions.has(bout.id)) continue;
-        const order = idx + 1;
-        const hasCrossMatConflict = hasConflict(bout, order, otherOrders, gap);
-        const hasSameMatConflict = hasSameMatConflictAt(working, idx, gap);
-        const outOfConstraintRange = !orderAllowed(order, constraints.get(bout.id));
-        if (!hasCrossMatConflict && !hasSameMatConflict && !outOfConstraintRange) {
-          continue;
-        }
-        const baseScore = computeConflictSummary(allMats, gap);
-        const baseViolations = countOrderConstraintViolations(working, constraints);
-        const attempts = Math.min(8, Math.max(1, working.length - 1));
-        for (let attempt = 0; attempt < attempts; attempt++) {
-          let target = Math.floor(Math.random() * working.length);
-          if (target === idx) {
-            target = (target + 1) % working.length;
-          }
-          if (target === idx) continue;
-          const targetBout = working[target];
-          if (lockedPositions.has(targetBout.id)) continue;
-          const newCurrentOrder = target + 1;
-          const newTargetOrder = idx + 1;
-          if (!orderAllowed(newCurrentOrder, constraints.get(bout.id))) continue;
-          if (!orderAllowed(newTargetOrder, constraints.get(targetBout.id))) continue;
-          [working[idx], working[target]] = [working[target], working[idx]];
-          if (!listRespectsLockedPositions(working, lockedPositions)) {
-            [working[idx], working[target]] = [working[target], working[idx]];
-            continue;
-          }
-          const candidateScore = computeConflictSummary(allMats, gap);
-          const candidateViolations = countOrderConstraintViolations(working, constraints);
-          const scoreCompare = compareConflictSummary(candidateScore, baseScore);
-          const fixedViolations = baseViolations - candidateViolations;
-          if (
-            scoreCompare < 0 ||
-            (scoreCompare === 0 && fixedViolations > 0) ||
-            (scoreCompare > 0 &&
-              fixedViolations > 0 &&
-              allowConflictIncreaseForConstraintFix(baseScore, candidateScore, fixedViolations))
-          ) {
-            idx = Math.max(-1, Math.min(idx, target) - 1);
-            break;
-          }
-          [working[idx], working[target]] = [working[target], working[idx]];
-        }
-      }
-    }
-    allMats[matIndex] = working.slice();
-    return working;
+    })();
   }
 
   /**
@@ -932,57 +700,41 @@ export default function MatBoardTab({
    */
   function reorderMat(matNum: number) {
     if (!canEdit) return;
-    setBouts(prev => {
-      const next = prev.map(b => ({ ...b }));
-      const matKeys = Array.from({ length: numMats }, (_, i) => i + 1);
-      const matLists = matKeys.map(key =>
-        (mats[keyMat(key)] ?? []).map(b => ({ ...b })),
-      );
-      const matIndex = matKeys.indexOf(matNum);
-      if (matIndex === -1) return next;
-      const targetList = matLists[matIndex];
-      const ordered = reorderBoutsForMat(targetList, matLists, matIndex, conflictGap);
-      const updated = new Map<string, { mat: number; order: number }>();
-      ordered.forEach((bout, idx) => {
-        updated.set(bout.id, { mat: matNum, order: idx + 1 });
-      });
-      return next.map(x => {
-        const u = updated.get(x.id);
-        if (!u) return x;
-        return { ...x, mat: u.mat, order: u.order };
-      });
-    });
+    const updates = reorderBoutsByMat(
+      bouts.map((bout) => ({
+        ...bout,
+        mat: bout.mat ?? null,
+        order: bout.order ?? null,
+        locked: lockedBoutIds.has(bout.id),
+      })),
+      numMats,
+      conflictGap,
+      buildExplicitOrderingStatusMap(),
+      new Set([matNum]),
+    );
+    const nextSnapshot = applyOrderUpdates(bouts.map(b => ({ ...b })), updates);
+    setBouts(nextSnapshot);
     markDirty();
+    saveSnapshot(nextSnapshot);
   }
 
   function reorderAllMats() {
     if (!canEdit) return;
-    setBouts(prev => {
-      const next = prev.map((bout) => ({ ...bout }));
-      const matKeys = Array.from({ length: numMats }, (_, i) => i + 1);
-      const matLists = matKeys.map((key) =>
-        next
-          .filter((bout) => (bout.mat ?? 1) === key)
-          .sort((a, b) => (a.order ?? 9999) - (b.order ?? 9999)),
-      );
-      for (let matIndex = 0; matIndex < matLists.length; matIndex++) {
-        const targetList = matLists[matIndex];
-        matLists[matIndex] = reorderBoutsForMat(targetList, matLists, matIndex, conflictGap);
-      }
-      const updated = new Map<string, { mat: number; order: number }>();
-      matLists.forEach((list, matIndex) => {
-        const matNum = matKeys[matIndex];
-        list.forEach((bout, idx) => {
-          updated.set(bout.id, { mat: matNum, order: idx + 1 });
-        });
-      });
-      return next.map((bout) => {
-        const update = updated.get(bout.id);
-        if (!update) return bout;
-        return { ...bout, mat: update.mat, order: update.order };
-      });
-    });
+    const updates = reorderBoutsByMat(
+      bouts.map((bout) => ({
+        ...bout,
+        mat: bout.mat ?? null,
+        order: bout.order ?? null,
+        locked: lockedBoutIds.has(bout.id),
+      })),
+      numMats,
+      conflictGap,
+      buildExplicitOrderingStatusMap(),
+    );
+    const nextSnapshot = applyOrderUpdates(bouts.map((bout) => ({ ...bout })), updates);
+    setBouts(nextSnapshot);
     markDirty();
+    saveSnapshot(nextSnapshot);
   }
 
   function toggleBoutLock(
@@ -1059,19 +811,6 @@ export default function MatBoardTab({
     setBoutLockState(boutId, drag.shouldLock);
   }
 
-  function lockAllOnMat(matNum: number) {
-    if (!canEdit) return;
-    const ids = (mats[keyMat(matNum)] ?? []).map(b => b.id);
-    if (ids.length === 0) return;
-    setLockedBoutIds(prev => {
-      const next = new Set(prev);
-      ids.forEach(id => next.add(id));
-      return next;
-    });
-    lastLockAnchorRef.current = null;
-    markDirty();
-  }
-
   function unlockAllOnMat(matNum: number) {
     if (!canEdit) return;
     const ids = (mats[keyMat(matNum)] ?? []).map(b => b.id);
@@ -1124,20 +863,21 @@ export default function MatBoardTab({
   /**
    * Persist the current bout ordering for every mat back to the server and refresh the view.
    */
-  async function saveOrder(opts?: { silent?: boolean; keepalive?: boolean }) {
+  async function saveOrder(opts?: { silent?: boolean; keepalive?: boolean; boutsOverride?: Bout[] }) {
     if (!canEdit) return;
     const silent = Boolean(opts?.silent);
     if (!silent) setMsg("Saving...");
     const saveVersion = orderVersionRef.current;
     const payload: Record<string, string[]> = {};
     const originalMatByBoutId: Record<string, number | null> = {};
+    const sourceBouts = opts?.boutsOverride ?? bouts;
     for (let m = 1; m <= numMats; m++) payload[keyMat(m)] = [];
-    for (const bout of bouts) {
+    for (const bout of sourceBouts) {
       originalMatByBoutId[bout.id] = bout.originalMat ?? null;
     }
 
     const grouped: Record<string, Bout[]> = {};
-    for (const b of bouts) {
+    for (const b of sourceBouts) {
       const m = b.mat ?? 1;
       const k = keyMat(m);
       grouped[k] ??= [];
@@ -1841,7 +1581,7 @@ export default function MatBoardTab({
                 aria-label="Adjust mat assignments table font size"
                 aria-expanded={matboardFontSizeOpen}
                 title="Adjust the mat assignments font size"
-                style={{ padding: "6px 8px", lineHeight: 1 }}
+                style={{ padding: "8px 10px", lineHeight: 1 }}
               >
                 <span
                   aria-hidden="true"
@@ -1867,6 +1607,9 @@ export default function MatBoardTab({
                     boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
                   }}
                 >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                    Change font size
+                  </div>
                   <div style={{ position: "relative", overflow: "visible" }}>
                     {matboardFontSizeSliding && (
                       <span
@@ -1990,13 +1733,6 @@ export default function MatBoardTab({
                 <div className="mat-card-actions">
                   <button
                     className="nav-btn reorder-inline-btn mat-lock-toggle-btn"
-                    onClick={() => lockAllOnMat(matNum)}
-                    disabled={!canEdit || list.length === 0 || allLocked}
-                  >
-                    Lock All
-                  </button>
-                  <button
-                    className="nav-btn reorder-inline-btn mat-lock-toggle-btn"
                     onClick={() => unlockAllOnMat(matNum)}
                     disabled={!canEdit || !anyLocked}
                   >
@@ -2085,7 +1821,6 @@ export default function MatBoardTab({
         .filter(Boolean)
         .join(", ");
       const peopleRuleTip = peopleRuleTooltipContent(b);
-      const lockHint = isLockedBout ? "Unlock this bout position for reorder" : "Lock this bout position for reorder";
       return (
         <div
           key={b.id}
@@ -2147,22 +1882,6 @@ export default function MatBoardTab({
                       <div className="bout-row">
                           <span
                             className={`number${b.originalMat != null && b.originalMat !== matNum ? " moved" : ""}`}
-                            role="button"
-                            tabIndex={canEdit ? 0 : -1}
-                            title={peopleRuleTip ? undefined : lockHint}
-                            aria-label={isLockedBout ? "Unlock bout position" : "Lock bout position"}
-                            aria-pressed={isLockedBout}
-                            onMouseDown={e => {
-                              setPeopleRuleTooltip(null);
-                              if (!canEdit) return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (e.shiftKey) {
-                                toggleBoutLock(b.id, { matNum, index, shiftKey: true });
-                                return;
-                              }
-                              startLockDrag(b.id, matNum, index, !isLockedBout);
-                            }}
                             onMouseEnter={e => {
                               applyLockDrag(b.id, matNum);
                               if (!peopleRuleTip) return;
@@ -2250,7 +1969,9 @@ export default function MatBoardTab({
                                 fill="currentColor"
                               />
                             </svg>
-                          ) : "-"}
+                          ) : (
+                            "-"
+                          )}
                         </button>
                         {ordered.map(entry => (
                           <span

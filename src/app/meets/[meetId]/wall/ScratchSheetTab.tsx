@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import ControlBar from "./ControlBar";
 
@@ -31,6 +31,24 @@ type WallChartPayload = {
 
 const NAMES_PER_COLUMN = 35;
 const NAMES_PER_PAGE = NAMES_PER_COLUMN * 2;
+const SCRATCH_SHEET_FONT_SIZE_STORAGE_KEY = "scratchSheetFontSize";
+const DEFAULT_SCRATCH_SHEET_FONT_SIZE = 14;
+const MIN_SCRATCH_SHEET_FONT_SIZE = 10;
+const MAX_SCRATCH_SHEET_FONT_SIZE = 22;
+
+function clampScratchSheetFontSize(value: number) {
+  return Math.max(MIN_SCRATCH_SHEET_FONT_SIZE, Math.min(MAX_SCRATCH_SHEET_FONT_SIZE, Math.round(value)));
+}
+
+function readStoredScratchSheetFontSize() {
+  if (typeof window === "undefined") return DEFAULT_SCRATCH_SHEET_FONT_SIZE;
+  const stored = window.localStorage.getItem(SCRATCH_SHEET_FONT_SIZE_STORAGE_KEY);
+  if (!stored) return DEFAULT_SCRATCH_SHEET_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed)
+    ? clampScratchSheetFontSize(parsed)
+    : DEFAULT_SCRATCH_SHEET_FONT_SIZE;
+}
 
 function formatLastFirst(w?: Wrestler | null) {
   if (!w) return "";
@@ -60,6 +78,12 @@ export default function ScratchSheetTab({
   const [error, setError] = useState<string | null>(null);
   const scratchRef = useRef<HTMLDivElement | null>(null);
   const fetchRequestIdRef = useRef(0);
+  const [scratchFontSize, setScratchFontSize] = useState(DEFAULT_SCRATCH_SHEET_FONT_SIZE);
+  const [scratchFontSizeReady, setScratchFontSizeReady] = useState(false);
+  const [scratchFontSizeOpen, setScratchFontSizeOpen] = useState(false);
+  const [scratchFontSizeSliding, setScratchFontSizeSliding] = useState(false);
+  const scratchFontSizeControlRef = useRef<HTMLDivElement | null>(null);
+  const scratchFontSizeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const signal = refreshIndex ?? 0;
@@ -93,6 +117,28 @@ export default function ScratchSheetTab({
       isMounted = false;
     };
   }, [meetId, refreshIndex]);
+  useLayoutEffect(() => {
+    setScratchFontSize(readStoredScratchSheetFontSize());
+    setScratchFontSizeReady(true);
+  }, []);
+  useEffect(() => {
+    if (!scratchFontSizeOpen) return;
+    scratchFontSizeInputRef.current?.focus();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (scratchFontSizeControlRef.current?.contains(target)) return;
+      setScratchFontSizeOpen(false);
+      setScratchFontSizeSliding(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [scratchFontSizeOpen]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!scratchFontSizeReady) return;
+    window.localStorage.setItem(SCRATCH_SHEET_FONT_SIZE_STORAGE_KEY, String(scratchFontSize));
+  }, [scratchFontSize, scratchFontSizeReady]);
 
   const styles = `
     @media print {
@@ -113,6 +159,9 @@ export default function ScratchSheetTab({
         padding-top: 54px;
       }
       .scratch-sheet-root .chart-controls {
+        display: none !important;
+      }
+      .scratch-sheet-root .scratch-font-size-control {
         display: none !important;
       }
       .scratch-sheet-root .scratch-page {
@@ -201,6 +250,16 @@ export default function ScratchSheetTab({
       text-transform: uppercase;
       cursor: pointer;
     }
+    .scratch-sheet-root .scratch-controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin: 0 0 12px;
+    }
+    .scratch-sheet-root .scratch-controls-row .chart-controls {
+      margin: 0;
+    }
     .scratch-sheet-root .page-card {
       border: 1px solid #ddd;
       border-radius: 12px;
@@ -212,17 +271,16 @@ export default function ScratchSheetTab({
       align-items: baseline;
       justify-content: space-between;
       gap: 10px;
-      margin-bottom: 8px;
-      border-bottom: 1px solid #e5e8ee;
-      padding-bottom: 6px;
+      margin-bottom: 14px;
     }
     .scratch-sheet-root .team-label {
-      font-size: 16px;
+      font-size: var(--scratch-team-label-font-size, 16px);
       font-weight: 700;
     }
     .scratch-sheet-root .meet-label {
-      font-size: 12px;
-      color: #4e5563;
+      font-size: var(--scratch-team-label-font-size, 16px);
+      font-weight: 700;
+      color: inherit;
       white-space: nowrap;
     }
     .scratch-sheet-root .scratch-columns {
@@ -242,13 +300,9 @@ export default function ScratchSheetTab({
       justify-content: flex-start;
       gap: 12px;
       min-height: 19px;
-      font-size: 14px;
-      line-height: 1.25;
-      border-bottom: 1px solid #f1f3f6;
+      font-size: var(--scratch-name-row-font-size, 14px);
+      line-height: 1.4;
       padding: 2px 0;
-    }
-    .scratch-sheet-root .name-row:last-child {
-      border-bottom: none;
     }
     .scratch-sheet-root .name-value {
       flex: 1 1 auto;
@@ -263,7 +317,7 @@ export default function ScratchSheetTab({
       margin: 0;
     }
     .scratch-sheet-root .empty-msg {
-      font-size: 14px;
+      font-size: var(--scratch-empty-font-size, 14px);
       color: #666;
       margin: 8px 0 0;
     }
@@ -295,6 +349,16 @@ export default function ScratchSheetTab({
     meet.name
       ? `${meet.name} - ${meet.meetTeams.map(mt => formatTeamName(mt.team)).join(", ")}`
       : meet.name;
+  const scratchFontSliderPercent =
+    ((scratchFontSize - MIN_SCRATCH_SHEET_FONT_SIZE)
+      / (MAX_SCRATCH_SHEET_FONT_SIZE - MIN_SCRATCH_SHEET_FONT_SIZE))
+    * 100;
+  const scratchFontStyle = {
+    "--scratch-team-label-font-size": `${scratchFontSize + 2}px`,
+    "--scratch-meet-label-font-size": `${Math.max(11, scratchFontSize - 2)}px`,
+    "--scratch-name-row-font-size": `${scratchFontSize}px`,
+    "--scratch-empty-font-size": `${scratchFontSize}px`,
+  } as CSSProperties;
 
   const pages = meet.meetTeams.flatMap((mt) => {
     const names = payload.wrestlers
@@ -314,7 +378,7 @@ export default function ScratchSheetTab({
     const nameChunks = names.length > 0 ? chunk(names, NAMES_PER_PAGE) : [[]];
     return nameChunks.map((part, idx) => ({
       key: `${mt.team.id}-${idx}`,
-      teamLabel: formatTeamName(mt.team),
+      teamLabel: mt.team.name,
       names: part,
       pageIndex: idx,
       pageCount: nameChunks.length,
@@ -322,10 +386,125 @@ export default function ScratchSheetTab({
   });
 
   return (
-    <div className="scratch-sheet-root" ref={scratchRef}>
+    <div className="scratch-sheet-root" ref={scratchRef} style={scratchFontStyle}>
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
-      <ControlBar meetId={meetId} printTargetRef={scratchRef} printStyles={styles} />
+      <div className="scratch-controls-row">
+        <ControlBar meetId={meetId} printTargetRef={scratchRef} printStyles={styles} />
+        <div
+          ref={scratchFontSizeControlRef}
+          className="scratch-font-size-control"
+          style={{
+            position: "relative",
+            display: "inline-flex",
+            alignItems: "center",
+            color: "#4b5563",
+          }}
+        >
+          <button
+            type="button"
+            className="chart-controls-button"
+            onClick={() => {
+              setScratchFontSizeOpen(open => !open);
+              setScratchFontSizeSliding(false);
+            }}
+            aria-label="Adjust scratches font size"
+            aria-expanded={scratchFontSizeOpen}
+            title="Adjust the scratches font size"
+            style={{
+              padding: "8px 10px",
+              lineHeight: 1,
+              border: "1px solid #d5dbe2",
+              borderRadius: 6,
+              background: "#fff",
+              color: "#1d232b",
+              cursor: "pointer",
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+            >
+              <span style={{ fontSize: 18 }}>A</span>
+              <span style={{ fontSize: 13 }}>A</span>
+            </span>
+          </button>
+          {scratchFontSizeOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                zIndex: 40,
+                width: 220,
+                padding: "10px 12px",
+                border: "1px solid #d5dbe2",
+                borderRadius: 10,
+                background: "#ffffff",
+                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                Change font size
+              </div>
+              <div style={{ position: "relative", overflow: "visible" }}>
+                {scratchFontSizeSliding && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: `calc(${scratchFontSliderPercent}% - 2px)`,
+                      top: -18,
+                      transform: "translateX(-50%)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#1f2937",
+                      background: "#ffffff",
+                      padding: "1px 6px",
+                      borderRadius: 999,
+                      boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                      pointerEvents: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {scratchFontSize}px
+                  </span>
+                )}
+                <input
+                  ref={scratchFontSizeInputRef}
+                  type="range"
+                  min={MIN_SCRATCH_SHEET_FONT_SIZE}
+                  max={MAX_SCRATCH_SHEET_FONT_SIZE}
+                  step={1}
+                  value={scratchFontSize}
+                  onChange={event => setScratchFontSize(clampScratchSheetFontSize(Number(event.target.value)))}
+                  onPointerDown={() => setScratchFontSizeSliding(true)}
+                  onPointerUp={() => {
+                    setScratchFontSizeSliding(false);
+                    setScratchFontSizeOpen(false);
+                  }}
+                  onPointerCancel={() => {
+                    setScratchFontSizeSliding(false);
+                    setScratchFontSizeOpen(false);
+                  }}
+                  onBlur={() => {
+                    setScratchFontSizeSliding(false);
+                    setScratchFontSizeOpen(false);
+                  }}
+                  onKeyDown={event => {
+                    if (event.key === "Escape") {
+                      setScratchFontSizeSliding(false);
+                      setScratchFontSizeOpen(false);
+                    }
+                  }}
+                  aria-label="Adjust scratches font size"
+                  style={{ width: "100%", margin: 0 }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       {pages.map((page) => {
         const left = page.names.slice(0, NAMES_PER_COLUMN);
         const right = page.names.slice(NAMES_PER_COLUMN, NAMES_PER_PAGE);
@@ -337,7 +516,7 @@ export default function ScratchSheetTab({
             <article className="page-card">
               <div className="page-header">
                 <div className="team-label">
-                  {page.teamLabel}
+                  Check-in for: {page.teamLabel}
                   {showPageSuffix ? ` (Page ${page.pageIndex + 1}/${page.pageCount})` : ""}
                 </div>
                 <div className="meet-label">{meetLabel}</div>

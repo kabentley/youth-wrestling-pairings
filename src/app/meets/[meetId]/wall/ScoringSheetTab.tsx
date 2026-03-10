@@ -116,6 +116,9 @@ export default function ScoringSheetTab({
       }
       .scoring-sheet-root {
         padding-top: 0;
+        font-family: Calibri, "Segoe UI", Arial, sans-serif !important;
+        font-size: 13px !important;
+        line-height: 1.2 !important;
       }
       .scoring-sheet-root .chart-controls {
         display: none !important;
@@ -137,6 +140,34 @@ export default function ScoringSheetTab({
       .scoring-sheet-root .sheet-card {
         border: none !important;
         border-radius: 0 !important;
+      }
+      .scoring-sheet-root .sheet-header {
+        font-size: 16px !important;
+        line-height: 1.2 !important;
+      }
+      .scoring-sheet-root .sheet-header-right {
+        font-size: 16px !important;
+        line-height: 1.2 !important;
+      }
+      .scoring-sheet-root table {
+        font-size: 13px !important;
+        line-height: 1.2 !important;
+      }
+      .scoring-sheet-root th {
+        font-size: 13px !important;
+        line-height: 1.2 !important;
+      }
+      .scoring-sheet-root td {
+        font-size: 13px !important;
+        line-height: 1.3 !important;
+      }
+      .scoring-sheet-root .c-name {
+        font-size: 14px !important;
+        line-height: 1.3 !important;
+      }
+      .scoring-sheet-root .blank-page {
+        font-size: 13px !important;
+        line-height: 1.2 !important;
       }
     }
     .scoring-sheet-root {
@@ -449,7 +480,7 @@ export default function ScoringSheetTab({
             <div className="sheet-card">
               <div className="sheet-header">
                 <div>
-                  Mat {page.mat} Scoring Sheet
+                  Mat {page.mat}
                   {page.pageCount > 1 ? ` (Page ${page.pageIndex + 1}/${page.pageCount})` : ""}
                 </div>
                 <div className="sheet-header-right">{meetData.name}</div>

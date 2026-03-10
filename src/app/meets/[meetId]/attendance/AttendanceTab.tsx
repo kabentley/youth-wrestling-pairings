@@ -117,6 +117,7 @@ export default function AttendanceTab({
   const pendingStatusChangesRef = useRef(pendingStatusChanges);
   const savingRef = useRef(false);
   const savePendingChangesRef = useRef<(opts?: { silent?: boolean; keepalive?: boolean }) => Promise<boolean>>(async () => true);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     pendingStatusChangesRef.current = pendingStatusChanges;
@@ -303,6 +304,29 @@ export default function AttendanceTab({
   }, [onRegisterSaveHandler]);
 
   useEffect(() => {
+    if (readOnly || pendingStatusChanges.size === 0) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      return;
+    }
+    if (savingRef.current) return;
+    const timer = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      if (pendingStatusChangesRef.current.size === 0 || savingRef.current) return;
+      void savePendingChangesRef.current({ silent: true });
+    }, 2000);
+    autoSaveTimerRef.current = timer;
+    return () => {
+      if (autoSaveTimerRef.current === timer) {
+        clearTimeout(timer);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [pendingStatusChanges, readOnly]);
+
+  useEffect(() => {
     if (readOnly) return undefined;
     const autoSave = () => {
       if (pendingStatusChangesRef.current.size === 0 || savingRef.current) return;
@@ -461,18 +485,6 @@ export default function AttendanceTab({
                 </button>
               );
             })}
-            {canEditActiveTeam && (
-              <div style={{ display: "flex", alignItems: "center", paddingLeft: 32, transform: "translateY(-6px)" }}>
-                <button
-                  type="button"
-                  className="nav-btn primary"
-                  onClick={() => void savePendingChanges()}
-                  disabled={pendingStatusChanges.size === 0 || saving}
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-              </div>
-            )}
             {showRefresh && (
               <div style={{ display: "flex", alignItems: "center", paddingLeft: 40, transform: "translateY(-6px)" }}>
                 <button
@@ -509,7 +521,7 @@ export default function AttendanceTab({
                     <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
                       {column.label}
                     </h3>
-                    {canEditActiveTeam && column.key === "not-coming" && (
+                    {canEditActiveTeam && !showStatusAttribution && column.key === "not-coming" && (
                       <button
                         type="button"
                         className="nav-btn secondary"
@@ -527,7 +539,7 @@ export default function AttendanceTab({
                         {bulkUpdatingColumn === column.key ? "Saving..." : "All Coming"}
                       </button>
                     )}
-                    {canEditActiveTeam && column.key === "no-reply" && (
+                    {canEditActiveTeam && !showStatusAttribution && column.key === "no-reply" && (
                       <button
                         type="button"
                         className="nav-btn secondary"
@@ -578,14 +590,16 @@ export default function AttendanceTab({
                       (() => {
                         const isLate = w.status === "LATE";
                         const isEarly = w.status === "EARLY";
-                        const attribution = showStatusAttribution && !pendingStatusChanges.has(w.id)
+                        const attribution = !pendingStatusChanges.has(w.id)
                           ? formatStatusAttribution(w)
-                          : !showStatusAttribution && !pendingStatusChanges.has(w.id)
-                            ? formatStatusAttribution(w)
-                            : null;
+                          : null;
                         const tooltipMessage = !showStatusAttribution
                           ? (attribution ?? (column.key === "not-coming" ? "No response" : null))
                           : null;
+                        const hadExplicitResponse =
+                          w.status === "NOT_COMING" || w.status === "ABSENT";
+                        const emphasizeNotComingResponse =
+                          column.key === "not-coming" && !showNoReplyColumn && hadExplicitResponse;
                         const rowBackground = isLate
                           ? "#dff1ff"
                           : isEarly
@@ -625,7 +639,9 @@ export default function AttendanceTab({
                             onMouseLeave={tooltipMessage ? () => setAttributionTooltip(null) : undefined}
                           >
                             <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {w.first} {w.last}
+                              <span style={{ fontWeight: emphasizeNotComingResponse ? 700 : undefined }}>
+                                {w.first} {w.last}
+                              </span>
                             </div>
                             {showStatusAttribution && attribution && (
                               <div

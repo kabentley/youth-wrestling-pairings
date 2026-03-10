@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
@@ -94,6 +94,7 @@ type ScratchesTabProps = {
   checkpoints: Checkpoint[];
   targetMatchesPerWrestler: number | null;
   teamCheckins: TeamCheckin[];
+  canViewScratchMatchWorkspace: boolean;
   canManageScratchEntry: boolean;
   canManageScratchMatches: boolean;
   manageableTeamIds: string[];
@@ -101,6 +102,25 @@ type ScratchesTabProps = {
   onEnsureLock: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
+
+const SCRATCHES_TAB_FONT_SIZE_STORAGE_KEY = "scratchesTabFontSize";
+const DEFAULT_SCRATCHES_TAB_FONT_SIZE = 14;
+const MIN_SCRATCHES_TAB_FONT_SIZE = 10;
+const MAX_SCRATCHES_TAB_FONT_SIZE = 22;
+
+function clampScratchesTabFontSize(value: number) {
+  return Math.max(MIN_SCRATCHES_TAB_FONT_SIZE, Math.min(MAX_SCRATCHES_TAB_FONT_SIZE, Math.round(value)));
+}
+
+function readStoredScratchesTabFontSize() {
+  if (typeof window === "undefined") return DEFAULT_SCRATCHES_TAB_FONT_SIZE;
+  const stored = window.localStorage.getItem(SCRATCHES_TAB_FONT_SIZE_STORAGE_KEY);
+  if (!stored) return DEFAULT_SCRATCHES_TAB_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed)
+    ? clampScratchesTabFontSize(parsed)
+    : DEFAULT_SCRATCHES_TAB_FONT_SIZE;
+}
 
 function isReplacementEligible(status?: WrestlerStatus) {
   return status === "COMING" || status === "LATE" || status === "EARLY";
@@ -215,6 +235,7 @@ export default function ScratchesTab({
   checkpoints,
   targetMatchesPerWrestler,
   teamCheckins,
+  canViewScratchMatchWorkspace,
   canManageScratchEntry,
   canManageScratchMatches,
   manageableTeamIds,
@@ -222,17 +243,19 @@ export default function ScratchesTab({
   onEnsureLock,
   onRefresh,
 }: ScratchesTabProps) {
-  const visibleScratchTeams = teams.filter((team) => manageableTeamIds.includes(team.id));
+  const visibleScratchTeams = canViewScratchMatchWorkspace
+    ? teams
+    : teams.filter((team) => manageableTeamIds.includes(team.id));
   const orderedTeamsSource = homeTeamId
     ? [visibleScratchTeams.find((team) => team.id === homeTeamId), ...visibleScratchTeams.filter((team) => team.id !== homeTeamId)].filter(
         (team): team is Team => Boolean(team),
       )
     : visibleScratchTeams;
   const orderedTeams = orderedTeamsSource;
-  const checkinTeams = canManageScratchMatches
+  const checkinTeams = canViewScratchMatchWorkspace
     ? orderedTeams
     : orderedTeams.filter((team) => team.id === currentUserTeamId);
-  const fallbackCheckinTeams = !canManageScratchMatches && checkinTeams.length === 0
+  const fallbackCheckinTeams = !canViewScratchMatchWorkspace && checkinTeams.length === 0
     ? orderedTeams.slice(0, 1)
     : checkinTeams;
   const initialActiveTeam = fallbackCheckinTeams.length > 0 ? fallbackCheckinTeams[0] : orderedTeams[0];
@@ -253,7 +276,6 @@ export default function ScratchesTab({
   const [scratchSaveLoading, setScratchSaveLoading] = useState(false);
   const [showScratchModal, setShowScratchModal] = useState(false);
   const [showUnexpectedArrivalsModal, setShowUnexpectedArrivalsModal] = useState(false);
-  const [showCompleteCheckinConfirmModal, setShowCompleteCheckinConfirmModal] = useState(false);
   const [localTeamCheckins, setLocalTeamCheckins] = useState<Map<string, TeamCheckinInfo>>(
     new Map(
       teamCheckins.map((entry) => [
@@ -282,9 +304,15 @@ export default function ScratchesTab({
     girlsWrestleGirls: true,
   });
   const [isPhoneLayout, setIsPhoneLayout] = useState(false);
+  const [scratchesFontSize, setScratchesFontSize] = useState(DEFAULT_SCRATCHES_TAB_FONT_SIZE);
+  const [scratchesFontSizeReady, setScratchesFontSizeReady] = useState(false);
+  const [scratchesFontSizeOpen, setScratchesFontSizeOpen] = useState(false);
+  const [scratchesFontSizeSliding, setScratchesFontSizeSliding] = useState(false);
   const pendingScratchChangesRef = useRef(pendingScratchChanges);
   const pendingArrivalAddsRef = useRef(pendingArrivalAdds);
   const scratchSaveLoadingRef = useRef(scratchSaveLoading);
+  const scratchesFontSizeControlRef = useRef<HTMLDivElement | null>(null);
+  const scratchesFontSizeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     pendingScratchChangesRef.current = pendingScratchChanges;
@@ -311,6 +339,31 @@ export default function ScratchesTab({
     return () => mediaQuery.removeListener(updateLayout);
   }, []);
 
+  useLayoutEffect(() => {
+    setScratchesFontSize(readStoredScratchesTabFontSize());
+    setScratchesFontSizeReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!scratchesFontSizeOpen) return;
+    scratchesFontSizeInputRef.current?.focus();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (scratchesFontSizeControlRef.current?.contains(target)) return;
+      setScratchesFontSizeOpen(false);
+      setScratchesFontSizeSliding(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [scratchesFontSizeOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!scratchesFontSizeReady) return;
+    window.localStorage.setItem(SCRATCHES_TAB_FONT_SIZE_STORAGE_KEY, String(scratchesFontSize));
+  }, [scratchesFontSize, scratchesFontSizeReady]);
+
   useEffect(() => {
     setLocalTeamCheckins((current) => {
       const next = new Map(current);
@@ -327,11 +380,12 @@ export default function ScratchesTab({
   }, [teamCheckins]);
 
   useEffect(() => {
-    const allowedTeams = canManageScratchMatches ? orderedTeams : fallbackCheckinTeams;
+    const allowedTeams = canViewScratchMatchWorkspace ? orderedTeams : fallbackCheckinTeams;
     if (!activeTeamId || allowedTeams.some((team) => team.id === activeTeamId)) return;
     setActiveTeamId(allowedTeams[0]?.id ?? null);
-  }, [activeTeamId, canManageScratchMatches, fallbackCheckinTeams, orderedTeams]);
+  }, [activeTeamId, canViewScratchMatchWorkspace, fallbackCheckinTeams, orderedTeams]);
 
+  const manageableTeamIdSet = new Set(manageableTeamIds);
   const teamMap = new Map(teams.map((team) => [team.id, team]));
   const teamCheckinMap = localTeamCheckins;
   const wrestlerMap = new Map(wrestlers.map((wrestler) => [wrestler.id, wrestler]));
@@ -752,8 +806,8 @@ export default function ScratchesTab({
           return next;
         });
       }
-      clearPendingScratchChanges();
       await refreshScratchData();
+      clearPendingScratchChanges();
       setNotice(payload?.message ?? "Scratch changes saved.");
       return true;
     } catch (err) {
@@ -766,19 +820,18 @@ export default function ScratchesTab({
   }
 
   function openScratchModal(teamId: string) {
+    if (!manageableTeamIdSet.has(teamId)) return;
     clearPendingScratchChanges();
     setActiveTeamId(teamId);
     setScratchSearch("");
     setUnexpectedArrivalSearch("");
     setShowUnexpectedArrivalsModal(false);
-    setShowCompleteCheckinConfirmModal(false);
     setShowScratchModal(true);
   }
 
   function cancelScratchModal() {
     clearPendingScratchChanges();
     setShowUnexpectedArrivalsModal(false);
-    setShowCompleteCheckinConfirmModal(false);
     setShowScratchModal(false);
   }
 
@@ -789,23 +842,9 @@ export default function ScratchesTab({
     }
     const ok = await saveScratchChanges({ completeTeamId: activeTeamId });
     if (ok) {
-      setShowCompleteCheckinConfirmModal(false);
       setShowUnexpectedArrivalsModal(false);
       setShowScratchModal(false);
     }
-  }
-
-  async function confirmScratchModal() {
-    if (!activeTeamId) {
-      setShowScratchModal(false);
-      return;
-    }
-    const teamAlreadyCompleted = Boolean(teamCheckinMap.get(activeTeamId)?.checkinCompletedAt);
-    if (!teamAlreadyCompleted) {
-      setShowCompleteCheckinConfirmModal(true);
-      return;
-    }
-    await completeScratchModal();
   }
 
   function openUnexpectedArrivalsModal() {
@@ -956,12 +995,20 @@ export default function ScratchesTab({
     { label: "Matches", key: "matches" },
   ] as const;
   const newMatchesColumnWidths = [230, 230, 78, 70, 96];
+  const scratchesTableFontSize = isPhoneLayout
+    ? Math.max(MIN_SCRATCHES_TAB_FONT_SIZE, scratchesFontSize - 1)
+    : scratchesFontSize;
+  const scratchesHeaderFontSize = Math.max(10, scratchesTableFontSize - 1);
+  const scratchesFontSliderPercent =
+    ((scratchesFontSize - MIN_SCRATCHES_TAB_FONT_SIZE)
+      / (MAX_SCRATCHES_TAB_FONT_SIZE - MIN_SCRATCHES_TAB_FONT_SIZE))
+    * 100;
   const pairingsTableStyle = {
     borderCollapse: "collapse" as const,
     width: "fit-content",
     maxWidth: "100%",
     tableLayout: "fixed" as const,
-    fontSize: isPhoneLayout ? 12 : 14,
+    fontSize: scratchesTableFontSize,
   };
   const pairingsHeaderCellStyle = {
     padding: isPhoneLayout ? "2px 10px 2px 4px" : "3px 18px 3px 6px",
@@ -970,10 +1017,12 @@ export default function ScratchesTab({
     whiteSpace: "nowrap" as const,
     position: "relative" as const,
     lineHeight: isPhoneLayout ? 1.05 : 1.15,
+    fontSize: scratchesHeaderFontSize,
   };
   const pairingsBodyCellStyle = {
     padding: isPhoneLayout ? "2px 4px" : "3px 6px",
     lineHeight: isPhoneLayout ? 1.05 : 1.2,
+    fontSize: scratchesTableFontSize,
   };
   const modalCardStyle = {
     width: isPhoneLayout ? "100%" : "min(760px, 100%)",
@@ -1024,9 +1073,14 @@ export default function ScratchesTab({
                   return (
                     <tr
                       key={wrestler.id}
+                      onClick={() => {
+                        if (!canManageScratchEntry || scratchSaveLoading) return;
+                        queueScratchChange(wrestler.id, !absent);
+                      }}
                       style={{
                         background: rowBackground,
                         borderTop: `1px solid ${rowBorder}`,
+                        cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
                       }}
                     >
                       <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(wrestler.teamId) }}>
@@ -1034,26 +1088,23 @@ export default function ScratchesTab({
                           <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {wrestler.first} {wrestler.last}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => queueScratchChange(wrestler.id, !absent)}
-                            disabled={!canManageScratchEntry || scratchSaveLoading}
-                            style={{
-                              border: `1px solid ${absent ? "#bcd8c1" : "#d0b2b2"}`,
-                              borderRadius: 4,
-                              background: absent ? "#e6f6ea" : "#fff7f7",
-                              color: absent ? "#1d5b2a" : "#7a3d3d",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: "1px 6px",
-                              cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
-                              whiteSpace: "nowrap",
-                              flex: "0 0 auto",
-                            }}
-                            title={absent ? "Un-scratch wrestler" : "Scratch wrestler"}
-                          >
-                            {absent ? "Un-scratch" : "Scratch"}
-                          </button>
+                          {absent && (
+                            <span
+                              style={{
+                                border: "1px solid #d0b2b2",
+                                borderRadius: 999,
+                                background: "#fff7f7",
+                                color: "#7a3d3d",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: "1px 8px",
+                                whiteSpace: "nowrap",
+                                flex: "0 0 auto",
+                              }}
+                            >
+                              Scratched
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td
@@ -1091,6 +1142,10 @@ export default function ScratchesTab({
           return (
             <div
               key={wrestler.id}
+              onClick={() => {
+                if (!canManageScratchEntry || scratchSaveLoading) return;
+                queueScratchChange(wrestler.id, !absent);
+              }}
               style={{
                 border: `1px solid ${absent ? "#dfc1c1" : "#c7ddc7"}`,
                 borderRadius: 8,
@@ -1101,27 +1156,26 @@ export default function ScratchesTab({
                 gap: 8,
                 alignItems: "center",
                 lineHeight: 1.05,
+                cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
               }}
             >
               <div style={{ minWidth: 0, color: teamTextColor(wrestler.teamId), fontSize: 14, fontWeight: 700, lineHeight: 1.02 }}>
                 {wrestler.first} {wrestler.last}
               </div>
-              <button
-                type="button"
-                onClick={() => queueScratchChange(wrestler.id, !absent)}
-                disabled={!canManageScratchEntry || scratchSaveLoading}
-                style={{
-                  ...mobileActionButtonStyle,
-                  border: `1px solid ${absent ? "#bcd8c1" : "#d0b2b2"}`,
-                  background: absent ? "#e6f6ea" : "#fff7f7",
-                  color: absent ? "#1d5b2a" : "#7a3d3d",
-                  cursor: !canManageScratchEntry || scratchSaveLoading ? "default" : "pointer",
-                  flex: "0 0 auto",
-                }}
-                title={absent ? "Un-scratch wrestler" : "Scratch wrestler"}
-              >
-                {absent ? "Un-scratch" : "Scratch"}
-              </button>
+              {absent && (
+                <span
+                  style={{
+                    ...mobileActionButtonStyle,
+                    border: "1px solid #d0b2b2",
+                    background: "#fff7f7",
+                    color: "#7a3d3d",
+                    cursor: "default",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  Scratched
+                </span>
+              )}
             </div>
           );
         })}
@@ -1258,6 +1312,7 @@ export default function ScratchesTab({
             Enter Scratches For:
           </div>
           {fallbackCheckinTeams.map((team) => {
+            const canEditScratchTeam = manageableTeamIdSet.has(team.id);
             const teamColorValue = team.color ?? "#7a1738";
             const textColor = adjustTeamTextColor(teamColorValue);
             const completedInfo = teamCheckinMap.get(team.id) ?? { checkinCompletedAt: null, completedByUsername: null };
@@ -1276,7 +1331,7 @@ export default function ScratchesTab({
                 type="button"
                 className="team-chip-btn"
                 onClick={() => openScratchModal(team.id)}
-                disabled={!canManageScratchEntry}
+                disabled={!canEditScratchTeam || !canManageScratchEntry}
                 title={completedTitle}
                 style={{
                   background: team.color ? `${team.color}22` : "#f7f9fc",
@@ -1286,8 +1341,9 @@ export default function ScratchesTab({
                   padding: isPhoneLayout ? "6px 10px" : "8px 14px",
                   borderRadius: isPhoneLayout ? 8 : 10,
                   fontWeight: 700,
+                  opacity: canEditScratchTeam ? 1 : 0.65,
                   boxShadow: "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)",
-                  cursor: canManageScratchEntry ? "pointer" : "default",
+                  cursor: canEditScratchTeam && canManageScratchEntry ? "pointer" : "default",
                 }}
               >
                 <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
@@ -1329,15 +1385,119 @@ export default function ScratchesTab({
               {refreshingTeamCheckins ? "Refreshing..." : "Refresh"}
             </button>
           )}
+          <div
+            ref={scratchesFontSizeControlRef}
+            style={{
+              position: "relative",
+              display: "inline-flex",
+              alignItems: "center",
+              color: "#4b5563",
+            }}
+          >
+            <button
+              type="button"
+              className="nav-btn secondary"
+              onClick={() => {
+                setScratchesFontSizeOpen(open => !open);
+                setScratchesFontSizeSliding(false);
+              }}
+              aria-label="Adjust scratches font size"
+              aria-expanded={scratchesFontSizeOpen}
+              title="Adjust the scratches font size"
+              style={{ padding: "8px 10px", lineHeight: 1 }}
+            >
+              <span
+                aria-hidden="true"
+                style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+              >
+                <span style={{ fontSize: 18 }}>A</span>
+                <span style={{ fontSize: 13 }}>A</span>
+              </span>
+            </button>
+            {scratchesFontSizeOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 40,
+                  width: 220,
+                  padding: "10px 12px",
+                  border: "1px solid #d5dbe2",
+                  borderRadius: 10,
+                  background: "#ffffff",
+                  boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                  Change font size
+                </div>
+                <div style={{ position: "relative", overflow: "visible" }}>
+                  {scratchesFontSizeSliding && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        left: `calc(${scratchesFontSliderPercent}% - 2px)`,
+                        top: -18,
+                        transform: "translateX(-50%)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#1f2937",
+                        background: "#ffffff",
+                        padding: "1px 6px",
+                        borderRadius: 999,
+                        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                        pointerEvents: "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {scratchesFontSize}px
+                    </span>
+                  )}
+                  <input
+                    ref={scratchesFontSizeInputRef}
+                    type="range"
+                    min={MIN_SCRATCHES_TAB_FONT_SIZE}
+                    max={MAX_SCRATCHES_TAB_FONT_SIZE}
+                    step={1}
+                    value={scratchesFontSize}
+                    onChange={event => setScratchesFontSize(clampScratchesTabFontSize(Number(event.target.value)))}
+                    onPointerDown={() => setScratchesFontSizeSliding(true)}
+                    onPointerUp={() => {
+                      setScratchesFontSizeSliding(false);
+                      setScratchesFontSizeOpen(false);
+                    }}
+                    onPointerCancel={() => {
+                      setScratchesFontSizeSliding(false);
+                      setScratchesFontSizeOpen(false);
+                    }}
+                    onBlur={() => {
+                      setScratchesFontSizeSliding(false);
+                      setScratchesFontSizeOpen(false);
+                    }}
+                    onKeyDown={event => {
+                      if (event.key === "Escape") {
+                        setScratchesFontSizeSliding(false);
+                        setScratchesFontSizeOpen(false);
+                      }
+                    }}
+                    aria-label="Adjust scratches font size"
+                    style={{ width: "100%", margin: 0 }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         {!canManageScratchEntry && (
           <div className="notice" style={{ margin: 0 }}>
-            Coaches can enter scratches for their own team. The Meet Coordinator or an admin can enter scratches for any team.
+            Coaches need edit access from the Meet Coordinator to enter scratches for their own team. The Meet Coordinator or an admin can enter scratches for any team.
           </div>
         )}
       </div>
 
-      {canManageScratchMatches ? (
+      {canViewScratchMatchWorkspace ? (
         <div
           style={{
             display: "grid",
@@ -1368,12 +1528,17 @@ export default function ScratchesTab({
                 type="button"
                 className="nav-btn primary"
                 onClick={() => void runAutoPairings()}
-                disabled={baselineLoading || Boolean(baselineError) || replacementRows.length === 0 || autoPairingLoading}
+                disabled={!canManageScratchMatches || baselineLoading || Boolean(baselineError) || replacementRows.length === 0 || autoPairingLoading}
               >
                 {autoPairingLoading ? "Running..." : "Auto pair for scratches"}
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 10, display: "grid", gap: 8 }}>
+              {!canManageScratchMatches && (
+                <div style={{ color: "#5a6673", fontSize: 13 }}>
+                  Start Editing to add or remove replacement matches.
+                </div>
+              )}
               <div style={{ display: "grid", gap: 8 }}>
                 {baselineLoading && (
                   <div style={{ color: "#5a6673", fontSize: 13 }}>Loading Check-in checkpoint...</div>
@@ -1403,9 +1568,9 @@ export default function ScratchesTab({
                       </thead>
                       <tbody>
                         {replacementRows.map((row) => {
-                          const selected = row.wrestler.id === selectedDetailWrestlerId;
-                          const team = teamMap.get(row.wrestler.teamId) ?? null;
-                          return (
+                                const selected = row.wrestler.id === selectedDetailWrestlerId;
+                                const team = teamMap.get(row.wrestler.teamId) ?? null;
+                                return (
                             <tr
                               key={row.wrestler.id}
                               onClick={() => {
@@ -1548,19 +1713,19 @@ export default function ScratchesTab({
                                 const sourceBackground = sourceColor ?? "#f7f9fc";
                                 const sourceBorder = sourceColor ?? "#e4e9f2";
                                 return (
-                                  <tr
-                                    key={bout.id}
-                                    onClick={() => {
-                                      if (removeLoadingId === bout.id) return;
-                                      void removeReplacementMatch(bout.id);
-                                    }}
-                                    style={{
-                                      borderTop: "1px solid #eee",
-                                      cursor: "pointer",
-                                      background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
-                                    }}
-                                    title="Click to remove this match."
-                                  >
+                                    <tr
+                                      key={bout.id}
+                                      onClick={() => {
+                                        if (!canManageScratchMatches || removeLoadingId === bout.id) return;
+                                        void removeReplacementMatch(bout.id);
+                                      }}
+                                      style={{
+                                        borderTop: "1px solid #eee",
+                                        cursor: canManageScratchMatches ? "pointer" : "default",
+                                        background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
+                                      }}
+                                      title={canManageScratchMatches ? "Click to remove this match." : undefined}
+                                    >
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
                                     <td style={pairingsBodyCellStyle}>
@@ -1666,15 +1831,15 @@ export default function ScratchesTab({
                                 <tr
                                   key={opponent.id}
                                   onClick={() => {
-                                      if (loading) return;
+                                      if (!canManageScratchMatches || loading) return;
                                       void addReplacementMatch(opponent.id);
                                     }}
                                     style={{
                                       borderTop: "1px solid #eee",
-                                      cursor: "pointer",
+                                      cursor: canManageScratchMatches ? "pointer" : "default",
                                       background: loading ? "#eef6ff" : "#ffffff",
                                     }}
-                                    title="Click to add this match."
+                                    title={canManageScratchMatches ? "Click to add this match." : undefined}
                                   >
                                     <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.last}</td>
                                     <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.first}</td>
@@ -2072,15 +2237,15 @@ export default function ScratchesTab({
                                 <tr
                                   key={bout.id}
                                   onClick={() => {
-                                    if (removeLoadingId === bout.id) return;
+                                    if (!canManageScratchMatches || removeLoadingId === bout.id) return;
                                     void removeReplacementMatch(bout.id);
                                   }}
                                   style={{
                                     borderTop: "1px solid #eee",
-                                    cursor: "pointer",
+                                    cursor: canManageScratchMatches ? "pointer" : "default",
                                     background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
                                   }}
-                                  title="Click to remove this match."
+                                  title={canManageScratchMatches ? "Click to remove this match." : undefined}
                                 >
                                   <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
                                   <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
@@ -2187,15 +2352,15 @@ export default function ScratchesTab({
                                 <tr
                                   key={opponent.id}
                                   onClick={() => {
-                                    if (loading) return;
+                                    if (!canManageScratchMatches || loading) return;
                                     void addReplacementMatch(opponent.id);
                                   }}
                                   style={{
                                     borderTop: "1px solid #eee",
-                                    cursor: "pointer",
+                                    cursor: canManageScratchMatches ? "pointer" : "default",
                                     background: loading ? "#eef6ff" : "#ffffff",
                                   }}
-                                  title="Click to add this match."
+                                  title={canManageScratchMatches ? "Click to add this match." : undefined}
                                 >
                                   <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.last}</td>
                                   <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.first}</td>
@@ -2410,7 +2575,7 @@ export default function ScratchesTab({
                 <button
                   type="button"
                   className="nav-btn primary"
-                  onClick={() => void confirmScratchModal()}
+                  onClick={() => void completeScratchModal()}
                   disabled={!canManageScratchEntry || scratchSaveLoading}
                   style={isPhoneLayout ? { width: "100%" } : undefined}
                 >
@@ -2497,74 +2662,6 @@ export default function ScratchesTab({
                 style={isPhoneLayout ? { width: "100%" } : { justifySelf: "end" }}
               >
                 Back
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showScratchModal && showCompleteCheckinConfirmModal && (
-        <div
-          onClick={() => {
-            if (scratchSaveLoading) return;
-            setShowCompleteCheckinConfirmModal(false);
-          }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(20, 26, 36, 0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: isPhoneLayout ? 12 : 20,
-            zIndex: 1002,
-          }}
-        >
-          <div
-            onClick={(event) => event.stopPropagation()}
-            style={{
-              width: isPhoneLayout ? "100%" : "min(520px, 100%)",
-              background: "#ffffff",
-              borderRadius: 16,
-              border: "1px solid #d5dbe2",
-              boxShadow: "0 18px 60px rgba(15, 23, 42, 0.28)",
-              display: "grid",
-              gap: 0,
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ padding: isPhoneLayout ? "14px 14px 10px" : "16px 18px 10px", borderBottom: "1px solid #e5e8ee" }}>
-              <div style={{ fontSize: isPhoneLayout ? 18 : 20, fontWeight: 800, color: "#243041" }}>
-                Finish check-in?
-              </div>
-            </div>
-            <div style={{ padding: isPhoneLayout ? 14 : 18, color: "#425066", fontSize: 15, lineHeight: 1.3 }}>
-              Are you sure you're done checking in? Parents of scratches will be notified and the Meet Coordinator will start working on scratches for your team.
-            </div>
-            <div
-              style={{
-                padding: isPhoneLayout ? "0 14px 14px" : "0 18px 18px",
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 10,
-              }}
-            >
-              <button
-                type="button"
-                className="nav-btn"
-                onClick={() => setShowCompleteCheckinConfirmModal(false)}
-                disabled={scratchSaveLoading}
-                style={{ width: "100%" }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="nav-btn primary"
-                onClick={() => void completeScratchModal()}
-                disabled={scratchSaveLoading}
-                style={{ width: "100%" }}
-              >
-                {scratchSaveLoading ? "Saving..." : "Yes, I'm done"}
               </button>
             </div>
           </div>

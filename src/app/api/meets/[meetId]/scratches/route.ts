@@ -80,6 +80,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       status: true,
       homeTeam: { select: { headCoachId: true } },
       meetTeams: { select: { teamId: true, team: { select: { id: true, name: true, symbol: true } } } },
+      lockAccesses: {
+        where: { userId: user.id },
+        select: { userId: true },
+      },
     },
   });
   if (!meet || meet.deletedAt) {
@@ -90,6 +94,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
 
   const isCoordinator = Boolean(meet.homeTeam?.headCoachId) && meet.homeTeam?.headCoachId === user.id;
+  const hasCoordinatorGrant = meet.lockAccesses.length > 0;
   const wrestlerIds = changes.map((change) => change.wrestlerId);
   const wrestlers = wrestlerIds.length > 0
     ? await db.wrestler.findMany({
@@ -114,6 +119,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (!canManageAnyTeam) {
     if (user.role !== "COACH" || !user.teamId) {
       return NextResponse.json({ error: "You are not authorized to manage scratches." }, { status: 403 });
+    }
+    if (!hasCoordinatorGrant) {
+      return NextResponse.json(
+        { error: "Coaches need edit access from the Meet Coordinator to enter scratches." },
+        { status: 403 },
+      );
     }
     const unauthorizedWrestler = wrestlers.find((wrestler) => wrestler.teamId !== user.teamId);
     if (unauthorizedWrestler) {

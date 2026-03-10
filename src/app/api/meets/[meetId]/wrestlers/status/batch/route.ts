@@ -27,16 +27,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       deletedAt: true,
       status: true,
       homeTeam: { select: { headCoachId: true } },
+      meetTeams: { select: { teamId: true } },
+      lockAccesses: {
+        where: { userId: user.id },
+        select: { userId: true },
+      },
     },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
   const isCoordinator = meet.homeTeam?.headCoachId === user.id;
+  const meetPhase = normalizeMeetPhase(meet.status);
+  const meetTeamIds = new Set(meet.meetTeams.map((entry) => entry.teamId));
+  const userTeamId = user.teamId;
+  const isCoachOnMeetTeam = userTeamId !== null && meetTeamIds.has(userTeamId);
+  const hasCoordinatorGrant = meet.lockAccesses.length > 0;
   const allowCoachWithoutLock =
-    normalizeMeetPhase(meet.status) === "DRAFT" &&
-    user.role === "COACH" &&
-    Boolean(user.teamId);
+    !isCoordinator &&
+    userTeamId !== null &&
+    (
+      meetPhase === "ATTENDANCE" ||
+      (meetPhase === "DRAFT" && isCoachOnMeetTeam && hasCoordinatorGrant)
+    );
   if (!allowCoachWithoutLock) {
     try {
       await requireMeetLock(meetId, user.id, user.role);
@@ -55,32 +68,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const changes = [...uniqueChanges.values()];
   const wrestlerIds = changes.map(change => change.wrestlerId);
 
-  const [wrestlers, meetTeams] = await Promise.all([
+  const [wrestlers] = await Promise.all([
     db.wrestler.findMany({
       where: { id: { in: wrestlerIds } },
       select: { id: true, teamId: true },
-    }),
-    db.meetTeam.findMany({
-      where: { meetId },
-      select: { teamId: true },
     }),
   ]);
   if (wrestlers.length !== wrestlerIds.length) {
     return NextResponse.json({ error: "Wrestler not found" }, { status: 404 });
   }
-  const meetTeamIds = new Set(meetTeams.map(team => team.teamId));
   for (const wrestler of wrestlers) {
     if (!meetTeamIds.has(wrestler.teamId)) {
       return NextResponse.json({ error: "Wrestler not in this meet" }, { status: 400 });
     }
   }
   if (allowCoachWithoutLock) {
-    const unauthorizedWrestler = !isCoordinator
-      ? wrestlers.find((wrestler) => wrestler.teamId !== user.teamId)
-      : null;
+    const unauthorizedWrestler = wrestlers.find((wrestler) => wrestler.teamId !== userTeamId);
     if (unauthorizedWrestler) {
       return NextResponse.json(
-        { error: "Coaches may only edit attendance for their own team during Draft." },
+        { error: "Coaches may only edit attendance for their own team during Attendance, or during Draft if they have edit access." },
         { status: 403 },
       );
     }

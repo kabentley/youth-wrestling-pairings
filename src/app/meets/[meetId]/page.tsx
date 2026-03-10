@@ -37,6 +37,7 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 }
 
 const PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY = "pairingsTableFontSize";
+const MATBOARD_SHOW_TEAM_SYMBOLS_STORAGE_KEY = "matboardShowTeamSymbols";
 const DEFAULT_PAIRINGS_TABLE_FONT_SIZE = 14;
 const MIN_PAIRINGS_TABLE_FONT_SIZE = 10;
 const MAX_PAIRINGS_TABLE_FONT_SIZE = 22;
@@ -53,6 +54,11 @@ function readStoredPairingsTableFontSize(key: string) {
   return Number.isFinite(parsed)
     ? clampPairingsTableFontSize(parsed)
     : DEFAULT_PAIRINGS_TABLE_FONT_SIZE;
+}
+
+function readStoredMatboardShowTeamSymbols() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(MATBOARD_SHOW_TEAM_SYMBOLS_STORAGE_KEY) === "true";
 }
 
 
@@ -564,6 +570,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
   const [matBoardShowTeamSymbols, setMatBoardShowTeamSymbols] = useState(false);
+  const [matBoardShowTeamSymbolsReady, setMatBoardShowTeamSymbolsReady] = useState(false);
   const pairingsTableFontSliderPercent =
     ((pairingsTableFontSize - MIN_PAIRINGS_TABLE_FONT_SIZE)
       / (MAX_PAIRINGS_TABLE_FONT_SIZE - MIN_PAIRINGS_TABLE_FONT_SIZE))
@@ -1396,13 +1403,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
   const canEditThisPhase = meetStatus === "DRAFT" || isMeetCoordinator || currentUserRole === "ADMIN";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase && canEditThisPhase;
-  const canDraftCoachEditAttendanceWithoutLock = Boolean(
-    meetStatus === "DRAFT" &&
+  const canCoachEditOwnAttendanceWithoutLock = Boolean(
     currentUserRole === "COACH" &&
+    !isMeetCoordinator &&
     currentUserTeamId &&
-    teams.some((team) => team.id === currentUserTeamId),
+    teams.some((team) => team.id === currentUserTeamId) &&
+    (
+      meetStatus === "ATTENDANCE" ||
+      (meetStatus === "DRAFT" && canAcquireMeetLock)
+    ),
   );
-  const canEditAttendance = canEdit || canDraftCoachEditAttendanceWithoutLock;
+  const canEditAttendance = canEdit || canCoachEditOwnAttendanceWithoutLock;
   const canApplyCheckpoint = canEdit && isMeetCoordinator;
   const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
   const isCoachOnMeetTeam = Boolean(
@@ -1410,13 +1421,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId &&
     teams.some((team) => team.id === currentUserTeamId),
   );
+  const canCoachManageOwnScratchesWithoutLock = Boolean(
+    currentUserRole === "COACH" &&
+    !isMeetCoordinator &&
+    currentUserTeamId &&
+    teams.some((team) => team.id === currentUserTeamId) &&
+    canAcquireMeetLock,
+  );
   const canViewScratches =
     meetStatus === "READY_FOR_CHECKIN" &&
     (isMeetCoordinator || currentUserRole === "ADMIN" || isCoachOnMeetTeam);
+  const canViewScratchMatchWorkspace =
+    meetStatus === "READY_FOR_CHECKIN" &&
+    (isMeetCoordinator || currentUserRole === "ADMIN" || canAcquireMeetLock);
   const scratchManageTeamIds =
     currentUserRole === "ADMIN" || isMeetCoordinator
       ? teams.map((team) => team.id)
-      : isCoachOnMeetTeam && currentUserTeamId
+      : canCoachManageOwnScratchesWithoutLock && currentUserTeamId
         ? [currentUserTeamId]
         : [];
   const canManageScratchEntry = canViewScratches && scratchManageTeamIds.length > 0;
@@ -1844,6 +1865,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingsTableFontSize(readStoredPairingsTableFontSize(PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY));
     setPairingsTableFontSizeReady(true);
   }, []);
+  useLayoutEffect(() => {
+    setMatBoardShowTeamSymbols(readStoredMatboardShowTeamSymbols());
+    setMatBoardShowTeamSymbolsReady(true);
+  }, []);
   useEffect(() => {
     if (!pairingsTableFontSizeOpen) return;
     pairingsTableFontSizeInputRef.current?.focus();
@@ -1862,6 +1887,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!pairingsTableFontSizeReady) return;
     window.localStorage.setItem(PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY, String(pairingsTableFontSize));
   }, [pairingsTableFontSize, pairingsTableFontSizeReady]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!matBoardShowTeamSymbolsReady) return;
+    window.localStorage.setItem(MATBOARD_SHOW_TEAM_SYMBOLS_STORAGE_KEY, String(matBoardShowTeamSymbols));
+  }, [matBoardShowTeamSymbols, matBoardShowTeamSymbolsReady]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const update = () => setIsNarrowScreen(window.innerWidth <= 980);
@@ -2109,6 +2139,28 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setMatRefreshIndex(idx => idx + 1);
     setWallRefreshIndex(idx => idx + 1);
   }, [load, loadActivity]);
+
+  const refreshWrestlersAfterAttendanceFlagChange = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/meets/${meetId}/wrestlers`, { cache: "no-store" });
+      if (res.ok) {
+        const wrestlersJson = await res.json().catch(() => null);
+        const nextTeams = Array.isArray(wrestlersJson?.teams) ? wrestlersJson.teams : [];
+        const nextWrestlers = Array.isArray(wrestlersJson?.wrestlers) ? wrestlersJson.wrestlers : [];
+        setTeams(nextTeams);
+        setWrestlers(nextWrestlers);
+        setCandidateRefreshVersion((prev) => prev + 1);
+        const nextMap: Record<string, Wrestler | undefined> = {};
+        for (const wrestler of nextWrestlers as Wrestler[]) nextMap[wrestler.id] = wrestler;
+        setWMap(nextMap);
+      }
+    } catch {
+      // Keep current view if the lightweight refresh fails.
+    }
+    void loadActivity();
+    setMatRefreshIndex(idx => idx + 1);
+    setWallRefreshIndex(idx => idx + 1);
+  }, [loadActivity, meetId]);
 
   useEffect(() => {
     if (attendingByTeam.length === 0) {
@@ -2375,7 +2427,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       const payload = await res.json().catch(() => null);
       throw new Error(payload?.error ?? `Unable to update attendance (${res.status}).`);
     }
-    await refreshAfterAttendanceChange();
+    if (isNotAttending(status)) {
+      await refreshAfterAttendanceChange();
+    } else {
+      await refreshWrestlersAfterAttendanceFlagChange();
+    }
     if (isNotAttending(status)) {
       setTarget(null);
       setCandidates([]);
@@ -4290,12 +4346,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               showNoReplyColumn={meetStatus !== "DRAFT"}
               showStatusAttribution={meetStatus === "ATTENDANCE"}
               editableTeamId={
-                canDraftCoachEditAttendanceWithoutLock && !isMeetCoordinator
+                canCoachEditOwnAttendanceWithoutLock && !isMeetCoordinator
                   ? currentUserTeamId
                   : null
               }
-              lockRequired={!canDraftCoachEditAttendanceWithoutLock}
-              readOnly={meetStatus === "ATTENDANCE" || !canEditAttendance}
+              lockRequired={!canCoachEditOwnAttendanceWithoutLock}
+              readOnly={!canEditAttendance}
               onEnsureLock={ensureMeetLock}
               onRefresh={load}
               onRegisterSaveHandler={(handler) => {
@@ -4387,7 +4443,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   aria-label="Adjust pairings table font size"
                   aria-expanded={pairingsTableFontSizeOpen}
                   title="Adjust the pairings table font size"
-                  style={{ padding: "6px 8px", lineHeight: 1 }}
+                  style={{ padding: "8px 10px", lineHeight: 1 }}
                 >
                   <span
                     aria-hidden="true"
@@ -4413,6 +4469,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
                     }}
                   >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                      Change font size
+                    </div>
                     <div style={{ position: "relative", overflow: "visible" }}>
                       {pairingsTableFontSizeSliding && (
                         <span
@@ -5783,6 +5842,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             checkpoints={checkpoints}
             targetMatchesPerWrestler={matchesPerWrestler ?? savedMatchesPerWrestler}
             teamCheckins={teamCheckins}
+            canViewScratchMatchWorkspace={canViewScratchMatchWorkspace}
             canManageScratchEntry={canManageScratchEntry}
             canManageScratchMatches={canManageScratchMatches}
             manageableTeamIds={scratchManageTeamIds}

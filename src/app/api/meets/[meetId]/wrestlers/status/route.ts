@@ -23,16 +23,29 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       deletedAt: true,
       status: true,
       homeTeam: { select: { headCoachId: true } },
+      meetTeams: { select: { teamId: true } },
+      lockAccesses: {
+        where: { userId: user.id },
+        select: { userId: true },
+      },
     },
   });
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
   const isCoordinator = meet.homeTeam?.headCoachId === user.id;
+  const meetPhase = normalizeMeetPhase(meet.status);
+  const meetTeamIds = new Set(meet.meetTeams.map((entry) => entry.teamId));
+  const userTeamId = user.teamId;
+  const isCoachOnMeetTeam = userTeamId !== null && meetTeamIds.has(userTeamId);
+  const hasCoordinatorGrant = meet.lockAccesses.length > 0;
   const allowCoachWithoutLock =
-    normalizeMeetPhase(meet.status) === "DRAFT" &&
-    user.role === "COACH" &&
-    Boolean(user.teamId);
+    !isCoordinator &&
+    userTeamId !== null &&
+    (
+      meetPhase === "ATTENDANCE" ||
+      (meetPhase === "DRAFT" && isCoachOnMeetTeam && hasCoordinatorGrant)
+    );
   if (!allowCoachWithoutLock) {
     try {
       await requireMeetLock(meetId, user.id, user.role);
@@ -56,9 +69,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     select: { teamId: true },
   });
   if (!inMeet) return NextResponse.json({ error: "Wrestler not in this meet" }, { status: 400 });
-  if (allowCoachWithoutLock && !isCoordinator && wrestler.teamId !== user.teamId) {
+  if (allowCoachWithoutLock && wrestler.teamId !== userTeamId) {
     return NextResponse.json(
-      { error: "Coaches may only edit attendance for their own team during Draft." },
+      { error: "Coaches may only edit attendance for their own team during Attendance, or during Draft if they have edit access." },
       { status: 403 },
     );
   }
@@ -107,5 +120,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     `Attendance: ${wrestler.first} ${wrestler.last} -> ${statusLabel.replace(/_/g, " ").toLowerCase()}.`
   );
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    wrestler: {
+      id: body.wrestlerId,
+      status: body.status,
+      statusChangedByUsername: body.status === null ? null : attribution.lastChangedByUsername,
+      statusChangedByRole: body.status === null ? null : attribution.lastChangedByRole,
+      statusChangedSource: body.status === null ? null : attribution.lastChangedSource,
+      statusChangedAt: body.status === null
+        ? null
+        : attribution.lastChangedAt.toISOString(),
+    },
+  });
 }

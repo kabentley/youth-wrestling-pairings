@@ -37,8 +37,8 @@ type WallChartPayload = {
   wrestlers: Wrestler[];
 };
 
-const TEAM_MEMBERS_PER_PAGE = 33;
-const MAT_BOUTS_PER_PAGE = 40;
+const TEAM_MEMBERS_PER_PAGE = 32;
+const MAT_BOUTS_PER_PAGE = 35;
 
 export default function WallChartTab({
   meetId,
@@ -136,9 +136,13 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               background: #fff;
               border-bottom: 1px solid #d0d5df;
               z-index: 5;
+              line-height: 1.2;
             }
             .wall-chart-root {
               padding-top: 54px;
+              font-family: system-ui !important;
+              font-size: 12px !important;
+              line-height: 1.2 !important;
             }
             .wall-chart-root .noprint { display: none; }
             .wall-chart-root .mat-toggle-bar { display: none !important; }
@@ -152,6 +156,56 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             .wall-chart-root .team-block {
               border: none !important;
               border-radius: 0 !important;
+            }
+            .wall-chart-root .mat-table {
+              font-size: 11px !important;
+            }
+            .wall-chart-root .mat-col-bout {
+              width: 46px !important;
+            }
+            .wall-chart-root .mat-col-name {
+              width: 200px !important;
+            }
+            .wall-chart-root .mat-table th,
+            .wall-chart-root .mat-table td {
+              padding: 2px 4px !important;
+              line-height: 1.5 !important;
+            }
+            .wall-chart-root .mat-table td.mat-wrestler-name {
+              font-size: 13px !important;
+              line-height: 1.5 !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+            }
+            .wall-chart-root .mat-header,
+            .wall-chart-root .team-header {
+              font-size: 16px !important;
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .team-name,
+            .wall-chart-root .card-meet-label {
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .mat-empty,
+            .wall-chart-root .team-empty {
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .team-table {
+              font-size: 12px !important;
+            }
+            .wall-chart-root .team-table th,
+            .wall-chart-root .team-table td {
+              font-size: 12px !important;
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .match-line {
+              font-size: 12px !important;
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .team-empty {
+              font-size: 12px !important;
+              line-height: 1.2 !important;
             }
           }
           .wall-chart-root {
@@ -203,7 +257,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             font-size: 11px;
           }
           .wall-chart-root .mat-col-bout {
-            width: 56px;
+            width: 46px;
           }
           .wall-chart-root .mat-col-name {
             width: 180px;
@@ -216,6 +270,14 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           }
           .wall-chart-root .mat-table td.mat-wrestler-name {
             font-size: 13px;
+          }
+          .wall-chart-root .mat-table th.mat-bout-number,
+          .wall-chart-root .mat-table td.mat-bout-number {
+            text-align: center;
+          }
+          .wall-chart-root .mat-table th.mat-wrestler-header {
+            text-align: center;
+            font-size: 14px;
           }
           .wall-chart-root .mat-table th {
             background: #f7f9fb;
@@ -514,21 +576,32 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           }
           .wall-chart-root .team-table {
             border-collapse: collapse;
-            font-size: 11px;
+            font-size: 14px;
+            width: 100%;
+          }
+          .wall-chart-root .team-col-name {
+            width: 190px;
           }
           .wall-chart-root .team-table th,
           .wall-chart-root .team-table td {
             border: 1px solid #eee;
-            padding: 1px 3px;
-            line-height: 1.1;
+            padding: 2px 4px;
             text-align: left;
+          }
+          .wall-chart-root .team-table td:first-child,
+          .wall-chart-root .team-table .wrestler-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .wall-chart-root .match-line {
             display: flex;
             flex-wrap: wrap;
             align-items: baseline;
-            gap: 18px;
-            font-size: 11px;
+            column-gap: 18px;
+            row-gap: 2px;
+            font-size: 14px;
+            line-height: 1.1;
           }
           .wall-chart-root .match-chip {
             display: inline-flex;
@@ -542,12 +615,8 @@ function chunkArray<T>(items: T[], size: number): T[][] {
           .wall-chart-root .match-opponent {
             font-weight: 400;
           }
-          .wall-chart-root .wrestler-name,
-          .wall-chart-root .match-opponent {
-            font-size: 13px;
-          }
           .wall-chart-root .team-empty {
-            font-size: 11px;
+            font-size: 14px;
             color: #555;
             margin: 0 0 12px 0;
           }
@@ -814,9 +883,9 @@ function chunkArray<T>(items: T[], size: number): T[][] {
                           </colgroup>
                           <thead>
                             <tr>
-                              <th>Bout #</th>
-                              <th>Wrestler 1</th>
-                              <th>Wrestler 2</th>
+                              <th className="mat-bout-number">Bout #</th>
+                              <th className="mat-wrestler-header">Wrestler 1</th>
+                              <th className="mat-wrestler-header">Wrestler 2</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -824,7 +893,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
                               const t = cellText(bout);
                               return (
                                 <tr key={bout.id}>
-                                  <td>{boutNumber}</td>
+                                  <td className="mat-bout-number">{boutNumber}</td>
                                   <td className="mat-wrestler-name" style={{ color: t.redColor }}>{t.red}</td>
                                   <td className="mat-wrestler-name" style={{ color: t.greenColor }}>{t.green}</td>
                                 </tr>
@@ -857,6 +926,10 @@ function chunkArray<T>(items: T[], size: number): T[][] {
                   <p className="team-empty">No wrestlers recorded.</p>
                 ) : (
                   <table className="team-table">
+                    <colgroup>
+                      <col className="team-col-name" />
+                      <col />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>Name</th>

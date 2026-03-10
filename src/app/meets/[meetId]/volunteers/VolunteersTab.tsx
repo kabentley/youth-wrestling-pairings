@@ -788,6 +788,9 @@ export default function VolunteersTab({
                     boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
                   }}
                 >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                    Change font size
+                  </div>
                   <div style={{ position: "relative", overflow: "visible" }}>
                     {volunteersFontSizeSliding && (
                       <span
