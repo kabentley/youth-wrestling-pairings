@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 type Team = { id: string; name: string; symbol?: string; color?: string };
@@ -41,6 +41,24 @@ type MatRuleRange = {
 };
 const keyMat = (m: number) => String(m);
 const MAX_MATS = 8;
+const MATBOARD_FONT_SIZE_STORAGE_KEY = "matboardTableFontSize";
+const DEFAULT_MATBOARD_FONT_SIZE = 14;
+const MIN_MATBOARD_FONT_SIZE = 10;
+const MAX_MATBOARD_FONT_SIZE = 22;
+
+function clampMatboardFontSize(value: number) {
+  return Math.max(MIN_MATBOARD_FONT_SIZE, Math.min(MAX_MATBOARD_FONT_SIZE, Math.round(value)));
+}
+
+function readStoredMatboardFontSize(key: string) {
+  if (typeof window === "undefined") return DEFAULT_MATBOARD_FONT_SIZE;
+  const stored = window.localStorage.getItem(key);
+  if (!stored) return DEFAULT_MATBOARD_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed)
+    ? clampMatboardFontSize(parsed)
+    : DEFAULT_MATBOARD_FONT_SIZE;
+}
 
 interface MatBoardTabProps {
   meetId: string;
@@ -154,6 +172,12 @@ export default function MatBoardTab({
   const [conflictGap, setConflictGap] = useState(4);
   const [msg, setMsg] = useState("");
   const [authMsg, setAuthMsg] = useState("");
+  const [matboardFontSize, setMatboardFontSize] = useState(DEFAULT_MATBOARD_FONT_SIZE);
+  const [matboardFontSizeReady, setMatboardFontSizeReady] = useState(false);
+  const [matboardFontSizeOpen, setMatboardFontSizeOpen] = useState(false);
+  const [matboardFontSizeSliding, setMatboardFontSizeSliding] = useState(false);
+  const matboardFontSizeControlRef = useRef<HTMLDivElement | null>(null);
+  const matboardFontSizeInputRef = useRef<HTMLInputElement | null>(null);
   const [matRuleColors, setMatRuleColors] = useState<Record<number, string | null>>({});
   const [matRulesByMat, setMatRulesByMat] = useState<Partial<Record<number, MatRuleRange>>>({});
   const [meetSettings, setMeetSettings] = useState<{
@@ -198,6 +222,29 @@ export default function MatBoardTab({
   useEffect(() => {
     void load();
   }, [meetId, refreshIndex]);
+  useLayoutEffect(() => {
+    setMatboardFontSize(readStoredMatboardFontSize(MATBOARD_FONT_SIZE_STORAGE_KEY));
+    setMatboardFontSizeReady(true);
+  }, []);
+  useEffect(() => {
+    if (!matboardFontSizeOpen) return;
+    matboardFontSizeInputRef.current?.focus();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (matboardFontSizeControlRef.current?.contains(target)) return;
+      setMatboardFontSizeOpen(false);
+      setMatboardFontSizeSliding(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [matboardFontSizeOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!matboardFontSizeReady) return;
+    window.localStorage.setItem(MATBOARD_FONT_SIZE_STORAGE_KEY, String(matboardFontSize));
+  }, [matboardFontSize, matboardFontSizeReady]);
 
   useEffect(() => {
     const img = new Image();
@@ -1356,14 +1403,29 @@ export default function MatBoardTab({
   const matColumnCount = Math.max(1, numMats);
   const matColumnMinWidth = 280;
   const matGridMinWidth = matColumnCount * matColumnMinWidth + Math.max(0, matColumnCount - 1) * 10;
+  const matboardFontSliderPercent =
+    ((matboardFontSize - MIN_MATBOARD_FONT_SIZE)
+      / (MAX_MATBOARD_FONT_SIZE - MIN_MATBOARD_FONT_SIZE))
+    * 100;
+  const matboardFontStyle = {
+    "--matboard-row-font-size": `${Math.max(10, matboardFontSize - 3)}px`,
+    "--matboard-number-font-size": `${Math.max(11, matboardFontSize - 2)}px`,
+    "--matboard-wrestler-font-size": `${matboardFontSize}px`,
+    "--matboard-row-font-size-mobile": `${Math.max(10, matboardFontSize - 4)}px`,
+  } as CSSProperties;
 
   return (
     <section
       className={`matboard-tab${canEdit ? "" : " readonly"}`}
       onDragOverCapture={handleDragPreviewMove}
+      style={matboardFontStyle}
     >
       <style>{`
         .matboard-tab {
+          --matboard-row-font-size: 11px;
+          --matboard-number-font-size: 12px;
+          --matboard-wrestler-font-size: 14px;
+          --matboard-row-font-size-mobile: 10px;
           background: #fff;
           border-radius: 10px;
           padding: 8px;
@@ -1567,13 +1629,13 @@ export default function MatBoardTab({
           display: grid;
           grid-template-columns: max-content max-content 1fr 1fr;
           gap: 0;
-          font-size: 11px;
+          font-size: var(--matboard-row-font-size, 11px);
           opacity: 0.9;
           align-items: center;
           padding: 0;
         }
         .bout-row span.number {
-          font-size: 12px;
+          font-size: var(--matboard-number-font-size, 12px);
           font-weight: 600;
           color: #1d232b;
           text-align: center;
@@ -1588,7 +1650,7 @@ export default function MatBoardTab({
         }
         .bout-row span[data-role="wrestler"] {
           font-weight: 500;
-          font-size: 14px;
+          font-size: var(--matboard-wrestler-font-size, 14px);
           cursor: pointer;
           border-radius: 3px;
           padding: 0 2px;
@@ -1740,7 +1802,7 @@ export default function MatBoardTab({
         }
         .bout-row {
           grid-template-columns: max-content max-content 1fr 1fr;
-          font-size: 10px;
+          font-size: var(--matboard-row-font-size-mobile, 10px);
           gap: 0;
           padding: 0;
         }
@@ -1760,6 +1822,107 @@ export default function MatBoardTab({
             >
               Reorder all
             </button>
+            <div
+              ref={matboardFontSizeControlRef}
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                color: "#4b5563",
+              }}
+            >
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={() => {
+                  setMatboardFontSizeOpen(open => !open);
+                  setMatboardFontSizeSliding(false);
+                }}
+                aria-label="Adjust mat assignments table font size"
+                aria-expanded={matboardFontSizeOpen}
+                title="Adjust the mat assignments font size"
+                style={{ padding: "6px 8px", lineHeight: 1 }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+                >
+                  <span style={{ fontSize: 18 }}>A</span>
+                  <span style={{ fontSize: 13 }}>A</span>
+                </span>
+              </button>
+              {matboardFontSizeOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    zIndex: 40,
+                    width: 220,
+                    padding: "10px 12px",
+                    border: "1px solid #d5dbe2",
+                    borderRadius: 10,
+                    background: "#ffffff",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+                  }}
+                >
+                  <div style={{ position: "relative", overflow: "visible" }}>
+                    {matboardFontSizeSliding && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: `calc(${matboardFontSliderPercent}% - 2px)`,
+                          top: -18,
+                          transform: "translateX(-50%)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#1f2937",
+                          background: "#ffffff",
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {matboardFontSize}px
+                      </span>
+                    )}
+                    <input
+                      ref={matboardFontSizeInputRef}
+                      type="range"
+                      min={MIN_MATBOARD_FONT_SIZE}
+                      max={MAX_MATBOARD_FONT_SIZE}
+                      step={1}
+                      value={matboardFontSize}
+                      onChange={event => setMatboardFontSize(clampMatboardFontSize(Number(event.target.value)))}
+                      onPointerDown={() => setMatboardFontSizeSliding(true)}
+                      onPointerUp={() => {
+                        setMatboardFontSizeSliding(false);
+                        setMatboardFontSizeOpen(false);
+                      }}
+                      onPointerCancel={() => {
+                        setMatboardFontSizeSliding(false);
+                        setMatboardFontSizeOpen(false);
+                      }}
+                      onBlur={() => {
+                        setMatboardFontSizeSliding(false);
+                        setMatboardFontSizeOpen(false);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === "Escape") {
+                          setMatboardFontSizeSliding(false);
+                          setMatboardFontSizeOpen(false);
+                        }
+                      }}
+                      aria-label="Adjust mat assignments table font size"
+                      style={{ width: "100%", margin: 0 }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
             <label className="matboard-italic-control">
               <input
                 type="checkbox"

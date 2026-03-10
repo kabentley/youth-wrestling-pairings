@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 
@@ -53,6 +53,25 @@ type MatRulesPayload = {
     color?: string | null;
   }>;
 };
+
+const VOLUNTEERS_FONT_SIZE_STORAGE_KEY = "volunteersTableFontSize";
+const DEFAULT_VOLUNTEERS_FONT_SIZE = 13;
+const MIN_VOLUNTEERS_FONT_SIZE = 10;
+const MAX_VOLUNTEERS_FONT_SIZE = 22;
+
+function clampVolunteersFontSize(value: number) {
+  return Math.max(MIN_VOLUNTEERS_FONT_SIZE, Math.min(MAX_VOLUNTEERS_FONT_SIZE, Math.round(value)));
+}
+
+function readStoredVolunteersFontSize() {
+  if (typeof window === "undefined") return DEFAULT_VOLUNTEERS_FONT_SIZE;
+  const stored = window.localStorage.getItem(VOLUNTEERS_FONT_SIZE_STORAGE_KEY);
+  if (!stored) return DEFAULT_VOLUNTEERS_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed)
+    ? clampVolunteersFontSize(parsed)
+    : DEFAULT_VOLUNTEERS_FONT_SIZE;
+}
 
 function roleLabel(role: VolunteerRole) {
   if (role === "COACH") return "Coach";
@@ -133,6 +152,12 @@ export default function VolunteersTab({
   const [matColors, setMatColors] = useState<Record<number, string>>({});
   const [pendingMovedCount, setPendingMovedCount] = useState<number | null>(null);
   const [movingVolunteerId, setMovingVolunteerId] = useState<string | null>(null);
+  const [volunteersFontSize, setVolunteersFontSize] = useState(DEFAULT_VOLUNTEERS_FONT_SIZE);
+  const [volunteersFontSizeReady, setVolunteersFontSizeReady] = useState(false);
+  const [volunteersFontSizeOpen, setVolunteersFontSizeOpen] = useState(false);
+  const [volunteersFontSizeSliding, setVolunteersFontSizeSliding] = useState(false);
+  const volunteersFontSizeControlRef = useRef<HTMLDivElement | null>(null);
+  const volunteersFontSizeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -180,6 +205,28 @@ export default function VolunteersTab({
       mounted = false;
     };
   }, [meetId, canEdit]);
+  useLayoutEffect(() => {
+    setVolunteersFontSize(readStoredVolunteersFontSize());
+    setVolunteersFontSizeReady(true);
+  }, []);
+  useEffect(() => {
+    if (!volunteersFontSizeOpen) return;
+    volunteersFontSizeInputRef.current?.focus();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (volunteersFontSizeControlRef.current?.contains(target)) return;
+      setVolunteersFontSizeOpen(false);
+      setVolunteersFontSizeSliding(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [volunteersFontSizeOpen]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!volunteersFontSizeReady) return;
+    window.localStorage.setItem(VOLUNTEERS_FONT_SIZE_STORAGE_KEY, String(volunteersFontSize));
+  }, [volunteersFontSize, volunteersFontSizeReady]);
 
   const volunteers = payload?.volunteers ?? [];
   const meet = payload?.meet ?? null;
@@ -339,6 +386,16 @@ export default function VolunteersTab({
   }, [volunteers]);
   const noMatUpdatesNeeded = dirtyMats.length === 0;
   const matchesToMove = pendingMovedCount ?? 0;
+  const volunteersFontSliderPercent =
+    ((volunteersFontSize - MIN_VOLUNTEERS_FONT_SIZE)
+      / (MAX_VOLUNTEERS_FONT_SIZE - MIN_VOLUNTEERS_FONT_SIZE))
+    * 100;
+  const volunteersFontStyle = {
+    "--volunteers-title-font-size": `${volunteersFontSize + 1}px`,
+    "--volunteers-line-font-size": `${volunteersFontSize}px`,
+    "--volunteers-kid-font-size": `${Math.max(10, volunteersFontSize - 1)}px`,
+    "--volunteers-bout-font-size": `${Math.max(10, volunteersFontSize - 2)}px`,
+  } as CSSProperties;
   const updateButtonDisabled = saving || updatingBouts || Boolean(movingVolunteerId) || matchesToMove <= 0;
   const updateButtonTooltip =
     matchesToMove <= 0
@@ -526,7 +583,7 @@ export default function VolunteersTab({
     .volunteers-mat-title,
     .volunteers-pool-title {
       font-weight: 700;
-      font-size: 14px;
+      font-size: var(--volunteers-title-font-size, 14px);
       color: #203040;
     }
     .volunteers-mat-title {
@@ -582,7 +639,7 @@ export default function VolunteersTab({
       align-items: center;
       justify-content: space-between;
       gap: 8px;
-      font-size: 13px;
+      font-size: var(--volunteers-line-font-size, 13px);
       font-weight: 700;
       color: #1f2f41;
     }
@@ -591,7 +648,7 @@ export default function VolunteersTab({
       align-items: flex-start;
       gap: 8px;
       margin-top: 2px;
-      font-size: 13px;
+      font-size: var(--volunteers-line-font-size, 13px);
       color: #59687a;
       line-height: 1.25;
       white-space: normal;
@@ -608,7 +665,7 @@ export default function VolunteersTab({
       align-items: flex-start;
       flex-wrap: wrap;
       gap: 4px;
-      font-size: 12px;
+      font-size: var(--volunteers-kid-font-size, 12px);
       line-height: 1.25;
       color: #4f6073;
     }
@@ -625,7 +682,7 @@ export default function VolunteersTab({
       padding: 1px 7px;
       background: #ffffff;
       color: #233446;
-      font-size: 11px;
+      font-size: var(--volunteers-bout-font-size, 11px);
       font-weight: 600;
     }
     .volunteer-bout-chip.wrong-mat {
@@ -658,7 +715,7 @@ export default function VolunteersTab({
   if (!payload) return null;
 
   return (
-    <div className="volunteers-tab">
+    <div className="volunteers-tab" style={volunteersFontStyle}>
       <style>{styles}</style>
       <div className="volunteers-toolbar">
         {canEdit && (
@@ -676,9 +733,118 @@ export default function VolunteersTab({
           </div>
         )}
         <div className="volunteers-help-note">
-          {canEdit
-            ? "Drag volunteers to assign mats. Click on cards to move their kids' bouts to their mat. Badge colors: red = wrong mat, yellow = parents on different mats."
-            : "Badge colors: red = wrong mat, yellow = parents on different mats."}
+          {canEdit && "Drag volunteers to assign mats. Click on cards to move their kids' bouts to their mat. "}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>Badge colors:</span>
+            <span>red = wrong mat, yellow = parents on different mats.</span>
+            <span
+              ref={volunteersFontSizeControlRef}
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                color: "#4b5563",
+              }}
+            >
+              <button
+                type="button"
+                className="volunteers-btn"
+                onClick={() => {
+                  setVolunteersFontSizeOpen(open => !open);
+                  setVolunteersFontSizeSliding(false);
+                }}
+                aria-label="Adjust volunteers font size"
+                aria-expanded={volunteersFontSizeOpen}
+                title="Adjust the volunteers font size"
+                style={{
+                  borderColor: "#d5dbe2",
+                  background: "#fff",
+                  color: "#1d232b",
+                  padding: "6px 8px",
+                  lineHeight: 1,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+                >
+                  <span style={{ fontSize: 18 }}>A</span>
+                  <span style={{ fontSize: 13 }}>A</span>
+                </span>
+              </button>
+              {volunteersFontSizeOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    zIndex: 40,
+                    width: 220,
+                    padding: "10px 12px",
+                    border: "1px solid #d5dbe2",
+                    borderRadius: 10,
+                    background: "#ffffff",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+                  }}
+                >
+                  <div style={{ position: "relative", overflow: "visible" }}>
+                    {volunteersFontSizeSliding && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: `calc(${volunteersFontSliderPercent}% - 2px)`,
+                          top: -18,
+                          transform: "translateX(-50%)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#1f2937",
+                          background: "#ffffff",
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {volunteersFontSize}px
+                      </span>
+                    )}
+                    <input
+                      ref={volunteersFontSizeInputRef}
+                      type="range"
+                      min={MIN_VOLUNTEERS_FONT_SIZE}
+                      max={MAX_VOLUNTEERS_FONT_SIZE}
+                      step={1}
+                      value={volunteersFontSize}
+                      onChange={event => setVolunteersFontSize(clampVolunteersFontSize(Number(event.target.value)))}
+                      onPointerDown={() => setVolunteersFontSizeSliding(true)}
+                      onPointerUp={() => {
+                        setVolunteersFontSizeSliding(false);
+                        setVolunteersFontSizeOpen(false);
+                      }}
+                      onPointerCancel={() => {
+                        setVolunteersFontSizeSliding(false);
+                        setVolunteersFontSizeOpen(false);
+                      }}
+                      onBlur={() => {
+                        setVolunteersFontSizeSliding(false);
+                        setVolunteersFontSizeOpen(false);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === "Escape") {
+                          setVolunteersFontSizeSliding(false);
+                          setVolunteersFontSizeOpen(false);
+                        }
+                      }}
+                      aria-label="Adjust volunteers font size"
+                      style={{ width: "100%", margin: 0 }}
+                    />
+                  </div>
+                </div>
+              )}
+            </span>
+          </span>
         </div>
       </div>
       {!canEdit && !hideReadonlyEditNotice && (

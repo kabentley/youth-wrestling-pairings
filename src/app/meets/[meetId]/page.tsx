@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import AttendanceTab from "./attendance/AttendanceTab";
@@ -34,6 +34,25 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
   }, []);
   if (!mounted) return null;
   return createPortal(children, document.body);
+}
+
+const PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY = "pairingsTableFontSize";
+const DEFAULT_PAIRINGS_TABLE_FONT_SIZE = 14;
+const MIN_PAIRINGS_TABLE_FONT_SIZE = 10;
+const MAX_PAIRINGS_TABLE_FONT_SIZE = 22;
+
+function clampPairingsTableFontSize(value: number) {
+  return Math.max(MIN_PAIRINGS_TABLE_FONT_SIZE, Math.min(MAX_PAIRINGS_TABLE_FONT_SIZE, Math.round(value)));
+}
+
+function readStoredPairingsTableFontSize(key: string) {
+  if (typeof window === "undefined") return DEFAULT_PAIRINGS_TABLE_FONT_SIZE;
+  const stored = window.localStorage.getItem(key);
+  if (!stored) return DEFAULT_PAIRINGS_TABLE_FONT_SIZE;
+  const parsed = Number(stored);
+  return Number.isFinite(parsed)
+    ? clampPairingsTableFontSize(parsed)
+    : DEFAULT_PAIRINGS_TABLE_FONT_SIZE;
 }
 
 
@@ -332,6 +351,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [sharedPairingsColWidths, setSharedPairingsColWidths] = useState([110, 95, 45, 60, 60, 45, 45, 70, 70]);
   const pairingsTableWrapperRef = useRef<HTMLDivElement | null>(null);
   const [pairingsTableWidth, setPairingsTableWidth] = useState<number | null>(null);
+  const [pairingsTableFontSize, setPairingsTableFontSize] = useState(DEFAULT_PAIRINGS_TABLE_FONT_SIZE);
+  const [pairingsTableFontSizeReady, setPairingsTableFontSizeReady] = useState(false);
+  const [pairingsTableFontSizeOpen, setPairingsTableFontSizeOpen] = useState(false);
+  const [pairingsTableFontSizeSliding, setPairingsTableFontSizeSliding] = useState(false);
+  const pairingsTableFontSizeControlRef = useRef<HTMLDivElement | null>(null);
+  const pairingsTableFontSizeInputRef = useRef<HTMLInputElement | null>(null);
   const [currentBoutColWidth, setCurrentBoutColWidth] = useState(66);
   const [currentTeamColWidth, setCurrentTeamColWidth] = useState(70);
   const [currentSourceColWidth, setCurrentSourceColWidth] = useState(80);
@@ -539,6 +564,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [homeTeamId, setHomeTeamId] = useState<string | null>(null);
   const [meetLocation, setMeetLocation] = useState<string | null>(null);
   const [matBoardShowTeamSymbols, setMatBoardShowTeamSymbols] = useState(false);
+  const pairingsTableFontSliderPercent =
+    ((pairingsTableFontSize - MIN_PAIRINGS_TABLE_FONT_SIZE)
+      / (MAX_PAIRINGS_TABLE_FONT_SIZE - MIN_PAIRINGS_TABLE_FONT_SIZE))
+    * 100;
   // Keep the home team first in the pairings tab order.
   const orderedPairingsTeams = useMemo(() => {
     if (!homeTeamId) return teams;
@@ -1225,7 +1254,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           typeof meetJson.restGap === "number" ? meetJson.restGap : 4,
         );
       }
-      setMeetLoaded(true);
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
       setCurrentUsername(meJson?.username ?? null);
@@ -1236,6 +1264,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setCurrentUserRole(null);
       setCurrentUserTeamId(null);
     }
+      setMeetLoaded(true);
     if (rRes.ok) {
       const rejectedJson = await rRes.json().catch(() => ({}));
       const rows = Array.isArray(rejectedJson?.pairs) ? rejectedJson.pairs : [];
@@ -1811,6 +1840,28 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setPairingsTableWidth(Math.floor(wrapper.getBoundingClientRect().width));
     return () => observer.disconnect();
   }, []);
+  useLayoutEffect(() => {
+    setPairingsTableFontSize(readStoredPairingsTableFontSize(PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY));
+    setPairingsTableFontSizeReady(true);
+  }, []);
+  useEffect(() => {
+    if (!pairingsTableFontSizeOpen) return;
+    pairingsTableFontSizeInputRef.current?.focus();
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (pairingsTableFontSizeControlRef.current?.contains(target)) return;
+      setPairingsTableFontSizeOpen(false);
+      setPairingsTableFontSizeSliding(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [pairingsTableFontSizeOpen]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!pairingsTableFontSizeReady) return;
+    window.localStorage.setItem(PAIRINGS_TABLE_FONT_SIZE_STORAGE_KEY, String(pairingsTableFontSize));
+  }, [pairingsTableFontSize, pairingsTableFontSizeReady]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const update = () => setIsNarrowScreen(window.innerWidth <= 980);
@@ -3042,7 +3093,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           background: #fff7cc;
         }
         .pairings-table th,
-        .pairings-table td,
+        .pairings-table td {
+          padding: 3px 6px;
+          line-height: 1.2;
+          font-size: var(--pairings-table-font-size, 14px);
+        }
         .attendance-table th,
         .attendance-table td {
           padding: 3px 6px;
@@ -4251,7 +4306,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         )}
 
         {activeTab === "pairings" && (
-          <div className={`pairings-pane${canEdit ? "" : " readonly"}`}>
+          <div
+            className={`pairings-pane${canEdit ? "" : " readonly"}`}
+            style={
+              {
+                "--pairings-table-font-size": `${pairingsTableFontSize}px`,
+              } as CSSProperties
+            }
+          >
           {authMsg && (
             <div className="notice">
               {authMsg}
@@ -4300,12 +4362,113 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               style={{
                 display: "flex",
                 gap: 8,
-                flexWrap: "nowrap",
+                flexWrap: isNarrowScreen ? "wrap" : "nowrap",
                 alignItems: "center",
                 flex: "0 0 auto",
                 alignSelf: isNarrowScreen ? "stretch" : "auto",
               }}
             >
+              <div
+                ref={pairingsTableFontSizeControlRef}
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  color: "#4b5563",
+                }}
+              >
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => {
+                    setPairingsTableFontSizeOpen(open => !open);
+                    setPairingsTableFontSizeSliding(false);
+                  }}
+                  aria-label="Adjust pairings table font size"
+                  aria-expanded={pairingsTableFontSizeOpen}
+                  title="Adjust the pairings table font size"
+                  style={{ padding: "6px 8px", lineHeight: 1 }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+                  >
+                    <span style={{ fontSize: 18 }}>A</span>
+                    <span style={{ fontSize: 13 }}>A</span>
+                  </span>
+                </button>
+                {pairingsTableFontSizeOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      zIndex: 40,
+                      width: Math.max(isNarrowScreen ? 180 : 220, 180),
+                      padding: "10px 12px",
+                      border: "1px solid #d5dbe2",
+                      borderRadius: 10,
+                      background: "#ffffff",
+                      boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+                    }}
+                  >
+                    <div style={{ position: "relative", overflow: "visible" }}>
+                      {pairingsTableFontSizeSliding && (
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: `calc(${pairingsTableFontSliderPercent}% - 2px)`,
+                            top: -18,
+                            transform: "translateX(-50%)",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "#1f2937",
+                            background: "#ffffff",
+                            padding: "1px 6px",
+                            borderRadius: 999,
+                            boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                            pointerEvents: "none",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {pairingsTableFontSize}px
+                        </span>
+                      )}
+                      <input
+                        ref={pairingsTableFontSizeInputRef}
+                        type="range"
+                        min={MIN_PAIRINGS_TABLE_FONT_SIZE}
+                        max={MAX_PAIRINGS_TABLE_FONT_SIZE}
+                        step={1}
+                        value={pairingsTableFontSize}
+                        onChange={event => setPairingsTableFontSize(clampPairingsTableFontSize(Number(event.target.value)))}
+                        onPointerDown={() => setPairingsTableFontSizeSliding(true)}
+                        onPointerUp={() => {
+                          setPairingsTableFontSizeSliding(false);
+                          setPairingsTableFontSizeOpen(false);
+                        }}
+                        onPointerCancel={() => {
+                          setPairingsTableFontSizeSliding(false);
+                          setPairingsTableFontSizeOpen(false);
+                        }}
+                        onBlur={() => {
+                          setPairingsTableFontSizeSliding(false);
+                          setPairingsTableFontSizeOpen(false);
+                        }}
+                        onKeyDown={event => {
+                          if (event.key === "Escape") {
+                            setPairingsTableFontSizeSliding(false);
+                            setPairingsTableFontSizeOpen(false);
+                          }
+                        }}
+                        aria-label="Adjust pairings table font size"
+                        style={{ width: "100%", margin: 0 }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 className="nav-btn"
