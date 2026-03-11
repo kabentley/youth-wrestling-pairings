@@ -68,6 +68,8 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Account and permissions",
         paragraphs: [
           "New accounts start as parents. Coaches can promote parents to assistant coaches or table workers for their team [Team Settings > Team Roles].",
+          "Head coaches can also create parent accounts in bulk from [My Team > Team Roles > Import Parents]. Upload a CSV, XLS, or XLSX file with first name, last name, email, phone, and optional kid names. Kid names can go in one `Kids` column separated by semicolons, or in separate columns such as `Kid 1`, `Kid 2`. Usernames are generated automatically, and the import links each parent to matching active wrestlers on that team.",
+          "The import can use one shared temporary password for everyone or generate a different temporary password for each parent. If you use a shared temporary password, imported parents must reset it the first time they sign in. After the import finishes, the app downloads a credentials report with the account information for the imported parents [My Team > Team Roles > Import Parents].",
           "Table workers enter bout results and keep mat sheets accurate. This is ideal for trusted volunteers who should not change pairings [Meets > Enter Results].",
           "Promote gradually: table worker for meet-day help, assistant coach for people you trust to adjust pairings and mat order [Team Settings > Team Roles].",
         ],
