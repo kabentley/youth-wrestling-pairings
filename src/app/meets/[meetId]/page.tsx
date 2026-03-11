@@ -471,7 +471,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showReopenAttendanceWarningModal, setShowReopenAttendanceWarningModal] = useState(false);
   const [showReopenDraftWarningModal, setShowReopenDraftWarningModal] = useState(false);
   const [showPublishWarningModal, setShowPublishWarningModal] = useState(false);
+  const [pairingNotAttendingConfirm, setPairingNotAttendingConfirm] = useState<{ wrestler: Wrestler; closeContext: boolean } | null>(null);
   const pairingsInitRef = useRef(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [currentUserTeamId, setCurrentUserTeamId] = useState<string | null>(null);
   const [lockAccessLoaded, setLockAccessLoaded] = useState(false);
@@ -585,7 +587,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [pairingMenuSize, setPairingMenuSize] = useState({ width: 210, height: 150 });
   const [pairingContext, setPairingContext] = useState<PairingContext | null>(null);
   const [matchesTooltip, setMatchesTooltip] = useState<MatchesTooltip | null>(null);
-  const targetAge = target ? ageYears(target.birthdate)?.toFixed(1) : null;
+  const activePairingTarget = target ? (wMap[target.id] ?? target) : null;
+  const targetAge = activePairingTarget ? ageYears(activePairingTarget.birthdate)?.toFixed(1) : null;
   const autoTargetMatches = autoMatchesPerWrestler ?? matchesPerWrestler ?? savedMatchesPerWrestler ?? null;
   const pruneTargetMin = autoTargetMatches ?? 1;
   const pruneTargetDisplay = pruneTargetMatches ?? DEFAULT_PRUNE_TARGET_MATCHES;
@@ -1257,10 +1260,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
     if (meRes.ok) {
       const meJson = await meRes.json().catch(() => ({}));
+      setCurrentUserId(typeof meJson?.id === "string" ? meJson.id : null);
       setCurrentUsername(meJson?.username ?? null);
       setCurrentUserRole(typeof meJson?.role === "string" ? meJson.role : null);
       setCurrentUserTeamId(typeof meJson?.teamId === "string" ? meJson.teamId : null);
     } else {
+      setCurrentUserId(null);
       setCurrentUsername(null);
       setCurrentUserRole(null);
       setCurrentUserTeamId(null);
@@ -1397,30 +1402,31 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
   const canEditThisPhase = meetStatus === "DRAFT" || isMeetCoordinator || currentUserRole === "ADMIN";
   const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase && canEditThisPhase;
-  const canCoachEditOwnAttendanceWithoutLock = Boolean(
-    currentUserRole === "COACH" &&
-    !isMeetCoordinator &&
-    currentUserTeamId &&
-    teams.some((team) => team.id === currentUserTeamId) &&
-    (
-      meetStatus === "ATTENDANCE" ||
-      (meetStatus === "DRAFT" && canAcquireMeetLock)
-    ),
-  );
-  const canEditAttendance = canEdit || canCoachEditOwnAttendanceWithoutLock;
-  const canApplyCheckpoint = canEdit && isMeetCoordinator;
-  const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
   const isCoachOnMeetTeam = Boolean(
     currentUserRole === "COACH" &&
     currentUserTeamId &&
     teams.some((team) => team.id === currentUserTeamId),
   );
+  const coachAttendanceEditScopeWithoutLock: "all" | "team" | null =
+    currentUserRole !== "COACH"
+      ? null
+      : meetStatus === "ATTENDANCE"
+        ? isMeetCoordinator
+          ? "all"
+          : isCoachOnMeetTeam
+            ? "team"
+            : null
+          : null;
+  const canEditAttendance = canEdit || coachAttendanceEditScopeWithoutLock !== null;
+  const canApplyCheckpoint = canEdit && isMeetCoordinator;
+  const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
   const canCoachManageOwnScratchesWithoutLock = Boolean(
     currentUserRole === "COACH" &&
     !isMeetCoordinator &&
+    currentUserId &&
     currentUserTeamId &&
     teams.some((team) => team.id === currentUserTeamId) &&
-    canAcquireMeetLock,
+    lockAccessDraftIds.has(currentUserId),
   );
   const canViewScratches =
     meetStatus === "READY_FOR_CHECKIN" &&
@@ -1442,11 +1448,15 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canSetPairingNotComing = meetStatus === "DRAFT";
   const canRunPairingsAutoPair = canEdit && meetStatus === "DRAFT";
   const defaultTabForPhase = meetStatus === "ATTENDANCE" ? "attendance" : "pairings";
-  const canChangeStatus =
+  const canChangeMeetPhase =
     (isMeetCoordinator || currentUserRole === "ADMIN") &&
-    editAllowed &&
+    editAllowed;
+  const canChangeStatus =
+    canChangeMeetPhase &&
     (isPublished || lockState.status === "acquired");
+  const canCloseAttendanceWithoutLock = meetStatus === "ATTENDANCE" && canChangeMeetPhase;
   const canReopenAttendance = meetStatus === "DRAFT" && canChangeStatus && bouts.length === 0;
+  const shouldShowAttendanceReadOnlyNotice = !(activeTab === "attendance" && (canEditAttendance || meetStatus === "ATTENDANCE"));
   const canViewVolunteers = Boolean(
     homeTeamId &&
     currentUserTeamId &&
@@ -2399,15 +2409,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         const next = prev.filter(b => b.id !== created.id);
         return [...next, created];
       });
+      setCandidates(prev => prev.filter(({ opponent }) => opponent.id !== redId && opponent.id !== greenId));
+      setCandidateRefreshVersion(prev => prev + 1);
     } else {
       await load();
     }
-    await loadActivity();
-    if (selectedPairingId && (maxMatchesPerWrestler === null || selectedMatchCount + 1 < maxMatchesPerWrestler)) {
-      await loadCandidates(selectedPairingId);
-    } else {
-      setCandidates([]);
-    }
+    void loadActivity().catch(() => {});
   }
 
   // Update attendance status and refresh dependent views.
@@ -2438,38 +2445,87 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
   }
 
-  // Apply attendance change from the right-click context menu.
-  async function handlePairingContextStatus(status: AttendanceStatus | null) {
+  async function applyPairingStatusToWrestler(wrestler: Wrestler, status: AttendanceStatus | null, options?: { closeContext?: boolean }) {
     if (!canEdit) {
-      setPairingContext(null);
+      if (options?.closeContext ?? true) {
+        setPairingContext(null);
+      }
       return;
     }
-    if (!pairingContext) return;
-    const currentStatus = pairingContext.wrestler.status ?? null;
+    const currentStatus = (wMap[wrestler.id]?.status ?? wrestler.status) ?? null;
     const nextStatus =
       (status === "LATE" || status === "EARLY") && currentStatus === status
         ? "COMING"
         : status;
     try {
-      await updateWrestlerStatus(pairingContext.wrestler.id, nextStatus);
+      await updateWrestlerStatus(wrestler.id, nextStatus);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to update attendance.";
       window.alert(message);
     }
-    setPairingContext(null);
+    if (options?.closeContext ?? true) {
+      setPairingContext(null);
+    }
+  }
+
+  function requestPairingNotAttendingConfirmation(wrestler: Wrestler, options?: { closeContext?: boolean }) {
+    const closeContext = options?.closeContext ?? true;
+    if (!canEdit) {
+      if (closeContext) {
+        setPairingContext(null);
+      }
+      return;
+    }
+    const currentStatus = (wMap[wrestler.id]?.status ?? wrestler.status) ?? null;
+    if (currentStatus === "NOT_COMING") {
+      void applyPairingStatusToWrestler(wrestler, "NOT_COMING", { closeContext });
+      return;
+    }
+    if (closeContext) {
+      setPairingContext(null);
+    }
+    setPairingNotAttendingConfirm({ wrestler, closeContext });
+  }
+
+  async function confirmPairingNotAttending() {
+    if (!pairingNotAttendingConfirm) return;
+    const pending = pairingNotAttendingConfirm;
+    setPairingNotAttendingConfirm(null);
+    await applyPairingStatusToWrestler(pending.wrestler, "NOT_COMING", { closeContext: pending.closeContext });
+  }
+
+  // Apply attendance change from the right-click context menu.
+  async function handlePairingContextStatus(status: AttendanceStatus | null) {
+    if (!pairingContext) return;
+    if (status === "NOT_COMING") {
+      requestPairingNotAttendingConfirmation(pairingContext.wrestler);
+      return;
+    }
+    await applyPairingStatusToWrestler(pairingContext.wrestler, status);
   }
 
   // Remove a bout and refresh candidates/metadata.
   async function removeBout(boutId: string) {
     if (!canEdit) return;
+    const removedBoutIndex = bouts.findIndex(b => b.id === boutId);
+    const removedBout = removedBoutIndex >= 0 ? bouts[removedBoutIndex] : null;
+    setBouts(prev => prev.filter(b => b.id !== boutId));
     const res = await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
+      if (removedBout) {
+        setBouts(prev => {
+          if (prev.some(b => b.id === removedBout.id)) return prev;
+          const next = [...prev];
+          const insertAt = Math.min(removedBoutIndex, next.length);
+          next.splice(insertAt, 0, removedBout);
+          return next;
+        });
+      }
       const message = payload?.error ?? `Unable to remove match (${res.status}).`;
       window.alert(message);
       return;
     }
-    setBouts(prev => prev.filter(b => b.id !== boutId));
     if (payload?.rejectedPair) {
       const row = payload.rejectedPair;
       if (typeof row.pairKey === "string") {
@@ -2492,8 +2548,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       }
     }
     setCandidateRefreshVersion(prev => prev + 1);
-    await loadActivity();
-    if (target) await loadCandidates(target.id);
+    void loadActivity().catch(() => {});
   }
 
   async function ensureMeetLock(force = false) {
@@ -2513,9 +2568,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
 
   // Change meet status while ensuring lock ownership.
   async function updateMeetStatus(nextStatus: MeetPhase) {
-    if (!canChangeStatus) return false;
+    const closingAttendance = meetStatus === "ATTENDANCE" && nextStatus === "DRAFT";
+    if (closingAttendance ? !canCloseAttendanceWithoutLock : !canChangeStatus) return false;
     if (!(await flushPendingAttendanceChanges())) return false;
-    if (!(await ensureMeetLock())) return false;
+    if (!closingAttendance && !(await ensureMeetLock())) return false;
     const sendStatusUpdate = () => fetch(`/api/meets/${meetId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -4126,7 +4182,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {meetStatus === "ATTENDANCE" && canChangeStatus && (
+            {meetStatus === "ATTENDANCE" && canCloseAttendanceWithoutLock && (
               <button
                 type="button"
                 className="nav-btn primary meet-status-btn"
@@ -4180,7 +4236,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
+            {meetStatus !== "ATTENDANCE" && isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
               <button
                 type="button"
                 className="nav-btn secondary"
@@ -4223,7 +4279,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Release Lock
               </button>
             )}
-            {!isPublished && (
+            {meetStatus !== "ATTENDANCE" && !isPublished && (
               <button
                 type="button"
                 className="nav-btn primary checkpoint-btn"
@@ -4241,7 +4297,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
-      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !(activeTab === "scratches" && canManageScratchEntry) && (
+      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !(activeTab === "scratches" && canManageScratchEntry) && shouldShowAttendanceReadOnlyNotice && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
           {"Read-only mode. Click Start Editing to make changes."}
           {lockState.lockedByUsername ? (
@@ -4251,7 +4307,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           ) : ""}
         </div>
       )}
-      {isEditablePhase && lockAccessDenied && !lockActionError && !(activeTab === "scratches" && canManageScratchEntry) && (
+      {isEditablePhase && lockAccessDenied && !lockActionError && !(activeTab === "scratches" && canManageScratchEntry) && shouldShowAttendanceReadOnlyNotice && (
         <div className="notice" style={{ marginTop: 10 }}>
           {meetStatus === "DRAFT"
             ? `You do not have edit access yet. Meet Coordinator ${coordinatorDisplay ? `${coordinatorDisplay} ` : ""}has not granted you edit access.`
@@ -4318,12 +4374,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn={meetStatus !== "DRAFT"}
               showStatusAttribution={meetStatus === "ATTENDANCE"}
+              showParentEntryNotice={meetStatus === "ATTENDANCE"}
               editableTeamId={
-                canCoachEditOwnAttendanceWithoutLock && !isMeetCoordinator
+                coachAttendanceEditScopeWithoutLock === "team"
                   ? currentUserTeamId
                   : null
               }
-              lockRequired={!canCoachEditOwnAttendanceWithoutLock}
+              lockRequired={coachAttendanceEditScopeWithoutLock === null}
               readOnly={!canEditAttendance}
               onEnsureLock={ensureMeetLock}
               onRefresh={load}
@@ -4734,6 +4791,60 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
             </div>
           </div>
+          {canEdit && activePairingTarget && (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={() => void applyPairingStatusToWrestler(activePairingTarget, "LATE", { closeContext: false })}
+                style={{
+                  padding: "4px 10px",
+                  minHeight: "auto",
+                  fontSize: 12,
+                  fontWeight: activePairingTarget.status === "LATE" ? 800 : 600,
+                  background: activePairingTarget.status === "LATE" ? "#dff1ff" : undefined,
+                  borderColor: activePairingTarget.status === "LATE" ? "#b6defc" : undefined,
+                  color: activePairingTarget.status === "LATE" ? "#275f84" : undefined,
+                }}
+              >
+                Arrive Late
+              </button>
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={() => void applyPairingStatusToWrestler(activePairingTarget, "EARLY", { closeContext: false })}
+                style={{
+                  padding: "4px 10px",
+                  minHeight: "auto",
+                  fontSize: 12,
+                  fontWeight: activePairingTarget.status === "EARLY" ? 800 : 600,
+                  background: activePairingTarget.status === "EARLY" ? "#f3eadf" : undefined,
+                  borderColor: activePairingTarget.status === "EARLY" ? "#e2c8ad" : undefined,
+                  color: activePairingTarget.status === "EARLY" ? "#7a5d36" : undefined,
+                }}
+              >
+                Leave Early
+              </button>
+              {canSetPairingNotComing && (
+                <button
+                  type="button"
+                  className="nav-btn secondary"
+                  onClick={() => requestPairingNotAttendingConfirmation(activePairingTarget, { closeContext: false })}
+                  style={{ padding: "4px 10px", minHeight: "auto", fontSize: 12 }}
+                >
+                  Not Attending
+                </button>
+              )}
+            </div>
+          )}
           {!target && <div>Select a wrestler to see opponent options.</div>}
 
               {target && (
@@ -5820,6 +5931,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             canManageScratchMatches={canManageScratchMatches}
             manageableTeamIds={scratchManageTeamIds}
             currentUserTeamId={currentUserTeamId}
+            meetCoordinatorLabel={coordinatorDisplay}
             onEnsureLock={ensureMeetLock}
             onRefresh={async () => {
               await load();
@@ -6099,6 +6211,36 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   disabled={readyForCheckinSubmitting}
                 >
                   {readyForCheckinSubmitting ? "Publishing..." : "Publish"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {pairingNotAttendingConfirm && (
+        <ModalPortal>
+          <div className="modal-backdrop" onClick={() => setPairingNotAttendingConfirm(null)}>
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>
+                Mark {pairingNotAttendingConfirm.wrestler.first} {pairingNotAttendingConfirm.wrestler.last} Not Attending?
+              </h3>
+              <div className="ready-checkin-summary" style={{ fontSize: 16 }}>
+                All existing bouts will be removed, and no new bouts will be added unless this wrestler is marked attending again.
+              </div>
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => setPairingNotAttendingConfirm(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => void confirmPairingNotAttending()}
+                >
+                  Not Attending
                 </button>
               </div>
             </div>

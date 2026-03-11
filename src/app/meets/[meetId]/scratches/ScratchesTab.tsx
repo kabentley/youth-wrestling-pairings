@@ -99,6 +99,7 @@ type ScratchesTabProps = {
   canManageScratchMatches: boolean;
   manageableTeamIds: string[];
   currentUserTeamId: string | null;
+  meetCoordinatorLabel?: string | null;
   onEnsureLock: (force?: boolean) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 };
@@ -240,6 +241,7 @@ export default function ScratchesTab({
   canManageScratchMatches,
   manageableTeamIds,
   currentUserTeamId,
+  meetCoordinatorLabel = null,
   onEnsureLock,
   onRefresh,
 }: ScratchesTabProps) {
@@ -258,8 +260,12 @@ export default function ScratchesTab({
   const fallbackCheckinTeams = !canViewScratchMatchWorkspace && checkinTeams.length === 0
     ? orderedTeams.slice(0, 1)
     : checkinTeams;
-  const initialActiveTeam = fallbackCheckinTeams.length > 0 ? fallbackCheckinTeams[0] : orderedTeams[0];
-  const [activeTeamId, setActiveTeamId] = useState<string | null>(initialActiveTeam.id);
+  const initialActiveTeamId = fallbackCheckinTeams.length > 0
+    ? fallbackCheckinTeams[0].id
+    : orderedTeams.length > 0
+      ? orderedTeams[0].id
+      : null;
+  const [activeTeamId, setActiveTeamId] = useState<string | null>(initialActiveTeamId);
   const [selectedDetailWrestlerId, setSelectedDetailWrestlerId] = useState<string | null>(null);
   const [candidateRows, setCandidateRows] = useState<Candidate[]>([]);
   const [candidateError, setCandidateError] = useState<string | null>(null);
@@ -304,6 +310,7 @@ export default function ScratchesTab({
     girlsWrestleGirls: true,
   });
   const [isPhoneLayout, setIsPhoneLayout] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [scratchesFontSize, setScratchesFontSize] = useState(DEFAULT_SCRATCHES_TAB_FONT_SIZE);
   const [scratchesFontSizeReady, setScratchesFontSizeReady] = useState(false);
   const [scratchesFontSizeOpen, setScratchesFontSizeOpen] = useState(false);
@@ -337,6 +344,19 @@ export default function ScratchesTab({
     }
     mediaQuery.addListener(updateLayout);
     return () => mediaQuery.removeListener(updateLayout);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updateTouchDevice = () => setIsTouchDevice(mediaQuery.matches);
+    updateTouchDevice();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", updateTouchDevice);
+      return () => mediaQuery.removeEventListener("change", updateTouchDevice);
+    }
+    mediaQuery.addListener(updateTouchDevice);
+    return () => mediaQuery.removeListener(updateTouchDevice);
   }, []);
 
   useLayoutEffect(() => {
@@ -1024,14 +1044,17 @@ export default function ScratchesTab({
     lineHeight: isPhoneLayout ? 1.05 : 1.2,
     fontSize: scratchesTableFontSize,
   };
+  const useTouchModalLayout = isPhoneLayout || isTouchDevice;
   const modalCardStyle = {
-    width: isPhoneLayout ? "100%" : "min(760px, 100%)",
-    maxHeight: isPhoneLayout ? "100dvh" : "calc(100vh - 24px)",
-    height: isPhoneLayout ? "100dvh" : undefined,
+    width: useTouchModalLayout ? "min(100%, 720px)" : "min(760px, 100%)",
+    maxHeight: useTouchModalLayout
+      ? "calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px)"
+      : "calc(100vh - 24px)",
+    height: undefined,
     background: "#ffffff",
-    borderRadius: isPhoneLayout ? 0 : 16,
+    borderRadius: useTouchModalLayout ? 12 : 16,
     border: "1px solid #d5dbe2",
-    boxShadow: isPhoneLayout ? "none" : "0 18px 60px rgba(15, 23, 42, 0.28)",
+    boxShadow: useTouchModalLayout ? "none" : "0 18px 60px rgba(15, 23, 42, 0.28)",
     display: "grid",
     gridTemplateRows: "auto minmax(0, 1fr) auto",
     overflow: "hidden",
@@ -1088,23 +1111,28 @@ export default function ScratchesTab({
                           <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {wrestler.first} {wrestler.last}
                           </span>
-                          {absent && (
-                            <span
-                              style={{
-                                border: "1px solid #d0b2b2",
-                                borderRadius: 999,
-                                background: "#fff7f7",
-                                color: "#7a3d3d",
-                                fontSize: 11,
-                                fontWeight: 700,
-                                padding: "1px 8px",
-                                whiteSpace: "nowrap",
-                                flex: "0 0 auto",
-                              }}
-                            >
-                              Scratched
-                            </span>
-                          )}
+                          <span
+                            aria-hidden={!absent}
+                            style={{
+                              border: "1px solid #d0b2b2",
+                              borderRadius: 999,
+                              background: "#fff7f7",
+                              color: "#7a3d3d",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              minHeight: 20,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: "1px 8px",
+                              lineHeight: 1,
+                              whiteSpace: "nowrap",
+                              flex: "0 0 auto",
+                              textTransform: "lowercase",
+                              visibility: absent ? "visible" : "hidden",
+                            }}
+                          >
+                            scratched
+                          </span>
                         </div>
                       </td>
                       <td
@@ -1162,20 +1190,27 @@ export default function ScratchesTab({
               <div style={{ minWidth: 0, color: teamTextColor(wrestler.teamId), fontSize: 14, fontWeight: 700, lineHeight: 1.02 }}>
                 {wrestler.first} {wrestler.last}
               </div>
-              {absent && (
-                <span
-                  style={{
-                    ...mobileActionButtonStyle,
-                    border: "1px solid #d0b2b2",
-                    background: "#fff7f7",
-                    color: "#7a3d3d",
-                    cursor: "default",
-                    flex: "0 0 auto",
-                  }}
-                >
-                  Scratched
-                </span>
-              )}
+              <span
+                aria-hidden={!absent}
+                style={{
+                  ...mobileActionButtonStyle,
+                  border: "1px solid #d0b2b2",
+                  borderRadius: 999,
+                  background: "#fff7f7",
+                  color: "#7a3d3d",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  minHeight: 20,
+                  padding: "1px 8px",
+                  lineHeight: 1,
+                  cursor: "inherit",
+                  flex: "0 0 auto",
+                  textTransform: "lowercase",
+                  visibility: absent ? "visible" : "hidden",
+                }}
+              >
+                scratched
+              </span>
             </div>
           );
         })}
@@ -1306,193 +1341,195 @@ export default function ScratchesTab({
         height: "auto",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: isPhoneLayout ? 8 : 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: isPhoneLayout ? 8 : 10 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#243041", marginRight: 4, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
-            Enter Scratches For:
-          </div>
-          {fallbackCheckinTeams.map((team) => {
-            const canEditScratchTeam = manageableTeamIdSet.has(team.id);
-            const teamColorValue = team.color ?? "#7a1738";
-            const textColor = adjustTeamTextColor(teamColorValue);
-            const completedInfo = teamCheckinMap.get(team.id) ?? { checkinCompletedAt: null, completedByUsername: null };
-            const completedAt = completedInfo.checkinCompletedAt;
-            const completedByUsername = completedInfo.completedByUsername;
-            const completedTitle = completedAt
-              ? [
-                  `Check-in complete for ${formatTeamName(team)}.`,
-                  completedByUsername ? `Completed by ${completedByUsername}.` : null,
-                  `Completed at ${new Date(completedAt).toLocaleString()}.`,
-                ].filter(Boolean).join(" ")
-              : undefined;
-            return (
-              <button
-                key={team.id}
-                type="button"
-                className="team-chip-btn"
-                onClick={() => openScratchModal(team.id)}
-                disabled={!canEditScratchTeam || !canManageScratchEntry}
-                title={completedTitle}
-                style={{
-                  background: team.color ? `${team.color}22` : "#f7f9fc",
-                  color: textColor,
-                  border: `1px solid ${teamColorValue}`,
-                  borderWidth: 2,
-                  padding: isPhoneLayout ? "6px 10px" : "8px 14px",
-                  borderRadius: isPhoneLayout ? 8 : 10,
+      <div style={{ display: "flex", justifyContent: canManageScratchEntry ? "space-between" : "flex-start", gap: isPhoneLayout ? 8 : 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        {canManageScratchEntry && (
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: isPhoneLayout ? 8 : 10 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#243041", marginRight: 4, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
+              Enter Scratches For:
+            </div>
+            {fallbackCheckinTeams.map((team) => {
+              const canEditScratchTeam = manageableTeamIdSet.has(team.id);
+              const teamColorValue = team.color ?? "#7a1738";
+              const textColor = adjustTeamTextColor(teamColorValue);
+              const completedInfo = teamCheckinMap.get(team.id) ?? { checkinCompletedAt: null, completedByUsername: null };
+              const completedAt = completedInfo.checkinCompletedAt;
+              const completedByUsername = completedInfo.completedByUsername;
+              const completedTitle = completedAt
+                ? [
+                    `Check-in complete for ${formatTeamName(team)}.`,
+                    completedByUsername ? `Completed by ${completedByUsername}.` : null,
+                    `Completed at ${new Date(completedAt).toLocaleString()}.`,
+                  ].filter(Boolean).join(" ")
+                : undefined;
+              return (
+                <button
+                  key={team.id}
+                  type="button"
+                  className="team-chip-btn"
+                  onClick={() => openScratchModal(team.id)}
+                  disabled={!canEditScratchTeam || !canManageScratchEntry}
+                  title={completedTitle}
+                  style={{
+                    background: team.color ? `${team.color}22` : "#f7f9fc",
+                    color: textColor,
+                    border: `1px solid ${teamColorValue}`,
+                    borderWidth: 2,
+                    padding: isPhoneLayout ? "6px 10px" : "8px 14px",
+                    borderRadius: isPhoneLayout ? 8 : 10,
                   fontWeight: 700,
                   opacity: canEditScratchTeam ? 1 : 0.65,
                   boxShadow: "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)",
-                  cursor: canEditScratchTeam && canManageScratchEntry ? "pointer" : "default",
+                  cursor: canEditScratchTeam ? "pointer" : "default",
                 }}
               >
-                <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span>{team.symbol ?? team.name}</span>
-                    {completedAt && (
-                      <span
-                        style={{
-                          padding: "1px 6px",
-                          borderRadius: 999,
-                          background: "#e6f6ea",
-                          border: "1px solid #b8d9c0",
-                          color: "#1d5b2a",
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        Done
+                  <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      <span>{team.symbol ?? team.name}</span>
+                      {completedAt && (
+                        <span
+                          style={{
+                            padding: "1px 6px",
+                            borderRadius: 999,
+                            background: "#e6f6ea",
+                            border: "1px solid #b8d9c0",
+                            color: "#1d5b2a",
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Done
+                        </span>
+                      )}
+                    </span>
+                    {completedAt && completedByUsername && (
+                      <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
+                        by {completedByUsername}
                       </span>
                     )}
                   </span>
-                  {completedAt && completedByUsername && (
-                    <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, lineHeight: isPhoneLayout ? 1.05 : undefined }}>
-                      by {completedByUsername}
-                    </span>
-                  )}
+                </button>
+              );
+            })}
+            {canManageScratchMatches && (
+              <button
+                type="button"
+                className="nav-btn"
+                onClick={() => void refreshTeamCheckins()}
+                disabled={refreshingTeamCheckins}
+                style={{ padding: "8px 14px", borderRadius: 10 }}
+              >
+                {refreshingTeamCheckins ? "Refreshing..." : "Refresh"}
+              </button>
+            )}
+            <div
+              ref={scratchesFontSizeControlRef}
+              style={{
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                color: "#4b5563",
+              }}
+            >
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={() => {
+                  setScratchesFontSizeOpen(open => !open);
+                  setScratchesFontSizeSliding(false);
+                }}
+                aria-label="Adjust scratches font size"
+                aria-expanded={scratchesFontSizeOpen}
+                title="Adjust the scratches font size"
+                style={{ padding: "8px 10px", lineHeight: 1 }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
+                >
+                  <span style={{ fontSize: 18 }}>A</span>
+                  <span style={{ fontSize: 13 }}>A</span>
                 </span>
               </button>
-            );
-          })}
-          {canManageScratchMatches && (
-            <button
-              type="button"
-              className="nav-btn"
-              onClick={() => void refreshTeamCheckins()}
-              disabled={refreshingTeamCheckins}
-              style={{ padding: "8px 14px", borderRadius: 10 }}
-            >
-              {refreshingTeamCheckins ? "Refreshing..." : "Refresh"}
-            </button>
-          )}
-          <div
-            ref={scratchesFontSizeControlRef}
-            style={{
-              position: "relative",
-              display: "inline-flex",
-              alignItems: "center",
-              color: "#4b5563",
-            }}
-          >
-            <button
-              type="button"
-              className="nav-btn secondary"
-              onClick={() => {
-                setScratchesFontSizeOpen(open => !open);
-                setScratchesFontSizeSliding(false);
-              }}
-              aria-label="Adjust scratches font size"
-              aria-expanded={scratchesFontSizeOpen}
-              title="Adjust the scratches font size"
-              style={{ padding: "8px 10px", lineHeight: 1 }}
-            >
-              <span
-                aria-hidden="true"
-                style={{ display: "inline-flex", alignItems: "baseline", gap: 1, lineHeight: 1 }}
-              >
-                <span style={{ fontSize: 18 }}>A</span>
-                <span style={{ fontSize: 13 }}>A</span>
-              </span>
-            </button>
-            {scratchesFontSizeOpen && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  zIndex: 40,
-                  width: 220,
-                  padding: "10px 12px",
-                  border: "1px solid #d5dbe2",
-                  borderRadius: 10,
-                  background: "#ffffff",
-                  boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
-                  Change font size
-                </div>
-                <div style={{ position: "relative", overflow: "visible" }}>
-                  {scratchesFontSizeSliding && (
-                    <span
-                      style={{
-                        position: "absolute",
-                        left: `calc(${scratchesFontSliderPercent}% - 2px)`,
-                        top: -18,
-                        transform: "translateX(-50%)",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#1f2937",
-                        background: "#ffffff",
-                        padding: "1px 6px",
-                        borderRadius: 999,
-                        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
-                        pointerEvents: "none",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {scratchesFontSize}px
-                    </span>
-                  )}
-                  <input
-                    ref={scratchesFontSizeInputRef}
-                    type="range"
-                    min={MIN_SCRATCHES_TAB_FONT_SIZE}
-                    max={MAX_SCRATCHES_TAB_FONT_SIZE}
-                    step={1}
-                    value={scratchesFontSize}
-                    onChange={event => setScratchesFontSize(clampScratchesTabFontSize(Number(event.target.value)))}
-                    onPointerDown={() => setScratchesFontSizeSliding(true)}
-                    onPointerUp={() => {
-                      setScratchesFontSizeSliding(false);
-                      setScratchesFontSizeOpen(false);
-                    }}
-                    onPointerCancel={() => {
-                      setScratchesFontSizeSliding(false);
-                      setScratchesFontSizeOpen(false);
-                    }}
-                    onBlur={() => {
-                      setScratchesFontSizeSliding(false);
-                      setScratchesFontSizeOpen(false);
-                    }}
-                    onKeyDown={event => {
-                      if (event.key === "Escape") {
+              {scratchesFontSizeOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    zIndex: 40,
+                    width: 220,
+                    padding: "10px 12px",
+                    border: "1px solid #d5dbe2",
+                    borderRadius: 10,
+                    background: "#ffffff",
+                    boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#4b5563", marginBottom: 8 }}>
+                    Change font size
+                  </div>
+                  <div style={{ position: "relative", overflow: "visible" }}>
+                    {scratchesFontSizeSliding && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: `calc(${scratchesFontSliderPercent}% - 2px)`,
+                          top: -18,
+                          transform: "translateX(-50%)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#1f2937",
+                          background: "#ffffff",
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          boxShadow: "0 1px 4px rgba(0, 0, 0, 0.18)",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {scratchesFontSize}px
+                      </span>
+                    )}
+                    <input
+                      ref={scratchesFontSizeInputRef}
+                      type="range"
+                      min={MIN_SCRATCHES_TAB_FONT_SIZE}
+                      max={MAX_SCRATCHES_TAB_FONT_SIZE}
+                      step={1}
+                      value={scratchesFontSize}
+                      onChange={event => setScratchesFontSize(clampScratchesTabFontSize(Number(event.target.value)))}
+                      onPointerDown={() => setScratchesFontSizeSliding(true)}
+                      onPointerUp={() => {
                         setScratchesFontSizeSliding(false);
                         setScratchesFontSizeOpen(false);
-                      }
-                    }}
-                    aria-label="Adjust scratches font size"
-                    style={{ width: "100%", margin: 0 }}
-                  />
+                      }}
+                      onPointerCancel={() => {
+                        setScratchesFontSizeSliding(false);
+                        setScratchesFontSizeOpen(false);
+                      }}
+                      onBlur={() => {
+                        setScratchesFontSizeSliding(false);
+                        setScratchesFontSizeOpen(false);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === "Escape") {
+                          setScratchesFontSizeSliding(false);
+                          setScratchesFontSizeOpen(false);
+                        }
+                      }}
+                      aria-label="Adjust scratches font size"
+                      style={{ width: "100%", margin: 0 }}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
         {!canManageScratchEntry && (
-          <div className="notice" style={{ margin: 0 }}>
-            Coaches need edit access from the Meet Coordinator to enter scratches for their own team. The Meet Coordinator or an admin can enter scratches for any team.
+          <div className="notice" style={{ margin: 0, textAlign: "left" }}>
+            Coaches need edit access from the Meet Coordinator to enter scratches. Contact {meetCoordinatorLabel ?? "the Meet Coordinator"} for access.
           </div>
         )}
       </div>
@@ -2480,10 +2517,13 @@ export default function ScratchesTab({
             inset: 0,
             background: "rgba(20, 26, 36, 0.48)",
             display: "flex",
-            alignItems: isPhoneLayout ? "stretch" : "center",
+            alignItems: "center",
             justifyContent: "center",
-            padding: isPhoneLayout ? 0 : 20,
+            padding: useTouchModalLayout
+              ? "calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))"
+              : 20,
             zIndex: 1000,
+            overflowY: "auto",
           }}
         >
           <div
@@ -2594,10 +2634,13 @@ export default function ScratchesTab({
             inset: 0,
             background: "rgba(20, 26, 36, 0.4)",
             display: "flex",
-            alignItems: isPhoneLayout ? "stretch" : "center",
+            alignItems: "center",
             justifyContent: "center",
-            padding: isPhoneLayout ? 0 : 20,
+            padding: useTouchModalLayout
+              ? "calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))"
+              : 20,
             zIndex: 1001,
+            overflowY: "auto",
           }}
         >
           <div

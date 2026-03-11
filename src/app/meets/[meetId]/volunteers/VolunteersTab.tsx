@@ -145,6 +145,14 @@ export default function VolunteersTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dragVolunteerId, setDragVolunteerId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<{
+    volunteerId: string;
+    x: number;
+    y: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [updatingBouts, setUpdatingBouts] = useState(false);
   const [dirtyMats, setDirtyMats] = useState<number[]>([]);
@@ -158,6 +166,9 @@ export default function VolunteersTab({
   const [volunteersFontSizeSliding, setVolunteersFontSizeSliding] = useState(false);
   const volunteersFontSizeControlRef = useRef<HTMLDivElement | null>(null);
   const volunteersFontSizeInputRef = useRef<HTMLInputElement | null>(null);
+  const dragVolunteerIdRef = useRef<string | null>(null);
+  const dragImageRef = useRef<HTMLImageElement | null>(null);
+  const dragPreviewFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -227,6 +238,18 @@ export default function VolunteersTab({
     if (!volunteersFontSizeReady) return;
     window.localStorage.setItem(VOLUNTEERS_FONT_SIZE_STORAGE_KEY, String(volunteersFontSize));
   }, [volunteersFontSize, volunteersFontSizeReady]);
+  useEffect(() => {
+    const img = new Image();
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+    dragImageRef.current = img;
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (dragPreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragPreviewFrameRef.current);
+      }
+    };
+  }, []);
 
   const volunteers = payload?.volunteers ?? [];
   const meet = payload?.meet ?? null;
@@ -403,22 +426,51 @@ export default function VolunteersTab({
       : noMatUpdatesNeeded
         ? "No detected mat updates yet."
         : undefined;
+  const dragPreviewVolunteer = dragPreview
+    ? volunteers.find((volunteer) => volunteer.id === dragPreview.volunteerId) ?? null
+    : null;
+
+  const clearVolunteerDrag = () => {
+    dragVolunteerIdRef.current = null;
+    setDragVolunteerId(null);
+    setDragPreview(null);
+  };
+
+  const handleVolunteerDragPreviewMove = (event: React.DragEvent<HTMLElement>) => {
+    if (!dragVolunteerIdRef.current) return;
+    if (event.clientX === 0 && event.clientY === 0) return;
+    if (dragPreviewFrameRef.current !== null) return;
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    dragPreviewFrameRef.current = window.requestAnimationFrame(() => {
+      dragPreviewFrameRef.current = null;
+      const volunteerId = dragVolunteerIdRef.current;
+      if (!volunteerId) return;
+      setDragPreview((current) => (
+        current?.volunteerId === volunteerId
+          ? { ...current, x: clientX, y: clientY }
+          : current
+      ));
+    });
+  };
 
   const onDropToMat = (matNumber: number) => {
-    if (!canEdit || !dragVolunteerId || saving || updatingBouts) return;
-    setVolunteerMat(dragVolunteerId, matNumber);
-    setDragVolunteerId(null);
+    const activeVolunteerId = dragVolunteerIdRef.current ?? dragVolunteerId;
+    if (!canEdit || !activeVolunteerId || saving || updatingBouts) return;
+    setVolunteerMat(activeVolunteerId, matNumber);
+    clearVolunteerDrag();
   };
 
   const onDropToPool = () => {
-    if (!canEdit || !dragVolunteerId || saving || updatingBouts) return;
-    const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
+    const activeVolunteerId = dragVolunteerIdRef.current ?? dragVolunteerId;
+    if (!canEdit || !activeVolunteerId || saving || updatingBouts) return;
+    const dragged = volunteers.find((volunteer) => volunteer.id === activeVolunteerId);
     if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) {
-      setDragVolunteerId(null);
+      clearVolunteerDrag();
       return;
     }
-    setVolunteerMat(dragVolunteerId, null);
-    setDragVolunteerId(null);
+    setVolunteerMat(activeVolunteerId, null);
+    clearVolunteerDrag();
   };
 
   async function saveAssignments(volunteersToSave?: Volunteer[]) {
@@ -628,6 +680,14 @@ export default function VolunteersTab({
       cursor: grab;
       user-select: none;
     }
+    .volunteer-chip.dragging {
+      opacity: 0.35;
+      border-style: dashed;
+      border-color: #8a93a1;
+      background: #f7f9fc;
+      box-shadow: 0 0 0 2px rgba(63, 83, 111, 0.14);
+      cursor: grabbing;
+    }
     .volunteer-chip.clickable-move {
       cursor: pointer;
     }
@@ -700,6 +760,19 @@ export default function VolunteersTab({
       background: #f5f7fa;
       color: #708193;
     }
+    .volunteers-drag-preview {
+      position: fixed;
+      z-index: 2000;
+      pointer-events: none;
+    }
+    .volunteers-drag-preview-card {
+      border: 1px solid #cbd3de;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+      padding: 6px 8px;
+      overflow: hidden;
+    }
     @media (max-width: 1100px) {
       .volunteers-grid {
         grid-template-columns: 1fr;
@@ -715,7 +788,11 @@ export default function VolunteersTab({
   if (!payload) return null;
 
   return (
-    <div className="volunteers-tab" style={volunteersFontStyle}>
+    <div
+      className="volunteers-tab"
+      onDragOverCapture={handleVolunteerDragPreviewMove}
+      style={volunteersFontStyle}
+    >
       <style>{styles}</style>
       <div className="volunteers-toolbar">
         {canEdit && (
@@ -733,7 +810,7 @@ export default function VolunteersTab({
           </div>
         )}
         <div className="volunteers-help-note">
-          {canEdit && "Drag volunteers to assign mats. Click on cards to move their kids' bouts to their mat. "}
+          {canEdit && "Drag volunteers to assign mats. On iPad, long-press and drag a card. Click on cards to move their kids' bouts to their mat. "}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>Badge colors:</span>
             <span>red = wrong mat, yellow = parents on different mats.</span>
@@ -892,15 +969,32 @@ export default function VolunteersTab({
                     return (
                     <div
                       key={volunteer.id}
-                      className={`volunteer-chip${canClickMove ? " clickable-move" : ""}`}
+                      className={`volunteer-chip${dragVolunteerId === volunteer.id ? " dragging" : ""}${canClickMove ? " clickable-move" : ""}`}
                       draggable={canEdit && !saving && !updatingBouts}
                       onDragStart={(event) => {
                         if (!canEdit) return;
                         event.dataTransfer.effectAllowed = "move";
-                        setVolunteerDragImage(event);
+                        event.dataTransfer.setData("text/plain", volunteer.id);
+                        if (dragImageRef.current) {
+                          event.dataTransfer.setDragImage(dragImageRef.current, 0, 0);
+                        } else {
+                          setVolunteerDragImage(event);
+                        }
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const offsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+                        const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+                        dragVolunteerIdRef.current = volunteer.id;
                         setDragVolunteerId(volunteer.id);
+                        setDragPreview({
+                          volunteerId: volunteer.id,
+                          x: event.clientX,
+                          y: event.clientY,
+                          offsetX,
+                          offsetY,
+                          width: rect.width,
+                        });
                       }}
-                      onDragEnd={() => setDragVolunteerId(null)}
+                      onDragEnd={clearVolunteerDrag}
                       onClick={() => {
                         if (!canClickMove) return;
                         void moveVolunteerKids(volunteer);
@@ -917,7 +1011,7 @@ export default function VolunteersTab({
                             <div key={kid.id} className="volunteer-kid-row">
                               <span className="volunteer-kid-name">{kid.name}</span>
                               {kid.bouts.length === 0 ? (
-                                <span className="volunteer-bout-chip unassigned">none</span>
+                                <span className="volunteer-bout-chip unassigned">no bouts</span>
                               ) : (
                                 kid.bouts.map((bout) => {
                                   const wrongMat =
@@ -963,8 +1057,9 @@ export default function VolunteersTab({
         <div
           className="volunteers-pool"
           onDragOver={(event) => {
-            if (!canEdit || saving || updatingBouts || !dragVolunteerId) return;
-            const dragged = volunteers.find((volunteer) => volunteer.id === dragVolunteerId);
+            const activeVolunteerId = dragVolunteerIdRef.current ?? dragVolunteerId;
+            if (!canEdit || saving || updatingBouts || !activeVolunteerId) return;
+            const dragged = volunteers.find((volunteer) => volunteer.id === activeVolunteerId);
             if (!dragged || !canBeInUnassignedPool(dragged, homeTeamId)) return;
             event.preventDefault();
           }}
@@ -991,15 +1086,32 @@ export default function VolunteersTab({
             {filteredPool.map((volunteer) => (
               <div
                 key={`pool-${volunteer.id}`}
-                className="volunteer-chip"
+                className={`volunteer-chip${dragVolunteerId === volunteer.id ? " dragging" : ""}`}
                 draggable={canEdit && !saving && !updatingBouts}
                 onDragStart={(event) => {
                   if (!canEdit) return;
                   event.dataTransfer.effectAllowed = "move";
-                  setVolunteerDragImage(event);
+                  event.dataTransfer.setData("text/plain", volunteer.id);
+                  if (dragImageRef.current) {
+                    event.dataTransfer.setDragImage(dragImageRef.current, 0, 0);
+                  } else {
+                    setVolunteerDragImage(event);
+                  }
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const offsetX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+                  const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+                  dragVolunteerIdRef.current = volunteer.id;
                   setDragVolunteerId(volunteer.id);
+                  setDragPreview({
+                    volunteerId: volunteer.id,
+                    x: event.clientX,
+                    y: event.clientY,
+                    offsetX,
+                    offsetY,
+                    width: rect.width,
+                  });
                 }}
-                onDragEnd={() => setDragVolunteerId(null)}
+                onDragEnd={clearVolunteerDrag}
               >
                 <div className="volunteer-line-1">
                   <span>{volunteer.displayName}</span>
@@ -1011,7 +1123,7 @@ export default function VolunteersTab({
                       <div key={kid.id} className="volunteer-kid-row">
                         <span className="volunteer-kid-name">{kid.name}</span>
                         {kid.bouts.length === 0 ? (
-                          <span className="volunteer-bout-chip unassigned">none</span>
+                          <span className="volunteer-bout-chip unassigned">no bouts</span>
                         ) : (
                           kid.bouts.map((bout) => (
                             <span
@@ -1031,6 +1143,40 @@ export default function VolunteersTab({
           </div>
         </div>
       </div>
+      {dragPreview && dragPreviewVolunteer && (
+        <div
+          className="volunteers-drag-preview"
+          style={{ left: dragPreview.x - dragPreview.offsetX, top: dragPreview.y - dragPreview.offsetY }}
+        >
+          <div className="volunteers-drag-preview-card" style={{ width: dragPreview.width }}>
+            <div className="volunteer-line-1">
+              <span>{dragPreviewVolunteer.displayName}</span>
+              <span>{roleLabel(dragPreviewVolunteer.role)}</span>
+            </div>
+            {dragPreviewVolunteer.kids.length > 0 && (
+              <div className="volunteer-kids-bouts">
+                {dragPreviewVolunteer.kids.map((kid) => (
+                  <div key={`drag-preview-${kid.id}`} className="volunteer-kid-row">
+                    <span className="volunteer-kid-name">{kid.name}</span>
+                    {kid.bouts.length === 0 ? (
+                      <span className="volunteer-bout-chip unassigned">no bouts</span>
+                    ) : (
+                      kid.bouts.map((bout) => (
+                        <span
+                          key={`drag-preview-${kid.id}-${bout.id}`}
+                          className={`volunteer-bout-chip${bout.mat === null ? " unassigned" : ""}`}
+                        >
+                          {bout.boutNumber ?? "Unassigned"}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ type AttendanceTabProps = {
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
   showStatusAttribution?: boolean;
+  showParentEntryNotice?: boolean;
   editableTeamId?: string | null;
   lockRequired?: boolean;
   readOnly?: boolean;
@@ -92,6 +93,7 @@ export default function AttendanceTab({
   showRefresh = false,
   showNoReplyColumn = true,
   showStatusAttribution = false,
+  showParentEntryNotice = false,
   editableTeamId = null,
   lockRequired = true,
   readOnly = false,
@@ -107,6 +109,7 @@ export default function AttendanceTab({
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bulkUpdatingColumn, setBulkUpdatingColumn] = useState<string | null>(null);
+  const [isTouchInteraction, setIsTouchInteraction] = useState(false);
   const [pendingStatusChanges, setPendingStatusChanges] = useState<Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>>(new Map());
   const [attributionTooltip, setAttributionTooltip] = useState<AttributionTooltip | null>(null);
   const [columnSearch, setColumnSearch] = useState<Record<string, string>>({
@@ -116,6 +119,8 @@ export default function AttendanceTab({
   });
   const pendingStatusChangesRef = useRef(pendingStatusChanges);
   const savingRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const onRefreshRef = useRef(onRefresh);
   const savePendingChangesRef = useRef<(opts?: { silent?: boolean; keepalive?: boolean }) => Promise<boolean>>(async () => true);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,8 +129,29 @@ export default function AttendanceTab({
   }, [pendingStatusChanges]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updateTouchInteraction = () => setIsTouchInteraction(mediaQuery.matches);
+    updateTouchInteraction();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", updateTouchInteraction);
+      return () => mediaQuery.removeEventListener("change", updateTouchInteraction);
+    }
+    mediaQuery.addListener(updateTouchInteraction);
+    return () => mediaQuery.removeListener(updateTouchInteraction);
+  }, []);
+
+  useEffect(() => {
     savingRef.current = saving;
   }, [saving]);
+
+  useEffect(() => {
+    refreshingRef.current = refreshing;
+  }, [refreshing]);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
 
   useEffect(() => {
     if (!attributionTooltip) return;
@@ -159,6 +185,7 @@ export default function AttendanceTab({
 
   const activeTeam = teams.find(t => t.id === activeTeamId);
   const canEditActiveTeam = !readOnly && (!editableTeamId || activeTeamId === editableTeamId);
+  const showTouchMoveButtons = canEditActiveTeam && isTouchInteraction;
   const teamWrestlers = wrestlers
     .filter(w => w.teamId === activeTeamId)
     .map((wrestler) => ({ ...wrestler, status: effectiveStatus(wrestler) }));
@@ -252,6 +279,25 @@ export default function AttendanceTab({
       pendingStatusChangesRef.current = next;
       return next;
     });
+  };
+
+  const getQuickStatusActions = (columnKey: string) => {
+    if (columnKey === "coming") {
+      return [
+        { label: "Not Coming", status: "NOT_COMING" as const },
+        ...(showNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
+      ];
+    }
+    if (columnKey === "not-coming") {
+      return [
+        { label: "Coming", status: "COMING" as const },
+        ...(showNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
+      ];
+    }
+    return [
+      { label: "Coming", status: "COMING" as const },
+      { label: "Not Coming", status: "NOT_COMING" as const },
+    ];
   };
 
   const savePendingChanges = async (opts?: { silent?: boolean; keepalive?: boolean }) => {
@@ -378,6 +424,22 @@ export default function AttendanceTab({
     }
   };
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      if (savingRef.current || refreshingRef.current) return;
+      refreshingRef.current = true;
+      setRefreshing(true);
+      void onRefreshRef.current()
+        .catch(() => {})
+        .finally(() => {
+          refreshingRef.current = false;
+          setRefreshing(false);
+        });
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const bulkUpdateStatus = async (
     wrestlerIds: string[],
     status: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null,
@@ -422,9 +484,9 @@ export default function AttendanceTab({
 
   return (
     <div>
-      {readOnly && (
+      {showParentEntryNotice && (
         <div className="notice" style={{ marginBottom: 12 }}>
-          This page shows what parents have entered for their kids so far. After the attendance deadline{attendanceDeadlineLabel ? ` (${attendanceDeadlineLabel})` : ""}, coaches will be able to make changes.
+          This page shows what parents have entered for their kids so far. After the attendance deadline{attendanceDeadlineLabel ? ` (${attendanceDeadlineLabel})` : ""}, only coaches will be able to make changes.
         </div>
       )}
       {activeTeam && (
@@ -498,6 +560,11 @@ export default function AttendanceTab({
               </div>
             )}
           </div>
+          {showTouchMoveButtons && (
+            <div style={{ marginTop: 4, fontSize: 12, color: "#5f6b79" }}>
+              Touch: use the row buttons to move wrestlers between columns.
+            </div>
+          )}
           <div style={{ marginTop: 12, overflowX: "auto" }}>
             <div
               style={{
@@ -610,6 +677,9 @@ export default function AttendanceTab({
                           : isEarly
                             ? "#e2c8ad"
                             : column.itemBorder;
+                        const noReplyStatusActions = canEditActiveTeam && column.key === "no-reply"
+                          ? getQuickStatusActions(column.key)
+                          : [];
                         return (
                       <div
                         key={w.id}
@@ -628,7 +698,7 @@ export default function AttendanceTab({
                       >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                           <div
-                            style={{ minWidth: 0 }}
+                            style={{ minWidth: 0, flex: "1 1 auto" }}
                             onMouseMove={tooltipMessage ? (event) => {
                               setAttributionTooltip({
                                 message: tooltipMessage,
@@ -659,53 +729,75 @@ export default function AttendanceTab({
                               </div>
                             )}
                           </div>
-                        {canEditActiveTeam && column.key === "coming" && (
                           <div
-                            style={{ display: "flex", gap: 8, fontSize: 12, flex: "0 0 auto", whiteSpace: "nowrap" }}
+                            style={{ display: "flex", gap: 6, fontSize: 12, flex: "0 0 auto", whiteSpace: "nowrap", alignItems: "center" }}
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void toggleComingStatus(w, "LATE");
-                              }}
-                              style={{
-                                border: "1px solid #b6defc",
-                                borderRadius: 4,
-                                background: w.status === "LATE" ? "#dff1ff" : "#f6fbff",
-                                color: "#275f84",
-                                fontSize: 11,
-                                fontWeight: w.status === "LATE" ? 800 : 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Toggle Late"
-                            >
-                              Late
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void toggleComingStatus(w, "EARLY");
-                              }}
-                              style={{
-                                border: "1px solid #e2c8ad",
-                                borderRadius: 4,
-                                background: w.status === "EARLY" ? "#f3eadf" : "#fbf7f1",
-                                color: "#7a5d36",
-                                fontSize: 11,
-                                fontWeight: w.status === "EARLY" ? 800 : 600,
-                                padding: "1px 6px",
-                                cursor: "pointer",
-                                whiteSpace: "nowrap",
-                              }}
-                              title="Toggle Early"
-                            >
-                              Early
-                            </button>
+                            {noReplyStatusActions.map((action) => (
+                              <button
+                                key={`${w.id}-${action.label}`}
+                                type="button"
+                                onClick={() => queueStatusChange(w.id, action.status)}
+                                style={{
+                                  border: "1px solid #cfd5dc",
+                                  borderRadius: 999,
+                                  background: "#ffffff",
+                                  color: "#334155",
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  padding: "2px 8px",
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                            {canEditActiveTeam && column.key === "coming" && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void toggleComingStatus(w, "LATE");
+                                  }}
+                                  style={{
+                                    border: "1px solid #b6defc",
+                                    borderRadius: 4,
+                                    background: w.status === "LATE" ? "#dff1ff" : "#f6fbff",
+                                    color: "#275f84",
+                                    fontSize: 11,
+                                    fontWeight: w.status === "LATE" ? 800 : 600,
+                                    padding: "1px 6px",
+                                    cursor: "pointer",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title="Toggle Late"
+                                >
+                                  Late
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void toggleComingStatus(w, "EARLY");
+                                  }}
+                                  style={{
+                                    border: "1px solid #e2c8ad",
+                                    borderRadius: 4,
+                                    background: w.status === "EARLY" ? "#f3eadf" : "#fbf7f1",
+                                    color: "#7a5d36",
+                                    fontSize: 11,
+                                    fontWeight: w.status === "EARLY" ? 800 : 600,
+                                    padding: "1px 6px",
+                                    cursor: "pointer",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title="Toggle Early"
+                                >
+                                  Early
+                                </button>
+                              </>
+                            )}
                           </div>
-                        )}
                         </div>
                       </div>
                         );

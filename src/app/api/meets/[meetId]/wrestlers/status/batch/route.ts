@@ -42,15 +42,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const meetTeamIds = new Set(meet.meetTeams.map((entry) => entry.teamId));
   const userTeamId = user.teamId;
   const isCoachOnMeetTeam = userTeamId !== null && meetTeamIds.has(userTeamId);
-  const hasCoordinatorGrant = meet.lockAccesses.length > 0;
-  const allowCoachWithoutLock =
-    !isCoordinator &&
-    userTeamId !== null &&
-    (
-      meetPhase === "ATTENDANCE" ||
-      (meetPhase === "DRAFT" && isCoachOnMeetTeam && hasCoordinatorGrant)
-    );
-  if (!allowCoachWithoutLock) {
+  const coachAttendanceScopeWithoutLock: "all" | "team" | null =
+    user.role !== "COACH"
+      ? null
+      : meetPhase === "ATTENDANCE"
+        ? isCoordinator
+          ? "all"
+          : isCoachOnMeetTeam
+            ? "team"
+            : null
+          : null;
+  if (!coachAttendanceScopeWithoutLock) {
     try {
       await requireMeetLock(meetId, user.id, user.role);
     } catch (err) {
@@ -82,7 +84,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       return NextResponse.json({ error: "Wrestler not in this meet" }, { status: 400 });
     }
   }
-  if (allowCoachWithoutLock) {
+  if (coachAttendanceScopeWithoutLock === "team") {
     const unauthorizedWrestler = wrestlers.find((wrestler) => wrestler.teamId !== userTeamId);
     if (unauthorizedWrestler) {
       return NextResponse.json(

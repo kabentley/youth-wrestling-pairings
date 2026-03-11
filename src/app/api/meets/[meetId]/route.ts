@@ -165,14 +165,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 export async function PATCH(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   const { user } = await requireRole("COACH");
-  try {
-    await requireMeetLock(meetId, user.id, user.role);
-  } catch (err) {
-    const lockError = getMeetLockError(err);
-    if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
-    throw err;
-  }
-
   const body = PatchSchema.parse(await req.json());
   if (body.homeTeamId !== undefined && user.role !== "ADMIN") {
     return NextResponse.json({ error: "Only admins can change the home team." }, { status: 403 });
@@ -193,6 +185,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (!current) {
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
+  const currentStatus = normalizeMeetPhase(current.status);
+  const nextStatus = body.status ? normalizeMeetPhase(body.status) : currentStatus;
+  const requestKeys = Object.keys(body);
+  const closingAttendanceWithoutLock =
+    currentStatus === "ATTENDANCE" &&
+    nextStatus === "DRAFT" &&
+    requestKeys.length === 1 &&
+    requestKeys[0] === "status";
+  if (!closingAttendanceWithoutLock) {
+    try {
+      await requireMeetLock(meetId, user.id, user.role);
+    } catch (err) {
+      const lockError = getMeetLockError(err);
+      if (lockError) return NextResponse.json(lockError.body, { status: lockError.status });
+      throw err;
+    }
+  }
   if (body.status) {
     const coordinatorId = current.homeTeam?.headCoachId ?? null;
     const canChangePhase = user.role === "ADMIN" || (Boolean(coordinatorId) && coordinatorId === user.id);
@@ -203,8 +212,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       );
     }
   }
-  const currentStatus = normalizeMeetPhase(current.status);
-  const nextStatus = body.status ? normalizeMeetPhase(body.status) : currentStatus;
   if (body.status && !canTransitionMeetPhase(currentStatus, nextStatus)) {
     return NextResponse.json(
       { error: `Cannot change meet status from ${currentStatus} to ${nextStatus}.` },
