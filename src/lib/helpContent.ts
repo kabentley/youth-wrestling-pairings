@@ -287,6 +287,13 @@ export const HELP_PAGES: HelpPage[] = [
         ],
       },
       {
+        title: "Admin vs Coach Accounts",
+        paragraphs: [
+          "Admin accounts cannot be coach accounts. An admin has broad privileges across teams, so an admin account does not behave like a normal team coach during live meet work [Admin > Users, Meets].",
+          "If an individual is both a coach and an admin, that person needs two separate accounts: one admin account for admin work and one coach account for team and meet work. Use the admin account only for admin functions, and use the coach account for normal coaching tasks [Admin > Users].",
+        ],
+      },
+      {
         title: "User management",
         paragraphs: [
           "Use the user list to search, filter by team, and page through accounts [Admin > Users]. This helps you locate coaches, parents, and table workers quickly.",

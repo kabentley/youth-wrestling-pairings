@@ -12,6 +12,17 @@ const BodySchema = z.object({
 
 type MeetContext = Awaited<ReturnType<typeof loadMeetContext>>;
 
+function authErrorResponse(error: unknown) {
+  if (!(error instanceof Error)) return null;
+  if (error.message === "UNAUTHORIZED") {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
+  if (error.message === "FORBIDDEN") {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
+  return null;
+}
+
 async function loadMeetContext(meetId: string) {
   return db.meet.findUnique({
     where: { id: meetId },
@@ -105,7 +116,14 @@ async function loadCoachRows(teamIds: string[], coordinatorId: string | null, me
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (error) {
+    const response = authErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
   const meet = await loadMeetContext(meetId);
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
@@ -141,7 +159,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  try {
+    ({ user } = await requireRole("COACH"));
+  } catch (error) {
+    const response = authErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
   const body = BodySchema.parse(await req.json());
   const meet = await loadMeetContext(meetId);
   if (!meet || meet.deletedAt) {

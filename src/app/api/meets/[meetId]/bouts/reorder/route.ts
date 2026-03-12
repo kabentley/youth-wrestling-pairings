@@ -101,10 +101,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     if (locksChanged > 0) {
       messages.push(`Updated ${locksChanged} bout lock${locksChanged === 1 ? "" : "s"}.`);
     }
-    if (startingMatsChanged > 0) {
-      messages.push(`Updated starting mat on ${startingMatsChanged} bout${startingMatsChanged === 1 ? "" : "s"}.`);
+    if (messages.length > 0) {
+      await logMeetChange(meetId, user.id, messages.join(" "));
     }
-    await logMeetChange(meetId, user.id, messages.join(" "));
   }
 
   return NextResponse.json({ ok: true });

@@ -315,6 +315,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const { meetId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const showNotificationControls = process.env.NODE_ENV !== "production";
   const editRequested = searchParams.get("edit") === "1";
   const [wantsEdit, setWantsEdit] = useState(editRequested);
   const daysPerYear = DAYS_PER_YEAR;
@@ -328,6 +329,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [attendanceDeadline, setAttendanceDeadline] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<MeetPhase>("DRAFT");
+  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(false);
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
   const [savedMatchesPerWrestler, setSavedMatchesPerWrestler] = useState<number | null>(null);
@@ -493,6 +495,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [readyForCheckinError, setReadyForCheckinError] = useState<string | null>(null);
   const [readyForCheckinActionId, setReadyForCheckinActionId] = useState<string | null>(null);
   const [readyForCheckinTargetStatus, setReadyForCheckinTargetStatus] = useState<"READY_FOR_CHECKIN" | "PUBLISHED">("READY_FOR_CHECKIN");
+  const [sendReadyForCheckinNotification, setSendReadyForCheckinNotification] = useState(showNotificationControls);
+  const [sendPublishedNotification, setSendPublishedNotification] = useState(showNotificationControls);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -616,7 +620,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     setWantsEdit(next);
     router.replace(next ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`);
-  }, [meetId, router]);
+  }, [meetId, router, showNotificationControls]);
 
   // Briefly flash a UI notice (used after saves).
   const triggerNoticeFlash = useCallback(() => {
@@ -1239,6 +1243,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           girlsWrestleGirls: Boolean(meetJson.girlsWrestleGirls),
         }));
         setMeetStatus(normalizeMeetPhase(meetJson.status));
+        setSendNotificationsToParents(Boolean(meetJson.sendNotificationsToParents));
+        setSendReadyForCheckinNotification(Boolean(meetJson.sendNotificationsToParents) && showNotificationControls);
+        setSendPublishedNotification(Boolean(meetJson.sendNotificationsToParents) && showNotificationControls);
         setTeamCheckins(Array.isArray(meetJson.teamCheckins) ? meetJson.teamCheckins : []);
         setLastUpdatedAt(meetJson.lastChangeAt ?? null);
         setLastUpdatedBy(meetJson.lastChangeBy ?? null);
@@ -1401,7 +1408,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const lockAccessDenied = lockAccessLoaded && !canManageLockAccess && !canAcquireMeetLock;
   const isMeetCoordinator = Boolean(currentUsername) && Boolean(coordinatorUsername) && currentUsername === coordinatorUsername;
   const canEditThisPhase = meetStatus === "DRAFT" || isMeetCoordinator || currentUserRole === "ADMIN";
-  const canEdit = editAllowed && wantsEdit && lockState.status === "acquired" && isEditablePhase && canEditThisPhase;
+  const canChangeMeetPhase =
+    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    editAllowed;
+  const hasImplicitCheckinEdit = meetStatus === "READY_FOR_CHECKIN" && canChangeMeetPhase;
+  const hasActiveMeetEdit = hasImplicitCheckinEdit || (wantsEdit && lockState.status === "acquired");
+  const canEdit = editAllowed && isEditablePhase && canEditThisPhase && hasActiveMeetEdit;
   const isCoachOnMeetTeam = Boolean(
     currentUserRole === "COACH" &&
     currentUserTeamId &&
@@ -1448,12 +1460,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canSetPairingNotComing = meetStatus === "DRAFT";
   const canRunPairingsAutoPair = canEdit && meetStatus === "DRAFT";
   const defaultTabForPhase = meetStatus === "ATTENDANCE" ? "attendance" : "pairings";
-  const canChangeMeetPhase =
-    (isMeetCoordinator || currentUserRole === "ADMIN") &&
-    editAllowed;
   const canChangeStatus =
     canChangeMeetPhase &&
-    (isPublished || lockState.status === "acquired");
+    (isPublished || lockState.status === "acquired" || hasImplicitCheckinEdit);
   const canCloseAttendanceWithoutLock = meetStatus === "ATTENDANCE" && canChangeMeetPhase;
   const canReopenAttendance = meetStatus === "DRAFT" && canChangeStatus && bouts.length === 0;
   const shouldShowAttendanceReadOnlyNotice = !(activeTab === "attendance" && (canEditAttendance || meetStatus === "ATTENDANCE"));
@@ -1732,6 +1741,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       updateLockState({ status: "locked", lockedByUsername: null });
       return;
     }
+    if (hasImplicitCheckinEdit) {
+      clearInactivityTimer();
+      if (!wantsEdit || lockStatusRef.current !== "acquired") {
+        void refreshLockStatus();
+        return;
+      }
+      const interval = setInterval(() => {
+        if (lockStatusRef.current === "acquired") {
+          void acquireLock();
+        }
+      }, 60_000);
+      const onBeforeUnload = () => { void releaseLock("beforeunload", true); };
+      window.addEventListener("beforeunload", onBeforeUnload);
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+        if (isUnmountingRef.current) {
+          void releaseLock("unmount", true);
+        }
+      };
+    }
     if (!wantsEdit) {
       void refreshLockStatus();
       const interval = setInterval(() => {
@@ -1757,10 +1787,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         void releaseLock("unmount", true);
       }
     };
-  }, [meetId, editAllowed, meetLoaded, meetStatus, wantsEdit, refreshLockStatus, triggerNoticeFlash]);
+  }, [clearInactivityTimer, editAllowed, hasImplicitCheckinEdit, meetId, meetLoaded, meetStatus, refreshLockStatus, releaseLock, triggerNoticeFlash, wantsEdit]);
 
   useEffect(() => {
-    if (!wantsEdit || lockState.status !== "acquired") return;
+    if (hasImplicitCheckinEdit || !wantsEdit || lockState.status !== "acquired") return;
     resetInactivityTimer();
     const handleActivity = () => resetInactivityTimer();
     window.addEventListener("mousedown", handleActivity);
@@ -1776,10 +1806,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       window.removeEventListener("scroll", handleActivity);
       clearInactivityTimer();
     };
-  }, [wantsEdit, lockState.status, resetInactivityTimer, clearInactivityTimer]);
+  }, [clearInactivityTimer, hasImplicitCheckinEdit, lockState.status, resetInactivityTimer, wantsEdit]);
 
   useEffect(() => {
-    if (!wantsEdit || lockState.status !== "acquired") return;
+    if (hasImplicitCheckinEdit || !wantsEdit || lockState.status !== "acquired") return;
     const handleVisibility = () => {
       if (document.hidden) return;
       const deadline = inactivityDeadlineRef.current;
@@ -1798,10 +1828,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleVisibility);
     };
-  }, [wantsEdit, lockState.status, releaseLock, updateLockState]);
+  }, [hasImplicitCheckinEdit, lockState.status, releaseLock, updateLockState, wantsEdit]);
 
   useEffect(() => {
-    if (!wantsEdit || lockState.status !== "acquired") {
+    if (hasImplicitCheckinEdit || !wantsEdit || lockState.status !== "acquired") {
       setInactivityRemainingMs(null);
       return;
     }
@@ -1815,7 +1845,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       setInactivityRemainingMs(remaining);
     }, 200);
     return () => clearInterval(interval);
-  }, [wantsEdit, lockState.status]);
+  }, [hasImplicitCheckinEdit, lockState.status, wantsEdit]);
 
   const matchedIds = new Set<string>();
   for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
@@ -2552,6 +2582,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }
 
   async function ensureMeetLock(force = false) {
+    if (hasImplicitCheckinEdit) return true;
     if (!force && lockState.status === "acquired") return true;
     const ok = await acquireLock();
     if (!ok) {
@@ -2578,10 +2609,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       body: JSON.stringify({
         status: nextStatus,
         ...(nextStatus === "READY_FOR_CHECKIN"
-          ? { sendReadyForCheckinNotification: false }
+          ? { sendReadyForCheckinNotification: showNotificationControls && sendNotificationsToParents && sendReadyForCheckinNotification }
           : {}),
         ...(nextStatus === "PUBLISHED"
-          ? { sendPublishedNotification: false }
+          ? { sendPublishedNotification: showNotificationControls && sendNotificationsToParents && sendPublishedNotification }
           : {}),
       }),
     });
@@ -2638,6 +2669,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function openReadyForCheckinChecklist(targetStatus: "READY_FOR_CHECKIN" | "PUBLISHED" = "READY_FOR_CHECKIN") {
     if (!(await flushPendingAttendanceChanges())) return;
     setReadyForCheckinTargetStatus(targetStatus);
+    if (targetStatus === "READY_FOR_CHECKIN") {
+      setSendReadyForCheckinNotification(showNotificationControls && sendNotificationsToParents);
+    } else {
+      setSendPublishedNotification(showNotificationControls && sendNotificationsToParents);
+    }
     setShowReadyForCheckinModal(true);
     setReadyForCheckinLoading(true);
     setReadyForCheckinError(null);
@@ -4160,7 +4196,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           className="lock-release-banner"
           style={{
             visibility:
-              wantsEdit && lockState.status === "acquired" && inactivityRemainingMs !== null
+              !hasImplicitCheckinEdit && wantsEdit && lockState.status === "acquired" && inactivityRemainingMs !== null
                 ? inactivityRemainingMs <= 30 * 1000
                   ? "visible"
                   : "hidden"
@@ -4236,7 +4272,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {meetStatus !== "ATTENDANCE" && isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && (
+            {meetStatus !== "ATTENDANCE" && isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !hasImplicitCheckinEdit && (
               <button
                 type="button"
                 className="nav-btn secondary"
@@ -4254,7 +4290,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Start Editing
               </button>
             )}
-            {isEditablePhase && wantsEdit && lockState.status === "acquired" && (
+            {isEditablePhase && wantsEdit && lockState.status === "acquired" && !hasImplicitCheckinEdit && (
               <button
                 type="button"
                 className="nav-btn secondary"
@@ -4297,7 +4333,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           </div>
         </div>
       </div>
-      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !(activeTab === "scratches" && canManageScratchEntry) && shouldShowAttendanceReadOnlyNotice && (
+      {isEditablePhase && lockState.status !== "acquired" && !lockAccessDenied && !hasImplicitCheckinEdit && !(activeTab === "scratches" && canManageScratchEntry) && shouldShowAttendanceReadOnlyNotice && (
         <div className={`notice${flashNotice ? " flash" : ""}`} style={{ marginTop: 10 }}>
           {"Read-only mode. Click Start Editing to make changes."}
           {lockState.lockedByUsername ? (
@@ -5875,6 +5911,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               onMatAssignmentsChange={refreshAfterMatAssignments}
               refreshIndex={matRefreshIndex}
               canEdit={canEdit}
+              canChangeMatCount={meetStatus === "DRAFT" && isMeetCoordinator && canEdit}
               allowNotAttendingStatus={meetStatus === "DRAFT"}
               showTeamSymbols={matBoardShowTeamSymbols}
               onShowTeamSymbolsChange={setMatBoardShowTeamSymbols}
@@ -6150,6 +6187,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         ? "Fix the failed checklist items before publishing the meet."
                         : "Fix the failed checklist items before moving the meet to Check-in.")}
                   </div>
+                  {showNotificationControls && readyForCheckinChecklist.ok && readyForCheckinTargetStatus === "READY_FOR_CHECKIN" && (
+                    <label className="row" style={{ marginTop: 8, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={sendReadyForCheckinNotification}
+                        onChange={(event) => setSendReadyForCheckinNotification(event.target.checked)}
+                        disabled={!sendNotificationsToParents || readyForCheckinSubmitting || Boolean(readyForCheckinActionId)}
+                      />
+                      <span className="muted">
+                        {sendNotificationsToParents
+                          ? "Send ready-for-check-in notifications"
+                          : "Parent meet-event notifications are disabled for this meet."}
+                      </span>
+                    </label>
+                  )}
                 </>
               )}
               <div className="ready-checkin-footer">
@@ -6195,6 +6247,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <div>
                 For that reason, publishing is irreversible.
               </div>
+              {showNotificationControls && (
+                <label className="row" style={{ marginTop: 12, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={sendPublishedNotification}
+                    onChange={(event) => setSendPublishedNotification(event.target.checked)}
+                    disabled={!sendNotificationsToParents || readyForCheckinSubmitting}
+                  />
+                  <span className="muted">
+                    {sendNotificationsToParents
+                      ? "Send published notifications"
+                      : "Parent meet-event notifications are disabled for this meet."}
+                  </span>
+                </label>
+              )}
               <div className="ready-checkin-footer">
                 <button
                   type="button"

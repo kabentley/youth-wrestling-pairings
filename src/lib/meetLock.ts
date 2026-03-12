@@ -48,10 +48,17 @@ export async function requireMeetLock(meetId: string, userId: string, userRole?:
     meetStatus === "DRAFT" ||
     userRole === "ADMIN" ||
     (Boolean(coordinatorId) && coordinatorId === userId);
+  const hasImplicitCheckinLock =
+    meetStatus === "READY_FOR_CHECKIN" &&
+    (userRole === "ADMIN" || (Boolean(coordinatorId) && coordinatorId === userId));
 
   if (userRole && !canEditThisPhase) {
     const err = new Error("MEET_EDIT_FORBIDDEN");
     throw err;
+  }
+
+  if (hasImplicitCheckinLock) {
+    return;
   }
 
   if (meet.lockExpiresAt && meet.lockExpiresAt < now) {

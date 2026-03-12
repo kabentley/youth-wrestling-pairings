@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { logMeetChange } from "@/lib/meetActivity";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
 import { requireSession } from "@/lib/rbac";
@@ -94,11 +93,6 @@ export async function PATCH(
       });
     }
 
-    await logMeetChange(
-      meetId,
-      userId,
-      `Parent attendance: ${wrestler.first} ${wrestler.last} -> ${update.status === null ? "no reply" : update.status.replace(/_/g, " ").toLowerCase()}.`,
-    );
   }
 
   return NextResponse.json({ ok: true });

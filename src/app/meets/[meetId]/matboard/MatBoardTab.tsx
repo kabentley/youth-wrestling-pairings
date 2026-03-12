@@ -66,6 +66,7 @@ interface MatBoardTabProps {
   onMatAssignmentsChange?: (opts?: { includeWrestlers?: boolean }) => Promise<void> | void;
   refreshIndex?: number;
   canEdit: boolean;
+  canChangeMatCount?: boolean;
   allowNotAttendingStatus?: boolean;
   showTeamSymbols: boolean;
   onShowTeamSymbolsChange: (value: boolean) => void;
@@ -162,6 +163,7 @@ export default function MatBoardTab({
   onMatAssignmentsChange,
   refreshIndex,
   canEdit,
+  canChangeMatCount = false,
   allowNotAttendingStatus = false,
   showTeamSymbols,
   onShowTeamSymbolsChange,
@@ -192,6 +194,9 @@ export default function MatBoardTab({
   const [statusContext, setStatusContext] = useState<MatboardStatusContext | null>(null);
   const [peopleRuleTooltip, setPeopleRuleTooltip] = useState<MatboardPeopleRuleTooltip | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [showMatCountModal, setShowMatCountModal] = useState(false);
+  const [pendingMatCount, setPendingMatCount] = useState(1);
+  const [matCountSaving, setMatCountSaving] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement | null>(null);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -365,7 +370,7 @@ export default function MatBoardTab({
     return () => {
       cancelled = true;
     };
-  }, [meetId]);
+  }, [meetId, refreshIndex]);
 
   useEffect(() => {
     const saveOnExit = () => {
@@ -477,6 +482,51 @@ export default function MatBoardTab({
     orderVersionRef.current = 0;
     lastLockAnchorRef.current = null;
 
+  }
+
+  function openMatCountModal() {
+    setPendingMatCount(Math.max(1, Math.min(MAX_MATS, numMats || 1)));
+    setShowMatCountModal(true);
+  }
+
+  async function confirmMatCountChange() {
+    if (!canChangeMatCount || matCountSaving) return;
+    const nextNumMats = Math.max(1, Math.min(MAX_MATS, Math.round(pendingMatCount || numMats || 1)));
+    if (nextNumMats === numMats) {
+      setShowMatCountModal(false);
+      return;
+    }
+    setMatCountSaving(true);
+    setMsg("Reassigning bouts...");
+    try {
+      if (dirtyRef.current) {
+        await saveOrderRef.current?.({ silent: true });
+      }
+      const response = await fetch(`/api/meets/${meetId}/mats/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ numMats: nextNumMats }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to change the number of mats.");
+      }
+      setMeetSettings((current) => (
+        current
+          ? { ...current, numMats: nextNumMats }
+          : { numMats: nextNumMats, restGap: conflictGap, homeTeamId: null, date: null }
+      ));
+      setNumMats(nextNumMats);
+      await load();
+      await onMatAssignmentsChange?.({ includeWrestlers: true });
+      setShowMatCountModal(false);
+      setMsg("Mat count updated.");
+      void setTimeout(() => setMsg(""), 1600);
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Unable to change the number of mats.");
+    } finally {
+      setMatCountSaving(false);
+    }
   }
 
   const mats = useMemo(() => {
@@ -1141,7 +1191,7 @@ export default function MatBoardTab({
     return null;
   };
   const matColumnCount = Math.max(1, numMats);
-  const matColumnMinWidth = 280;
+  const matColumnMinWidth = 320;
   const matGridMinWidth = matColumnCount * matColumnMinWidth + Math.max(0, matColumnCount - 1) * 10;
   const matboardFontSliderPercent =
     ((matboardFontSize - MIN_MATBOARD_FONT_SIZE)
@@ -1678,14 +1728,104 @@ export default function MatBoardTab({
               Wrestlers with only one match are always shown in <em>italics</em>.
             </span>
           </div>
-          <div className="matboard-legend">
-          <span style={{ fontWeight: 600 }}>Legend:</span>
-          <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
-          <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
-          <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            {canChangeMatCount && (
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={openMatCountModal}
+                disabled={matCountSaving}
+              >
+                Change # Mats
+              </button>
+            )}
+            <div className="matboard-legend">
+              <span style={{ fontWeight: 600 }}>Legend:</span>
+              <span style={{ background: "#ffd6df", padding: "2px 6px", borderRadius: 6 }}>Conflict</span>
+              <span style={{ background: "#dff1ff", padding: "2px 6px", borderRadius: 6 }}>Arrive Late</span>
+              <span style={{ background: "#f3eadf", padding: "2px 6px", borderRadius: 6 }}>Leave Early</span>
+            </div>
+            {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
+          </div>
         </div>
-        {msg && <span style={{ fontSize: 13, fontWeight: 600 }}>{msg}</span>}
-      </div>
+      {showMatCountModal && (
+        <div
+          onClick={() => {
+            if (matCountSaving) return;
+            setShowMatCountModal(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(20, 26, 36, 0.48)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(420px, 100%)",
+              borderRadius: 12,
+              border: "1px solid #d5dbe2",
+              background: "#ffffff",
+              boxShadow: "0 16px 36px rgba(0, 0, 0, 0.2)",
+              padding: 18,
+              display: "grid",
+              gap: 14,
+            }}
+          >
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#243041" }}>
+              Change Number of Mats
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#4b5563" }}>Number of mats</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_MATS}
+                value={pendingMatCount}
+                onChange={(event) => {
+                  const raw = Number(event.target.value);
+                  if (!Number.isFinite(raw)) {
+                    setPendingMatCount(1);
+                    return;
+                  }
+                  setPendingMatCount(Math.max(1, Math.min(MAX_MATS, Math.round(raw))));
+                }}
+                disabled={matCountSaving}
+                style={{ padding: "8px 10px", fontSize: 16, width: 88 }}
+              />
+            </label>
+            <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.35, color: "#243041" }}>
+              All existing bouts will be reassigned to the new set of mats, and all bout numbers will change.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="nav-btn secondary"
+                onClick={() => setShowMatCountModal(false)}
+                disabled={matCountSaving}
+                style={{ minWidth: 96 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="nav-btn primary"
+                onClick={() => void confirmMatCountChange()}
+                disabled={matCountSaving || pendingMatCount === numMats}
+                style={{ minWidth: 96 }}
+              >
+                {matCountSaving ? "OK..." : "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {authMsg && <div className="notice">{authMsg}</div>}
       <div className="mat-grid-scroll">
       <div

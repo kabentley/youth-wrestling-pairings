@@ -94,7 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       `reordered ${reorderResult.reordered} bout${reorderResult.reordered === 1 ? "" : "s"}`,
     ].join(", ");
     const matsLabel = shouldReorderAllMats ? " on all mats" : "";
-    await logMeetChange(meetId, user.id, `Synced staff-driven mat assignments${matsLabel} (${details}).`);
+    await logMeetChange(meetId, user.id, `Synced volunteer mat assignments${matsLabel} (${details}).`);
   }
 
   return NextResponse.json({

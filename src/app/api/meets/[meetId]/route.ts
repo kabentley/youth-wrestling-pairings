@@ -34,6 +34,7 @@ const PatchSchema = z.object({
   maxMatchesPerWrestler: z.number().int().min(1).max(5).optional(),
   restGap: z.number().int().min(0).max(20).optional(),
   status: z.enum(MEET_PHASES).optional(),
+  sendNotificationsToParents: z.boolean().optional(),
   sendReadyForCheckinNotification: z.boolean().optional(),
   sendPublishedNotification: z.boolean().optional(),
 });
@@ -316,6 +317,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     maxMatchesPerWrestler?: number;
     restGap?: number;
     status?: string;
+    sendNotificationsToParents?: boolean;
     updatedById?: string;
   } = { updatedById: user.id };
 
@@ -330,6 +332,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.matchesPerWrestler !== undefined) data.matchesPerWrestler = body.matchesPerWrestler;
   if (body.maxMatchesPerWrestler !== undefined) data.maxMatchesPerWrestler = body.maxMatchesPerWrestler;
   if (body.restGap !== undefined) data.restGap = body.restGap;
+  if (body.sendNotificationsToParents !== undefined) data.sendNotificationsToParents = body.sendNotificationsToParents;
   if (body.status) data.status = body.status;
 
   const now = new Date();

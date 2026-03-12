@@ -152,6 +152,7 @@ type Meet = {
 
 export default function MeetsPage() {
   const { data: session } = useSession();
+  const showNotificationControls = process.env.NODE_ENV !== "production";
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
   const [isLoadingMeets, setIsLoadingMeets] = useState(true);
@@ -172,6 +173,7 @@ export default function MeetsPage() {
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
   const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(true);
+  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(showNotificationControls);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
@@ -221,8 +223,9 @@ export default function MeetsPage() {
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
     setAllCoachesHaveLockAccess(true);
+    setSendNotificationsToParents(showNotificationControls);
     setEditingMeet(null);
-  }, []);
+  }, [showNotificationControls]);
 
   const closeCreateModal = useCallback((options?: { skipCreateQueryCleanup?: boolean }) => {
     setIsCreateModalOpen(false);
@@ -324,7 +327,7 @@ export default function MeetsPage() {
           restGap,
           autoPairings: true,
           allCoachesHaveLockAccess,
-          sendNotificationsToParents: false,
+          sendNotificationsToParents: showNotificationControls ? sendNotificationsToParents : false,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -352,6 +355,7 @@ export default function MeetsPage() {
         matchesPerWrestler,
         maxMatchesPerWrestler,
         restGap,
+        ...(showNotificationControls ? { sendNotificationsToParents } : {}),
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -1220,6 +1224,19 @@ export default function MeetsPage() {
                   />
                 </label>
               </div>
+              {showNotificationControls && (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <label className="row" style={{ margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={sendNotificationsToParents}
+                      onChange={e => setSendNotificationsToParents(e.target.checked)}
+                      disabled={!canManageMeets}
+                    />
+                    <span className="muted">Enable parent meet-event notifications</span>
+                  </label>
+                </div>
+              )}
               <div className="row" style={{ marginTop: 10, alignItems: "center" }}>
                 <label className="row">
                   <span className="muted">Number of mats</span>

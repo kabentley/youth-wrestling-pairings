@@ -14,6 +14,7 @@ type Props = {
 };
 
 export default async function AdminHome({ searchParams }: Props) {
+  const showNotifications = process.env.NODE_ENV !== "production";
   try {
     await requireAdmin();
   } catch (err) {
@@ -54,6 +55,8 @@ export default async function AdminHome({ searchParams }: Props) {
       case "pairings":
       case "users":
         return resolvedSearchParams.tab;
+      case "notifications":
+        return showNotifications ? "notifications" : "users";
       default:
         return "users";
     }
@@ -63,7 +66,7 @@ export default async function AdminHome({ searchParams }: Props) {
     <main className="admin">
       <style>{adminStyles}</style>
       <div className="admin-shell">
-        <AdminTabs initialTab={requestedTab} />
+        <AdminTabs initialTab={requestedTab} showNotifications={showNotifications} />
       </div>
     </main>
   );

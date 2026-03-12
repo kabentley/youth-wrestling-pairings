@@ -1811,12 +1811,12 @@ export default function ScratchesTab({
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 0, flex: 1 }}>
                       <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#243041" }}>
                         Possible additional matches:
                       </h3>
-                      <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ maxHeight: "28dvh", overflow: "auto" }}>
+                      <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
+                        <div style={{ maxHeight: "min(24dvh, 260px)", overflow: "auto" }}>
                           <table cellPadding={4} style={pairingsTableStyle}>
                             <colgroup>
                               {availableColumnWidths.map((width, index) => (
@@ -2169,7 +2169,7 @@ export default function ScratchesTab({
               gridRow: isPhoneLayout ? 2 : 1,
             }}
           >
-            <div style={{ flex: 1, minHeight: 0, padding: 12, display: "grid", gap: 6, alignContent: "start" }}>
+            <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", gap: 6, overflow: "hidden" }}>
               {!selectedWrestler && (
                 <div style={{ color: "#5a6673", fontSize: 13 }}>Select a wrestler to review current and replacement matches.</div>
               )}
@@ -2332,12 +2332,12 @@ export default function ScratchesTab({
                     </div>
                   </div>
 
-                  <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 0, flex: 1 }}>
                     <h3 style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, color: "#243041" }}>
                       Possible additional matches:
                     </h3>
-                    <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                      <div style={{ maxHeight: "28dvh", overflow: "auto" }}>
+                    <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
+                      <div style={{ maxHeight: "min(24dvh, 260px)", overflow: "auto" }}>
                         <table cellPadding={4} style={pairingsTableStyle}>
                           <colgroup>
                             {availableColumnWidths.map((width, index) => (
