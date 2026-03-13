@@ -125,24 +125,37 @@ export default function AccountPage() {
         <div className="account-card">
           <h3>Profile</h3>
           <div className="account-grid">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Full name"
-            />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email address"
-            />
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Phone number"
-            />
+            <label className="account-field">
+              <span className="account-label">Username</span>
+              <input type="text" value={username} readOnly />
+            </label>
+            <label className="account-field">
+              <span className="account-label">Full Name</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Full name"
+              />
+            </label>
+            <label className="account-field">
+              <span className="account-label">Email Address</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email address"
+              />
+            </label>
+            <label className="account-field">
+              <span className="account-label">Phone Number</span>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="Phone number"
+              />
+            </label>
           </div>
           <button className="account-btn" style={{ marginTop: 12 }} onClick={saveProfile}>Update</button>
           {profileErr && <div className="account-error">{profileErr}</div>}
@@ -230,7 +243,7 @@ const accountStyles = `
     padding: 28px 18px 40px;
   }
   .account-shell {
-    width: 100%;
+    width: min(720px, 100%);
   }
   .account-header {
     display: flex;
@@ -240,7 +253,7 @@ const accountStyles = `
     margin: 12px 0 16px;
     border-bottom: 1px solid var(--line);
     padding-bottom: 12px;
-    width: 100%;
+    width: min(720px, 100%);
   }
   .account-header h1 {
     margin: 0;
@@ -260,6 +273,16 @@ const accountStyles = `
     gap: 10px;
     align-items: center;
     flex-wrap: wrap;
+  }
+  .account-field {
+    display: grid;
+    gap: 6px;
+  }
+  .account-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.02em;
   }
   .account-grid {
     display: grid;

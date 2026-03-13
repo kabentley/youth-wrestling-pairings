@@ -28,6 +28,8 @@ export type MeetReadyForAttendanceSummary = {
   teams: NotificationTeamSummary[];
 };
 
+const NOTIFICATION_LOGGING_ENABLED = false;
+
 type NotificationLogInput = {
   event: NotificationEvent;
   channel: NotificationChannel;
@@ -254,6 +256,9 @@ export function buildPreferredMessages(
 }
 
 async function writeNotificationLog(input: NotificationLogInput) {
+  if (!NOTIFICATION_LOGGING_ENABLED) {
+    return;
+  }
   await getNotificationLogDelegate().create({
     data: {
       event: input.event,
@@ -351,6 +356,9 @@ function buildEventDedupeKey(event: NotificationEvent, meetId: string) {
 }
 
 async function claimMeetEventDispatch(event: NotificationEvent, meetId: string) {
+  if (!NOTIFICATION_LOGGING_ENABLED) {
+    return true;
+  }
   try {
     await writeNotificationLog({
       event,
