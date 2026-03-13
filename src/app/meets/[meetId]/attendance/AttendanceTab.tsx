@@ -35,6 +35,7 @@ type AttendanceTabProps = {
   attendanceDeadline?: string | null;
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
+  showScratchedColumn?: boolean;
   disableAllComing?: boolean;
   showStatusAttribution?: boolean;
   showParentEntryNotice?: boolean;
@@ -78,7 +79,7 @@ function formatAttendanceLabel(status: AttendanceStatus) {
   if (status === "COMING") return "Coming";
   if (status === "LATE") return "Late";
   if (status === "EARLY") return "Early";
-  if (status === "ABSENT") return "Absent";
+  if (status === "ABSENT") return "Scratched";
   return "No Reply";
 }
 
@@ -153,6 +154,7 @@ export default function AttendanceTab({
   attendanceDeadline = null,
   showRefresh = false,
   showNoReplyColumn = true,
+  showScratchedColumn = false,
   disableAllComing = false,
   showStatusAttribution = false,
   showParentEntryNotice = false,
@@ -256,9 +258,10 @@ export default function AttendanceTab({
   })();
 
   const coming = sortRosterRows(teamWrestlers.filter(w => w.status === "COMING" || w.status === "LATE" || w.status === "EARLY"));
+  const scratched = sortRosterRows(teamWrestlers.filter(w => w.status === "ABSENT"));
   const notComing = sortRosterRows(
     teamWrestlers.filter(
-      w => w.status === "NOT_COMING" || w.status === "ABSENT" || (!showNoReplyColumn && w.status == null),
+      w => w.status === "NOT_COMING" || (!showNoReplyColumn && w.status == null),
     ),
   );
   const noReply = sortRosterRows(teamWrestlers.filter(w => w.status == null));
@@ -294,6 +297,18 @@ export default function AttendanceTab({
       itemBorder: "#cfd5dc",
     },
   ];
+  if (showScratchedColumn) {
+    columns.push({
+      key: "scratched",
+      label: "Scratched",
+      wrestlers: scratched,
+      dropStatus: "NOT_COMING",
+      clickStatus: "COMING",
+      panelBackground: "#f8f1f1",
+      itemBackground: "#f4e6e6",
+      itemBorder: "#dfc1c1",
+    });
+  }
   if (shouldShowNoReplyColumn) {
     columns.push({
       key: "no-reply",
@@ -629,7 +644,7 @@ export default function AttendanceTab({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: columns.length === 3 ? "360px 360px 340px" : "360px 360px",
+                gridTemplateColumns: columns.map((column) => column.key === "no-reply" ? "340px" : "360px").join(" "),
                 gap: 8,
                 width: "fit-content",
                 alignItems: "start",
@@ -667,7 +682,7 @@ export default function AttendanceTab({
                             ? "All Coming is only available during Draft."
                             : canEditActiveTeam
                               ? "Mark all visible no-reply wrestlers coming"
-                              : "Acquire the meet lock to update attendance"
+                              : undefined
                         }
                       >
                         {bulkUpdatingColumn === column.key ? "Saving..." : "All Coming"}
@@ -722,9 +737,7 @@ export default function AttendanceTab({
                           !pendingStatusChanges.has(w.id)
                           ? formatParentResponseLabel(w)
                           : null;
-                        const tooltipMessage = parentResponseInfo ?? (!canEditActiveTeam
-                          ? "Acquire the meet lock to update attendance."
-                          : null);
+                        const tooltipMessage = parentResponseInfo;
                         const hadExplicitResponse =
                           w.status === "NOT_COMING" || w.status === "ABSENT";
                         const emphasizeNotComingResponse =

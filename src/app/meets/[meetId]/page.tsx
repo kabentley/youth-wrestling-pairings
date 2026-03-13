@@ -4426,9 +4426,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       )}
       <div className="tab-bar">
           {[
-            ...((meetStatus === "ATTENDANCE" || meetStatus === "DRAFT")
-              ? [{ key: "attendance", label: "Attendance" } as const]
-              : []),
+            { key: "attendance", label: "Attendance" } as const,
             ...(meetStatus !== "ATTENDANCE" ? [{ key: "pairings", label: "Pairings" } as const] : []),
             ...(meetStatus !== "ATTENDANCE" ? [{ key: "matboard", label: "Mat Assignments" } as const] : []),
             ...(canShowVolunteers ? [{ key: "volunteers", label: "Volunteers" } as const] : []),
@@ -4473,17 +4471,18 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               attendanceDeadline={attendanceDeadline}
               showRefresh={meetStatus === "ATTENDANCE"}
               showNoReplyColumn
+              showScratchedColumn={meetStatus === "READY_FOR_CHECKIN" || meetStatus === "PUBLISHED"}
               disableAllComing={meetStatus === "ATTENDANCE"}
               showStatusAttribution={false}
               showParentEntryNotice={meetStatus === "ATTENDANCE"}
-              showParentResponseDetails={meetStatus === "DRAFT" || meetStatus === "ATTENDANCE"}
+              showParentResponseDetails
               editableTeamId={
                 coachAttendanceEditScopeWithoutLock === "team"
                   ? currentUserTeamId
                   : null
               }
               lockRequired={coachAttendanceEditScopeWithoutLock === null}
-              readOnly={!canEditAttendance}
+              readOnly={meetStatus === "READY_FOR_CHECKIN" || !canEditAttendance}
               onEnsureLock={ensureMeetLock}
               onRefresh={load}
               onRegisterSaveHandler={(handler) => {
