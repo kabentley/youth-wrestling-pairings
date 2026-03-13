@@ -10,36 +10,28 @@ const MAX_RESET_ATTEMPTS = 5;
 
 const BodySchema = z.object({
   username: z.string().trim().min(6).max(32),
-  email: z.string().trim().email().optional(),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional(),
+  email: z.string().trim().email(),
   code: z.string().trim().min(4).max(20),
   password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
-}).refine(v => Boolean(v.email ?? v.phone), {
-  message: "Provide email or phone",
+}).refine(v => Boolean(v.email), {
+  message: "Provide email",
 });
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
-function normalizePhone(phone: string) {
-  return phone.trim();
-}
 
 export async function POST(req: Request) {
   const body = BodySchema.parse(await req.json());
   const username = body.username.trim().toLowerCase();
-  const email = body.email ? normalizeEmail(body.email) : null;
-  const phone = body.phone ? normalizePhone(body.phone) : null;
+  const email = normalizeEmail(body.email);
   const code = body.code.trim();
 
   const user = await db.user.findUnique({ where: { username } });
   if (!user) {
     return NextResponse.json({ error: "Invalid reset code." }, { status: 400 });
   }
-  if (email && user.email.toLowerCase() !== email) {
-    return NextResponse.json({ error: "Invalid reset code." }, { status: 400 });
-  }
-  if (phone && user.phone !== phone) {
+  if (user.email.toLowerCase() !== email) {
     return NextResponse.json({ error: "Invalid reset code." }, { status: 400 });
   }
 

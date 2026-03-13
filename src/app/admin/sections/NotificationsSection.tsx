@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 type NotificationRow = {
   id: string;
   event: "meet_ready_for_attendance" | "meet_ready_for_checkin" | "meet_published";
-  channel: "email" | "sms" | "system" | string;
+  channel: "email" | "system" | string;
   status: "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
   recipient: string;
   subject: string | null;

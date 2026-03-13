@@ -10,8 +10,6 @@ function ResetPasswordContent() {
   const [username, setUsername] = useState("");
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [method, setMethod] = useState<"email" | "sms">("email");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -47,12 +45,8 @@ function ResetPasswordContent() {
       setErr("Enter your username.");
       return;
     }
-    if (method === "email" && !email.trim()) {
+    if (!email.trim()) {
       setErr("Enter your email.");
-      return;
-    }
-    if (method === "sms" && !phone.trim()) {
-      setErr("Enter your phone.");
       return;
     }
     if (!code.trim()) {
@@ -75,7 +69,7 @@ function ResetPasswordContent() {
     const res = await fetch("/api/auth/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, email, phone, code, password }),
+      body: JSON.stringify({ username, email, code, password }),
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
@@ -108,48 +102,18 @@ function ResetPasswordContent() {
               void submit();
             }}
           >
-            <label className="auth-radio">
-              <input
-                type="radio"
-                name="method"
-                value="email"
-                checked={method === "email"}
-                onChange={() => setMethod("email")}
-              />{" "}
-              Email
-            </label>
-            <label className="auth-radio">
-              <input
-                type="radio"
-                name="method"
-                value="sms"
-                checked={method === "sms"}
-                onChange={() => setMethod("sms")}
-              />{" "}
-              SMS
-            </label>
-
             <input
               type="text"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
-            {method === "email" ? (
-              <input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            ) : (
-              <input
-                type="tel"
-                placeholder="Phone (E.164)"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            )}
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
             <input
               type="text"
               placeholder="Reset code"

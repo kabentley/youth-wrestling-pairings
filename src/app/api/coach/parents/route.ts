@@ -154,9 +154,6 @@ export async function POST(request: Request) {
   }
   const payload = parsed.data;
   const username = payload.username.trim().toLowerCase();
-  if (username.startsWith("oauth-")) {
-    return NextResponse.json({ error: "Choose a different username." }, { status: 400 });
-  }
   const existing = await db.user.findUnique({
     where: { username },
     select: { id: true },

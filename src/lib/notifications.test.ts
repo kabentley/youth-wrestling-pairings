@@ -26,7 +26,7 @@ describe("resolveNotificationTransport", () => {
 });
 
 describe("buildMeetReadyForAttendanceContent", () => {
-  it("builds email and sms content with deadline and links", async () => {
+  it("builds email content with deadline and links", async () => {
     process.env.DATABASE_URL = "file:./dev.db";
     const { buildMeetReadyForAttendanceContent } = await import("./notifications");
     const content = buildMeetReadyForAttendanceContent({
@@ -46,8 +46,6 @@ describe("buildMeetReadyForAttendanceContent", () => {
     expect(content.emailText).toContain("North Gym");
     expect(content.emailText).toContain("Ava Smith and Ben Smith");
     expect(content.emailText).toContain("http://localhost:3000/parent/attendance");
-    expect(content.smsText).toContain("Tigers-Wolves Jan 12");
-    expect(content.smsText).toContain("http://localhost:3000/parent/attendance");
   });
 
   it("falls back when no linked wrestlers are listed", async () => {
@@ -71,43 +69,18 @@ describe("buildMeetReadyForAttendanceContent", () => {
 });
 
 describe("buildPreferredMessages", () => {
-  it("prefers sms when both phone and email are present", async () => {
+  it("uses email when both phone and email are present", async () => {
     process.env.DATABASE_URL = "file:./dev.db";
     const { buildPreferredMessages } = await import("./notifications");
     const messages = buildPreferredMessages(
       {
         userId: "user_1",
         email: "parent@example.com",
-        phone: "+15551234567",
       },
       {
         meetId: "meet_1",
         emailSubject: "Email subject",
         emailText: "Email body",
-        smsText: "SMS body",
-        extraPayload: {},
-      },
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.channel).toBe("sms");
-    expect(messages[0]?.recipient).toBe("+15551234567");
-  });
-
-  it("falls back to email when no phone is present", async () => {
-    process.env.DATABASE_URL = "file:./dev.db";
-    const { buildPreferredMessages } = await import("./notifications");
-    const messages = buildPreferredMessages(
-      {
-        userId: "user_1",
-        email: "parent@example.com",
-        phone: null,
-      },
-      {
-        meetId: "meet_1",
-        emailSubject: "Email subject",
-        emailText: "Email body",
-        smsText: "SMS body",
         extraPayload: {},
       },
     );
@@ -115,6 +88,25 @@ describe("buildPreferredMessages", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]?.channel).toBe("email");
     expect(messages[0]?.recipient).toBe("parent@example.com");
+  });
+
+  it("returns no message when no email is present", async () => {
+    process.env.DATABASE_URL = "file:./dev.db";
+    const { buildPreferredMessages } = await import("./notifications");
+    const messages = buildPreferredMessages(
+      {
+        userId: "user_1",
+        email: null,
+      },
+      {
+        meetId: "meet_1",
+        emailSubject: "Email subject",
+        emailText: "Email body",
+        extraPayload: {},
+      },
+    );
+
+    expect(messages).toHaveLength(0);
   });
 });
 
@@ -129,7 +121,6 @@ describe("dedupeMeetRecipients", () => {
         teamLabel: "Tigers",
         displayName: "Pat Parent",
         email: "parent@example.com",
-        phone: null,
         childNames: ["Ben Smith"],
       },
       {
@@ -138,7 +129,6 @@ describe("dedupeMeetRecipients", () => {
         teamLabel: "Tigers",
         displayName: "Pat Parent",
         email: "parent@example.com",
-        phone: null,
         childNames: ["Ava Smith", "Ben Smith"],
       },
     ]);
@@ -165,7 +155,6 @@ describe("buildMeetReadyForCheckinContent", () => {
     expect(content.emailSubject).toContain("ready for check-in");
     expect(content.emailText).toContain("Coming wrestlers: Ava Smith and Ben Smith.");
     expect(content.emailText).toContain("http://localhost:3000/parent/today");
-    expect(content.smsText).toContain("http://localhost:3000/parent/today");
   });
 
   it("falls back when no child names are provided", async () => {
@@ -202,6 +191,5 @@ describe("buildMeetPublishedContent", () => {
     expect(content.emailSubject).toContain("has been published");
     expect(content.emailText).toContain("Bout numbers and opponents are now available");
     expect(content.emailText).toContain("http://localhost:3000/parent");
-    expect(content.smsText).toContain("Today: http://localhost:3000/parent/today");
   });
 });

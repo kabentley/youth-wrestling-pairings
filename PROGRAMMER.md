@@ -4,7 +4,7 @@ Tech stack:
 - Next.js 14
 - TypeScript
 - Prisma
-- NextAuth + MFA
+- NextAuth
 - SQLite / Postgres
 - Vitest + Playwright
 - ESLint (type-aware)
@@ -43,8 +43,8 @@ API:
 
 Meet notifications are routed through `src/lib/notifications.ts`.
 
-- `NOTIFICATIONS_TRANSPORT=log` writes outbound notifications to `NotificationLog` without calling SendGrid or Twilio. Use this for local development.
-- `NOTIFICATIONS_TRANSPORT=live` sends through SendGrid for email and Twilio for SMS, then records the provider result in `NotificationLog`.
+- `NOTIFICATIONS_TRANSPORT=log` writes outbound notifications to `NotificationLog` without calling SendGrid. Use this for local development.
+- `NOTIFICATIONS_TRANSPORT=live` sends through SendGrid email delivery, then records the provider result in `NotificationLog`.
 - `NOTIFICATIONS_TRANSPORT=off` disables meet notifications.
 
 Current event coverage:

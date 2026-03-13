@@ -4,7 +4,7 @@ import { db } from "./db";
 import { normalizeMeetPhase } from "./meetPhase";
 
 export type NotificationTransport = "off" | "log" | "live";
-export type NotificationChannel = "email" | "sms" | "system";
+export type NotificationChannel = "email" | "system";
 export type NotificationEvent = "meet_ready_for_attendance" | "meet_ready_for_checkin" | "meet_published";
 export type NotificationStatus = "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
 export type NotificationTeamSummary = {
@@ -12,7 +12,6 @@ export type NotificationTeamSummary = {
   teamLabel: string;
   recipients: number;
   emailCount: number;
-  smsCount: number;
   successfulCount: number;
   failedCount: number;
   skippedCount: number;
@@ -69,14 +68,12 @@ type MeetReadyRecipient = {
   teamLabel: string;
   displayName: string;
   email: string | null;
-  phone: string | null;
   childNames: string[];
 };
 
 type MeetReadyContent = {
   emailSubject: string;
   emailText: string;
-  smsText: string;
 };
 
 type MeetReadyContext = {
@@ -122,12 +119,6 @@ export function resolveNotificationTransport(
 
 function normalizeEmail(email?: string | null) {
   const trimmed = email?.trim().toLowerCase();
-  if (!trimmed) return null;
-  return trimmed;
-}
-
-function normalizePhone(phone?: string | null) {
-  const trimmed = phone?.trim();
   if (!trimmed) return null;
   return trimmed;
 }
@@ -203,7 +194,6 @@ export function dedupeMeetRecipients(recipients: MeetReadyRecipient[]): MeetRead
 
     existing.childNames = uniqueSortedNames([...existing.childNames, ...recipient.childNames]);
     if (!existing.email && recipient.email) existing.email = recipient.email;
-    if (!existing.phone && recipient.phone) existing.phone = recipient.phone;
   }
 
   return Array.from(byUserId.values());
@@ -236,12 +226,6 @@ export function buildMeetReadyForAttendanceContent(
       `Reply here: ${context.attendanceUrl}`,
       `My Wrestlers: ${context.myWrestlersUrl}`,
     ].filter(Boolean).join("\n"),
-    smsText: [
-      `${context.meetName} is ready for attendance.`,
-      `Meet date: ${formatMeetDate(context.meetDate)}.`,
-      context.attendanceDeadline ? `Deadline: ${formatDeadline(context.attendanceDeadline)}.` : "",
-      `Reply: ${context.attendanceUrl}`,
-    ].filter(Boolean).join(" "),
   };
 }
 
@@ -266,11 +250,6 @@ export function buildMeetReadyForCheckinContent(
       `Today: ${context.todayUrl}`,
       `My Wrestlers: ${context.myWrestlersUrl}`,
     ].join("\n"),
-    smsText: [
-      `${context.meetName} is ready for check-in.`,
-      `Meet date: ${formatMeetDate(context.meetDate)}.`,
-      `Today: ${context.todayUrl}`,
-    ].join(" "),
   };
 }
 
@@ -294,11 +273,6 @@ export function buildMeetPublishedContent(
       `My Wrestlers: ${context.myWrestlersUrl}`,
       `Today: ${context.todayUrl}`,
     ].join("\n"),
-    smsText: [
-      `${context.meetName} has been published.`,
-      "Bout numbers and opponents are now available.",
-      `Today: ${context.todayUrl}`,
-    ].join(" "),
   };
 }
 
@@ -327,25 +301,14 @@ function buildEmptyMeetReadySummary(transport: NotificationTransport): MeetReady
 }
 
 export function buildPreferredMessages(
-  recipient: Pick<MeetReadyRecipient, "userId" | "email" | "phone">,
+  recipient: Pick<MeetReadyRecipient, "userId" | "email">,
   payload: {
     meetId: string;
     emailSubject: string;
     emailText: string;
-    smsText: string;
     extraPayload: Prisma.InputJsonObject;
   },
 ): DeliveryMessage[] {
-  if (recipient.phone) {
-    return [{
-      channel: "sms",
-      recipient: recipient.phone,
-      message: payload.smsText,
-      userId: recipient.userId,
-      meetId: payload.meetId,
-      payload: payload.extraPayload,
-    }];
-  }
   if (recipient.email) {
     return [{
       channel: "email",
@@ -403,28 +366,6 @@ async function sendEmailLive(subject: string, text: string, to: string): Promise
   };
 }
 
-async function sendSmsLive(message: string, to: string): Promise<DeliveryResult> {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from) {
-    return { status: "FAILED", provider: "twilio", errorMessage: "Twilio is not configured." };
-  }
-
-  const twilio = await import("twilio");
-  const client = twilio.default(sid, token);
-  const result = await client.messages.create({
-    to,
-    from,
-    body: message,
-  });
-  return {
-    status: "SENT",
-    provider: "twilio",
-    providerMessageId: result.sid,
-  };
-}
-
 async function deliverNotification(
   message: DeliveryMessage,
   transport: NotificationTransport,
@@ -443,14 +384,11 @@ async function deliverNotification(
   }
 
   try {
-    if (message.channel === "email") {
-      return await sendEmailLive(message.subject ?? "(no subject)", message.message, message.recipient);
-    }
-    return await sendSmsLive(message.message, message.recipient);
+    return await sendEmailLive(message.subject ?? "(no subject)", message.message, message.recipient);
   } catch (error) {
     return {
       status: "FAILED",
-      provider: message.channel === "email" ? "sendgrid" : "twilio",
+      provider: "sendgrid",
       errorMessage: error instanceof Error ? error.message : `Unknown ${event} delivery error.`,
     };
   }
@@ -528,7 +466,6 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
         },
       },
       email: true,
-      phone: true,
       children: {
         where: {
           wrestler: {
@@ -555,7 +492,6 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     teamLabel: buildTeamLabel(parent.team ?? {}),
     displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
     email: normalizeEmail(parent.email),
-    phone: normalizePhone(parent.phone),
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
@@ -593,7 +529,6 @@ async function getMeetReadyForCheckinRecipients(meetId: string, teamIds: string[
         },
       },
       email: true,
-      phone: true,
       children: {
         where: {
           wrestler: {
@@ -629,7 +564,6 @@ async function getMeetReadyForCheckinRecipients(meetId: string, teamIds: string[
     teamLabel: buildTeamLabel(parent.team ?? {}),
     displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
     email: normalizeEmail(parent.email),
-    phone: normalizePhone(parent.phone),
     childNames: uniqueSortedNames(
       parent.children
         .filter((entry) => entry.wrestler.meetStatuses.some((status) => isAttendingStatus(status.status)))
@@ -674,7 +608,6 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
         },
       },
       email: true,
-      phone: true,
       children: {
         where: {
           wrestlerId: { in: Array.from(wrestlerIdsWithBouts) },
@@ -701,7 +634,6 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
     teamLabel: buildTeamLabel(parent.team ?? {}),
     displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
     email: normalizeEmail(parent.email),
-    phone: normalizePhone(parent.phone),
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
@@ -763,7 +695,6 @@ export async function notifyMeetReadyForAttendance(
       teamLabel: buildTeamLabel(team.team),
       recipients: 0,
       emailCount: 0,
-      smsCount: 0,
       successfulCount: 0,
       failedCount: 0,
       skippedCount: 0,
@@ -797,7 +728,6 @@ export async function notifyMeetReadyForAttendance(
       meetId: meet.id,
       emailSubject: content.emailSubject,
       emailText: content.emailText,
-      smsText: content.smsText,
       extraPayload: { attendanceUrl, myWrestlersUrl, teamLabels, childNames: recipient.childNames },
     });
 
@@ -814,7 +744,6 @@ export async function notifyMeetReadyForAttendance(
       const result = await deliverNotification(message, transport, "meet_ready_for_attendance");
       await recordDelivery("meet_ready_for_attendance", message, result);
       if (message.channel === "email" && recipientTeam) recipientTeam.emailCount += 1;
-      if (message.channel === "sms" && recipientTeam) recipientTeam.smsCount += 1;
       if (result.status === "SENT") {
         sent += 1;
         if (recipientTeam) recipientTeam.successfulCount += 1;
@@ -898,7 +827,6 @@ export async function notifyMeetReadyForCheckin(
       teamLabel: buildTeamLabel(team.team),
       recipients: 0,
       emailCount: 0,
-      smsCount: 0,
       successfulCount: 0,
       failedCount: 0,
       skippedCount: 0,
@@ -930,7 +858,6 @@ export async function notifyMeetReadyForCheckin(
       meetId: meet.id,
       emailSubject: content.emailSubject,
       emailText: content.emailText,
-      smsText: content.smsText,
       extraPayload: { todayUrl, myWrestlersUrl, childNames: recipient.childNames },
     });
 
@@ -947,7 +874,6 @@ export async function notifyMeetReadyForCheckin(
       const result = await deliverNotification(message, transport, "meet_ready_for_checkin");
       await recordDelivery("meet_ready_for_checkin", message, result);
       if (message.channel === "email" && recipientTeam) recipientTeam.emailCount += 1;
-      if (message.channel === "sms" && recipientTeam) recipientTeam.smsCount += 1;
       if (result.status === "SENT") {
         sent += 1;
         if (recipientTeam) recipientTeam.successfulCount += 1;
@@ -1027,7 +953,6 @@ export async function notifyMeetPublished(
       teamLabel: buildTeamLabel(team.team),
       recipients: 0,
       emailCount: 0,
-      smsCount: 0,
       successfulCount: 0,
       failedCount: 0,
       skippedCount: 0,
@@ -1058,7 +983,6 @@ export async function notifyMeetPublished(
       meetId: meet.id,
       emailSubject: content.emailSubject,
       emailText: content.emailText,
-      smsText: content.smsText,
       extraPayload: { myWrestlersUrl, todayUrl, childNames: recipient.childNames },
     });
 
@@ -1075,7 +999,6 @@ export async function notifyMeetPublished(
       const result = await deliverNotification(message, transport, "meet_published");
       await recordDelivery("meet_published", message, result);
       if (message.channel === "email" && recipientTeam) recipientTeam.emailCount += 1;
-      if (message.channel === "sms" && recipientTeam) recipientTeam.smsCount += 1;
       if (result.status === "SENT") {
         sent += 1;
         if (recipientTeam) recipientTeam.successfulCount += 1;

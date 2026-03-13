@@ -3,7 +3,7 @@
 This app helps you schedule youth wrestling meets.
 
 ## Sign in
-Use your username and password. If MFA is enabled, enter the 6-digit code.
+Use your username and password.
 
 ## Teams
 Create teams, add wrestlers, or import rosters via CSV.

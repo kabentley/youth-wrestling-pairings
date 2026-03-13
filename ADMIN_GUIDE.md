@@ -9,7 +9,6 @@ This guide is for **league administrators** who manage users, security, and syst
 As an admin you can:
 - Create and manage user accounts
 - Reset passwords
-- Disable or reset MFA for users
 - Import and correct rosters
 - Prepare demo or production databases
 - Deploy the application
@@ -43,26 +42,6 @@ ADMIN_PASSWORD="strongpassword"
 
 ### Create a user
 Use **Admin → Users** in the app to create accounts with a username, temp password, and role.
-
----
-
-## MFA Administration
-
-### Reset MFA for a user
-If a user loses their authenticator device:
-
-1. Open Prisma Studio:
-```bash
-npx prisma studio
-```
-
-2. Locate the user
-3. Set:
-   - `mfaEnabled = false`
-   - `mfaSecret = null`
-   - `mfaTempSecret = null`
-
-The user can then sign in without MFA and re-enroll.
 
 ---
 
@@ -145,7 +124,6 @@ Which:
 
 ## Security Best Practices
 
-- Require MFA for all admins
 - Rotate `NEXTAUTH_SECRET` periodically
 - Do not reuse admin passwords
 - Restrict DB access credentials
@@ -157,7 +135,6 @@ Which:
 Future improvements may include:
 - Admin UI for users
 - Role-based access control (RBAC)
-- MFA recovery codes
 - Audit logs
 
 

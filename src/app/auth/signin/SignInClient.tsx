@@ -21,16 +21,8 @@ export default function SignInClient() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const twoFactorMethod: "email" | "sms" = "email";
-  const [twoFactorCode, setTwoFactorCode] = useState("");
-  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  type OauthProviderKey = "google" | "apple" | "facebook";
-  const providerKeys: OauthProviderKey[] = ["google", "apple", "facebook"];
-  const [oauthProviders, setOauthProviders] = useState<Partial<Record<OauthProviderKey, { id: string }>>>({});
-
-  const hasOauthProviders = providerKeys.some(key => Boolean(oauthProviders[key]));
 
   useEffect(() => {
     let active = true;
@@ -40,18 +32,6 @@ export default function SignInClient() {
         if (!active || !json) return;
         const name = String(json.name ?? "").trim();
         if (name) setLeagueName(name);
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/auth/providers")
-      .then(res => res.ok ? res.json() : {})
-      .then(json => {
-        if (!active) return;
-        setOauthProviders(json);
       })
       .catch(() => {});
     return () => { active = false; };
@@ -67,33 +47,10 @@ export default function SignInClient() {
         redirect: false,
         username,
         password,
-        twoFactorMethod,
-        twoFactorCode: twoFactorRequired ? twoFactorCode : "",
         callbackUrl,
       });
 
       if (res?.error) {
-        if (res.error === "2FA_REQUIRED") {
-          setTwoFactorRequired(true);
-          setErr("Enter the code that was sent to you.");
-          return;
-        }
-        if (res.error === "2FA_INVALID") {
-          setErr("Invalid code. Try again.");
-          return;
-        }
-        if (res.error === "PHONE_REQUIRED") {
-          setErr("A phone number is required for SMS codes.");
-          return;
-        }
-        if (res.error === "2FA_DELIVERY_FAILED") {
-          setErr("Unable to send a verification code. Try again later.");
-          return;
-        }
-        if (res.error === "2FA_RATE_LIMITED") {
-          setErr("Too many verification codes requested. Please wait a bit.");
-          return;
-        }
         setErr("Sign-in failed. Check username/password.");
         return;
       }
@@ -266,18 +223,6 @@ export default function SignInClient() {
                   disabled={submitting}
                 />
               </div>
-              {twoFactorRequired && (
-                <div className="form-group">
-                  <label htmlFor="twoFactorCode">Verification code</label>
-                  <input
-                    id="twoFactorCode"
-                    type="text"
-                    value={twoFactorCode}
-                    onChange={(e) => setTwoFactorCode(e.target.value)}
-                    disabled={submitting}
-                  />
-                </div>
-              )}
               <div className="form-group">
                 <label className="remember">
                   <input
@@ -290,50 +235,10 @@ export default function SignInClient() {
                 </label>
               </div>
               <button className="btn-full" type="submit" disabled={submitting}>
-                {submitting ? (twoFactorRequired ? "Verifying..." : "Logging in...") : (twoFactorRequired ? "Verify" : "Login")}
+                {submitting ? "Logging in..." : "Login"}
               </button>
               {submitting && <div className="status-note">Please wait...</div>}
               {err && <div className="error">{err}</div>}
-            {hasOauthProviders && (
-                <div className="center-links" style={{ marginTop: 12 }}>
-                  <div style={{ marginBottom: 8 }}>Or sign in with</div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {oauthProviders.google && (
-                      <button
-                        className="btn-full"
-                        type="button"
-                        style={{ background: "#ffffff", color: "#1d232b", border: "1px solid #d5dbe2" }}
-                        onClick={() => void signIn("google", { callbackUrl: resolvedCallbackUrl })}
-                        disabled={submitting}
-                      >
-                        Google
-                      </button>
-                    )}
-                    {oauthProviders.apple && (
-                      <button
-                        className="btn-full"
-                        type="button"
-                        style={{ background: "#000000" }}
-                        onClick={() => void signIn("apple", { callbackUrl: resolvedCallbackUrl })}
-                        disabled={submitting}
-                      >
-                        Apple
-                      </button>
-                    )}
-                    {oauthProviders.facebook && (
-                      <button
-                        className="btn-full"
-                        type="button"
-                        style={{ background: "#1877f2" }}
-                        onClick={() => void signIn("facebook", { callbackUrl: resolvedCallbackUrl })}
-                        disabled={submitting}
-                      >
-                        Facebook
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
             </form>
           </div>
         </div>

@@ -35,10 +35,6 @@ export async function GET(req: Request) {
   }
 
   const username = normalizeUsername(rawUsername);
-  if (username.startsWith("oauth-")) {
-    return NextResponse.json({ available: false, reason: "Choose a different username." });
-  }
-
   const existing = await db.user.findUnique({
     where: { username },
     select: { id: true },

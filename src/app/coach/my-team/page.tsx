@@ -186,9 +186,6 @@ const buildGeneratedUsernameBase = (firstName: string, lastName: string) => {
   const initial = first.slice(0, 1);
   let base = `${initial}${last}`;
   if (!base) return "";
-  if (base.startsWith("oauth")) {
-    base = `u${base}`;
-  }
   if (base.length < MIN_USERNAME_LEN) {
     base = `${base}${"1".repeat(MIN_USERNAME_LEN - base.length)}`;
   }
