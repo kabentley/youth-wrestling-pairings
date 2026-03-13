@@ -1,2 +1,2 @@
 ALTER TABLE "MeetWrestlerStatus"
-ADD COLUMN "parentResponseStatus" TEXT;
+ADD COLUMN "parentResponseStatus" "MeetWrestlerStatusType";
