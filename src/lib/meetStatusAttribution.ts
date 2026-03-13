@@ -1,4 +1,5 @@
 export type MeetStatusAttributionSource = "PARENT" | "COACH" | "CHECKIN" | "SYSTEM";
+export type MeetWrestlerStatusValue = "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT";
 
 type StatusActor = {
   id: string;
@@ -22,7 +23,7 @@ export function buildMeetStatusAttribution(
 }
 
 type ExistingMeetStatusAttribution = {
-  parentResponseStatus?: string | null;
+  parentResponseStatus?: MeetWrestlerStatusValue | null;
   lastChangedById?: string | null;
   lastChangedByUsername?: string | null;
   lastChangedByRole?: string | null;
@@ -54,6 +55,8 @@ export function buildCoachSafeStatusAttribution(existing?: ExistingMeetStatusAtt
 }
 
 /** Preserve the parent's last attendance response even after later coach/system updates. */
-export function preserveParentResponseStatus(existing?: ExistingMeetStatusAttribution | null) {
+export function preserveParentResponseStatus(
+  existing?: ExistingMeetStatusAttribution | null,
+): MeetWrestlerStatusValue | null {
   return existing?.parentResponseStatus ?? null;
 }
