@@ -271,6 +271,8 @@ export default function ScratchesTab({
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [candidateRefreshVersion, setCandidateRefreshVersion] = useState(0);
+  const [localBouts, setLocalBouts] = useState<Bout[]>(bouts);
+  const localBoutsRef = useRef<Bout[]>(bouts);
   const [baselineMatchCounts, setBaselineMatchCounts] = useState<Map<string, number>>(new Map());
   const [baselineOpponentIds, setBaselineOpponentIds] = useState<Map<string, string[]>>(new Map());
   const [baselineAttendanceStatuses, setBaselineAttendanceStatuses] = useState<Map<string, WrestlerStatus>>(new Map());
@@ -400,6 +402,14 @@ export default function ScratchesTab({
   }, [teamCheckins]);
 
   useEffect(() => {
+    setLocalBouts(bouts);
+  }, [bouts]);
+
+  useEffect(() => {
+    localBoutsRef.current = localBouts;
+  }, [localBouts]);
+
+  useEffect(() => {
     const allowedTeams = canViewScratchMatchWorkspace ? orderedTeams : fallbackCheckinTeams;
     if (!activeTeamId || allowedTeams.some((team) => team.id === activeTeamId)) return;
     setActiveTeamId(allowedTeams[0]?.id ?? null);
@@ -410,7 +420,7 @@ export default function ScratchesTab({
   const teamCheckinMap = localTeamCheckins;
   const wrestlerMap = new Map(wrestlers.map((wrestler) => [wrestler.id, wrestler]));
   const matchCounts = new Map<string, number>();
-  for (const bout of bouts) {
+  for (const bout of localBouts) {
     matchCounts.set(bout.redId, (matchCounts.get(bout.redId) ?? 0) + 1);
     matchCounts.set(bout.greenId, (matchCounts.get(bout.greenId) ?? 0) + 1);
   }
@@ -428,7 +438,7 @@ export default function ScratchesTab({
       return symbol ? `${wrestlerName(opponent)} (${symbol})` : wrestlerName(opponent);
     }).join(", ");
   };
-  const currentBoutKeys = new Set(bouts.map((bout) => pairKey(bout.redId, bout.greenId)));
+  const currentBoutKeys = new Set(localBouts.map((bout) => pairKey(bout.redId, bout.greenId)));
   const lostScratchOpponentsText = (wrestlerId: string) => {
     const opponentIds = baselineOpponentIds.get(wrestlerId) ?? [];
     const labels = opponentIds
@@ -625,7 +635,7 @@ export default function ScratchesTab({
     settings.firstYearOnlyWithFirstYear,
     settings.girlsWrestleGirls,
   ]);
-  const newMatches = bouts
+  const newMatches = localBouts
     .filter((bout) => !baselineBoutKeys.has(pairKey(bout.redId, bout.greenId)))
     .map((bout) => ({
       bout,
@@ -642,7 +652,7 @@ export default function ScratchesTab({
       return a.bout.id.localeCompare(b.bout.id);
     });
   const currentBouts = selectedWrestler
-    ? bouts
+    ? localBouts
         .filter((bout) => bout.redId === selectedWrestler.id || bout.greenId === selectedWrestler.id)
         .sort((a, b) => {
           const matDiff = (a.mat ?? 999) - (b.mat ?? 999);
@@ -721,6 +731,17 @@ export default function ScratchesTab({
   async function refreshScratchData() {
     await onRefresh();
     setCandidateRefreshVersion((version) => version + 1);
+  }
+
+  function syncScratchDataInBackground() {
+    void (async () => {
+      try {
+        await onRefresh();
+        setCandidateRefreshVersion((version) => version + 1);
+      } catch {
+        // Keep the optimistic local state if the background refresh fails.
+      }
+    })();
   }
 
   async function runManagedRequest(makeRequest: () => Promise<Response>, fallbackError: string) {
@@ -891,7 +912,7 @@ export default function ScratchesTab({
     setNotice(null);
     setAddLoadingId(opponentId);
     try {
-      await runManagedRequest(
+      const response = await runManagedRequest(
         () => fetch(`/api/meets/${meetId}/pairings/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -899,7 +920,14 @@ export default function ScratchesTab({
         }),
         "Unable to add replacement match.",
       );
-      await refreshScratchData();
+      const payload = await response.json().catch(() => null);
+      if (payload?.id && typeof payload.redId === "string" && typeof payload.greenId === "string") {
+        setLocalBouts((current) => {
+          if (current.some((bout) => bout.id === payload.id)) return current;
+          return [...current, payload as Bout];
+        });
+      }
+      syncScratchDataInBackground();
       setNotice("Replacement match added.");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Unable to add replacement match.");
@@ -911,14 +939,17 @@ export default function ScratchesTab({
   async function removeReplacementMatch(boutId: string) {
     setNotice(null);
     setRemoveLoadingId(boutId);
+    const previousBouts = localBoutsRef.current;
+    setLocalBouts(previousBouts.filter((bout) => bout.id !== boutId));
     try {
       await runManagedRequest(
         () => fetch(`/api/bouts/${boutId}`, { method: "DELETE" }),
         "Unable to remove match.",
       );
-      await refreshScratchData();
+      syncScratchDataInBackground();
       setNotice("Match removed.");
     } catch (err) {
+      setLocalBouts((current) => current.some((bout) => bout.id === boutId) ? current : previousBouts);
       setNotice(err instanceof Error ? err.message : "Unable to remove match.");
     } finally {
       setRemoveLoadingId(null);
@@ -2511,7 +2542,6 @@ export default function ScratchesTab({
 
       {showScratchModal && (
         <div
-          onClick={cancelScratchModal}
           style={{
             position: "fixed",
             inset: 0,
@@ -2628,7 +2658,6 @@ export default function ScratchesTab({
       )}
       {showScratchModal && showUnexpectedArrivalsModal && (
         <div
-          onClick={closeUnexpectedArrivalsModal}
           style={{
             position: "fixed",
             inset: 0,

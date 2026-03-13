@@ -1840,8 +1840,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return () => clearInterval(interval);
   }, [hasImplicitCheckinEdit, lockState.status, wantsEdit]);
 
-  const matchedIds = new Set<string>();
-  for (const b of bouts) { matchedIds.add(b.redId); matchedIds.add(b.greenId); }
+  const matchedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const bout of bouts) {
+      ids.add(bout.redId);
+      ids.add(bout.greenId);
+    }
+    return ids;
+  }, [bouts]);
   // Cache team labels for quick lookup in tables.
   const teamLabelById = useMemo(() => {
     return new Map(teams.map(team => [team.id, formatTeamName(team)]));
@@ -1863,9 +1869,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const pairingsHeaderColor = pairingsHeaderTeam?.color
     ? teamTextColor(pairingsHeaderTeam.id)
     : "#2a3b4d";
-  const attendingByTeam = pairingsTeamId
-    ? rosterSorted.filter(w => w.teamId === pairingsTeamId && !isNotAttending(w.status))
-    : rosterSorted.filter(w => !isNotAttending(w.status));
+  const attendingByTeam = useMemo(() => (
+    pairingsTeamId
+      ? rosterSorted.filter((wrestler) => wrestler.teamId === pairingsTeamId && !isNotAttending(wrestler.status))
+      : rosterSorted.filter((wrestler) => !isNotAttending(wrestler.status))
+  ), [pairingsTeamId, rosterSorted]);
   useEffect(() => {
     if (matchesPerWrestler === null) return;
     setPruneTargetMatches((prev) => {
@@ -1993,11 +2001,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return map;
   }, [bouts]);
   // Precompute match counts per wrestler for tables and tooltips.
-  const matchCounts = bouts.reduce((acc, bout) => {
+  const matchCounts = useMemo(() => bouts.reduce((acc, bout) => {
     acc.set(bout.redId, (acc.get(bout.redId) ?? 0) + 1);
     acc.set(bout.greenId, (acc.get(bout.greenId) ?? 0) + 1);
     return acc;
-  }, new Map<string, number>());
+  }, new Map<string, number>()), [bouts]);
   const getMatchCount = (id: string) => matchCounts.get(id) ?? 0;
   // Show/update the floating tooltip near the cursor.
   const showMatchesTooltip = useCallback((event: React.MouseEvent, wrestlerId: string) => {
@@ -2044,20 +2052,20 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   }, [hideMatchesTooltip, showMatchesTooltip]);
 
   // Sort pairings roster according to the active column.
-  const pairingsSorted = [...attendingByTeam].sort((a, b) => {
-    const getValue = (w: Wrestler) => {
-      if (pairingsSort.key === "last") return w.last;
-      if (pairingsSort.key === "first") return w.first;
-      if (pairingsSort.key === "girl") return w.isGirl ? 0 : 1;
-      if (pairingsSort.key === "age") return ageYears(w.birthdate) ?? null;
-      if (pairingsSort.key === "weight") return w.weight;
-      if (pairingsSort.key === "exp") return w.experienceYears;
-      if (pairingsSort.key === "skill") return w.skill;
-      if (pairingsSort.key === "matches") return getMatchCount(w.id);
+  const pairingsSorted = useMemo(() => [...attendingByTeam].sort((a, b) => {
+    const getValue = (wrestler: Wrestler) => {
+      if (pairingsSort.key === "last") return wrestler.last;
+      if (pairingsSort.key === "first") return wrestler.first;
+      if (pairingsSort.key === "girl") return wrestler.isGirl ? 0 : 1;
+      if (pairingsSort.key === "age") return ageYears(wrestler.birthdate) ?? null;
+      if (pairingsSort.key === "weight") return wrestler.weight;
+      if (pairingsSort.key === "exp") return wrestler.experienceYears;
+      if (pairingsSort.key === "skill") return wrestler.skill;
+      if (pairingsSort.key === "matches") return getMatchCount(wrestler.id);
       return "";
     };
     return sortValueCompare(getValue(a), getValue(b), pairingsSort.dir);
-  });
+  }), [attendingByTeam, pairingsSort, matchCounts]);
 
   // Keep the selected row visible during keyboard navigation.
   const scrollPairingsRowIntoView = useCallback((wrestlerId: string) => {
@@ -2189,6 +2197,25 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setWallRefreshIndex(idx => idx + 1);
   }, [loadActivity, meetId]);
 
+  function applyLocalWrestlerStatusUpdate(wrestlerId: string, status: AttendanceStatus | null) {
+    setWrestlers((current) => current.map((wrestler) => (
+      wrestler.id === wrestlerId
+        ? { ...wrestler, status: status ?? undefined }
+        : wrestler
+    )));
+    setWMap((current) => {
+      const existing = current[wrestlerId];
+      if (!existing) return current;
+      return {
+        ...current,
+        [wrestlerId]: {
+          ...existing,
+          status: status ?? undefined,
+        },
+      };
+    });
+  }
+
   function rememberNextPairingSelectionAfterRemoval(wrestlerId: string) {
     const currentIndex = pairingsSorted.findIndex((entry) => entry.id === wrestlerId);
     if (currentIndex < 0) {
@@ -2303,13 +2330,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const hasHomeInfo = Boolean(homeTeam ?? topMeetCoordinatorDisplay);
 
   // Current matches for the selected wrestler.
-  const currentMatches = target
-    ? bouts.filter(b => b.redId === target.id || b.greenId === target.id)
+  const currentMatchEntries = target
+    ? boutsByWrestlerId.get(target.id) ?? []
     : [];
+  const currentMatches = currentMatchEntries.map((entry) => entry.bout);
+  const currentOpponentIds = new Set(currentMatchEntries.map((entry) => entry.opponentId));
   const targetMatchCount = target ? getMatchCount(target.id) : 0;
   // Normalize current matches into rows with opponent + derived scores.
-  const currentMatchRows = currentMatches.map((b) => {
-    const opponentId = b.redId === target?.id ? b.greenId : b.redId;
+  const currentMatchRows = currentMatchEntries.map(({ bout: b, opponentId }) => {
     const signedScore = target
       ? (b.redId === target.id ? b.pairingScore : -b.pairingScore)
       : b.pairingScore;
@@ -2317,12 +2345,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       bout: b,
       opponentId,
       opponent: opponentId ? wMap[opponentId] : undefined,
-      boutOrder: (b.mat ?? 0) * 100 + (b.order ?? 0),
+      boutOrder: b.mat != null && b.order != null
+        ? (b.mat * 100 + b.order)
+        : Number.MAX_SAFE_INTEGER,
       signedScore,
     };
   });
   // Sort current matches by the chosen column.
   const currentSorted = [...currentMatchRows].sort((a, b) => {
+    const aOptimistic = a.bout.id.startsWith("optimistic-");
+    const bOptimistic = b.bout.id.startsWith("optimistic-");
+    if (aOptimistic !== bOptimistic) return aOptimistic ? 1 : -1;
     const getValue = (row: typeof currentMatchRows[number]) => {
       const o = row.opponent;
       if (currentSort.key === "score") return Math.abs(row.signedScore);
@@ -2357,11 +2390,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     })
     .filter((c) => {
       if (!target) return true;
-      const opponent = c.opponent;
-      return !bouts.some(b =>
-        (b.redId === target.id && b.greenId === opponent.id) ||
-        (b.greenId === target.id && b.redId === opponent.id)
-      );
+      return !currentOpponentIds.has(c.opponent.id);
     })
     .map((c) => ({ opponent: c.opponent, score: c.score }));
   // Sort candidate list by the chosen column.
@@ -2439,6 +2468,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   // Add a bout and refresh candidates/metadata.
   async function addMatch(redId: string, greenId: string) {
     if (!canEdit) return;
+    const optimisticBoutId = `optimistic-${Date.now()}-${redId}-${greenId}`;
+    const optimisticPairingScore = Math.abs(
+      candidates.find(({ opponent }) => opponent.id === greenId)?.score ?? 0,
+    );
+    const previousCandidates = candidates;
+    setBouts(prev => [
+      ...prev.filter(b => b.id !== optimisticBoutId),
+      {
+        id: optimisticBoutId,
+        redId,
+        greenId,
+        pairingScore: optimisticPairingScore,
+      },
+    ]);
+    setCandidates(prev => prev.filter(({ opponent }) => opponent.id !== redId && opponent.id !== greenId));
     const res = await fetch(`/api/meets/${meetId}/pairings/add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2447,12 +2491,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     const created = await res.json().catch(() => null);
     if (res.ok && created?.id) {
       setBouts(prev => {
-        const next = prev.filter(b => b.id !== created.id);
+        const next = prev.filter(b => b.id !== created.id && b.id !== optimisticBoutId);
         return [...next, created];
       });
-      setCandidates(prev => prev.filter(({ opponent }) => opponent.id !== redId && opponent.id !== greenId));
       setCandidateRefreshVersion(prev => prev + 1);
     } else {
+      setBouts(prev => prev.filter(b => b.id !== optimisticBoutId));
+      setCandidates(previousCandidates);
       await load();
     }
     void loadActivity().catch(() => {});
@@ -2471,8 +2516,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     if (isNotAttending(status)) {
       await refreshAfterAttendanceChange();
-    } else {
-      await refreshWrestlersAfterAttendanceFlagChange();
     }
     if (isNotAttending(status)) {
       setCandidates([]);
@@ -2497,13 +2540,22 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       (status === "LATE" || status === "EARLY") && currentStatus === status
         ? "COMING"
         : status;
+    const shouldOptimisticallyUpdateLocally = !isNotAttending(nextStatus);
     try {
       if (isNotAttending(nextStatus)) {
         rememberNextPairingSelectionAfterRemoval(wrestler.id);
+      } else {
+        applyLocalWrestlerStatusUpdate(wrestler.id, nextStatus);
       }
       await updateWrestlerStatus(wrestler.id, nextStatus);
+      if (shouldOptimisticallyUpdateLocally) {
+        void refreshWrestlersAfterAttendanceFlagChange();
+      }
     } catch (err) {
       pendingPairingSelectionAfterRemovalRef.current = null;
+      if (shouldOptimisticallyUpdateLocally) {
+        applyLocalWrestlerStatusUpdate(wrestler.id, currentStatus);
+      }
       const message = err instanceof Error ? err.message : "Unable to update attendance.";
       window.alert(message);
     }
@@ -2558,7 +2610,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     if (!canEdit) return;
     const removedBoutIndex = bouts.findIndex(b => b.id === boutId);
     const removedBout = removedBoutIndex >= 0 ? bouts[removedBoutIndex] : null;
+    const removedOpponentId = target && removedBout
+      ? (removedBout.redId === target.id ? removedBout.greenId : removedBout.greenId === target.id ? removedBout.redId : null)
+      : null;
+    const previousCandidates = candidates;
     setBouts(prev => prev.filter(b => b.id !== boutId));
+    if (removedOpponentId) {
+      setCandidates(prev => prev.filter(({ opponent }) => opponent.id !== removedOpponentId));
+    }
     const res = await fetch(`/api/bouts/${boutId}`, { method: "DELETE" });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -2571,6 +2630,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           return next;
         });
       }
+      setCandidates(previousCandidates);
       const message = payload?.error ?? `Unable to remove match (${res.status}).`;
       window.alert(message);
       return;
