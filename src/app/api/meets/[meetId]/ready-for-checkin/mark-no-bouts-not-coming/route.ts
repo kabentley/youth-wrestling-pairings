@@ -2,16 +2,11 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { isMeetAttendanceStatusAttending, normalizeMeetAttendanceStatus } from "@/lib/meetAttendanceStatus";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { buildCoachSafeStatusAttribution, preserveParentResponseStatus } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
-
-function normalizeAttendanceStatus(status?: string | null) {
-  if (status === "ABSENT") return "NOT_COMING";
-  if (status === "COMING" || status === "LATE" || status === "EARLY") return status;
-  return "NOT_COMING";
-}
 
 export async function POST(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
@@ -57,7 +52,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   ]);
 
   const statusByWrestler = new Map(
-    statuses.map((entry) => [entry.wrestlerId, normalizeAttendanceStatus(entry.status)]),
+    statuses.map((entry) => [entry.wrestlerId, normalizeMeetAttendanceStatus(entry.status)]),
   );
   const pairedWrestlerIds = new Set<string>();
   for (const bout of bouts) {
@@ -66,7 +61,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
   }
 
   const wrestlerIdsToMark = wrestlers
-    .filter((wrestler) => statusByWrestler.get(wrestler.id) !== "NOT_COMING" && !pairedWrestlerIds.has(wrestler.id))
+    .filter((wrestler) => isMeetAttendanceStatusAttending(statusByWrestler.get(wrestler.id)) && !pairedWrestlerIds.has(wrestler.id))
     .map((wrestler) => wrestler.id);
 
   if (wrestlerIdsToMark.length === 0) {

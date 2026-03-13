@@ -2288,7 +2288,7 @@ export default function MatBoardTab({
                     void handleStatusContextSelection("NOT_COMING");
                   }}
                 >
-                  <span>Not Attending</span>
+                  <span>Not Coming</span>
                   <span className="check">{currentNotAttending ? "\u2713" : ""}</span>
                 </button>
               )}

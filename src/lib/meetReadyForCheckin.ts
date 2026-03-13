@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { isMeetAttendanceStatusAttending, normalizeMeetAttendanceStatus } from "@/lib/meetAttendanceStatus";
+import { restConflictSeverityLabel, shouldShowRestConflict } from "@/lib/restConflictSeverity";
 
 type ChecklistClient = Prisma.TransactionClient | PrismaClient;
 
@@ -22,12 +24,6 @@ export type ReadyForCheckinChecklist = {
 
 export type ChecklistTargetStatus = "READY_FOR_CHECKIN" | "PUBLISHED";
 
-function normalizeAttendanceStatus(status?: string | null) {
-  if (status === "ABSENT") return "NOT_COMING";
-  if (status === "COMING" || status === "LATE" || status === "EARLY") return status;
-  return "NOT_COMING";
-}
-
 function formatNames(list: Array<{ first: string; last: string }>, limit = 4) {
   const names = list.slice(0, limit).map((entry) => `${entry.first} ${entry.last}`);
   if (list.length > limit) {
@@ -38,12 +34,6 @@ function formatNames(list: Array<{ first: string; last: string }>, limit = 4) {
 
 function formatMatList(mats: number[]) {
   return mats.map((mat) => `Mat ${mat}`).join(", ");
-}
-
-function restConflictSeverityLabel(minGap: number, _restGap: number) {
-  if (minGap <= 1) return "Severe";
-  if (minGap <= 4) return "Major";
-  return "Minor";
 }
 
 /**
@@ -137,11 +127,11 @@ export async function buildReadyForCheckinChecklist(
   const maxMat = Math.max(1, Math.min(8, meet.numMats));
   const restGap = Math.max(1, meet.restGap);
   const statusByWrestler = new Map(
-    statuses.map((entry) => [entry.wrestlerId, normalizeAttendanceStatus(entry.status)]),
+    statuses.map((entry) => [entry.wrestlerId, normalizeMeetAttendanceStatus(entry.status)]),
   );
   const activeWrestlers = wrestlers.filter((wrestler) => wrestler.active);
   const attendingWrestlers = activeWrestlers.filter(
-    (wrestler) => statusByWrestler.get(wrestler.id) !== "NOT_COMING",
+    (wrestler) => isMeetAttendanceStatusAttending(statusByWrestler.get(wrestler.id)),
   );
 
   const pairedWrestlerIds = new Set<string>();
@@ -253,10 +243,12 @@ export async function buildReadyForCheckinChecklist(
 
   const restConflictDetails = [...restConflictStatsByMat.entries()]
     .sort((a, b) => a[0] - b[0])
+    .filter(([, stats]) => shouldShowRestConflict(stats.minGap))
     .map(([mat, stats]) => {
-      const severity = restConflictSeverityLabel(stats.minGap, restGap);
+      const severity = restConflictSeverityLabel(stats.minGap);
       return `Mat ${mat}: ${stats.count} conflict${stats.count === 1 ? "" : "s"}, ${severity} (closest gap ${stats.minGap}).`;
     });
+  const hasOnlyMinorRestConflicts = restConflictStatsByMat.size > 0 && restConflictDetails.length === 0;
 
   const allItems: ReadyForCheckinChecklistItem[] = [
     {
@@ -314,7 +306,9 @@ export async function buildReadyForCheckinChecklist(
       ok: restConflictDetails.length === 0,
       severity: "warning",
       detail: restConflictDetails.length === 0
-        ? "No rest conflicts detected across mats."
+        ? hasOnlyMinorRestConflicts
+          ? "No major rest conflicts detected across mats."
+          : "No rest conflicts detected across mats."
         : restConflictDetails.join(" "),
       action: restConflictDetails.length > 0 ? "fix-rest-conflicts" : undefined,
       actionLabel: restConflictDetails.length > 0 ? "Reorder Mats" : undefined,

@@ -262,6 +262,7 @@ export default function AttendanceTab({
     ),
   );
   const noReply = sortRosterRows(teamWrestlers.filter(w => w.status == null));
+  const shouldShowNoReplyColumn = showNoReplyColumn && noReply.length > 0;
   const columns: Array<{
     key: string;
     label: string;
@@ -293,7 +294,7 @@ export default function AttendanceTab({
       itemBorder: "#cfd5dc",
     },
   ];
-  if (showNoReplyColumn) {
+  if (shouldShowNoReplyColumn) {
     columns.push({
       key: "no-reply",
       label: "No Reply",
@@ -344,13 +345,13 @@ export default function AttendanceTab({
     if (columnKey === "coming") {
       return [
         { label: "Not Coming", status: "NOT_COMING" as const },
-        ...(showNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
+        ...(shouldShowNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
       ];
     }
     if (columnKey === "not-coming") {
       return [
         { label: "Coming", status: "COMING" as const },
-        ...(showNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
+        ...(shouldShowNoReplyColumn ? [{ label: "No Reply", status: null }] : []),
       ];
     }
     return [

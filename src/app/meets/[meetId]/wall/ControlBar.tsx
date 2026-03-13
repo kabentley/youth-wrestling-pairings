@@ -8,9 +8,10 @@ type ControlBarProps = {
   meetId?: string;
   printTargetRef?: RefObject<HTMLElement>;
   printStyles?: string;
+  printOrientation?: "portrait" | "landscape";
 };
 
-export default function ControlBar({ meetId, printTargetRef, printStyles }: ControlBarProps) {
+export default function ControlBar({ meetId, printTargetRef, printStyles, printOrientation }: ControlBarProps) {
   const [scheme, setScheme] = useState<"color" | "black-and-white">("color");
   const userSetSchemeRef = useRef(false);
 
@@ -69,6 +70,7 @@ export default function ControlBar({ meetId, printTargetRef, printStyles }: Cont
         targetRef={printTargetRef}
         styles={printStyles}
         title={'Tip: turn off "Headers and footers" in the print settings.'}
+        printOrientation={printOrientation}
       />
     </div>
   );

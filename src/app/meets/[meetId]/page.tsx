@@ -474,6 +474,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [showReopenDraftWarningModal, setShowReopenDraftWarningModal] = useState(false);
   const [showPublishWarningModal, setShowPublishWarningModal] = useState(false);
   const [pairingNotAttendingConfirm, setPairingNotAttendingConfirm] = useState<{ wrestler: Wrestler; closeContext: boolean } | null>(null);
+  const pendingPairingSelectionAfterRemovalRef = useRef<number | null>(null);
   const pairingsInitRef = useRef(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
@@ -2188,16 +2189,34 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     setWallRefreshIndex(idx => idx + 1);
   }, [loadActivity, meetId]);
 
+  function rememberNextPairingSelectionAfterRemoval(wrestlerId: string) {
+    const currentIndex = pairingsSorted.findIndex((entry) => entry.id === wrestlerId);
+    if (currentIndex < 0) {
+      pendingPairingSelectionAfterRemovalRef.current = null;
+      return;
+    }
+    pendingPairingSelectionAfterRemovalRef.current = currentIndex;
+  }
+
   useEffect(() => {
-    if (attendingByTeam.length === 0) {
+    if (pairingsSorted.length === 0) {
+      pendingPairingSelectionAfterRemovalRef.current = null;
       setSelectedPairingId(null);
       return;
     }
-    if (!selectedPairingId || !attendingByTeam.some(w => w.id === selectedPairingId)) {
-      const nextId = attendingByTeam[0].id;
+    if (!selectedPairingId || !pairingsSorted.some((wrestler) => wrestler.id === selectedPairingId)) {
+      const rememberedIndex = pendingPairingSelectionAfterRemovalRef.current;
+      const nextId = typeof rememberedIndex === "number"
+        ? pairingsSorted[Math.min(rememberedIndex, pairingsSorted.length - 1)]?.id
+        : pairingsSorted[0]?.id;
+      pendingPairingSelectionAfterRemovalRef.current = null;
+      if (!nextId) {
+        setSelectedPairingId(null);
+        return;
+      }
       setSelectedPairingId(nextId);
     }
-  }, [attendingByTeam, selectedPairingId]);
+  }, [pairingsSorted, selectedPairingId]);
 
 
   useEffect(() => {
@@ -2456,7 +2475,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       await refreshWrestlersAfterAttendanceFlagChange();
     }
     if (isNotAttending(status)) {
-      setTarget(null);
       setCandidates([]);
     } else if (target?.id === wrestlerId) {
       if (maxMatchesPerWrestler === null || targetMatchCount < maxMatchesPerWrestler) {
@@ -2480,8 +2498,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         ? "COMING"
         : status;
     try {
+      if (isNotAttending(nextStatus)) {
+        rememberNextPairingSelectionAfterRemoval(wrestler.id);
+      }
       await updateWrestlerStatus(wrestler.id, nextStatus);
     } catch (err) {
+      pendingPairingSelectionAfterRemovalRef.current = null;
       const message = err instanceof Error ? err.message : "Unable to update attendance.";
       window.alert(message);
     }
@@ -2500,6 +2522,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     const currentStatus = (wMap[wrestler.id]?.status ?? wrestler.status) ?? null;
     if (currentStatus === "NOT_COMING") {
+      void applyPairingStatusToWrestler(wrestler, "NOT_COMING", { closeContext });
+      return;
+    }
+    const existingBoutCount = boutsByWrestlerId.get(wrestler.id)?.length ?? 0;
+    if (existingBoutCount === 0) {
       void applyPairingStatusToWrestler(wrestler, "NOT_COMING", { closeContext });
       return;
     }
@@ -4863,7 +4890,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   onClick={() => requestPairingNotAttendingConfirmation(activePairingTarget, { closeContext: false })}
                   style={{ padding: "4px 10px", minHeight: "auto", fontSize: 12 }}
                 >
-                  Not Attending
+                  Not Coming
                 </button>
               )}
             </div>
@@ -5675,7 +5702,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       onClick={() => handlePairingContextStatus("NOT_COMING")}
                       disabled={!canEdit}
                     >
-                      <span>Not Attending</span>
+                      <span>Not Coming</span>
                       <span className="pairings-context-check" aria-hidden="true">{currentStatus === "NOT_COMING" ? "\u2713" : ""}</span>
                     </button>
                   )}
@@ -6246,7 +6273,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           <div className="modal-backdrop" onClick={() => setPairingNotAttendingConfirm(null)}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <h3 style={{ margin: 0 }}>
-                Mark {pairingNotAttendingConfirm.wrestler.first} {pairingNotAttendingConfirm.wrestler.last} Not Attending?
+                Mark {pairingNotAttendingConfirm.wrestler.first} {pairingNotAttendingConfirm.wrestler.last} Not Coming?
               </h3>
               <div className="ready-checkin-summary" style={{ fontSize: 16 }}>
                 All existing bouts will be removed, and no new bouts will be added unless this wrestler is marked attending again.
@@ -6264,7 +6291,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   className="nav-btn primary"
                   onClick={() => void confirmPairingNotAttending()}
                 >
-                  Not Attending
+                  Not Coming
                 </button>
               </div>
             </div>

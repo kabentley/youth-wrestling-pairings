@@ -117,13 +117,17 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   }, [meetId, refreshIndex]);
 
   const styles = `
-          ${chartType === "team" ? `
           @page {
-            size: landscape;
+            size: ${chartType === "team" ? "landscape" : "portrait"};
+            size: letter ${chartType === "team" ? "landscape" : "portrait"};
             margin: 0.4in;
           }
-          ` : ""}
           @media print {
+            .wall-chart-root,
+            .wall-chart-root * {
+              -webkit-text-size-adjust: 100% !important;
+              text-size-adjust: 100% !important;
+            }
             .wall-chart-root .print-meet-header {
               display: block;
               position: fixed;
@@ -139,10 +143,14 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               line-height: 1.2;
             }
             .wall-chart-root {
-              padding-top: 54px;
+              padding: 54px 0 0 !important;
               font-family: system-ui !important;
               font-size: 12px !important;
               line-height: 1.2 !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              -webkit-text-size-adjust: 100% !important;
+              text-size-adjust: 100% !important;
             }
             .wall-chart-root .noprint { display: none; }
             .wall-chart-root .mat-toggle-bar { display: none !important; }
@@ -158,25 +166,42 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               border-radius: 0 !important;
             }
             .wall-chart-root .mat-table {
-              font-size: 11px !important;
+              font-size: 8.5pt !important;
+              width: 7.5in !important;
+              max-width: 100% !important;
+              margin: 0 auto !important;
+              table-layout: fixed !important;
             }
             .wall-chart-root .mat-col-bout {
-              width: 46px !important;
+              width: 0.6in !important;
             }
             .wall-chart-root .mat-col-name {
-              width: 200px !important;
+              width: 3.45in !important;
             }
             .wall-chart-root .mat-table th,
             .wall-chart-root .mat-table td {
-              padding: 2px 4px !important;
-              line-height: 1.5 !important;
+              font-size: 8.5pt !important;
+              padding: 0.03in 0.05in !important;
+              line-height: 1.2 !important;
+            }
+            .wall-chart-root .mat-table th.mat-wrestler-header {
+              font-size: 9pt !important;
+              line-height: 1.15 !important;
+            }
+            .wall-chart-root .mat-table th.mat-bout-number,
+            .wall-chart-root .mat-table td.mat-bout-number {
+              font-size: 8.5pt !important;
+              line-height: 1.15 !important;
             }
             .wall-chart-root .mat-table td.mat-wrestler-name {
-              font-size: 13px !important;
-              line-height: 1.5 !important;
+              font-size: 9pt !important;
+              line-height: 1.15 !important;
               white-space: nowrap !important;
               overflow: hidden !important;
               text-overflow: ellipsis !important;
+            }
+            .wall-chart-root .mat-table-wrap {
+              overflow: visible !important;
             }
             .wall-chart-root .mat-header,
             .wall-chart-root .team-header {
@@ -193,11 +218,14 @@ function chunkArray<T>(items: T[], size: number): T[][] {
             }
             .wall-chart-root .team-table {
               font-size: 12px !important;
+              width: 100% !important;
+              table-layout: fixed !important;
             }
             .wall-chart-root .team-table th,
             .wall-chart-root .team-table td {
               font-size: 12px !important;
               line-height: 1.2 !important;
+              padding: 2px 4px !important;
             }
             .wall-chart-root .match-line {
               font-size: 12px !important;
@@ -207,6 +235,61 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               font-size: 12px !important;
               line-height: 1.2 !important;
             }
+            .wall-chart-root .team-col-name {
+              width: 190px !important;
+            }
+          }
+          .print-document .wall-chart-root,
+          .print-document .wall-chart-root * {
+            -webkit-text-size-adjust: 100% !important;
+            text-size-adjust: 100% !important;
+          }
+          .print-document .wall-chart-root {
+            padding: 54px 0 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          .print-document .wall-chart-root .chart-controls,
+          .print-document .wall-chart-root .mat-toggle-bar {
+            display: none !important;
+          }
+          .print-document .wall-chart-root .mat-table {
+            font-size: 8.5pt !important;
+            width: 7.5in !important;
+            max-width: 100% !important;
+            margin: 0 auto !important;
+            table-layout: fixed !important;
+          }
+          .print-document .wall-chart-root .mat-col-bout {
+            width: 0.6in !important;
+          }
+          .print-document .wall-chart-root .mat-col-name {
+            width: 3.45in !important;
+          }
+          .print-document .wall-chart-root .mat-table th,
+          .print-document .wall-chart-root .mat-table td {
+            font-size: 8.5pt !important;
+            padding: 0.03in 0.05in !important;
+            line-height: 1.2 !important;
+          }
+          .print-document .wall-chart-root .mat-table th.mat-wrestler-header {
+            font-size: 9pt !important;
+            line-height: 1.15 !important;
+          }
+          .print-document .wall-chart-root .mat-table th.mat-bout-number,
+          .print-document .wall-chart-root .mat-table td.mat-bout-number {
+            font-size: 8.5pt !important;
+            line-height: 1.15 !important;
+          }
+          .print-document .wall-chart-root .mat-table td.mat-wrestler-name {
+            font-size: 9pt !important;
+            line-height: 1.15 !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+          }
+          .print-document .wall-chart-root .mat-table-wrap {
+            overflow: visible !important;
           }
           .wall-chart-root {
             font-family: system-ui;
@@ -640,6 +723,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   const tMap = new Map(meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? mt.team.name]));
   const teamSymbolMap = new Map(meetTeams.map(mt => [mt.team.id, mt.team.symbol ?? ""]));
   const tColor = new Map(meetTeams.map(mt => [mt.team.id, mt.team.color ?? "#000"]));
+  const wallChartPrintOrientation = chartType === "team" ? "landscape" : "portrait";
 
   const darkenHex = (color: string, amount: number) => {
     if (!color.startsWith("#") || color.length !== 7) return color;
@@ -853,10 +937,10 @@ function chunkArray<T>(items: T[], size: number): T[][] {
               })}
             </div>
           </div>
-          <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
+          <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} printOrientation={wallChartPrintOrientation} />
         </div>
       ) : (
-        <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} />
+        <ControlBar meetId={meetId} printTargetRef={wallChartRef} printStyles={styles} printOrientation={wallChartPrintOrientation} />
       )}
       <div>
         {(chartType === "both" || chartType === "mat") && (

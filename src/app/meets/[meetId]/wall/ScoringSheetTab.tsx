@@ -103,6 +103,7 @@ export default function ScoringSheetTab({
   const styles = `
     @page {
       size: landscape;
+      size: letter landscape;
       margin: 0.4in;
     }
     @media print {
@@ -115,10 +116,14 @@ export default function ScoringSheetTab({
         display: none;
       }
       .scoring-sheet-root {
-        padding-top: 0;
+        padding: 0 !important;
         font-family: Calibri, "Segoe UI", Arial, sans-serif !important;
         font-size: 13px !important;
         line-height: 1.2 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        -webkit-text-size-adjust: 100% !important;
+        text-size-adjust: 100% !important;
       }
       .scoring-sheet-root .chart-controls {
         display: none !important;
@@ -152,6 +157,8 @@ export default function ScoringSheetTab({
       .scoring-sheet-root table {
         font-size: 13px !important;
         line-height: 1.2 !important;
+        width: 100% !important;
+        table-layout: fixed !important;
       }
       .scoring-sheet-root th {
         font-size: 13px !important;
@@ -328,14 +335,14 @@ export default function ScoringSheetTab({
       font-weight: 700;
       background: #fff;
     }
-    .scoring-sheet-root .c-bout { width: 3.6%; text-align: center; font-weight: 700; }
-    .scoring-sheet-root .c-team { width: 3.6%; text-align: center; }
-    .scoring-sheet-root .c-name { width: 16%; text-align: left; font-size: 14px; }
-    .scoring-sheet-root .c-corner { width: 2.4%; text-align: center; font-weight: 700; }
-    .scoring-sheet-root .c-period { width: 20%; text-align: center; }
-    .scoring-sheet-root .c-small { width: 2.4%; text-align: center; }
-    .scoring-sheet-root .c-ot { width: 2.8%; text-align: center; }
-    .scoring-sheet-root .c-scr { width: 6.0%; text-align: center; font-weight: 700; }
+    .scoring-sheet-root .c-bout { width: 3.5%; text-align: center; font-weight: 700; }
+    .scoring-sheet-root .c-team { width: 3.5%; text-align: center; }
+    .scoring-sheet-root .c-name { width: 15%; text-align: left; font-size: 14px; }
+    .scoring-sheet-root .c-corner { width: 2.5%; text-align: center; font-weight: 700; }
+    .scoring-sheet-root .c-period { width: 19%; text-align: center; }
+    .scoring-sheet-root .c-small { width: 2.5%; text-align: center; }
+    .scoring-sheet-root .c-ot { width: 2.75%; text-align: center; }
+    .scoring-sheet-root .c-scr { width: 8%; text-align: center; font-weight: 700; }
     .scoring-sheet-root .home-cell {
       background: #ececec;
       font-weight: 700;
@@ -443,7 +450,7 @@ export default function ScoringSheetTab({
     <div className="scoring-sheet-root" ref={sheetRef}>
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
-      <ControlBar meetId={meetId} printTargetRef={sheetRef} printStyles={styles} />
+      <ControlBar meetId={meetId} printTargetRef={sheetRef} printStyles={styles} printOrientation="landscape" />
       <div className="mat-toggle-bar">
         <span className="mat-toggle-label">Mats</span>
         <div className="mat-toggle-buttons" role="group" aria-label="Visible mats">

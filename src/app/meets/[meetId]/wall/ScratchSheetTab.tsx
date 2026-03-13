@@ -141,6 +141,11 @@ export default function ScratchSheetTab({
   }, [scratchFontSize, scratchFontSizeReady]);
 
   const styles = `
+    @page {
+      size: portrait;
+      size: letter portrait;
+      margin: 0.4in;
+    }
     @media print {
       .scratch-sheet-root .print-meet-header {
         display: block;
@@ -156,7 +161,11 @@ export default function ScratchSheetTab({
         z-index: 5;
       }
       .scratch-sheet-root {
-        padding-top: 54px;
+        padding: 54px 0 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        -webkit-text-size-adjust: 100% !important;
+        text-size-adjust: 100% !important;
       }
       .scratch-sheet-root .chart-controls {
         display: none !important;
@@ -390,7 +399,7 @@ export default function ScratchSheetTab({
       <style>{styles}</style>
       <div className="print-meet-header" aria-hidden="true">{headerLabel}</div>
       <div className="scratch-controls-row">
-        <ControlBar meetId={meetId} printTargetRef={scratchRef} printStyles={styles} />
+        <ControlBar meetId={meetId} printTargetRef={scratchRef} printStyles={styles} printOrientation="portrait" />
         <div
           ref={scratchFontSizeControlRef}
           className="scratch-font-size-control"
