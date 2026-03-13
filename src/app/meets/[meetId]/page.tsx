@@ -238,7 +238,7 @@ type ReadyForCheckinChecklistItem = {
   detail: string;
   ok: boolean;
   severity: "error" | "warning";
-  action?: "sync-volunteer-mats" | "fix-rest-conflicts";
+  action?: "sync-volunteer-mats" | "fix-rest-conflicts" | "mark-no-bouts-not-coming";
   actionLabel?: string;
 };
 type ReadyForCheckinChecklist = {
@@ -2740,6 +2740,10 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({}),
             })
+          : action === "mark-no-bouts-not-coming"
+            ? fetch(`/api/meets/${meetId}/ready-for-checkin/mark-no-bouts-not-coming`, {
+                method: "POST",
+              })
           : fetch(`/api/meets/${meetId}/ready-for-checkin/fix-rest-conflicts`, {
               method: "POST",
             })

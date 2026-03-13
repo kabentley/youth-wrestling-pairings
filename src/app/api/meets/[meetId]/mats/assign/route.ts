@@ -45,6 +45,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     where: { id: meetId },
     data: { numMats: body.numMats, updatedById: user.id },
   });
+  await db.bout.updateMany({
+    where: { meetId },
+    data: { originalMat: null },
+  });
   const result = await assignMatsForMeet(meetId, { numMats: body.numMats });
   const reorderResult = await reorderBoutsForMeetUntilStable(meetId, { numMats: body.numMats });
   const changeMessage =

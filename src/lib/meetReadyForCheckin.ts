@@ -10,7 +10,7 @@ export type ReadyForCheckinChecklistItem = {
   detail: string;
   ok: boolean;
   severity: "error" | "warning";
-  action?: "sync-volunteer-mats" | "fix-rest-conflicts";
+  action?: "sync-volunteer-mats" | "fix-rest-conflicts" | "mark-no-bouts-not-coming";
   actionLabel?: string;
 };
 
@@ -276,6 +276,8 @@ export async function buildReadyForCheckinChecklist(
       detail: wrestlersWithoutBouts.length === 0
         ? "Every attending wrestler has at least one bout."
         : `${wrestlersWithoutBouts.length} attending wrestler${wrestlersWithoutBouts.length === 1 ? "" : "s"} still have no bouts: ${formatNames(wrestlersWithoutBouts)}.`,
+      action: wrestlersWithoutBouts.length > 0 ? "mark-no-bouts-not-coming" : undefined,
+      actionLabel: wrestlersWithoutBouts.length > 0 ? "Mark wrestlers with no bouts Not Coming" : undefined,
     },
     {
       id: "mat-coaches",
