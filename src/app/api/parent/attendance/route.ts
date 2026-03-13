@@ -114,9 +114,7 @@ export async function GET() {
         headCoachName,
         status: normalizeMeetPhase(meet.status),
         attendanceDeadline: meet.attendanceDeadline,
-        canEditAttendance:
-          normalizeMeetPhase(meet.status) === "ATTENDANCE" &&
-          (!meet.attendanceDeadline || meet.attendanceDeadline.getTime() > Date.now()),
+        canEditAttendance: normalizeMeetPhase(meet.status) === "ATTENDANCE",
         children,
       };
     }),

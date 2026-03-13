@@ -384,10 +384,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                   const hasSavedReply = repliedCount > 0;
                   const isEditing = meet.canEditAttendance && (!hasSavedReply || editingMeets[meet.id]);
                   const hasUnsavedChanges = changedCount > 0;
-                  const hasIncompleteDraft = meet.children.some(
-                    (child) => (draftStatuses[childStatusKey(meet.id, child.id)] ?? null) === null,
-                  );
-                  const canAutoSave = isEditing && hasUnsavedChanges && !hasIncompleteDraft && savingMeetId === null;
+                  const canAutoSave = isEditing && hasUnsavedChanges && savingMeetId === null;
 
                   return (
                     <article
@@ -427,7 +424,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                               <button
                                 type="button"
                                 className="submit-button"
-                                disabled={savingMeetId !== null || !hasUnsavedChanges || hasIncompleteDraft}
+                                disabled={savingMeetId !== null || !hasUnsavedChanges}
                                 onClick={() => void submitAttendance(meet)}
                               >
                                 {savingMeetId === meet.id
@@ -544,10 +541,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                   const hasSavedReply = repliedCount > 0;
                   const isEditing = meet.canEditAttendance && (!hasSavedReply || editingMeets[meet.id]);
                   const hasUnsavedChanges = changedCount > 0;
-                  const hasIncompleteDraft = meet.children.some(
-                    (child) => (draftStatuses[childStatusKey(meet.id, child.id)] ?? null) === null,
-                  );
-                  const canAutoSave = isEditing && hasUnsavedChanges && !hasIncompleteDraft && savingMeetId === null;
+                  const canAutoSave = isEditing && hasUnsavedChanges && savingMeetId === null;
 
                   return (
                     <article
@@ -587,7 +581,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                               <button
                                 type="button"
                                 className="submit-button"
-                                disabled={savingMeetId !== null || !hasUnsavedChanges || hasIncompleteDraft}
+                                disabled={savingMeetId !== null || !hasUnsavedChanges}
                                 onClick={() => void submitAttendance(meet)}
                               >
                                 {savingMeetId === meet.id

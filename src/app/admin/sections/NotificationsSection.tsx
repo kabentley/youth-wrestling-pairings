@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 type NotificationRow = {
   id: string;
-  event: "meet_ready_for_attendance" | "meet_ready_for_checkin" | "meet_published";
+  event: string;
   channel: "email" | "system" | string;
   status: "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
   recipient: string;
@@ -37,8 +37,6 @@ type MeetOption = {
 const EVENT_OPTIONS = [
   { value: "", label: "All events" },
   { value: "meet_ready_for_attendance", label: "Ready for Attendance" },
-  { value: "meet_ready_for_checkin", label: "Ready for Check-in" },
-  { value: "meet_published", label: "Published" },
 ] as const;
 
 const STATUS_OPTIONS = [
@@ -74,10 +72,6 @@ function formatEventLabel(event: NotificationRow["event"]) {
   switch (event) {
     case "meet_ready_for_attendance":
       return "Ready for Attendance";
-    case "meet_ready_for_checkin":
-      return "Ready for Check-in";
-    case "meet_published":
-      return "Published";
     default:
       return event;
   }

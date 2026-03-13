@@ -12,12 +12,15 @@ type Team = {
   color?: string | null;
 };
 
+type AttendanceStatus = "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT" | null;
+
 type Wrestler = {
   id: string;
   teamId: string;
   first: string;
   last: string;
-  status?: "COMING" | "NOT_COMING" | "LATE" | "EARLY" | "ABSENT" | null;
+  status?: AttendanceStatus;
+  parentResponseStatus?: AttendanceStatus;
   statusChangedByUsername?: string | null;
   statusChangedByRole?: string | null;
   statusChangedSource?: string | null;
@@ -32,8 +35,10 @@ type AttendanceTabProps = {
   attendanceDeadline?: string | null;
   showRefresh?: boolean;
   showNoReplyColumn?: boolean;
+  disableAllComing?: boolean;
   showStatusAttribution?: boolean;
   showParentEntryNotice?: boolean;
+  showParentResponseDetails?: boolean;
   editableTeamId?: string | null;
   lockRequired?: boolean;
   readOnly?: boolean;
@@ -68,6 +73,33 @@ function sortRosterRows(rows: Wrestler[]) {
   });
 }
 
+function formatAttendanceLabel(status: AttendanceStatus) {
+  if (status === "NOT_COMING") return "Not Coming";
+  if (status === "COMING") return "Coming";
+  if (status === "LATE") return "Late";
+  if (status === "EARLY") return "Early";
+  if (status === "ABSENT") return "Absent";
+  return "No Reply";
+}
+
+function hasParentResponseMismatch(wrestler: Wrestler) {
+  return wrestler.parentResponseStatus !== null &&
+    wrestler.parentResponseStatus !== undefined &&
+    wrestler.status !== null &&
+    wrestler.status !== undefined &&
+    wrestler.parentResponseStatus !== wrestler.status;
+}
+
+function withEffectiveStatus(
+  wrestler: Wrestler,
+  pendingStatusChanges: Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>,
+) {
+  return {
+    ...wrestler,
+    status: pendingStatusChanges.get(wrestler.id) ?? wrestler.status ?? null,
+  };
+}
+
 function formatStatusAttribution(wrestler: Wrestler) {
   if (!wrestler.statusChangedByUsername || !wrestler.statusChangedAt) return null;
   const changedAt = new Date(wrestler.statusChangedAt);
@@ -84,6 +116,35 @@ function formatStatusAttribution(wrestler: Wrestler) {
   return `${sourceLabel}: ${wrestler.statusChangedByUsername} on ${changedAt.toLocaleString()}`;
 }
 
+function formatParentResponseInfo(wrestler: Wrestler) {
+  if (
+    wrestler.statusChangedSource !== "PARENT" ||
+    !wrestler.parentResponseStatus ||
+    !wrestler.statusChangedByUsername ||
+    !wrestler.statusChangedAt
+  ) {
+    return null;
+  }
+  const changedAt = new Date(wrestler.statusChangedAt);
+  if (Number.isNaN(changedAt.getTime())) return null;
+  const responseLabel = formatAttendanceLabel(wrestler.parentResponseStatus);
+  return `${wrestler.statusChangedByUsername} marked ${responseLabel} on ${changedAt.toLocaleString()}`;
+}
+
+function formatParentResponseLabel(wrestler: Wrestler) {
+  if (wrestler.parentResponseStatus === null || wrestler.parentResponseStatus === undefined) return null;
+  if (wrestler.statusChangedByUsername) {
+    if (hasParentResponseMismatch(wrestler)) {
+      return `(${wrestler.statusChangedByUsername}: ${formatAttendanceLabel(wrestler.parentResponseStatus)})`;
+    }
+    return `(${wrestler.statusChangedByUsername})`;
+  }
+  if (hasParentResponseMismatch(wrestler)) {
+    return `(Parent: ${formatAttendanceLabel(wrestler.parentResponseStatus)})`;
+  }
+  return `(Parent)`;
+}
+
 export default function AttendanceTab({
   meetId,
   teams,
@@ -92,8 +153,10 @@ export default function AttendanceTab({
   attendanceDeadline = null,
   showRefresh = false,
   showNoReplyColumn = true,
+  disableAllComing = false,
   showStatusAttribution = false,
   showParentEntryNotice = false,
+  showParentResponseDetails = false,
   editableTeamId = null,
   lockRequired = true,
   readOnly = false,
@@ -179,16 +242,12 @@ export default function AttendanceTab({
     });
   }, [wrestlers]);
 
-  const effectiveStatus = (wrestler: Wrestler) => (
-    pendingStatusChanges.get(wrestler.id) ?? wrestler.status ?? null
-  );
-
   const activeTeam = teams.find(t => t.id === activeTeamId);
   const canEditActiveTeam = !readOnly && (!editableTeamId || activeTeamId === editableTeamId);
   const showTouchMoveButtons = canEditActiveTeam && isTouchInteraction;
   const teamWrestlers = wrestlers
     .filter(w => w.teamId === activeTeamId)
-    .map((wrestler) => ({ ...wrestler, status: effectiveStatus(wrestler) }));
+    .map((wrestler) => withEffectiveStatus(wrestler, pendingStatusChanges));
   const attendanceDeadlineLabel = (() => {
     if (!attendanceDeadline) return null;
     const deadline = new Date(attendanceDeadline);
@@ -588,38 +647,27 @@ export default function AttendanceTab({
                     <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
                       {column.label}
                     </h3>
-                    {canEditActiveTeam && !showStatusAttribution && column.key === "not-coming" && (
+                    {!showStatusAttribution && column.key === "no-reply" && (
                       <button
                         type="button"
                         className="nav-btn secondary"
                         onClick={() => {
+                          if (!canEditActiveTeam || disableAllComing) return;
                           void bulkUpdateStatus(
                             filteredWrestlers.map((wrestler) => wrestler.id),
                             "COMING",
                             column.key,
                           );
                         }}
-                        disabled={filteredWrestlers.length === 0 || bulkUpdatingColumn === column.key}
+                        disabled={disableAllComing || !canEditActiveTeam || filteredWrestlers.length === 0 || bulkUpdatingColumn === column.key}
                         style={{ padding: "3px 8px", fontSize: 11, minHeight: "auto" }}
-                        title="Mark all visible not-coming wrestlers coming"
-                      >
-                        {bulkUpdatingColumn === column.key ? "Saving..." : "All Coming"}
-                      </button>
-                    )}
-                    {canEditActiveTeam && !showStatusAttribution && column.key === "no-reply" && (
-                      <button
-                        type="button"
-                        className="nav-btn secondary"
-                        onClick={() => {
-                          void bulkUpdateStatus(
-                            filteredWrestlers.map((wrestler) => wrestler.id),
-                            "COMING",
-                            column.key,
-                          );
-                        }}
-                        disabled={filteredWrestlers.length === 0 || bulkUpdatingColumn === column.key}
-                        style={{ padding: "3px 8px", fontSize: 11, minHeight: "auto" }}
-                        title="Mark all visible no-reply wrestlers coming"
+                        title={
+                          disableAllComing
+                            ? "All Coming is only available during Draft."
+                            : canEditActiveTeam
+                              ? "Mark all visible no-reply wrestlers coming"
+                              : "Acquire the meet lock to update attendance"
+                        }
                       >
                         {bulkUpdatingColumn === column.key ? "Saving..." : "All Coming"}
                       </button>
@@ -660,9 +708,22 @@ export default function AttendanceTab({
                         const attribution = !pendingStatusChanges.has(w.id)
                           ? formatStatusAttribution(w)
                           : null;
-                        const tooltipMessage = !showStatusAttribution
-                          ? (attribution ?? (column.key === "not-coming" ? "No response" : null))
+                        const parentResponseInfo = !pendingStatusChanges.has(w.id)
+                          ? formatParentResponseInfo(w)
                           : null;
+                        const hasParentResponse = showParentResponseDetails &&
+                          w.parentResponseStatus !== null &&
+                          w.parentResponseStatus !== undefined;
+                        const hasParentMismatch = showParentResponseDetails &&
+                          !pendingStatusChanges.has(w.id) &&
+                          hasParentResponseMismatch(w);
+                        const parentResponseLabel = showParentResponseDetails &&
+                          !pendingStatusChanges.has(w.id)
+                          ? formatParentResponseLabel(w)
+                          : null;
+                        const tooltipMessage = parentResponseInfo ?? (!canEditActiveTeam
+                          ? "Acquire the meet lock to update attendance."
+                          : null);
                         const hadExplicitResponse =
                           w.status === "NOT_COMING" || w.status === "ABSENT";
                         const emphasizeNotComingResponse =
@@ -709,9 +770,14 @@ export default function AttendanceTab({
                             onMouseLeave={tooltipMessage ? () => setAttributionTooltip(null) : undefined}
                           >
                             <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              <span style={{ fontWeight: emphasizeNotComingResponse ? 700 : undefined }}>
+                              <span style={{ fontWeight: emphasizeNotComingResponse || hasParentResponse || parentResponseLabel || hasParentMismatch ? 700 : undefined }}>
                                 {w.first} {w.last}
                               </span>
+                              {parentResponseLabel && (
+                                <span style={{ marginLeft: 6, color: hasParentMismatch ? "#9a3412" : "#5f6b79" }}>
+                                  {parentResponseLabel}
+                                </span>
+                              )}
                             </div>
                             {showStatusAttribution && attribution && (
                               <div

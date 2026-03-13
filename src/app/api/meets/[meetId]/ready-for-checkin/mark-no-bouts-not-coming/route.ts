@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { isEditableMeetPhase } from "@/lib/meetPhase";
-import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
+import { buildCoachSafeStatusAttribution, preserveParentResponseStatus } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 
 function normalizeAttendanceStatus(status?: string | null) {
@@ -73,14 +73,31 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ ok: true, updated: 0 });
   }
 
-  const changedAt = new Date();
-  const attribution = buildMeetStatusAttribution(user, "COACH", changedAt);
   await db.$transaction(async (tx) => {
+    const existingStatuses = await tx.meetWrestlerStatus.findMany({
+      where: {
+        meetId,
+        wrestlerId: { in: wrestlerIdsToMark },
+      },
+      select: {
+        wrestlerId: true,
+        parentResponseStatus: true,
+        lastChangedById: true,
+        lastChangedByUsername: true,
+        lastChangedByRole: true,
+        lastChangedSource: true,
+        lastChangedAt: true,
+      },
+    });
+    const existingStatusByWrestlerId = new Map(existingStatuses.map((row) => [row.wrestlerId, row]));
     for (const wrestlerId of wrestlerIdsToMark) {
+      const existingStatus = existingStatusByWrestlerId.get(wrestlerId);
+      const safeAttribution = buildCoachSafeStatusAttribution(existingStatus);
+      const preservedParentResponseStatus = preserveParentResponseStatus(existingStatus);
       await tx.meetWrestlerStatus.upsert({
         where: { meetId_wrestlerId: { meetId, wrestlerId } },
-        update: { status: "NOT_COMING", ...attribution },
-        create: { meetId, wrestlerId, status: "NOT_COMING", ...attribution },
+        update: { status: "NOT_COMING", parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
+        create: { meetId, wrestlerId, status: "NOT_COMING", parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
       });
     }
   });

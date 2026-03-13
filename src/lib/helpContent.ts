@@ -130,7 +130,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: "Checkpoints",
         paragraphs: [
           "Checkpoints save the current state of meet attendance and scheduled bouts so you can roll back later [Meet > Checkpoints]. Each checkpoint stores attendance and all bouts with their mat assignments.",
-          "The system also creates automatic checkpoints at key transitions. Closing Attendance saves an Attendance Closed checkpoint, and moving from Draft to Check-in saves a Check-in checkpoint that becomes the baseline for scratches and unexpected arrivals [Meet > Close Attendance, Meet > Ready for Meet day].",
+          "The system creates automatic checkpoints when moving from Draft to Check-in. Reopening Attendance keeps the current attendance statuses; it only reopens parent responses [Meet > Close Attendance, Meet > Ready for Meet day].",
           "Use Save to capture a manual snapshot before a major change. Use Show Changes to review what has changed since a checkpoint, and Apply to revert the meet to that saved state [Meet > Checkpoints].",
           "Only the Meet Coordinator can apply checkpoints, and Apply is hidden after publish. Applying a checkpoint restores attendance for active wrestlers, clears current bouts, and recreates the saved bouts. Wrestlers who were deleted or set inactive after the checkpoint are not re-matched, and newly added wrestlers will have zero matches after applying [Meet > Checkpoints].",
         ],

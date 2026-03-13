@@ -172,7 +172,7 @@ export default function MeetsPage() {
   const [matchesPerWrestler, setMatchesPerWrestler] = useState(2);
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
-  const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(true);
+  const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(false);
   const [sendNotificationsToParents, setSendNotificationsToParents] = useState(showNotificationControls);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
@@ -222,7 +222,7 @@ export default function MeetsPage() {
     setMatchesPerWrestler(2);
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
-    setAllCoachesHaveLockAccess(true);
+    setAllCoachesHaveLockAccess(false);
     setSendNotificationsToParents(showNotificationControls);
     setEditingMeet(null);
   }, [showNotificationControls]);

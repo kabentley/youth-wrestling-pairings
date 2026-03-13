@@ -89,9 +89,7 @@ export async function GET(
   const statusMap = new Map(statuses.map((entry) => [entry.wrestlerId, normalizeParentAttendanceStatus(entry.status)]));
   const location = meet.location ?? (meet.homeTeam ? meet.homeTeam.address : null);
   const homeTeamLabel = meet.homeTeam ? `${meet.homeTeam.name} (${meet.homeTeam.symbol})`.trim() : null;
-  const canEditAttendance =
-    normalizeMeetPhase(meet.status) === "ATTENDANCE" &&
-    (!meet.attendanceDeadline || meet.attendanceDeadline.getTime() > Date.now());
+  const canEditAttendance = normalizeMeetPhase(meet.status) === "ATTENDANCE";
 
   return NextResponse.json({
     id: meet.id,

@@ -10,6 +10,7 @@ import { requireRole } from "@/lib/rbac";
 const AttendanceSchema = z.object({
   wrestlerId: z.string().min(1),
   status: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable(),
+  parentResponseStatus: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable().optional(),
   lastChangedByUsername: z.string().nullable().optional(),
   lastChangedByRole: z.string().nullable().optional(),
   lastChangedSource: z.string().nullable().optional(),
@@ -174,6 +175,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
           meetId,
           wrestlerId: a.wrestlerId,
           status: a.status,
+          parentResponseStatus: a.parentResponseStatus ?? null,
           lastChangedByUsername: a.lastChangedByUsername ?? null,
           lastChangedByRole: a.lastChangedByRole ?? null,
           lastChangedSource: a.lastChangedSource ?? null,

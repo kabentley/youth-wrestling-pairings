@@ -31,6 +31,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
     select: {
       wrestlerId: true,
       status: true,
+      parentResponseStatus: true,
       lastChangedByUsername: true,
       lastChangedByRole: true,
       lastChangedSource: true,
@@ -60,6 +61,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
       skill: w.skill,
       isGirl: w.isGirl,
       status: statusMap.get(w.id)?.status ?? null,
+      parentResponseStatus: statusMap.get(w.id)?.parentResponseStatus ?? null,
       statusChangedByUsername: statusMap.get(w.id)?.lastChangedByUsername ?? null,
       statusChangedByRole: statusMap.get(w.id)?.lastChangedByRole ?? null,
       statusChangedSource: statusMap.get(w.id)?.lastChangedSource ?? null,

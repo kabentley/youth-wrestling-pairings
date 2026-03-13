@@ -15,7 +15,6 @@ import {
   shouldCreateAutoCheckpoint,
 } from "@/lib/meetPhase";
 import { buildReadyForCheckinChecklist } from "@/lib/meetReadyForCheckin";
-import { notifyMeetPublished, notifyMeetReadyForCheckin } from "@/lib/notifications";
 import { requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
@@ -35,13 +34,12 @@ const PatchSchema = z.object({
   restGap: z.number().int().min(0).max(20).optional(),
   status: z.enum(MEET_PHASES).optional(),
   sendNotificationsToParents: z.boolean().optional(),
-  sendReadyForCheckinNotification: z.boolean().optional(),
-  sendPublishedNotification: z.boolean().optional(),
 });
 
 const CheckpointAttendanceSchema = z.object({
   wrestlerId: z.string().min(1),
   status: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable(),
+  parentResponseStatus: z.enum(["COMING", "NOT_COMING", "LATE", "EARLY"]).nullable().optional(),
   lastChangedByUsername: z.string().nullable().optional(),
   lastChangedByRole: z.string().nullable().optional(),
   lastChangedSource: z.string().nullable().optional(),
@@ -131,17 +129,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     },
   });
   if (!meet || meet.deletedAt) return NextResponse.json({ error: "Meet not found" }, { status: 404 });
-  const notificationFlags = await db.notificationLog.findMany({
-    where: {
-      dedupeKey: {
-        in: [
-          `meet_ready_for_checkin:${meetId}`,
-        ],
-      },
-    },
-    select: { dedupeKey: true },
-  });
-  const dedupeKeys = new Set(notificationFlags.map((entry) => entry.dedupeKey).filter((key): key is string => Boolean(key)));
   const lastChange = await db.meetChange.findFirst({
     where: { meetId },
     orderBy: { createdAt: "desc" },
@@ -156,7 +143,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       checkinCompletedAt: entry.checkinCompletedAt?.toISOString() ?? null,
       completedByUsername: entry.checkinCompletedBy?.username ?? null,
     })),
-    readyForCheckinNotificationSent: dedupeKeys.has(`meet_ready_for_checkin:${meetId}`),
     sendNotificationsToParents: Boolean(meet.sendNotificationsToParents),
     lastChangeAt,
     lastChangeBy,
@@ -262,30 +248,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     }
   }
   const reopeningFromCheckin = currentStatus === "READY_FOR_CHECKIN" && nextStatus === "DRAFT";
-  const reopeningAttendance = currentStatus === "DRAFT" && nextStatus === "ATTENDANCE";
-  const reopenCheckpoint = (reopeningFromCheckin || reopeningAttendance)
+  const reopenCheckpoint = reopeningFromCheckin
     ? await db.meetCheckpoint.findFirst({
         where: {
           meetId,
-          OR: reopeningFromCheckin
-            ? [
-                { name: { startsWith: "Ready for Check-in " } },
-                { name: { startsWith: "Check-in " } },
-              ]
-            : [
-                { name: { startsWith: "Attendance Closed " } },
-              ],
+          OR: [
+            { name: { startsWith: "Ready for Check-in " } },
+            { name: { startsWith: "Check-in " } },
+          ],
         },
         orderBy: { createdAt: "desc" },
         select: { name: true, teamSignature: true, payload: true },
       })
     : null;
-  if ((reopeningFromCheckin || reopeningAttendance) && !reopenCheckpoint) {
+  if (reopeningFromCheckin && !reopenCheckpoint) {
     return NextResponse.json(
       {
-        error: reopeningFromCheckin
-          ? "No Check-in checkpoint found. Cannot reopen as Draft."
-          : "No Attendance Closed checkpoint found. Cannot reopen attendance.",
+        error: "No Check-in checkpoint found. Cannot reopen as Draft.",
       },
       { status: 400 },
     );
@@ -293,12 +272,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const parsedReopenCheckpointPayload = reopenCheckpoint
     ? MeetCheckpointPayloadSchema.safeParse(reopenCheckpoint.payload)
     : null;
-  if ((reopeningFromCheckin || reopeningAttendance) && (!parsedReopenCheckpointPayload?.success)) {
+  if (reopeningFromCheckin && (!parsedReopenCheckpointPayload?.success)) {
     return NextResponse.json(
       {
-        error: reopeningFromCheckin
-          ? "Check-in checkpoint data is invalid. Cannot reopen as Draft."
-          : "Attendance Closed checkpoint data is invalid. Cannot reopen attendance.",
+        error: "Check-in checkpoint data is invalid. Cannot reopen as Draft.",
       },
       { status: 400 },
     );
@@ -336,42 +313,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.status) data.status = body.status;
 
   const now = new Date();
-  const closingAttendance = currentStatus === "ATTENDANCE" && nextStatus === "DRAFT";
-  const enteringReadyForCheckin = currentStatus === "DRAFT" && nextStatus === "READY_FOR_CHECKIN";
-  const publishingMeet = currentStatus === "READY_FOR_CHECKIN" && nextStatus === "PUBLISHED";
-  const shouldCreateCheckpoint = closingAttendance || shouldCreateAutoCheckpoint(currentStatus, nextStatus);
+  const shouldCreateCheckpoint = shouldCreateAutoCheckpoint(currentStatus, nextStatus);
   const autoCheckpointName = shouldCreateCheckpoint
-    ? (
-        closingAttendance
-          ? `Attendance Closed ${new Intl.DateTimeFormat("en-US", {
-              year: "numeric",
-              month: "numeric",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-              hour12: true,
-            }).format(now).replace(",", "")}`
-          : buildAutoPhaseCheckpointName(nextStatus, now)
-      )
+    ? buildAutoPhaseCheckpointName(nextStatus, now)
     : "";
   const updated = await db.$transaction(async (tx) => {
-    if (closingAttendance) {
-      const payload = await buildMeetCheckpointPayload(meetId, autoCheckpointName, tx);
-      if (!payload) {
-        throw new Error("Meet not found");
-      }
-      await tx.meetCheckpoint.create({
-        data: {
-          meetId,
-          name: autoCheckpointName,
-          payload,
-          teamSignature: buildTeamSignature(payload.teamIds),
-          createdById: user.id,
-        },
-      });
-    }
-
-    if ((reopeningFromCheckin || reopeningAttendance) && reopenCheckpoint && parsedReopenCheckpointPayload?.success) {
+    if (reopeningFromCheckin && reopenCheckpoint && parsedReopenCheckpointPayload?.success) {
       const checkpoint = reopenCheckpoint;
       const payload = parsedReopenCheckpointPayload.data;
 
@@ -452,6 +399,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
             meetId,
             wrestlerId: entry.wrestlerId,
             status: entry.status,
+            parentResponseStatus: entry.parentResponseStatus ?? null,
             lastChangedByUsername: entry.lastChangedByUsername ?? null,
             lastChangedByRole: entry.lastChangedByRole ?? null,
             lastChangedSource: entry.lastChangedSource ?? null,
@@ -516,7 +464,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       });
     }
 
-    if (shouldCreateCheckpoint && !closingAttendance) {
+    if (shouldCreateCheckpoint) {
       const payload = await buildMeetCheckpointPayload(meetId, autoCheckpointName, tx);
       if (!payload) {
         throw new Error("Meet not found");
@@ -565,50 +513,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       meetId,
       user.id,
       `Saved checkpoint automatically on ${
-        closingAttendance
-          ? "attendance close"
-          : nextStatus === "READY_FOR_CHECKIN"
-            ? "check-in"
-            : "publish"
+        nextStatus === "READY_FOR_CHECKIN"
+          ? "check-in"
+          : "publish"
       }: ${autoCheckpointName}.`,
     );
   }
-  if (reopenCheckpoint && (reopeningFromCheckin || reopeningAttendance)) {
+  if (reopenCheckpoint && reopeningFromCheckin) {
     await logMeetChange(
       meetId,
       user.id,
-      reopeningFromCheckin
-        ? `Reopened as Draft and restored checkpoint: ${reopenCheckpoint.name}.`
-        : `Reopened attendance and restored checkpoint: ${reopenCheckpoint.name}.`,
+      `Reopened as Draft and restored checkpoint: ${reopenCheckpoint.name}.`,
     );
   }
 
-  let notificationSummary = null;
-  if (current.sendNotificationsToParents && enteringReadyForCheckin && body.sendReadyForCheckinNotification) {
-    try {
-      notificationSummary = await notifyMeetReadyForCheckin(meetId, {
-        origin: req.headers.get("origin"),
-      });
-    } catch (error) {
-      console.error("Failed to send meet_ready_for_checkin notifications", error);
-    }
-  }
-  if (current.sendNotificationsToParents && publishingMeet && body.sendPublishedNotification) {
-    try {
-      notificationSummary = await notifyMeetPublished(meetId, {
-        origin: req.headers.get("origin"),
-      });
-    } catch (error) {
-      console.error("Failed to send meet_published notifications", error);
-    }
-  }
-
   revalidatePath(`/meets/${meetId}`);
-
-  return NextResponse.json({
-    ...updated,
-    notificationSummary,
-  });
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {

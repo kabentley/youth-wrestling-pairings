@@ -60,9 +60,6 @@ export async function PATCH(
   if (normalizeMeetPhase(meet.status) !== "ATTENDANCE") {
     return NextResponse.json({ error: "Parent attendance is only available while the meet is in Attendance phase." }, { status: 400 });
   }
-  if (meet.attendanceDeadline && new Date() > meet.attendanceDeadline) {
-    return NextResponse.json({ error: "The attendance deadline has passed." }, { status: 400 });
-  }
   if (wrestlers.length !== wrestlerIds.length) {
     return NextResponse.json({ error: "One or more wrestlers were not found." }, { status: 404 });
   }
@@ -88,8 +85,8 @@ export async function PATCH(
       const attribution = buildMeetStatusAttribution(user, "PARENT");
       await db.meetWrestlerStatus.upsert({
         where: { meetId_wrestlerId: { meetId, wrestlerId: update.wrestlerId } },
-        update: { status: update.status, ...attribution },
-        create: { meetId, wrestlerId: update.wrestlerId, status: update.status, ...attribution },
+        update: { status: update.status, parentResponseStatus: update.status, ...attribution },
+        create: { meetId, wrestlerId: update.wrestlerId, status: update.status, parentResponseStatus: update.status, ...attribution },
       });
     }
 

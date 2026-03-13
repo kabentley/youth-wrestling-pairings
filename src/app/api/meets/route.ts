@@ -26,7 +26,7 @@ const MeetSchema = z.object({
   maxMatchesPerWrestler: z.number().int().min(1).max(5).default(5),
   restGap: z.number().int().min(0).max(20).default(4),
   autoPairings: z.boolean().optional().default(true),
-  allCoachesHaveLockAccess: z.boolean().optional().default(true),
+  allCoachesHaveLockAccess: z.boolean().optional().default(false),
 });
 
 function normalizeOptionalDateTime(value?: string | null) {

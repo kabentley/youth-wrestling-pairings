@@ -3,9 +3,10 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { getCoachAttendanceEditScopeWithoutLock } from "@/lib/meetAttendanceEditScope";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
-import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
+import { buildCoachSafeStatusAttribution, preserveParentResponseStatus } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -42,16 +43,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const meetTeamIds = new Set(meet.meetTeams.map((entry) => entry.teamId));
   const userTeamId = user.teamId;
   const isCoachOnMeetTeam = userTeamId !== null && meetTeamIds.has(userTeamId);
-  const coachAttendanceScopeWithoutLock: "all" | "team" | null =
-    user.role !== "COACH"
-      ? null
-      : meetPhase === "ATTENDANCE"
-        ? isCoordinator
-          ? "all"
-          : isCoachOnMeetTeam
-            ? "team"
-            : null
-          : null;
+  const coachAttendanceScopeWithoutLock = getCoachAttendanceEditScopeWithoutLock({
+    userRole: user.role,
+    meetPhase,
+    isCoordinator,
+    isCoachOnMeetTeam,
+    hasCoordinatorEditAccess: meet.lockAccesses.length > 0,
+  });
   if (!coachAttendanceScopeWithoutLock) {
     try {
       await requireMeetLock(meetId, user.id, user.role);
@@ -95,8 +93,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   }
 
   await db.$transaction(async tx => {
-    const changedAt = new Date();
-    const attribution = buildMeetStatusAttribution(user, "COACH", changedAt);
+    const existingStatuses = await tx.meetWrestlerStatus.findMany({
+      where: {
+        meetId,
+        wrestlerId: { in: wrestlerIds },
+      },
+      select: {
+        wrestlerId: true,
+        parentResponseStatus: true,
+        lastChangedById: true,
+        lastChangedByUsername: true,
+        lastChangedByRole: true,
+        lastChangedSource: true,
+        lastChangedAt: true,
+      },
+    });
+    const existingStatusByWrestlerId = new Map(existingStatuses.map((row) => [row.wrestlerId, row]));
 
     for (const change of changes) {
       if (change.status === null) {
@@ -104,10 +116,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
           where: { meetId, wrestlerId: change.wrestlerId },
         });
       } else {
+        const existingStatus = existingStatusByWrestlerId.get(change.wrestlerId);
+        const safeAttribution = buildCoachSafeStatusAttribution(existingStatus);
+        const preservedParentResponseStatus = preserveParentResponseStatus(existingStatus);
         await tx.meetWrestlerStatus.upsert({
           where: { meetId_wrestlerId: { meetId, wrestlerId: change.wrestlerId } },
-          update: { status: change.status, ...attribution },
-          create: { meetId, wrestlerId: change.wrestlerId, status: change.status, ...attribution },
+          update: { status: change.status, parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
+          create: { meetId, wrestlerId: change.wrestlerId, status: change.status, parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
         });
       }
     }

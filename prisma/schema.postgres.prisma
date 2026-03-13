@@ -151,6 +151,7 @@ model MeetWrestlerStatus {
   meetId     String
   wrestlerId String
   status     MeetWrestlerStatusType
+  parentResponseStatus MeetWrestlerStatusType?
   lastChangedById       String?
   lastChangedByUsername String?
   lastChangedByRole     String?

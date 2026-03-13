@@ -18,6 +18,7 @@ export type MeetCheckpointPayload = {
   attendance: {
     wrestlerId: string;
     status: CheckpointAttendanceStatus;
+    parentResponseStatus?: CheckpointAttendanceStatus;
     lastChangedByUsername?: string | null;
     lastChangedByRole?: string | null;
     lastChangedSource?: string | null;
@@ -85,6 +86,7 @@ export async function buildMeetCheckpointPayload(
       select: {
         wrestlerId: true,
         status: true,
+        parentResponseStatus: true,
         lastChangedByUsername: true,
         lastChangedByRole: true,
         lastChangedSource: true,
@@ -119,6 +121,7 @@ export async function buildMeetCheckpointPayload(
   const attendance = sortedWrestlers.map(w => ({
     wrestlerId: w.id,
     status: normalizeAttendanceStatus(statusMap.get(w.id)?.status),
+    parentResponseStatus: normalizeAttendanceStatus(statusMap.get(w.id)?.parentResponseStatus),
     lastChangedByUsername: statusMap.get(w.id)?.lastChangedByUsername ?? null,
     lastChangedByRole: statusMap.get(w.id)?.lastChangedByRole ?? null,
     lastChangedSource: statusMap.get(w.id)?.lastChangedSource ?? null,

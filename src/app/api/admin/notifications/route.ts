@@ -6,14 +6,12 @@ import { requireAdmin } from "@/lib/rbac";
 
 const NotificationEventSchema = z.enum([
   "meet_ready_for_attendance",
-  "meet_ready_for_checkin",
-  "meet_published",
 ]);
 const NotificationStatusSchema = z.enum(["SKIPPED", "LOGGED", "SENT", "FAILED"]);
 
 type SearchNotificationRow = {
   id: string;
-  event: z.infer<typeof NotificationEventSchema>;
+  event: string;
   channel: string;
   status: z.infer<typeof NotificationStatusSchema>;
   recipient: string;

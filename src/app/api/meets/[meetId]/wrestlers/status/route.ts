@@ -3,9 +3,10 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { getCoachAttendanceEditScopeWithoutLock } from "@/lib/meetAttendanceEditScope";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
-import { buildMeetStatusAttribution } from "@/lib/meetStatusAttribution";
+import { buildCoachSafeStatusAttribution, preserveParentResponseStatus } from "@/lib/meetStatusAttribution";
 import { requireRole } from "@/lib/rbac";
 import { deleteBoutsAndRenumber } from "@/lib/renumberBouts";
 
@@ -38,16 +39,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   const meetTeamIds = new Set(meet.meetTeams.map((entry) => entry.teamId));
   const userTeamId = user.teamId;
   const isCoachOnMeetTeam = userTeamId !== null && meetTeamIds.has(userTeamId);
-  const coachAttendanceScopeWithoutLock: "all" | "team" | null =
-    user.role !== "COACH"
-      ? null
-      : meetPhase === "ATTENDANCE"
-        ? isCoordinator
-          ? "all"
-          : isCoachOnMeetTeam
-            ? "team"
-            : null
-          : null;
+  const coachAttendanceScopeWithoutLock = getCoachAttendanceEditScopeWithoutLock({
+    userRole: user.role,
+    meetPhase,
+    isCoordinator,
+    isCoachOnMeetTeam,
+    hasCoordinatorEditAccess: meet.lockAccesses.length > 0,
+  });
   if (!coachAttendanceScopeWithoutLock) {
     try {
       await requireMeetLock(meetId, user.id, user.role);
@@ -59,7 +57,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
 
   const body = BodySchema.parse(await req.json());
-  const attribution = buildMeetStatusAttribution(user, "COACH");
 
   const wrestler = await db.wrestler.findUnique({
     where: { id: body.wrestlerId },
@@ -78,6 +75,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     );
   }
 
+  const existingStatus = await db.meetWrestlerStatus.findUnique({
+    where: { meetId_wrestlerId: { meetId, wrestlerId: body.wrestlerId } },
+    select: {
+      parentResponseStatus: true,
+      lastChangedById: true,
+      lastChangedByUsername: true,
+      lastChangedByRole: true,
+      lastChangedSource: true,
+      lastChangedAt: true,
+    },
+  });
+  const safeAttribution = buildCoachSafeStatusAttribution(existingStatus);
+  const preservedParentResponseStatus = preserveParentResponseStatus(existingStatus);
+
   if (body.status === null) {
     await db.meetWrestlerStatus.deleteMany({
       where: { meetId, wrestlerId: body.wrestlerId },
@@ -85,8 +96,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   } else {
     await db.meetWrestlerStatus.upsert({
       where: { meetId_wrestlerId: { meetId, wrestlerId: body.wrestlerId } },
-      update: { status: body.status, ...attribution },
-      create: { meetId, wrestlerId: body.wrestlerId, status: body.status, ...attribution },
+      update: { status: body.status, parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
+      create: { meetId, wrestlerId: body.wrestlerId, status: body.status, parentResponseStatus: preservedParentResponseStatus, ...safeAttribution },
     });
   }
 
@@ -127,12 +138,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     wrestler: {
       id: body.wrestlerId,
       status: body.status,
-      statusChangedByUsername: body.status === null ? null : attribution.lastChangedByUsername,
-      statusChangedByRole: body.status === null ? null : attribution.lastChangedByRole,
-      statusChangedSource: body.status === null ? null : attribution.lastChangedSource,
+      parentResponseStatus: body.status === null ? null : preservedParentResponseStatus,
+      statusChangedByUsername: body.status === null ? null : safeAttribution.lastChangedByUsername,
+      statusChangedByRole: body.status === null ? null : safeAttribution.lastChangedByRole,
+      statusChangedSource: body.status === null ? null : safeAttribution.lastChangedSource,
       statusChangedAt: body.status === null
         ? null
-        : attribution.lastChangedAt.toISOString(),
+        : safeAttribution.lastChangedAt?.toISOString() ?? null,
     },
   });
 }

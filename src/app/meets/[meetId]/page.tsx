@@ -16,6 +16,7 @@ import AppHeader from "@/components/AppHeader";
 import { DAYS_PER_YEAR } from "@/lib/constants";
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
+import { getCoachAttendanceEditScopeWithoutLock } from "@/lib/meetAttendanceEditScope";
 import {
   isEditableMeetPhase,
   meetPhaseLabel,
@@ -88,6 +89,7 @@ type Wrestler = {
   isGirl: boolean;
   birthdate?: string;
   status?: AttendanceStatus | null;
+  parentResponseStatus?: AttendanceStatus | null;
   statusChangedByUsername?: string | null;
   statusChangedByRole?: string | null;
   statusChangedSource?: string | null;
@@ -315,7 +317,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const { meetId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const showNotificationControls = process.env.NODE_ENV !== "production";
   const editRequested = searchParams.get("edit") === "1";
   const [wantsEdit, setWantsEdit] = useState(editRequested);
   const daysPerYear = DAYS_PER_YEAR;
@@ -329,7 +330,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [attendanceDeadline, setAttendanceDeadline] = useState<string | null>(null);
   const [meetStatus, setMeetStatus] = useState<MeetPhase>("DRAFT");
-  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(false);
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
   const [savedMatchesPerWrestler, setSavedMatchesPerWrestler] = useState<number | null>(null);
@@ -495,8 +495,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [readyForCheckinError, setReadyForCheckinError] = useState<string | null>(null);
   const [readyForCheckinActionId, setReadyForCheckinActionId] = useState<string | null>(null);
   const [readyForCheckinTargetStatus, setReadyForCheckinTargetStatus] = useState<"READY_FOR_CHECKIN" | "PUBLISHED">("READY_FOR_CHECKIN");
-  const [sendReadyForCheckinNotification, setSendReadyForCheckinNotification] = useState(showNotificationControls);
-  const [sendPublishedNotification, setSendPublishedNotification] = useState(showNotificationControls);
 
   // Rebuild pairings (optionally clearing existing bouts) and refresh UI state.
   async function rerunAutoPairings(options: { clearExisting?: boolean } = {}) {
@@ -620,7 +618,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     }
     setWantsEdit(next);
     router.replace(next ? `/meets/${meetId}?edit=1` : `/meets/${meetId}`);
-  }, [meetId, router, showNotificationControls]);
+  }, [meetId, router]);
 
   // Briefly flash a UI notice (used after saves).
   const triggerNoticeFlash = useCallback(() => {
@@ -1243,9 +1241,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           girlsWrestleGirls: Boolean(meetJson.girlsWrestleGirls),
         }));
         setMeetStatus(normalizeMeetPhase(meetJson.status));
-        setSendNotificationsToParents(Boolean(meetJson.sendNotificationsToParents));
-        setSendReadyForCheckinNotification(Boolean(meetJson.sendNotificationsToParents) && showNotificationControls);
-        setSendPublishedNotification(Boolean(meetJson.sendNotificationsToParents) && showNotificationControls);
         setTeamCheckins(Array.isArray(meetJson.teamCheckins) ? meetJson.teamCheckins : []);
         setLastUpdatedAt(meetJson.lastChangeAt ?? null);
         setLastUpdatedBy(meetJson.lastChangeBy ?? null);
@@ -1419,16 +1414,13 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId &&
     teams.some((team) => team.id === currentUserTeamId),
   );
-  const coachAttendanceEditScopeWithoutLock: "all" | "team" | null =
-    currentUserRole !== "COACH"
-      ? null
-      : meetStatus === "ATTENDANCE"
-        ? isMeetCoordinator
-          ? "all"
-          : isCoachOnMeetTeam
-            ? "team"
-            : null
-          : null;
+  const coachAttendanceEditScopeWithoutLock = getCoachAttendanceEditScopeWithoutLock({
+    userRole: currentUserRole,
+    meetPhase: meetStatus,
+    isCoordinator: isMeetCoordinator,
+    isCoachOnMeetTeam,
+    hasCoordinatorEditAccess: Boolean(currentUserId && lockAccessDraftIds.has(currentUserId)),
+  });
   const canEditAttendance = canEdit || coachAttendanceEditScopeWithoutLock !== null;
   const canApplyCheckpoint = canEdit && isMeetCoordinator;
   const canShowCheckpointApply = canApplyCheckpoint && !isPublished;
@@ -2608,12 +2600,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         status: nextStatus,
-        ...(nextStatus === "READY_FOR_CHECKIN"
-          ? { sendReadyForCheckinNotification: showNotificationControls && sendNotificationsToParents && sendReadyForCheckinNotification }
-          : {}),
-        ...(nextStatus === "PUBLISHED"
-          ? { sendPublishedNotification: showNotificationControls && sendNotificationsToParents && sendPublishedNotification }
-          : {}),
       }),
     });
     let res = await sendStatusUpdate();
@@ -2669,11 +2655,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   async function openReadyForCheckinChecklist(targetStatus: "READY_FOR_CHECKIN" | "PUBLISHED" = "READY_FOR_CHECKIN") {
     if (!(await flushPendingAttendanceChanges())) return;
     setReadyForCheckinTargetStatus(targetStatus);
-    if (targetStatus === "READY_FOR_CHECKIN") {
-      setSendReadyForCheckinNotification(showNotificationControls && sendNotificationsToParents);
-    } else {
-      setSendPublishedNotification(showNotificationControls && sendNotificationsToParents);
-    }
     setShowReadyForCheckinModal(true);
     setReadyForCheckinLoading(true);
     setReadyForCheckinError(null);
@@ -4412,9 +4393,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               homeTeamId={homeTeamId}
               attendanceDeadline={attendanceDeadline}
               showRefresh={meetStatus === "ATTENDANCE"}
-              showNoReplyColumn={meetStatus !== "DRAFT"}
-              showStatusAttribution={meetStatus === "ATTENDANCE"}
+              showNoReplyColumn
+              disableAllComing={meetStatus === "ATTENDANCE"}
+              showStatusAttribution={false}
               showParentEntryNotice={meetStatus === "ATTENDANCE"}
+              showParentResponseDetails={meetStatus === "DRAFT" || meetStatus === "ATTENDANCE"}
               editableTeamId={
                 coachAttendanceEditScopeWithoutLock === "team"
                   ? currentUserTeamId
@@ -6191,21 +6174,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                         ? "Fix the failed checklist items before publishing the meet."
                         : "Fix the failed checklist items before moving the meet to Check-in.")}
                   </div>
-                  {showNotificationControls && readyForCheckinChecklist.ok && readyForCheckinTargetStatus === "READY_FOR_CHECKIN" && (
-                    <label className="row" style={{ marginTop: 8, alignItems: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={sendReadyForCheckinNotification}
-                        onChange={(event) => setSendReadyForCheckinNotification(event.target.checked)}
-                        disabled={!sendNotificationsToParents || readyForCheckinSubmitting || Boolean(readyForCheckinActionId)}
-                      />
-                      <span className="muted">
-                        {sendNotificationsToParents
-                          ? "Send ready-for-check-in notifications"
-                          : "Parent meet-event notifications are disabled for this meet."}
-                      </span>
-                    </label>
-                  )}
                 </>
               )}
               <div className="ready-checkin-footer">
@@ -6251,21 +6219,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
               <div>
                 For that reason, publishing is irreversible.
               </div>
-              {showNotificationControls && (
-                <label className="row" style={{ marginTop: 12, alignItems: "center" }}>
-                  <input
-                    type="checkbox"
-                    checked={sendPublishedNotification}
-                    onChange={(event) => setSendPublishedNotification(event.target.checked)}
-                    disabled={!sendNotificationsToParents || readyForCheckinSubmitting}
-                  />
-                  <span className="muted">
-                    {sendNotificationsToParents
-                      ? "Send published notifications"
-                      : "Parent meet-event notifications are disabled for this meet."}
-                  </span>
-                </label>
-              )}
               <div className="ready-checkin-footer">
                 <button
                   type="button"
@@ -6363,7 +6316,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 Are you sure you want to reopen attendance?
               </div>
               <div style={{ fontSize: 16 }}>
-                Any attendance changes made since the close will be lost.
+                Parent responses will reopen, and current attendance statuses will stay as they are.
               </div>
               <div className="ready-checkin-footer">
                 <button
