@@ -19,8 +19,7 @@ type JwtCallbackArgs = Parameters<JwtCallback>[0];
  * NextAuth configuration for the app.
  *
  * Highlights:
- * - Uses PrismaAdapter with a customized `createUser` to assign a placeholder
- *   username and default role (`PARENT`).
+ * - Uses PrismaAdapter with credential-based sign-in.
  * - Sessions use JWTs and include `sessionVersion` to allow server-side
  *   invalidation.
  */
@@ -36,13 +35,10 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
-        bypassEmailVerification: { label: "Bypass Email Verification", type: "text" },
       },
       async authorize(credentials) {
         const username = normalizeUsername(credentials?.username ?? "");
         const password = credentials?.password ?? "";
-        const bypassEmailVerification = credentials?.bypassEmailVerification === "true";
-        const skipEmailVerification = process.env.SKIP_EMAIL_VERIFICATION === "true";
 
         if (!username || !password) return null;
 
@@ -56,7 +52,6 @@ export const authOptions: NextAuthOptions = {
             teamId: true,
             sessionVersion: true,
             passwordHash: true,
-            emailVerified: true,
             mustResetPassword: true,
           },
         });
@@ -64,11 +59,6 @@ export const authOptions: NextAuthOptions = {
 
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
-
-        const requireEmailVerified = skipEmailVerification ? false : true;
-        if (requireEmailVerified && !user.emailVerified && !(process.env.NODE_ENV !== "production" && bypassEmailVerification)) {
-          throw new Error("EMAIL_NOT_VERIFIED");
-        }
 
         return {
           id: user.id,

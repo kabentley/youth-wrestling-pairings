@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
+import CreateUserModal from "@/app/admin/components/CreateUserModal";
 import { formatTeamName } from "@/lib/formatTeamName";
 
 type UserRow = {
@@ -20,29 +21,6 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 const MIN_USERNAME_LEN = 6;
 const MAX_USERNAME_LEN = 32;
-const normalizeUsernameToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const buildGeneratedUsernameBase = (firstName: string, lastName: string) => {
-  const first = normalizeUsernameToken(firstName);
-  const last = normalizeUsernameToken(lastName);
-  const initial = first.slice(0, 1);
-  let base = `${initial}${last}`;
-  if (!base) return "";
-  if (base.length < MIN_USERNAME_LEN) {
-    base = `${base}${"1".repeat(MIN_USERNAME_LEN - base.length)}`;
-  }
-  if (base.length > MAX_USERNAME_LEN) {
-    base = base.slice(0, MAX_USERNAME_LEN);
-  }
-  return base;
-};
-
-const withUsernameSuffix = (base: string, suffix: number) => {
-  if (suffix <= 0) return base;
-  const suffixText = String(suffix);
-  const maxBaseLen = Math.max(1, MAX_USERNAME_LEN - suffixText.length);
-  return `${base.slice(0, maxBaseLen)}${suffixText}`;
-};
 
 export default function UsersSection() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -55,20 +33,11 @@ export default function UsersSection() {
   const [pageSize, setPageSize] = useState(25);
   const [total, setTotal] = useState(0);
   const [adminCount, setAdminCount] = useState(0);
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<UserRow["role"]>("COACH");
-  const [teamId, setTeamId] = useState<string>("");
   const [msg, setMsg] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [allowParentSelfSignup, setAllowParentSelfSignup] = useState(false);
+  const [savingSelfSignupSetting, setSavingSelfSignupSetting] = useState(false);
   const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
-  const [creatingUser, setCreatingUser] = useState(false);
-  const [usernameEdited, setUsernameEdited] = useState(false);
-  const usernameSuggestReqRef = useRef(0);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [editUsername, setEditUsername] = useState("");
   const [editEmail, setEditEmail] = useState("");
@@ -94,9 +63,10 @@ export default function UsersSection() {
         page: String(overrides?.page ?? page),
         pageSize: String(overrides?.pageSize ?? pageSize),
       });
-      const [uRes, tRes] = await Promise.all([
+      const [uRes, tRes, lRes] = await Promise.all([
         fetch(`/api/admin/users?${params}`),
         fetch("/api/teams"),
+        fetch("/api/league"),
       ]);
       if (!uRes.ok) {
         const data = await uRes.json().catch(() => null);
@@ -108,10 +78,37 @@ export default function UsersSection() {
       setTotal(Number(data.total ?? 0));
       setAdminCount(Number(data.adminCount ?? 0));
       if (tRes.ok) setTeams(await tRes.json());
+      if (lRes.ok) {
+        const league = await lRes.json().catch(() => null);
+        setAllowParentSelfSignup(Boolean(league?.allowParentSelfSignup));
+      }
     } catch {
       setMsg("Unable to load users.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function setParentSelfSignup(nextValue: boolean) {
+    setMsg("");
+    setSavingSelfSignupSetting(true);
+    try {
+      const res = await fetch("/api/league", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowParentSelfSignup: nextValue }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setMsg(formatError(data?.error) ?? "Unable to update sign-up setting.");
+        return;
+      }
+      setAllowParentSelfSignup(nextValue);
+      setMsg(`Parent self-signup ${nextValue ? "enabled" : "disabled"}.`);
+    } catch {
+      setMsg("Unable to update sign-up setting.");
+    } finally {
+      setSavingSelfSignupSetting(false);
     }
   }
 
@@ -125,33 +122,6 @@ export default function UsersSection() {
   useEffect(() => {
     void load({ query: debouncedQuery });
   }, [page, pageSize, teamFilter, roleFilter, debouncedQuery]);
-
-  useEffect(() => {
-    if (!createUserModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !creatingUser) {
-        usernameSuggestReqRef.current += 1;
-        setCreateUserModalOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [createUserModalOpen, creatingUser]);
-
-  useEffect(() => {
-    if (!createUserModalOpen) return;
-    if (usernameEdited) return;
-    const nextFirstName = firstName.trim();
-    const nextLastName = lastName.trim();
-    if (!nextFirstName || !nextLastName) {
-      setUsername("");
-      return;
-    }
-    const timer = setTimeout(() => {
-      void suggestUsernameForName(nextFirstName, nextLastName);
-    }, 160);
-    return () => clearTimeout(timer);
-  }, [createUserModalOpen, firstName, lastName, usernameEdited]);
 
   useEffect(() => {
     if (!editingUser) return;
@@ -170,90 +140,9 @@ export default function UsersSection() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [editingUser, savingEditUser]);
 
-  function generatePassword() {
-    const digits = "0123456789";
-    let out = "";
-    for (let i = 0; i < 6; i += 1) {
-      out += digits[Math.floor(Math.random() * digits.length)];
-    }
-    setPassword(out);
-  }
-
-  async function isUsernameAvailable(candidate: string) {
-    const res = await fetch(`/api/auth/signup?username=${encodeURIComponent(candidate)}`, {
-      method: "GET",
-    });
-    if (!res.ok) return false;
-    const payload = await res.json().catch(() => null);
-    return payload?.available === true;
-  }
-
-  async function suggestUsernameForName(nextFirstName: string, nextLastName: string) {
-    const base = buildGeneratedUsernameBase(nextFirstName, nextLastName);
-    if (!base) {
-      setUsername("");
-      return;
-    }
-    const reqId = ++usernameSuggestReqRef.current;
-    for (let suffix = 0; suffix <= 200; suffix += 1) {
-      const candidate = withUsernameSuffix(base, suffix);
-      const available = await isUsernameAvailable(candidate);
-      if (reqId !== usernameSuggestReqRef.current) return;
-      if (available) {
-        setUsername(candidate);
-        return;
-      }
-    }
-    setUsername(withUsernameSuffix(base, Date.now() % 1000));
-  }
-
-  function handleFirstNameChange(event: ChangeEvent<HTMLInputElement>) {
-    setFirstName(event.target.value);
-  }
-
-  function handleLastNameChange(event: ChangeEvent<HTMLInputElement>) {
-    setLastName(event.target.value);
-  }
-
-  function handleUsernameChange(event: ChangeEvent<HTMLInputElement>) {
-    usernameSuggestReqRef.current += 1;
-    setUsername(event.target.value);
-    setUsernameEdited(true);
-  }
-
-  function resetCreateUserForm(defaultTeamId = "") {
-    usernameSuggestReqRef.current += 1;
-    setUsername("");
-    setUsernameEdited(false);
-    setEmail("");
-    setPhone("");
-    setFirstName("");
-    setLastName("");
-    setPassword("");
-    setRole("COACH");
-    setTeamId(defaultTeamId);
-  }
-
-  function clearCreateUserFieldsAfterCreate() {
-    usernameSuggestReqRef.current += 1;
-    setUsername("");
-    setUsernameEdited(false);
-    setEmail("");
-    setPhone("");
-    setFirstName("");
-    setLastName("");
-  }
-
   function openCreateUserModal() {
     setMsg("");
-    resetCreateUserForm(teamFilter.trim());
     setCreateUserModalOpen(true);
-  }
-
-  function closeCreateUserModal() {
-    if (creatingUser) return;
-    usernameSuggestReqRef.current += 1;
-    setCreateUserModalOpen(false);
   }
 
   function openEditUserModal(user: UserRow) {
@@ -280,63 +169,6 @@ export default function UsersSection() {
   function closeEditUserModal() {
     if (savingEditUser) return;
     clearEditUserForm();
-  }
-
-  async function createUser() {
-    setMsg("");
-    const trimmedFirstName = firstName.trim();
-    const trimmedLastName = lastName.trim();
-    const normalizedUsername = username.trim().toLowerCase();
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedPhone = phone.trim();
-    const normalizedPassword = password.trim();
-    const normalizedName = `${trimmedFirstName} ${trimmedLastName}`.trim();
-    const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
-    const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
-    const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
-    const hasValidTeam = !requiresTeam || teamId.trim().length > 0;
-    const isValid =
-      normalizedUsername.length >= MIN_USERNAME_LEN &&
-      normalizedUsername.length <= MAX_USERNAME_LEN &&
-      trimmedFirstName.length > 0 &&
-      trimmedLastName.length > 0 &&
-      normalizedName.length <= 120 &&
-      normalizedPassword.length > 0 &&
-      hasValidEmail &&
-      hasValidPhone &&
-      hasValidTeam;
-    if (!isValid) {
-      setMsg("Fill all required fields with valid values.");
-      return;
-    }
-    setCreatingUser(true);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: normalizedUsername,
-          email: normalizedEmail,
-          phone: normalizedPhone,
-          name: normalizedName,
-          role,
-          teamId: teamId || null,
-          password: normalizedPassword || null,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        setMsg(formatError(data?.error) ?? "Unable to create user.");
-        return;
-      }
-      clearCreateUserFieldsAfterCreate();
-      setMsg("");
-      await load();
-    } catch {
-      setMsg("Unable to create user.");
-    } finally {
-      setCreatingUser(false);
-    }
   }
 
   async function saveEditedUser() {
@@ -440,31 +272,7 @@ export default function UsersSection() {
     if (!canSaveEditedUser || savingEditUser) return;
     void saveEditedUser();
   }
-
-  const trimmedFirstName = firstName.trim();
-  const trimmedLastName = lastName.trim();
-  const normalizedUsername = username.trim().toLowerCase();
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedPhone = phone.trim();
-  const normalizedPassword = password.trim();
-  const normalizedName = `${trimmedFirstName} ${trimmedLastName}`.trim();
-  const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
-  const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
-  const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
-  const hasValidTeam = !requiresTeam || teamId.trim().length > 0;
-  const hasValidName = normalizedName.length > 0 && normalizedName.length <= 120;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const canCreateUser = Boolean(
-    normalizedUsername.length >= MIN_USERNAME_LEN &&
-    normalizedUsername.length <= MAX_USERNAME_LEN &&
-    trimmedFirstName.length > 0 &&
-    trimmedLastName.length > 0 &&
-    normalizedPassword.length > 0 &&
-    hasValidName &&
-    hasValidEmail &&
-    hasValidPhone &&
-    hasValidTeam
-  );
   const normalizedEditUsername = editUsername.trim().toLowerCase();
   const normalizedEditEmail = editEmail.trim().toLowerCase();
   const normalizedEditPhone = editPhone.trim();
@@ -497,9 +305,39 @@ export default function UsersSection() {
     <>
       <div className="admin-header admin-users-header">
         <h1 className="admin-title">User Management</h1>
-        <button className="admin-btn admin-create-user-trigger" type="button" onClick={openCreateUserModal}>
-          Create New User
-        </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 56,
+            flexWrap: "nowrap",
+          }}
+        >
+          <button className="admin-btn admin-create-user-trigger" type="button" onClick={openCreateUserModal}>
+            Create New User
+          </button>
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+            title="When off, the login page hides account creation and parent sign-up is blocked."
+          >
+            <input
+              type="checkbox"
+              checked={allowParentSelfSignup}
+              disabled={savingSelfSignupSetting}
+              onChange={(event) => {
+                void setParentSelfSignup(event.target.checked);
+              }}
+            />
+            {savingSelfSignupSetting ? "Saving..." : "Allow parents to create their own accounts"}
+          </label>
+        </div>
       </div>
       <div className="admin-card admin-users-controls">
         <form className="admin-search" onSubmit={onSearchSubmit}>
@@ -584,93 +422,16 @@ export default function UsersSection() {
           {msg && <span className="admin-pager-status">{msg}</span>}
         </div>
       </div>
-
-      {createUserModalOpen && (
-        <div className="admin-modal-backdrop" onClick={closeCreateUserModal}>
-          <div
-            className="admin-modal admin-create-user-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Create New User"
-          >
-            <h4>Create New User</h4>
-            <div className="admin-create-user-modal-grid">
-              <input
-                placeholder="First Name"
-                value={firstName}
-                onChange={handleFirstNameChange}
-              />
-              <input
-                placeholder="Last Name"
-                value={lastName}
-                onChange={handleLastNameChange}
-              />
-              <input placeholder="Username" value={username} onChange={handleUsernameChange} />
-              <input
-                placeholder="Email (optional)"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-              <input placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <div className="admin-create-user-password">
-                <input
-                  placeholder="Temporary Password"
-                  type="text"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-                <button
-                  className="admin-btn admin-btn-ghost"
-                  type="button"
-                  onClick={generatePassword}
-                  disabled={creatingUser}
-                >
-                  Generate
-                </button>
-              </div>
-              <div className="admin-create-user-role-team">
-                <select value={role} onChange={(e) => setRole(e.target.value as UserRow["role"])}>
-                  <option value="ADMIN">Admin</option>
-                  <option value="COACH">Coach</option>
-                  <option value="PARENT">Parent</option>
-                  <option value="TABLE_WORKER">Table Worker</option>
-                </select>
-                <select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-                  <option value="">Select team</option>
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {formatTeamName(t)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="admin-modal-actions">
-              <button
-                className="admin-btn admin-btn-ghost"
-                type="button"
-                onClick={closeCreateUserModal}
-                disabled={creatingUser}
-              >
-                Cancel
-              </button>
-              <button
-                className="admin-btn"
-                type="button"
-                onClick={() => void createUser()}
-                disabled={!canCreateUser || creatingUser}
-              >
-                {creatingUser ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateUserModal
+        isOpen={createUserModalOpen}
+        teams={teams}
+        defaultTeamId={teamFilter.trim()}
+        onClose={() => setCreateUserModalOpen(false)}
+        onCreated={async () => {
+          setMsg("");
+          await load();
+        }}
+      />
 
       {editingUser && (
         <div className="admin-modal-backdrop" onClick={closeEditUserModal}>

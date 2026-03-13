@@ -8,7 +8,7 @@ Supports:
 - Manual pairing overrides
 - Mat assignment and drag‑and‑drop mat boards
 - CSV roster import with safe upserts
-- Authentication with username/password and email verification
+- Authentication with username/password
 - SQLite for local dev/tests, Postgres for production (Vercel)
 
 ## Quick start (local)

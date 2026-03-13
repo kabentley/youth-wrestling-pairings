@@ -51,6 +51,7 @@ export default async function AdminHome({ searchParams }: Props) {
   const requestedTab = ((): AdminTabKey => {
     switch (resolvedSearchParams?.tab) {
       case "teams":
+      case "head-coaches":
       case "league":
       case "pairings":
       case "users":

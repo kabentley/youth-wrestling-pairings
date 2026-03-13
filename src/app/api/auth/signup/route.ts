@@ -1,5 +1,3 @@
-import crypto from "crypto";
-
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -44,6 +42,13 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const league = await db.league.findFirst({
+    select: { allowParentSelfSignup: true },
+  });
+  if (!league?.allowParentSelfSignup) {
+    return NextResponse.json({ error: "Parent self-signup is disabled." }, { status: 403 });
+  }
+
   const parsed = BodySchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
@@ -69,12 +74,12 @@ export async function POST(req: Request) {
           email,
           phone: phone === "" ? "" : phone,
           teamId,
-      name: normalizedName,
+          name: normalizedName,
           passwordHash,
+          emailVerified: new Date(),
           role: "PARENT",
         },
       });
-      await sendVerificationEmail(req, email);
       return NextResponse.json({ ok: true, reused: true });
     }
     return NextResponse.json({ error: "Username already taken" }, { status: 409 });
@@ -93,6 +98,7 @@ export async function POST(req: Request) {
         teamId,
         name: normalizedName,
         passwordHash,
+        emailVerified: new Date(),
         role: "PARENT",
       },
     });
@@ -103,38 +109,5 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  await sendVerificationEmail(req, email);
-
   return NextResponse.json({ ok: true });
-}
-
-async function sendVerificationEmail(req: Request, email: string) {
-  const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const token = crypto.randomBytes(24).toString("hex");
-  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24);
-
-  await db.verificationToken.deleteMany({ where: { identifier: email } });
-  await db.verificationToken.create({
-    data: { identifier: email, token, expires },
-  });
-
-  const link = `${origin}/auth/verify-email?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
-  const key = process.env.SENDGRID_API_KEY;
-  const from = process.env.SENDGRID_FROM;
-  if (!key || !from) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`Verify email link for ${email}: ${link}`);
-      return;
-    }
-    return;
-  }
-
-  const sgMail = await import("@sendgrid/mail");
-  sgMail.default.setApiKey(key);
-  await sgMail.default.send({
-    to: email,
-    from,
-    subject: "Verify your email",
-    text: `Verify your email address by visiting: ${link}`,
-  });
 }

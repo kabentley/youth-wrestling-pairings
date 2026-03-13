@@ -1,0 +1,2 @@
+ALTER TABLE "League"
+ADD COLUMN IF NOT EXISTS "allowParentSelfSignup" BOOLEAN NOT NULL DEFAULT false;

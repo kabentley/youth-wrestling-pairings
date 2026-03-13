@@ -23,6 +23,7 @@ export async function POST() {
         NOT: {
           OR: [
             { role: "ADMIN" },
+            { role: "COACH" },
             ...(headCoachIds.length > 0 ? [{ id: { in: headCoachIds } }] : []),
           ],
         },

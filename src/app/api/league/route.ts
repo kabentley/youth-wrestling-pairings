@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/rbac";
 const BodySchema = z.object({
   name: z.string().trim().max(100).optional(),
   website: z.string().trim().url().optional().or(z.literal("")),
+  allowParentSelfSignup: z.boolean().optional(),
   ageAllowancePctPerYear: z.number().min(0).max(2).optional(),
   experienceAllowancePctPerYear: z.number().min(0).max(2).optional(),
   skillAllowancePctPerPoint: z.number().min(0).max(2).optional(),
@@ -21,6 +22,7 @@ export async function GET() {
       name: true,
       logoData: true,
       website: true,
+      allowParentSelfSignup: true,
       ageAllowancePctPerYear: true,
       experienceAllowancePctPerYear: true,
       skillAllowancePctPerPoint: true,
@@ -39,6 +41,7 @@ export async function GET() {
     name: league?.name ?? null,
     hasLogo: Boolean(league?.logoData),
     website: league?.website ?? null,
+    allowParentSelfSignup: league?.allowParentSelfSignup ?? false,
     ageAllowancePctPerYear: league?.ageAllowancePctPerYear ?? defaults.ageAllowancePctPerYear,
     experienceAllowancePctPerYear: league?.experienceAllowancePctPerYear ?? defaults.experienceAllowancePctPerYear,
     skillAllowancePctPerPoint: league?.skillAllowancePctPerPoint ?? defaults.skillAllowancePctPerPoint,
@@ -61,6 +64,7 @@ export async function PUT(req: Request) {
   const data = {
     name: body.name ?? null,
     website: normalizeWebsite(body.website),
+    allowParentSelfSignup: body.allowParentSelfSignup,
     ageAllowancePctPerYear: body.ageAllowancePctPerYear,
     experienceAllowancePctPerYear: body.experienceAllowancePctPerYear,
     skillAllowancePctPerPoint: body.skillAllowancePctPerPoint,

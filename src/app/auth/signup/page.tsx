@@ -7,6 +7,8 @@ import { formatTeamName } from "@/lib/formatTeamName";
 
 export default function SignUpPage() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
+  const [allowParentSelfSignup, setAllowParentSelfSignup] = useState(false);
+  const [signupSettingsLoaded, setSignupSettingsLoaded] = useState(false);
   const [teams, setTeams] = useState<Array<{
     id: string;
     name: string;
@@ -50,8 +52,12 @@ export default function SignUpPage() {
         if (!active || !json) return;
         const name = String(json.name ?? "").trim();
         if (name) setLeagueName(name);
+        setAllowParentSelfSignup(Boolean(json.allowParentSelfSignup));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (active) setSignupSettingsLoaded(true);
+      });
     return () => { active = false; };
   }, []);
 
@@ -152,6 +158,11 @@ export default function SignUpPage() {
   async function submit() {
     setMsg("");
     setMsgTone("");
+    if (!allowParentSelfSignup) {
+      setMsg("Parent self-signup is currently disabled.");
+      setMsgTone("error");
+      return;
+    }
     if (username.includes("@")) {
       setMsg("Username cannot include @.");
       setMsgTone("error");
@@ -579,229 +590,238 @@ export default function SignUpPage() {
         <div className="signup-card">
           <div className="signup-right">
             <img className="logo" src="/api/league/logo/file" alt="League logo" />
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void submit();
-              }}
-            >
-              <div className="form-group">
-                <label htmlFor="username">Username</label>
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  autoComplete="username"
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (raw.includes("@")) {
-                      setUsernameInputError("may not contain @");
-                    } else {
-                      setUsernameInputError("");
-                    }
-                    setUsername(raw.replaceAll("@", ""));
-                  }}
-                />
-                {usernameInputError ? (
-                  <div className="username-status invalid">{usernameInputError}</div>
-                ) : (
-                  <div className={`username-status ${usernameStatus}`}>{usernameStatusMsg}</div>
-                )}
-              </div>
-              <div className="form-group">
-                <label htmlFor="email">Email</label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="phone">Phone (optional)</label>
-                <input
-                  id="phone"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="firstName">First Name</label>
-                <input
-                  id="firstName"
-                  type="text"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="lastName">Last Name</label>
-                <input
-                  id="lastName"
-                  type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="team">Team</label>
-                <div className="team-picker" ref={teamPickerRef}>
-                  <button
-                    id="team"
-                    type="button"
-                    className="team-picker-trigger"
-                    aria-haspopup="listbox"
-                    aria-expanded={teamMenuOpen}
-                    onClick={() => {
-                      if (teamMenuOpen) {
-                        setTeamMenuOpen(false);
+            {!signupSettingsLoaded ? null : !allowParentSelfSignup ? (
+              <>
+                <h2 style={{ marginTop: 0 }}>Account creation is disabled</h2>
+                <p className="strength-label" style={{ fontSize: 14 }}>
+                  Parents cannot create their own accounts right now. Contact an administrator or coach for access.
+                </p>
+              </>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submit();
+                }}
+              >
+                <div className="form-group">
+                  <label htmlFor="username">Username</label>
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="username"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw.includes("@")) {
+                        setUsernameInputError("may not contain @");
                       } else {
-                        openTeamMenu();
+                        setUsernameInputError("");
                       }
+                      setUsername(raw.replaceAll("@", ""));
                     }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
+                  />
+                  {usernameInputError ? (
+                    <div className="username-status invalid">{usernameInputError}</div>
+                  ) : (
+                    <div className={`username-status ${usernameStatus}`}>{usernameStatusMsg}</div>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label htmlFor="email">Email</label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="phone">Phone (optional)</label>
+                  <input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="firstName">First Name</label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="lastName">Last Name</label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="team">Team</label>
+                  <div className="team-picker" ref={teamPickerRef}>
+                    <button
+                      id="team"
+                      type="button"
+                      className="team-picker-trigger"
+                      aria-haspopup="listbox"
+                      aria-expanded={teamMenuOpen}
+                      onClick={() => {
                         if (teamMenuOpen) {
-                          commitTeamSelection();
+                          setTeamMenuOpen(false);
                         } else {
                           openTeamMenu();
                         }
-                        return;
-                      }
-                      if (event.key === "ArrowDown" || event.key === " ") {
-                        event.preventDefault();
-                        openTeamMenu();
-                        return;
-                      }
-                      if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                        event.preventDefault();
-                        openTeamMenu();
-                        handleTeamTypeaheadKey(event.key);
-                      }
-                    }}
-                  >
-                    <span className="team-picker-trigger-label">
-                      {selectedTeam ? (
-                        <>
-                          {selectedTeam.hasLogo ? (
-                            <img
-                              src={`/api/teams/${selectedTeam.id}/logo/file`}
-                              alt={`${selectedTeam.name} logo`}
-                              className="team-option-logo"
-                            />
-                          ) : (
-                            <span className="team-option-logo team-option-fallback" aria-hidden>
-                              {selectedTeamInitial}
-                            </span>
-                          )}
-                          <span>{formatTeamName(selectedTeam)}</span>
-                        </>
-                      ) : (
-                        <span>Select a team</span>
-                      )}
-                    </span>
-                    <span className="team-picker-caret" aria-hidden>{teamMenuOpen ? "^" : "v"}</span>
-                  </button>
-                  {teamMenuOpen && (
-                    <div
-                      className="team-menu"
-                      role="listbox"
-                      aria-labelledby="team"
+                      }}
                       onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setTeamMenuOpen(false);
-                          return;
-                        }
                         if (event.key === "Enter") {
                           event.preventDefault();
-                          commitTeamSelection();
+                          if (teamMenuOpen) {
+                            commitTeamSelection();
+                          } else {
+                            openTeamMenu();
+                          }
+                          return;
+                        }
+                        if (event.key === "ArrowDown" || event.key === " ") {
+                          event.preventDefault();
+                          openTeamMenu();
                           return;
                         }
                         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
                           event.preventDefault();
+                          openTeamMenu();
                           handleTeamTypeaheadKey(event.key);
                         }
                       }}
                     >
-                      {teams.map((team) => {
-                        const initial = (team.symbol || team.name || "T").slice(0, 1).toUpperCase();
-                        return (
-                          <button
-                            key={team.id}
-                            type="button"
-                            className={`team-menu-item ${team.id === teamId ? "active" : ""}`}
-                            role="option"
-                            aria-selected={team.id === teamId}
-                            ref={(node) => {
-                              teamOptionRefs.current[team.id] = node;
-                            }}
-                            onClick={() => {
-                              setTeamId(team.id);
-                              setTeamMenuOpen(false);
-                            }}
-                          >
-                            {team.hasLogo ? (
+                      <span className="team-picker-trigger-label">
+                        {selectedTeam ? (
+                          <>
+                            {selectedTeam.hasLogo ? (
                               <img
-                                src={`/api/teams/${team.id}/logo/file`}
-                                alt={`${team.name} logo`}
+                                src={`/api/teams/${selectedTeam.id}/logo/file`}
+                                alt={`${selectedTeam.name} logo`}
                                 className="team-option-logo"
                               />
                             ) : (
-                              <span className="team-option-logo team-option-fallback" aria-hidden>{initial}</span>
+                              <span className="team-option-logo team-option-fallback" aria-hidden>
+                                {selectedTeamInitial}
+                              </span>
                             )}
-                            <span>{formatTeamName(team)}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                            <span>{formatTeamName(selectedTeam)}</span>
+                          </>
+                        ) : (
+                          <span>Select a team</span>
+                        )}
+                      </span>
+                      <span className="team-picker-caret" aria-hidden>{teamMenuOpen ? "^" : "v"}</span>
+                    </button>
+                    {teamMenuOpen && (
+                      <div
+                        className="team-menu"
+                        role="listbox"
+                        aria-labelledby="team"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setTeamMenuOpen(false);
+                            return;
+                          }
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitTeamSelection();
+                            return;
+                          }
+                          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                            event.preventDefault();
+                            handleTeamTypeaheadKey(event.key);
+                          }
+                        }}
+                      >
+                        {teams.map((team) => {
+                          const initial = (team.symbol || team.name || "T").slice(0, 1).toUpperCase();
+                          return (
+                            <button
+                              key={team.id}
+                              type="button"
+                              className={`team-menu-item ${team.id === teamId ? "active" : ""}`}
+                              role="option"
+                              aria-selected={team.id === teamId}
+                              ref={(node) => {
+                                teamOptionRefs.current[team.id] = node;
+                              }}
+                              onClick={() => {
+                                setTeamId(team.id);
+                                setTeamMenuOpen(false);
+                              }}
+                            >
+                              {team.hasLogo ? (
+                                <img
+                                  src={`/api/teams/${team.id}/logo/file`}
+                                  alt={`${team.name} logo`}
+                                  className="team-option-logo"
+                                />
+                              ) : (
+                                <span className="team-option-logo team-option-fallback" aria-hidden>{initial}</span>
+                              )}
+                              <span>{formatTeamName(team)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="form-group">
-                <label htmlFor="password">Password</label>
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <div className="strength" aria-hidden>
-                  <span style={{ width: `${passwordStrength(password).pct}%`, background: passwordStrength(password).color }} />
-                </div>
-                <div className="strength-label">{passwordStrength(password).label}</div>
-              </div>
-              <div className="form-group">
-                <label htmlFor="confirm">Confirm password</label>
-                <input
-                  id="confirm"
-                  type={showPassword ? "text" : "password"}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="remember">
+                <div className="form-group">
+                  <label htmlFor="password">Password</label>
                   <input
-                    type="checkbox"
-                    checked={showPassword}
-                    onChange={(e) => setShowPassword(e.target.checked)}
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                   />
-                  Show password
-                </label>
-              </div>
-              <button className="btn-full" type="submit" disabled={usernameStatus === "checking"}>Create account</button>
-              {msg && msgTone === "error" && <div className="msg-error">{msg}</div>}
-              {msg && msgTone === "success" && <div className="msg-success">{msg}</div>}
-            </form>
+                  <div className="strength" aria-hidden>
+                    <span style={{ width: `${passwordStrength(password).pct}%`, background: passwordStrength(password).color }} />
+                  </div>
+                  <div className="strength-label">{passwordStrength(password).label}</div>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="confirm">Confirm password</label>
+                  <input
+                    id="confirm"
+                    type={showPassword ? "text" : "password"}
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="remember">
+                    <input
+                      type="checkbox"
+                      checked={showPassword}
+                      onChange={(e) => setShowPassword(e.target.checked)}
+                    />
+                    Show password
+                  </label>
+                </div>
+                <button className="btn-full" type="submit" disabled={usernameStatus === "checking"}>Create account</button>
+                {msg && msgTone === "error" && <div className="msg-error">{msg}</div>}
+                {msg && msgTone === "success" && <div className="msg-success">{msg}</div>}
+              </form>
+            )}
           </div>
         </div>
       </div>

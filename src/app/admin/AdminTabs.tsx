@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import HeadCoachesSection from "./sections/HeadCoachesSection";
 import LeagueSection from "./sections/LeagueSection";
 import NotificationsSection from "./sections/NotificationsSection";
 import UsersSection from "./sections/UsersSection";
@@ -17,12 +18,13 @@ const headerLinks = [
   { href: "/coach/my-team", label: "Team Settings", minRole: "COACH" as const },
 ];
 
-export type AdminTabKey = "users" | "teams" | "league" | "pairings" | "notifications";
+export type AdminTabKey = "users" | "teams" | "head-coaches" | "league" | "pairings" | "notifications";
 
 function resolveAdminTab(value: string | null | undefined, showNotifications: boolean, fallback: AdminTabKey): AdminTabKey {
   switch (value) {
     case "users":
     case "teams":
+    case "head-coaches":
     case "league":
     case "pairings":
       return value;
@@ -81,6 +83,15 @@ export default function AdminTabs({
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === "head-coaches"}
+          className={`admin-tab-button${activeTab === "head-coaches" ? " active" : ""}`}
+          onClick={() => handleTabClick("head-coaches")}
+        >
+          Head Coaches
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === "league"}
           className={`admin-tab-button${activeTab === "league" ? " active" : ""}`}
           onClick={() => handleTabClick("league")}
@@ -111,6 +122,7 @@ export default function AdminTabs({
       <div role="tabpanel">
         {activeTab === "users" && <UsersSection />}
         {activeTab === "teams" && <LeagueSection view="teams" />}
+        {activeTab === "head-coaches" && <HeadCoachesSection />}
         {activeTab === "league" && <LeagueSection view="league" />}
         {activeTab === "pairings" && <LeagueSection view="pairings" />}
         {showNotifications && activeTab === "notifications" && <NotificationsSection />}

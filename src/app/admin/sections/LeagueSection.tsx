@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import ColorPicker from "@/components/ColorPicker";
+import { adjustTeamTextColor } from "@/lib/contrastText";
 
 type TeamRow = {
   id: string;
@@ -16,14 +17,28 @@ type TeamRow = {
   inactiveWrestlerCount?: number;
   girlsCount?: number;
   headCoachId?: string | null;
-  headCoach?: { id: string; username: string } | null;
+  headCoach?: { id: string; username: string; name?: string | null } | null;
   coaches: { id: string; username: string }[];
 };
+
+function compareTeamRows(a: TeamRow, b: TeamRow) {
+  const symbolCompare = a.symbol.localeCompare(b.symbol, undefined, { sensitivity: "base" });
+  if (symbolCompare !== 0) return symbolCompare;
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function formatHeadCoachLabel(team: TeamRow) {
+  if (!team.headCoach) return "None";
+  const fullName = team.headCoach.name?.trim();
+  return fullName ? `${fullName} (@${team.headCoach.username})` : `@${team.headCoach.username}`;
+}
 
 export default function LeagueSection({ view = "league" }: { view?: "league" | "teams" | "pairings" }) {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [newTeamColor, setNewTeamColor] = useState("#000000");
+  const [newTeamLogoFile, setNewTeamLogoFile] = useState<File | null>(null);
   const [msg, setMsg] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [leagueName, setLeagueName] = useState("");
@@ -45,6 +60,8 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [teamNameEdits, setTeamNameEdits] = useState<Record<string, string | undefined>>({});
   const [teamSymbolEdits, setTeamSymbolEdits] = useState<Record<string, string | undefined>>({});
   const [teamHeadCoachEdits, setTeamHeadCoachEdits] = useState<Record<string, string | undefined>>({});
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [savingTeamId, setSavingTeamId] = useState<string | null>(null);
   const [leagueLogoVersion, setLeagueLogoVersion] = useState(0);
   const [teamLogoVersions, setTeamLogoVersions] = useState<Record<string, number>>({});
   const [showResetModal, setShowResetModal] = useState(false);
@@ -52,12 +69,15 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [resetError, setResetError] = useState("");
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [pendingDeleteTeam, setPendingDeleteTeam] = useState<TeamRow | null>(null);
+  const [isDeletingTeam, setIsDeletingTeam] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importConfirm, setImportConfirm] = useState("");
   const [importError, setImportError] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
-  const colorTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
 
   async function load() {
@@ -68,7 +88,10 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
         fetch("/api/league"),
         fetch("/api/league/stats"),
       ]);
-      if (tRes.ok) setTeams(await tRes.json());
+      if (tRes.ok) {
+        const loadedTeams = await tRes.json();
+        setTeams(Array.isArray(loadedTeams) ? [...loadedTeams].sort(compareTeamRows) : []);
+      }
       if (lRes.ok) {
         const league = await lRes.json();
         setLeagueName(league.name ?? "");
@@ -98,39 +121,72 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     }
   }
 
-  async function addTeam() {
-    setMsg("");
-    if (!name.trim() || !symbol.trim()) return;
-    const res = await fetch("/api/teams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      const error = (json as { error?: string }).error;
-      setMsg(error ?? "Unable to add team. Check the name and symbol, then try again.");
-      return;
-    }
+  function resetAddTeamForm() {
     setName("");
     setSymbol("");
-    await load();
+    setNewTeamColor("#000000");
+    setNewTeamLogoFile(null);
+  }
+
+  async function addTeam() {
+    setMsg("");
+    const cleanName = name.trim();
+    const cleanSymbol = symbol.trim();
+    if (!cleanName || !cleanSymbol) return;
+    setIsCreatingTeam(true);
+    try {
+      const res = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: cleanName, symbol: cleanSymbol, color: newTeamColor }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        const error = payload?.error;
+        setMsg(error ?? "Unable to add team. Check the name and symbol, then try again.");
+        return;
+      }
+
+      const teamId = String(payload?.id ?? "");
+      const warnings: string[] = [];
+
+      if (teamId && newTeamLogoFile) {
+        const logoError = await uploadLogo(teamId, newTeamLogoFile, false);
+        if (logoError) {
+          warnings.push(`Logo not uploaded: ${logoError}`);
+        }
+      }
+
+      resetAddTeamForm();
+      setShowAddTeamModal(false);
+      await load();
+      setMsg(warnings.length > 0 ? `Team created. ${warnings.join(" ")}` : "Team created.");
+    } catch {
+      setMsg("Unable to add team. Check the name and symbol, then try again.");
+    } finally {
+      setIsCreatingTeam(false);
+    }
   }
 
   async function removeTeam(teamId: string) {
     setMsg("");
-    const ok = confirm("Delete this team and all related data?");
-    if (!ok) return;
-    const res = await fetch(`/api/teams/${teamId}`, { method: "DELETE" });
-    if (!res.ok) {
-      setMsg("Unable to delete team.");
-      return;
+    setIsDeletingTeam(true);
+    try {
+      const res = await fetch(`/api/teams/${teamId}`, { method: "DELETE" });
+      if (!res.ok) {
+        setMsg("Unable to delete team.");
+        return;
+      }
+      setPendingDeleteTeam(null);
+      setMsg("Team removed.");
+      await load();
+    } finally {
+      setIsDeletingTeam(false);
     }
-    await load();
   }
 
-  async function uploadLogo(teamId: string, file: File | null) {
-    if (!file) return;
+  async function uploadLogo(teamId: string, file: File | null, reload = true) {
+    if (!file) return null;
     const form = new FormData();
     form.append("file", file);
     const res = await fetch(`/api/teams/${teamId}/logo`, {
@@ -140,54 +196,57 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       const error = (json as { error?: string }).error;
-      setMsg(error ?? "Logo upload failed.");
-      return;
+      if (reload) {
+        setMsg(error ?? "Logo upload failed.");
+      }
+      return error ?? "Logo upload failed.";
     }
     setTeamLogoVersions((prev) => ({ ...prev, [teamId]: Date.now() }));
-    await load();
+    if (reload) {
+      await load();
+    }
+    return null;
   }
 
-  async function updateTeamColor(teamId: string, color: string) {
-    const res = await fetch(`/api/teams/${teamId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ color }),
-    });
-    if (!res.ok) {
-      setMsg("Unable to update team color.");
-      return;
+  async function updateTeamDetails(teamId: string, name: string, symbol: string, color: string, headCoachId: string | null) {
+    setSavingTeamId(teamId);
+    try {
+      const res = await fetch(`/api/teams/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, symbol, color, headCoachId }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        const error = (json as { error?: string }).error;
+        setMsg(error ?? "Unable to update team.");
+        return;
+      }
+      setTeamNameEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      setTeamSymbolEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      setTeamHeadCoachEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      setColorEdits((prev) => {
+        const next = { ...prev };
+        delete next[teamId];
+        return next;
+      });
+      setEditingTeamId(null);
+      await load();
+    } finally {
+      setSavingTeamId(null);
     }
-    await load();
-  }
-
-  async function updateTeamDetails(teamId: string, name: string, symbol: string, headCoachId: string | null) {
-    const res = await fetch(`/api/teams/${teamId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol, headCoachId }),
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      const error = (json as { error?: string }).error;
-      setMsg(error ?? "Unable to update team.");
-      return;
-    }
-    setTeamNameEdits((prev) => {
-      const next = { ...prev };
-      delete next[teamId];
-      return next;
-    });
-    setTeamSymbolEdits((prev) => {
-      const next = { ...prev };
-      delete next[teamId];
-      return next;
-    });
-    setTeamHeadCoachEdits((prev) => {
-      const next = { ...prev };
-      delete next[teamId];
-      return next;
-    });
-    await load();
   }
 
   function getTeamName(team: TeamRow) {
@@ -205,6 +264,43 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   function normalizeHeadCoachId(value: string | null | undefined) {
     if (!value) return "";
     return value.trim();
+  }
+
+  function normalizeTeamSymbolInput(value: string) {
+    return value.toUpperCase().slice(0, 4);
+  }
+
+  function startEditingTeam(team: TeamRow) {
+    setMsg("");
+    setEditingTeamId(team.id);
+    setTeamNameEdits((prev) => ({ ...prev, [team.id]: team.name }));
+    setTeamSymbolEdits((prev) => ({ ...prev, [team.id]: team.symbol }));
+    setTeamHeadCoachEdits((prev) => ({ ...prev, [team.id]: team.headCoachId ?? "" }));
+    setColorEdits((prev) => ({ ...prev, [team.id]: team.color }));
+  }
+
+  function stopEditingTeam(teamId: string) {
+    setEditingTeamId((current) => (current === teamId ? null : current));
+    setTeamNameEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    setTeamSymbolEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    setTeamHeadCoachEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
+    setColorEdits((prev) => {
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
   }
 
   function parseAllowance(value: string, fallback: number) {
@@ -266,23 +362,14 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     await load();
   }
 
-  function commitTeamDetails(teamId: string, name: string, symbol: string, headCoachId: string | null) {
+  function commitTeamDetails(teamId: string, name: string, symbol: string, color: string, headCoachId: string | null) {
     const cleanName = name.trim();
     const cleanSymbol = symbol.trim();
-    if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4) {
-      setMsg("Team name must be at least 2 characters and symbol must be 2-4 characters.");
+    if (cleanName.length < 2 || cleanSymbol.length < 2 || cleanSymbol.length > 4 || !/^#[0-9a-fA-F]{6}$/.test(color)) {
+      setMsg("Team name must be at least 2 characters, symbol must be 2-4 characters, and color must be valid.");
       return;
     }
-    void updateTeamDetails(teamId, cleanName, cleanSymbol, headCoachId);
-  }
-
-  function scheduleColorSave(teamId: string, color: string) {
-    if (!/^#[0-9a-fA-F]{6}$/.test(color)) return;
-    const existingColorTimer = colorTimers.current[teamId];
-    if (existingColorTimer) clearTimeout(existingColorTimer);
-    colorTimers.current[teamId] = setTimeout(() => {
-      void updateTeamColor(teamId, color);
-    }, 300);
+    void updateTeamDetails(teamId, cleanName, cleanSymbol, color, headCoachId);
   }
 
   function scheduleLeagueSave(
@@ -309,11 +396,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     }, 500);
   }
 
-  function setTeamColor(teamId: string, color: string) {
-    setColorEdits((prev) => ({ ...prev, [teamId]: color }));
-    scheduleColorSave(teamId, color);
-  }
-
   function closeResetModal() {
     setShowResetModal(false);
     setResetConfirm("");
@@ -325,6 +407,17 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     setImportConfirm("");
     setImportError("");
     setImportFile(null);
+  }
+
+  function closeAddTeamModal() {
+    if (isCreatingTeam) return;
+    setShowAddTeamModal(false);
+    resetAddTeamForm();
+  }
+
+  function closeDeleteTeamModal() {
+    if (isDeletingTeam) return;
+    setPendingDeleteTeam(null);
   }
 
   async function confirmYearlyReset() {
@@ -422,10 +515,25 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     };
   }, [showResetModal, isResetting]);
 
+  const editingTeam = editingTeamId ? teams.find((team) => team.id === editingTeamId) ?? null : null;
+  const normalizedNewTeamSymbol = symbol.trim().toUpperCase();
+  const isNewTeamSymbolLengthValid = normalizedNewTeamSymbol.length >= 2 && normalizedNewTeamSymbol.length <= 4;
+  const isNewTeamSymbolTaken = normalizedNewTeamSymbol.length > 0 && teams.some((team) => team.symbol.trim().toUpperCase() === normalizedNewTeamSymbol);
+  const normalizedEditingTeamSymbol = editingTeam ? getTeamSymbol(editingTeam).trim().toUpperCase() : "";
+  const canSaveEditingTeam = Boolean(
+    editingTeam &&
+    getTeamName(editingTeam).trim().length >= 2 &&
+    normalizedEditingTeamSymbol.length >= 2 &&
+    normalizedEditingTeamSymbol.length <= 4 &&
+    savingTeamId !== editingTeam.id
+  );
+  const adminOverlayStyle = { zIndex: 11000 } as const;
+  const adminModalStyle = { position: "relative" as const, zIndex: 11001 };
+
   return (
     <>
       {view === "league" && (
-      <div className="admin-card">
+      <div className="admin-card" style={{ width: "min(980px, 100%)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>League</h3>
           <button
@@ -676,7 +784,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       )}
 
       {view === "teams" && (
-      <div className="admin-card">
+      <div className="admin-card" style={{ width: "fit-content", maxWidth: "100%" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0 }}>Teams</h3>
           {isLoading && (
@@ -690,6 +798,17 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             </div>
           )}
           <div style={{ display: "flex", gap: 12, marginLeft: "auto", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="admin-btn"
+              onClick={() => {
+                setMsg("");
+                resetAddTeamForm();
+                setShowAddTeamModal(true);
+              }}
+            >
+              Add New Team
+            </button>
             <button
               type="button"
               className="admin-btn"
@@ -712,26 +831,19 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             </button>
           </div>
         </div>
-        <div className="admin-row" style={{ marginTop: 12 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Team name" />
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="Symbol (2-4)" className="admin-input-sm" />
-          <button className="admin-btn" onClick={addTeam}>
-            Add Team
-          </button>
-        </div>
         {msg && <div className="admin-error">{msg}</div>}
 
-        <div className="admin-table">
-          <table cellPadding={6}>
+        <div className="admin-table" style={{ width: "fit-content", maxWidth: "100%" }}>
+          <table className="teams-table" cellPadding={0} style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th>Logo</th>
-                <th>Symbol</th>
+                <th style={{ width: 72 }}>Symbol</th>
+                <th style={{ width: 72 }}>Logo</th>
+                <th style={{ width: 72 }}>Color</th>
                 <th>Team</th>
+                <th>Head Coach</th>
                 <th>Wrestlers</th>
                 <th>Girls</th>
-                <th>Color</th>
-                <th>Head Coach</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -744,122 +856,99 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
                 <>
                   {teams.map((t) => (
                     <tr key={t.id}>
-                      <td>
+                      <td
+                        style={{
+                          width: 72,
+                          whiteSpace: "nowrap",
+                          color: adjustTeamTextColor(t.color),
+                          fontWeight: 700,
+                          textAlign: "center",
+                        }}
+                      >
+                        {t.symbol}
+                      </td>
+                      <td style={{ width: 72 }}>
                         <div className="logo-cell">
-                          <input
-                            id={`team-logo-file-${t.id}`}
-                            className="file-input"
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
-                            onChange={(e) => {
-                              void uploadLogo(t.id, e.target.files?.[0] ?? null);
-                              e.currentTarget.value = "";
-                            }}
-                          />
-                          <label className="logo-button" htmlFor={`team-logo-file-${t.id}`}>
-                            {t.hasLogo ? (
-                              <img
-                                src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`}
-                                alt={`${t.name} logo`}
-                                className="admin-team-logo"
-                              />
-                            ) : (
-                              <span className="admin-muted">Set Logo</span>
-                            )}
-                          </label>
+                          {t.hasLogo ? (
+                            <img
+                              src={`/api/teams/${t.id}/logo/file?v=${teamLogoVersions[t.id] ?? 0}`}
+                              alt={`${t.name} logo`}
+                              className="admin-team-logo"
+                              style={{ width: 32, height: 32 }}
+                            />
+                          ) : (
+                            <span className="admin-muted">No logo</span>
+                          )}
                         </div>
                       </td>
-                      <td>
-                        <input
-                          value={getTeamSymbol(t)}
-                          onChange={(e) => {
-                            const nextSymbol = e.target.value;
-                            setTeamSymbolEdits((prev) => ({ ...prev, [t.id]: nextSymbol }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            commitTeamDetails(
-                              t.id,
-                              getTeamName(t),
-                              getTeamSymbol(t),
-                              normalizeHeadCoachId(getTeamHeadCoachId(t)),
-                            );
-                          }}
-                          className="admin-input-sm"
-                        />
+                      <td style={{ width: 72 }}>
+                        <div className="color-cell">
+                          <span
+                            aria-label={`${t.name} color ${t.color}`}
+                            style={{
+                              display: "inline-block",
+                              width: 38,
+                              height: 24,
+                              borderRadius: 4,
+                              border: "1px solid var(--line)",
+                              backgroundColor: t.color,
+                            }}
+                          />
+                        </div>
                       </td>
-                      <td>
-                        <input
-                          value={getTeamName(t)}
-                          onChange={(e) => {
-                            const nextName = e.target.value;
-                            setTeamNameEdits((prev) => ({ ...prev, [t.id]: nextName }));
+                      <td style={{ width: 320, minWidth: 320, maxWidth: 320 }}>
+                        <div
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.2,
+                            color: adjustTeamTextColor(t.color),
+                            fontWeight: 700,
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            commitTeamDetails(
-                              t.id,
-                              getTeamName(t),
-                              getTeamSymbol(t),
-                              normalizeHeadCoachId(getTeamHeadCoachId(t)),
-                            );
+                          title={t.name}
+                        >
+                          {t.name}
+                        </div>
+                      </td>
+                      <td style={{ width: 280, minWidth: 280, maxWidth: 280 }}>
+                        <div
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.2,
                           }}
-                        />
+                          title={formatHeadCoachLabel(t)}
+                        >
+                          {formatHeadCoachLabel(t)}
+                        </div>
                       </td>
                       <td>
                         {(t.wrestlerCount ?? 0)}
                         {(t.inactiveWrestlerCount ?? 0) > 0 ? ` (inactive: ${t.inactiveWrestlerCount})` : ""}
                       </td>
                       <td>{t.girlsCount ?? 0}</td>
-                      <td>
-                        <div className="color-cell">
-                          <ColorPicker
-                            value={colorEdits[t.id] ?? t.color}
-                            onChange={(next) => setTeamColor(t.id, next)}
-                            idPrefix={`team-color-${t.id}`}
-                            buttonClassName="color-swatch"
-                            buttonStyle={{ backgroundColor: colorEdits[t.id] ?? t.color }}
-                            buttonAriaLabel={`Choose color for ${t.name}`}
-                            showNativeColorInput
-                          />
-                        </div>
-                      </td>
-                      <td>
-                        <select
-                          value={getTeamHeadCoachId(t)}
-                          onChange={(e) => {
-                            const nextHeadCoachId = e.target.value;
-                            setTeamHeadCoachEdits((prev) => ({ ...prev, [t.id]: nextHeadCoachId }));
-                            commitTeamDetails(
-                              t.id,
-                              getTeamName(t),
-                              getTeamSymbol(t),
-                              normalizeHeadCoachId(nextHeadCoachId),
-                            );
-                          }}
+                      <td style={{ verticalAlign: "middle" }}>
+                        <div
+                          className="admin-actions"
+                          style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
                         >
-                          <option value="">Select head coach</option>
-                          {t.coaches.map((coach) => (
-                            <option key={coach.id} value={coach.id}>
-                              {coach.username}
-                            </option>
-                          ))}
-                          {t.headCoach && !t.coaches.some((coach) => coach.id === t.headCoach?.id) && (
-                            <option value={t.headCoach.id}>{t.headCoach.username}</option>
-                          )}
-                        </select>
-                        {!t.coaches.length && (
-                          <div className="admin-muted" style={{ marginTop: 4 }}>
-                            No coaches assigned yet.
-                          </div>
-                        )}
-                      </td>
-                      <td className="admin-actions">
-                        <button className="admin-btn admin-btn-danger" onClick={() => removeTeam(t.id)}>
-                          Delete Team
-                        </button>
+                          <button
+                            className="admin-btn admin-btn-ghost teams-action-btn"
+                            type="button"
+                            onClick={() => startEditingTeam(t)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-danger teams-action-btn"
+                            type="button"
+                            onClick={() => setPendingDeleteTeam(t)}
+                          >
+                            Delete Team
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -875,6 +964,302 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
         </div>
       </div>
       )}
+      {showAddTeamModal && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={() => closeAddTeamModal()}
+          style={adminOverlayStyle}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-team-title"
+            onClick={(event) => event.stopPropagation()}
+            style={adminModalStyle}
+          >
+            <h4 id="add-team-title">Add New Team</h4>
+            <div style={{ display: "grid", gap: 12 }}>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Team name"
+                autoFocus
+                disabled={isCreatingTeam}
+              />
+              <input
+                value={symbol}
+                onChange={(e) => setSymbol(normalizeTeamSymbolInput(e.target.value))}
+                placeholder="Symbol (2-4)"
+                className="admin-input-sm"
+                maxLength={4}
+                disabled={isCreatingTeam}
+              />
+              {!isNewTeamSymbolTaken && normalizedNewTeamSymbol.length > 0 && !isNewTeamSymbolLengthValid && (
+                <div className="admin-muted" style={{ color: "#b00020", marginTop: -4 }}>
+                  Symbol must be 2-4 characters.
+                </div>
+              )}
+              {isNewTeamSymbolTaken && (
+                <div className="admin-muted" style={{ color: "#b00020", marginTop: -4 }}>
+                  That symbol is already in use.
+                </div>
+              )}
+              <div className="color-cell">
+                <div className="admin-muted" style={{ marginBottom: 6 }}>Team Color</div>
+                <ColorPicker
+                  value={newTeamColor}
+                  onChange={setNewTeamColor}
+                  idPrefix="new-team-color"
+                  buttonClassName="color-swatch"
+                  buttonStyle={{ backgroundColor: newTeamColor }}
+                  buttonAriaLabel="Choose color for new team"
+                  showNativeColorInput
+                />
+              </div>
+              <div>
+                <div className="admin-muted" style={{ marginBottom: 6 }}>Logo</div>
+                <input
+                  className="reset-confirm-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
+                  onChange={(e) => setNewTeamLogoFile(e.target.files?.[0] ?? null)}
+                  disabled={isCreatingTeam}
+                />
+              </div>
+            </div>
+            <div className="reset-actions" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={closeAddTeamModal}
+                disabled={isCreatingTeam}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn"
+                onClick={() => void addTeam()}
+                disabled={!name.trim() || !isNewTeamSymbolLengthValid || isNewTeamSymbolTaken || isCreatingTeam}
+              >
+                {isCreatingTeam ? "Creating..." : "Add Team"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {editingTeam && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={() => {
+            if (savingTeamId === editingTeam.id) return;
+            stopEditingTeam(editingTeam.id);
+          }}
+          style={adminOverlayStyle}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-team-title"
+            onClick={(event) => event.stopPropagation()}
+            style={adminModalStyle}
+          >
+            <h4 id="edit-team-title">Edit Team</h4>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div className="logo-cell" style={{ justifyContent: "center" }}>
+                <input
+                  id={`team-logo-file-${editingTeam.id}`}
+                  className="file-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml,image/avif"
+                  onChange={(e) => {
+                    void uploadLogo(editingTeam.id, e.target.files?.[0] ?? null);
+                    e.currentTarget.value = "";
+                  }}
+                  disabled={savingTeamId === editingTeam.id}
+                />
+                <label className="logo-button" htmlFor={`team-logo-file-${editingTeam.id}`}>
+                  {editingTeam.hasLogo ? (
+                    <img
+                      src={`/api/teams/${editingTeam.id}/logo/file?v=${teamLogoVersions[editingTeam.id] ?? 0}`}
+                      alt={`${editingTeam.name} logo`}
+                      className="admin-team-logo"
+                    />
+                  ) : (
+                    <span className="admin-muted">Set Logo</span>
+                  )}
+                </label>
+              </div>
+              <input
+                value={getTeamName(editingTeam)}
+                onChange={(e) => {
+                  const nextName = e.target.value;
+                  setTeamNameEdits((prev) => ({ ...prev, [editingTeam.id]: nextName }));
+                }}
+                placeholder="Team name"
+                disabled={savingTeamId === editingTeam.id}
+              />
+              <input
+                value={getTeamSymbol(editingTeam)}
+                onChange={(e) => {
+                  const nextSymbol = normalizeTeamSymbolInput(e.target.value);
+                  setTeamSymbolEdits((prev) => ({ ...prev, [editingTeam.id]: nextSymbol }));
+                }}
+                placeholder="Symbol (2-4)"
+                className="admin-input-sm"
+                maxLength={4}
+                disabled={savingTeamId === editingTeam.id}
+              />
+              {normalizedEditingTeamSymbol.length > 0 && (normalizedEditingTeamSymbol.length < 2 || normalizedEditingTeamSymbol.length > 4) && (
+                <div className="admin-muted" style={{ color: "#b00020", marginTop: -4 }}>
+                  Symbol must be 2-4 characters.
+                </div>
+              )}
+              <div className="color-cell">
+                <div className="admin-muted" style={{ marginBottom: 6 }}>Team Color</div>
+                <ColorPicker
+                  value={colorEdits[editingTeam.id] ?? editingTeam.color}
+                  onChange={(next) => setColorEdits((prev) => ({ ...prev, [editingTeam.id]: next }))}
+                  idPrefix={`team-color-${editingTeam.id}`}
+                  buttonClassName="color-swatch"
+                  buttonStyle={{ backgroundColor: colorEdits[editingTeam.id] ?? editingTeam.color }}
+                  buttonAriaLabel={`Choose color for ${editingTeam.name}`}
+                  showNativeColorInput
+                />
+              </div>
+              <div>
+                <div className="admin-muted" style={{ marginBottom: 6 }}>Head Coach</div>
+                <select
+                  value={getTeamHeadCoachId(editingTeam)}
+                  onChange={(e) => {
+                    const nextHeadCoachId = e.target.value;
+                    setTeamHeadCoachEdits((prev) => ({ ...prev, [editingTeam.id]: nextHeadCoachId }));
+                  }}
+                  disabled={savingTeamId === editingTeam.id}
+                >
+                  <option value="">Select head coach</option>
+                  {editingTeam.coaches.map((coach) => (
+                    <option key={coach.id} value={coach.id}>
+                      {coach.username}
+                    </option>
+                  ))}
+                  {editingTeam.headCoach && !editingTeam.coaches.some((coach) => coach.id === editingTeam.headCoach?.id) && (
+                    <option value={editingTeam.headCoach.id}>{editingTeam.headCoach.username}</option>
+                  )}
+                </select>
+                {!editingTeam.coaches.length && (
+                  <div className="admin-muted" style={{ marginTop: 4 }}>
+                    No coaches assigned yet.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="reset-actions" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => stopEditingTeam(editingTeam.id)}
+                disabled={savingTeamId === editingTeam.id}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn"
+                onClick={() => {
+                  commitTeamDetails(
+                    editingTeam.id,
+                    getTeamName(editingTeam),
+                    getTeamSymbol(editingTeam),
+                    colorEdits[editingTeam.id] ?? editingTeam.color,
+                    normalizeHeadCoachId(getTeamHeadCoachId(editingTeam)),
+                  );
+                }}
+                disabled={!canSaveEditingTeam}
+              >
+                {savingTeamId === editingTeam.id ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {pendingDeleteTeam && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={closeDeleteTeamModal}
+          style={adminOverlayStyle}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-team-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ ...adminModalStyle, maxWidth: 680, width: "100%" }}
+          >
+            <h4
+              id="delete-team-title"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                margin: 0,
+              }}
+            >
+              <span style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                <span>Delete team:</span>
+                <span
+                  style={{
+                    color: adjustTeamTextColor(pendingDeleteTeam.color),
+                    fontWeight: 700,
+                    lineHeight: 1.2,
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {`${pendingDeleteTeam.name} - ${pendingDeleteTeam.symbol}`}
+                </span>
+              </span>
+              {pendingDeleteTeam.hasLogo ? (
+                <img
+                  src={`/api/teams/${pendingDeleteTeam.id}/logo/file?v=${teamLogoVersions[pendingDeleteTeam.id] ?? 0}`}
+                  alt={`${pendingDeleteTeam.name} logo`}
+                  className="admin-team-logo"
+                  style={{ width: 88, height: 88, flexShrink: 0 }}
+                />
+              ) : null}
+            </h4>
+            <div style={{ display: "grid", gap: 14, justifyItems: "center", textAlign: "center" }}>
+              <p className="reset-message" style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>
+                This will permanently delete this team and all related data.
+              </p>
+            </div>
+            <div className="reset-actions" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={closeDeleteTeamModal}
+                disabled={isDeletingTeam}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn admin-btn-danger"
+                onClick={() => void removeTeam(pendingDeleteTeam.id)}
+                disabled={isDeletingTeam}
+              >
+                {isDeletingTeam ? "Deleting..." : "Delete Team"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showResetModal && (
         <div
           className="reset-overlay"
@@ -883,6 +1268,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             if (isResetting) return;
             closeResetModal();
           }}
+          style={adminOverlayStyle}
         >
           <div
             className="reset-modal"
@@ -890,10 +1276,11 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             aria-modal="true"
             aria-labelledby="reset-title"
             onClick={(event) => event.stopPropagation()}
+            style={adminModalStyle}
           >
             <h4 id="reset-title">Reset For New Year</h4>
             <p className="reset-message">
-              This will permanently delete every meet, clear all team rosters, and delete every account except admins and head coaches.
+              This will permanently delete every meet, clear all team rosters, and delete every account except admins and coaches.
             </p>
             <p className="reset-message">
               Type{" "}
@@ -934,6 +1321,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             if (isImporting) return;
             closeImportModal();
           }}
+          style={adminOverlayStyle}
         >
           <div
             className="reset-modal"
@@ -941,6 +1329,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             aria-modal="true"
             aria-labelledby="import-title"
             onClick={(event) => event.stopPropagation()}
+            style={adminModalStyle}
           >
             <h4 id="import-title">Import Teams + Rosters</h4>
             <p className="reset-message">
@@ -984,6 +1373,18 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
           </div>
         </div>
       )}
+      <style jsx>{`
+        .teams-table th,
+        .teams-table td {
+          padding: 4px 6px;
+          vertical-align: middle;
+          line-height: 1.15;
+        }
+        .teams-action-btn {
+          padding: 5px 10px;
+          font-size: 13px;
+        }
+      `}</style>
     </>
   );
 }

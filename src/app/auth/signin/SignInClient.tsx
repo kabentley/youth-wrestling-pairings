@@ -17,7 +17,7 @@ export default function SignInClient() {
     }
     return rawCallbackUrl.startsWith("/") ? rawCallbackUrl : "/";
   })();
-  const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
+  const [allowParentSelfSignup, setAllowParentSelfSignup] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -30,8 +30,7 @@ export default function SignInClient() {
       .then(res => res.ok ? res.json() : null)
       .then(json => {
         if (!active || !json) return;
-        const name = String(json.name ?? "").trim();
-        if (name) setLeagueName(name);
+        setAllowParentSelfSignup(Boolean(json.allowParentSelfSignup));
       })
       .catch(() => {});
     return () => { active = false; };
@@ -84,23 +83,6 @@ export default function SignInClient() {
           max-width: 980px;
           margin: 0 auto;
         }
-        .signin-brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 16px;
-        }
-        .signin-title {
-          font-family: "Oswald", Arial, sans-serif;
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
-          margin: 0;
-        }
-        .signin-logo {
-          width: 48px;
-          height: 48px;
-          object-fit: contain;
-        }
         .signin-card {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -108,6 +90,12 @@ export default function SignInClient() {
           border-radius: 8px;
           overflow: hidden;
           background: var(--card);
+          max-width: 780px;
+          margin: 0 auto;
+        }
+        .signin-card-single {
+          grid-template-columns: minmax(0, 1fr);
+          max-width: 460px;
         }
         .signin-left {
           padding: 26px 24px;
@@ -174,21 +162,25 @@ export default function SignInClient() {
         }
         .error { color: #b00020; font-size: 12px; margin-top: 6px; }
         .status-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+        .signin-footer-note {
+          text-align: center;
+          color: var(--muted);
+          font-size: 15px;
+          margin-top: 14px;
+        }
         @media (max-width: 900px) {
           .signin-card { grid-template-columns: 1fr; }
           .signin-left { border-right: none; border-bottom: 1px solid var(--line); }
         }
       `}</style>
       <div className="signin-shell">
-        <div className="signin-brand">
-          <img className="signin-logo" src="/api/league/logo/file" alt="League logo" />
-          <h1 className="signin-title">{leagueName}</h1>
-        </div>
-        <div className="signin-card">
-          <div className="signin-left">
-            <h2>Welcome</h2>
-            <Link className="ghost-btn" href="/auth/signup">Create New Account</Link>
-          </div>
+        <div className={`signin-card${allowParentSelfSignup ? "" : " signin-card-single"}`}>
+          {allowParentSelfSignup && (
+            <div className="signin-left">
+              <h2>Welcome</h2>
+              <Link className="ghost-btn" href="/auth/signup">Create New Account</Link>
+            </div>
+          )}
 
           <div className="signin-right">
             <img className="logo" src="/api/league/logo/file" alt="League logo" />
@@ -239,6 +231,11 @@ export default function SignInClient() {
               </button>
               {submitting && <div className="status-note">Please wait...</div>}
               {err && <div className="error">{err}</div>}
+              {!allowParentSelfSignup && (
+                <div className="signin-footer-note">
+                  If you don't know your account information, ask your coach.
+                </div>
+              )}
             </form>
           </div>
         </div>
