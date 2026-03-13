@@ -23,13 +23,21 @@ export function buildMeetStatusAttribution(
 }
 
 type ExistingMeetStatusAttribution = {
-  parentResponseStatus?: MeetWrestlerStatusValue | null;
+  parentResponseStatus?: string | null;
   lastChangedById?: string | null;
   lastChangedByUsername?: string | null;
   lastChangedByRole?: string | null;
   lastChangedSource?: string | null;
   lastChangedAt?: Date | null;
 };
+
+function isMeetWrestlerStatusValue(value: string): value is MeetWrestlerStatusValue {
+  return value === "COMING" ||
+    value === "NOT_COMING" ||
+    value === "LATE" ||
+    value === "EARLY" ||
+    value === "ABSENT";
+}
 
 /**
  * Coach edits should not replace the stored parent responder label shown in Draft.
@@ -58,5 +66,8 @@ export function buildCoachSafeStatusAttribution(existing?: ExistingMeetStatusAtt
 export function preserveParentResponseStatus(
   existing?: ExistingMeetStatusAttribution | null,
 ): MeetWrestlerStatusValue | null {
-  return existing?.parentResponseStatus ?? null;
+  if (!existing?.parentResponseStatus) return null;
+  return isMeetWrestlerStatusValue(existing.parentResponseStatus)
+    ? existing.parentResponseStatus
+    : null;
 }

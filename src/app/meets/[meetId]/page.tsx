@@ -1448,8 +1448,8 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const canManageScratchEntry = canViewScratches && scratchManageTeamIds.length > 0;
   const canManageScratchMatches =
     meetStatus === "READY_FOR_CHECKIN" &&
-    isMeetCoordinator &&
-    canEdit;
+    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    (hasImplicitCheckinEdit || canEdit);
   const canSetPairingNotComing = meetStatus === "DRAFT";
   const canRunPairingsAutoPair = canEdit && meetStatus === "DRAFT";
   const defaultTabForPhase = meetStatus === "ATTENDANCE" ? "attendance" : "pairings";
