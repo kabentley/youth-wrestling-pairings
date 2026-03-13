@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
-import { requireRole } from "@/lib/rbac";
+import { requireAnyRole } from "@/lib/rbac";
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
@@ -72,7 +72,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  const { user } = await requireAnyRole(["COACH", "ADMIN"]);
   try {
     await requireMeetLock(meetId, user.id, user.role);
   } catch (err) {

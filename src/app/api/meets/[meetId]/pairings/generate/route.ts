@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { generatePairingsForMeet } from "@/lib/generatePairings";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
-import { requireRole } from "@/lib/rbac";
+import { requireAnyRole } from "@/lib/rbac";
 import { reorderBoutsForMeet } from "@/lib/reorderBouts";
 
 const SettingsSchema = z.object({
@@ -22,7 +22,7 @@ const SettingsSchema = z.object({
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  const { user } = await requireAnyRole(["COACH", "ADMIN"]);
   try {
     await requireMeetLock(meetId, user.id, user.role);
   } catch (err) {
