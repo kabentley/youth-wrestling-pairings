@@ -159,7 +159,7 @@ function row(cells: string[]) {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
-  let userId: string | null = null;
+  let userId: string;
   try {
     const { user } = await requireAnyRole(["COACH", "ADMIN"]);
     userId = user.id;
