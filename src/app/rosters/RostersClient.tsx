@@ -120,6 +120,7 @@ export default function RostersClient() {
   const teamPickerRef = useRef<HTMLSelectElement | null>(null);
   const [adminTeamId, setAdminTeamId] = useState<string | null>(null);
   const [roster, setRoster] = useState<Wrestler[]>([]);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
   const [rosterMsg, setRosterMsg] = useState("");
   const [editableRows, setEditableRows] = useState<EditableWrestler[]>([]);
   const [savingAll, setSavingAll] = useState(false);
@@ -644,8 +645,10 @@ export default function RostersClient() {
   // Load the full roster (including inactive) for the selected team.
   async function loadRoster(teamId: string) {
     setRosterMsg("");
+    setRosterLoaded(false);
     if (!teamId) {
       setRoster([]);
+      setRosterLoaded(true);
       return;
     }
     const params = new URLSearchParams();
@@ -655,15 +658,18 @@ export default function RostersClient() {
     if (!res.ok) {
       setRosterMsg("Unable to load roster.");
       setRoster([]);
+      setRosterLoaded(true);
       return;
     }
     setRoster(await res.json());
+    setRosterLoaded(true);
   }
 
   // Reload roster whenever the selected team changes.
   useEffect(() => {
     if (!selectedTeamId) {
       setRoster([]);
+      setRosterLoaded(false);
       return;
     }
     void loadRoster(selectedTeamId);
@@ -2731,7 +2737,7 @@ export default function RostersClient() {
                           {sortedEditableRows.length === 0 ? (
                             <tr>
                               <td className="full-row-placeholder" colSpan={rosterSheetColumns.length}>
-                                No wrestlers yet.
+                                {rosterLoaded ? "No wrestlers yet." : "Loading..."}
                               </td>
                             </tr>
                           ) : (
@@ -2784,7 +2790,7 @@ export default function RostersClient() {
                         ))}
                         {displayRoster.length === 0 && (
                           <tr>
-                            <td colSpan={spectatorColumns.length}>No wrestlers yet.</td>
+                            <td colSpan={spectatorColumns.length}>{rosterLoaded ? "No wrestlers yet." : "Loading..."}</td>
                           </tr>
                         )}
                       </tbody>

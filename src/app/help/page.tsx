@@ -28,7 +28,9 @@ async function getVisibleHelpPages(): Promise<HelpPageEntry[]> {
     }
 
     return HELP_PAGES.filter((page) =>
-      page.audience === "coaches" || (isHeadCoach && page.audience === "meet-coordinators"),
+      page.audience === "coaches" ||
+      page.audience === "parents" ||
+      (isHeadCoach && page.audience === "meet-coordinators"),
     );
   }
 

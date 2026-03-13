@@ -65,6 +65,7 @@ export default function CreateUserModal({
   teams,
   defaultTeamId = "",
   defaultRole = "COACH",
+  title = "Create New User",
   lockTeamSelection = false,
   lockRoleSelection = false,
   onClose,
@@ -74,6 +75,7 @@ export default function CreateUserModal({
   teams: TeamRow[];
   defaultTeamId?: string;
   defaultRole?: UserRole;
+  title?: string;
   lockTeamSelection?: boolean;
   lockRoleSelection?: boolean;
   onClose: () => void;
@@ -269,9 +271,9 @@ export default function CreateUserModal({
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Create New User"
+        aria-label={title}
       >
-        <h4>Create New User</h4>
+        <h4>{title}</h4>
         <div className="admin-create-user-modal-grid">
           <input placeholder="First Name" value={firstName} onChange={(event) => setFirstName(event.target.value)} />
           <input placeholder="Last Name" value={lastName} onChange={(event) => setLastName(event.target.value)} />

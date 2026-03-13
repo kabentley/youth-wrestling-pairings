@@ -1840,14 +1840,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return () => clearInterval(interval);
   }, [hasImplicitCheckinEdit, lockState.status, wantsEdit]);
 
-  const matchedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const bout of bouts) {
-      ids.add(bout.redId);
-      ids.add(bout.greenId);
-    }
-    return ids;
-  }, [bouts]);
   // Cache team labels for quick lookup in tables.
   const teamLabelById = useMemo(() => {
     return new Map(teams.map(team => [team.id, formatTeamName(team)]));
