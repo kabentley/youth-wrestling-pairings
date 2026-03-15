@@ -709,14 +709,9 @@ export default function AttendanceTab({
                     return (
                       <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
-                        {column.label}
-                      </h3>
-                      <span style={{ fontSize: 15, fontWeight: 500, color: "#334155", lineHeight: 1 }}>
-                        {column.wrestlers.length}
-                      </span>
-                    </div>
+                    <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
+                      {column.label} ({column.wrestlers.length})
+                    </h3>
                     {!showStatusAttribution && column.key === "no-reply" && (
                       <button
                         type="button"
