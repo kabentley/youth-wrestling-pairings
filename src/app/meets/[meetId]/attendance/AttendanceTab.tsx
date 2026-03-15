@@ -91,6 +91,10 @@ function hasParentResponseMismatch(wrestler: Wrestler) {
     wrestler.parentResponseStatus !== wrestler.status;
 }
 
+function isAttendingStatus(status: AttendanceStatus) {
+  return status === "COMING" || status === "LATE" || status === "EARLY";
+}
+
 function withEffectiveStatus(
   wrestler: Wrestler,
   pendingStatusChanges: Map<string, "COMING" | "NOT_COMING" | "LATE" | "EARLY" | null>,
@@ -247,9 +251,16 @@ export default function AttendanceTab({
   const activeTeam = teams.find(t => t.id === activeTeamId);
   const canEditActiveTeam = !readOnly && (!editableTeamId || activeTeamId === editableTeamId);
   const showTouchMoveButtons = canEditActiveTeam && isTouchInteraction;
+  const effectiveWrestlers = wrestlers.map((wrestler) => withEffectiveStatus(wrestler, pendingStatusChanges));
   const teamWrestlers = wrestlers
     .filter(w => w.teamId === activeTeamId)
     .map((wrestler) => withEffectiveStatus(wrestler, pendingStatusChanges));
+  const totalAttending = effectiveWrestlers.filter((wrestler) => isAttendingStatus(wrestler.status ?? null)).length;
+  const attendingByTeam = new Map<string, number>();
+  for (const wrestler of effectiveWrestlers) {
+    if (!isAttendingStatus(wrestler.status ?? null)) continue;
+    attendingByTeam.set(wrestler.teamId, (attendingByTeam.get(wrestler.teamId) ?? 0) + 1);
+  }
   const attendanceDeadlineLabel = (() => {
     if (!attendanceDeadline) return null;
     const deadline = new Date(attendanceDeadline);
@@ -635,6 +646,44 @@ export default function AttendanceTab({
               </div>
             )}
           </div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginTop: 10,
+              marginBottom: showTouchMoveButtons ? 4 : 0,
+              fontSize: 12,
+            }}
+          >
+            <div
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: "#eef6ff",
+                border: "1px solid #c9ddf5",
+                fontWeight: 700,
+                color: "#23415f",
+              }}
+            >
+              Total Attending: {totalAttending}
+            </div>
+            {orderedTeams.map((team) => (
+              <div
+                key={`${team.id}-attending-total`}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  background: team.color ? `${team.color}18` : "#f4f5f7",
+                  border: `1px solid ${team.color ?? "#d1d5db"}`,
+                  color: team.color ? adjustTeamTextColor(team.color) : "#374151",
+                  fontWeight: 600,
+                }}
+              >
+                {(team.symbol ?? team.name)}: {attendingByTeam.get(team.id) ?? 0}
+              </div>
+            ))}
+          </div>
           {showTouchMoveButtons && (
             <div style={{ marginTop: 4, fontSize: 12, color: "#5f6b79" }}>
               Touch: use the row buttons to move wrestlers between columns.
@@ -660,9 +709,14 @@ export default function AttendanceTab({
                     return (
                       <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                    <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
-                      {column.label}
-                    </h3>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <h3 className="pairings-heading" style={{ margin: 0, fontSize: 14 }}>
+                        {column.label}
+                      </h3>
+                      <span style={{ fontSize: 15, fontWeight: 500, color: "#334155", lineHeight: 1 }}>
+                        {column.wrestlers.length}
+                      </span>
+                    </div>
                     {!showStatusAttribution && column.key === "no-reply" && (
                       <button
                         type="button"
