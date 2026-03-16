@@ -90,6 +90,16 @@ type ParentImportSkippedRow = ParentImportCreatedRow & {
   phone?: string | null;
 };
 
+type ParentImportFailedRow = {
+  rowNumber?: number;
+  reason?: string | null;
+};
+
+type ParentImportWarningRow = {
+  rowNumber?: number;
+  reason?: string | null;
+};
+
 type ParentImportResult = {
   status: string;
   username?: string;
@@ -97,6 +107,7 @@ type ParentImportResult = {
   email?: string | null;
   phone?: string | null;
   temporaryPassword?: string | null;
+  note?: string | null;
 };
 
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
@@ -153,16 +164,16 @@ const downloadParentImportResults = (
   const resolvedTeamSlug = rawTeamSlug.length > 0 ? rawTeamSlug : "team";
   const stamp = new Date().toISOString().slice(0, 10);
   const csvRows = [
-    ["Parent Name", "Username", "Password", "Kids", "Note"],
+    ["Parent Name", "Username", "Password", "Kids", "Status", "Note"],
     ...rows.map((row) => {
       const result = resultsByRow.get(row.rowNumber) ?? { status: "Created" };
-      const isExisting = result.status === "Existing account";
       return [
         result.name?.trim() ?? `${row.firstName} ${row.lastName}`.trim(),
         result.username?.trim() ?? "",
-        isExisting ? "" : result.temporaryPassword?.trim() ?? "",
+        result.status === "Created" ? result.temporaryPassword?.trim() ?? "" : "",
         row.kids.join("; "),
-        isExisting ? "Existing account" : "",
+        result.status,
+        result.note?.trim() ?? "",
       ];
     }),
   ];
@@ -1471,11 +1482,20 @@ export default function CoachMyTeamPage() {
       const createdCount = typeof data?.createdCount === "number" ? data.createdCount : importUsersRows.length;
       const skippedCount = typeof data?.skippedCount === "number" ? data.skippedCount : 0;
       const adjustedUsernameCount = typeof data?.adjustedUsernameCount === "number" ? data.adjustedUsernameCount : 0;
+      const rowErrors = Array.isArray(data?.rowErrors)
+        ? data.rowErrors.filter((value: unknown): value is string => typeof value === "string")
+        : [];
       const createdRows: ParentImportCreatedRow[] = Array.isArray(data?.created)
         ? data.created.filter((value: unknown): value is ParentImportCreatedRow => typeof value === "object" && value !== null)
         : [];
       const skippedRows: ParentImportSkippedRow[] = Array.isArray(data?.skipped)
         ? data.skipped.filter((value: unknown): value is ParentImportSkippedRow => typeof value === "object" && value !== null)
+        : [];
+      const failedRows: ParentImportFailedRow[] = Array.isArray(data?.failedRows)
+        ? data.failedRows.filter((value: unknown): value is ParentImportFailedRow => typeof value === "object" && value !== null)
+        : [];
+      const warningRows: ParentImportWarningRow[] = Array.isArray(data?.warningRows)
+        ? data.warningRows.filter((value: unknown): value is ParentImportWarningRow => typeof value === "object" && value !== null)
         : [];
       const resultsByRow = new Map<number, ParentImportResult>();
       createdRows.forEach((row: ParentImportCreatedRow) => {
@@ -1496,6 +1516,25 @@ export default function CoachMyTeamPage() {
           name: row.name,
           email: row.email,
           phone: row.phone,
+          note: "Existing account",
+        });
+      });
+      failedRows.forEach((row: ParentImportFailedRow) => {
+        if (typeof row.rowNumber !== "number") return;
+        const existing = resultsByRow.get(row.rowNumber);
+        resultsByRow.set(row.rowNumber, {
+          ...(existing ?? {}),
+          status: "Error",
+          note: row.reason ?? "Unable to import this row.",
+        });
+      });
+      warningRows.forEach((row: ParentImportWarningRow) => {
+        if (typeof row.rowNumber !== "number") return;
+        const existing = resultsByRow.get(row.rowNumber);
+        if (!existing) return;
+        resultsByRow.set(row.rowNumber, {
+          ...existing,
+          note: row.reason ?? existing.note ?? null,
         });
       });
       downloadParentImportResults(teamName, importedRows, resultsByRow);
@@ -1508,6 +1547,9 @@ export default function CoachMyTeamPage() {
       }
       if (adjustedUsernameCount > 0) {
         summaryParts.push(`${adjustedUsernameCount} username${adjustedUsernameCount === 1 ? " was" : "s were"} adjusted to keep them unique`);
+      }
+      if (rowErrors.length > 0) {
+        summaryParts.push(`${rowErrors.length} row${rowErrors.length === 1 ? "" : "s"} reported issues`);
       }
       setRolesMessage(`${summaryParts.join(", ")}, and downloaded the credentials file.`);
       setRolesMessageStatus("success");

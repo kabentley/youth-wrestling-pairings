@@ -211,6 +211,14 @@ export async function POST(request: Request) {
   const sharedPassword = payload.password.trim();
   const useSharedPassword = sharedPassword.length > 0;
   const rowErrors: string[] = [];
+  const warningRows: Array<{
+    rowNumber: number;
+    reason: string;
+  }> = [];
+  const failedRows: Array<{
+    rowNumber: number;
+    reason: string;
+  }> = [];
   const plannedRows: Array<{
     rowNumber: number;
     firstName: string;
@@ -261,11 +269,15 @@ export async function POST(request: Request) {
     const firstName = row.firstName.trim();
     const lastName = row.lastName.trim();
     if (!firstName) {
-      rowErrors.push(`Row ${row.rowNumber}: First name is required.`);
+      const reason = "First name is required.";
+      rowErrors.push(`Row ${row.rowNumber}: ${reason}`);
+      failedRows.push({ rowNumber: row.rowNumber, reason });
       continue;
     }
     if (!lastName) {
-      rowErrors.push(`Row ${row.rowNumber}: Last name is required.`);
+      const reason = "Last name is required.";
+      rowErrors.push(`Row ${row.rowNumber}: ${reason}`);
+      failedRows.push({ rowNumber: row.rowNumber, reason });
       continue;
     }
     const existingUser = existingByName.get(normalizeNameToken(`${firstName} ${lastName}`));
@@ -283,12 +295,14 @@ export async function POST(request: Request) {
     const emailError = validateOptionalEmail(row.email);
     if (emailError) {
       rowErrors.push(`Row ${row.rowNumber}: ${emailError}`);
+      failedRows.push({ rowNumber: row.rowNumber, reason: emailError });
       continue;
     }
     const normalizedPhone = normalizeOptionalPhone(row.phone);
     const phoneError = validateOptionalPhone(normalizedPhone);
     if (phoneError) {
       rowErrors.push(`Row ${row.rowNumber}: ${phoneError}`);
+      failedRows.push({ rowNumber: row.rowNumber, reason: phoneError });
       continue;
     }
     const wrestlerIds: string[] = [];
@@ -306,15 +320,18 @@ export async function POST(request: Request) {
       }
     }
     if (unknownKids.length > 0) {
+      const reason = `Wrestler${unknownKids.length === 1 ? "" : "s"} not found on this team: ${unknownKids.join(", ")}.`;
       rowErrors.push(
-        `Row ${row.rowNumber}: Wrestler${unknownKids.length === 1 ? "" : "s"} not found on this team: ${unknownKids.join(", ")}.`,
+        `Row ${row.rowNumber}: ${reason}`,
       );
-      continue;
+      warningRows.push({ rowNumber: row.rowNumber, reason });
     }
 
     const resolved = await resolveUsername(row, reservedUsernames);
     if (!resolved.username) {
-      rowErrors.push(`Row ${row.rowNumber}: ${resolved.error ?? "Unable to determine username."}`);
+      const reason = resolved.error ?? "Unable to determine username.";
+      rowErrors.push(`Row ${row.rowNumber}: ${reason}`);
+      failedRows.push({ rowNumber: row.rowNumber, reason });
       continue;
     }
 
@@ -335,10 +352,17 @@ export async function POST(request: Request) {
       });
   }
 
-  if (rowErrors.length > 0) {
+  if (plannedRows.length === 0) {
     return NextResponse.json({
       error: "Import file has problems.",
       rowErrors,
+      warningRows,
+      failedRows,
+      createdCount: 0,
+      skippedCount: skippedRows.length,
+      adjustedUsernameCount: 0,
+      created: [],
+      skipped: skippedRows,
     }, { status: 400 });
   }
 
@@ -358,58 +382,70 @@ export async function POST(request: Request) {
   }
 
   try {
-    const created = await db.$transaction(async (tx) => {
-      const createdUsers: Array<{
-        rowNumber: number;
-        id: string;
-        username: string;
-        email: string;
-        name: string | null;
-        temporaryPassword: string;
-      }> = [];
-      for (const row of plannedRows) {
-        const passwordHash = passwordHashByRow.get(row.rowNumber);
-        if (!passwordHash) {
-          throw new Error(`Missing password hash for import row ${row.rowNumber}.`);
-        }
-        const createdUser = await tx.user.create({
-          data: {
-            username: row.username,
-            email: row.email,
-            phone: row.phone,
-            name: `${row.firstName} ${row.lastName}`,
-            role: "PARENT",
-            teamId,
-            passwordHash,
-            mustResetPassword: useSharedPassword,
-          },
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            name: true,
-          },
+    const adjustedRowNumbers = new Set(
+      plannedRows.filter((row) => row.adjustedUsername).map((row) => row.rowNumber),
+    );
+    const created: Array<{
+      rowNumber: number;
+      id: string;
+      username: string;
+      email: string;
+      name: string | null;
+      temporaryPassword: string;
+    }> = [];
+    for (const row of plannedRows) {
+      const passwordHash = passwordHashByRow.get(row.rowNumber);
+      if (!passwordHash) {
+        throw new Error(`Missing password hash for import row ${row.rowNumber}.`);
+      }
+      try {
+        const createdUser = await db.$transaction(async (tx) => {
+          const userRecord = await tx.user.create({
+            data: {
+              username: row.username,
+              email: row.email,
+              phone: row.phone,
+              name: `${row.firstName} ${row.lastName}`,
+              role: "PARENT",
+              teamId,
+              passwordHash,
+              mustResetPassword: useSharedPassword,
+            },
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              name: true,
+            },
+          });
+          if (row.wrestlerIds.length > 0) {
+            await Promise.all(
+              row.wrestlerIds.map((wrestlerId) =>
+                tx.userChild.create({
+                  data: {
+                    userId: userRecord.id,
+                    wrestlerId,
+                  },
+                }),
+              ),
+            );
+          }
+          return userRecord;
         });
-        if (row.wrestlerIds.length > 0) {
-          await Promise.all(
-            row.wrestlerIds.map((wrestlerId) =>
-              tx.userChild.create({
-                data: {
-                  userId: createdUser.id,
-                  wrestlerId,
-                },
-              }),
-            ),
-          );
-        }
-        createdUsers.push({
+        created.push({
           rowNumber: row.rowNumber,
           ...createdUser,
           temporaryPassword: row.temporaryPassword,
         });
+      } catch (error: unknown) {
+        let reason = "Unable to import this row.";
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          reason = "A username or account conflict was detected while importing this row.";
+        }
+        rowErrors.push(`Row ${row.rowNumber}: ${reason}`);
+        failedRows.push({ rowNumber: row.rowNumber, reason });
       }
-      return createdUsers;
-    });
+    }
     const league = await db.league.findFirst({
       select: { name: true },
     });
@@ -435,9 +471,10 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json({
+      partial: rowErrors.length > 0,
       createdCount: created.length,
       skippedCount: skippedRows.length,
-      adjustedUsernameCount: plannedRows.filter((row) => row.adjustedUsername).length,
+      adjustedUsernameCount: created.filter((entry) => adjustedRowNumbers.has(entry.rowNumber)).length,
       created: created.map((entry) => ({
         rowNumber: entry.rowNumber,
         id: entry.id,
@@ -447,6 +484,9 @@ export async function POST(request: Request) {
         temporaryPassword: entry.temporaryPassword,
       })),
       skipped: skippedRows,
+      warningRows,
+      rowErrors,
+      failedRows,
     });
   } catch (error: unknown) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
