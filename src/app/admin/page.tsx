@@ -57,7 +57,7 @@ export default async function AdminHome({ searchParams }: Props) {
       case "users":
         return resolvedSearchParams.tab;
       case "notifications":
-        return showNotifications ? "notifications" : "users";
+        return "notifications";
       default:
         return "users";
     }

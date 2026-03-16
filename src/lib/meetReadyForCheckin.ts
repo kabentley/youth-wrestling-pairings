@@ -318,9 +318,6 @@ export async function buildReadyForCheckinChecklist(
   const items: ReadyForCheckinChecklistItem[] = targetStatus === "PUBLISHED"
     ? [
         {
-          ...allItems[0],
-        },
-        {
           id: "scratches-complete",
           label: "Scratches are complete for every team",
           ok: teamsMissingScratchCompletion.length === 0,
@@ -329,18 +326,15 @@ export async function buildReadyForCheckinChecklist(
             ? "Every team has finished scratches/check-in."
             : `Still waiting on scratches/check-in for: ${teamsMissingScratchCompletion.join(", ")}.`,
         },
-        {
-          ...allItems[1],
-          label: "No wrestlers have zero matches",
-          severity: "warning",
-          detail: wrestlersWithoutBouts.length === 0
-            ? "Every attending wrestler has at least one match."
-            : `${wrestlersWithoutBouts.length} attending wrestler${wrestlersWithoutBouts.length === 1 ? "" : "s"} still have no matches: ${formatNames(wrestlersWithoutBouts)}.`,
-        },
-        {
-          ...allItems[5],
-          severity: "warning",
-        },
+        ...allItems.map((item) => item.id === "coverage"
+          ? {
+              ...item,
+              label: "No wrestlers have zero matches",
+              detail: wrestlersWithoutBouts.length === 0
+                ? "Every attending wrestler has at least one match."
+                : `${wrestlersWithoutBouts.length} attending wrestler${wrestlersWithoutBouts.length === 1 ? "" : "s"} still have no matches: ${formatNames(wrestlersWithoutBouts)}.`,
+            }
+          : item),
       ]
     : allItems;
 
