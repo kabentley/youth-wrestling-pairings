@@ -1465,7 +1465,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     currentUserTeamId === homeTeamId &&
     ["ADMIN", "COACH"].includes(currentUserRole ?? ""),
   );
-  const canShowVolunteers = canViewVolunteers && meetStatus !== "ATTENDANCE" && meetStatus !== "READY_FOR_CHECKIN";
+  const canShowVolunteers = canViewVolunteers && meetStatus !== "ATTENDANCE";
   const grantedCoachIds = useMemo(
     () => new Set(lockAccessCoaches.filter((coach) => coach.canAcquireLock).map((coach) => coach.id)),
     [lockAccessCoaches],
@@ -2985,6 +2985,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .setup-control-row {
           margin-top: 22px;
+          max-width: 100%;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px 16px;
+          align-items: start;
         }
         .tab-button {
           flex: none;
@@ -4147,16 +4152,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           transform: none;
           opacity: 0.9;
         }
-        .setup-control-row {
-          max-width: 100%;
-          flex-wrap: wrap;
-          gap: 12px;
-        }
         .setup-control-row label {
-          display: inline-flex;
-          align-items: center;
+          display: flex;
+          align-items: flex-start;
           gap: 6px;
-          flex: 0 1 auto;
+          min-width: 0;
+          line-height: 1.35;
+          white-space: normal;
+        }
+        .setup-control-row label input {
+          flex: none;
+          margin-top: 2px;
         }
         .wall-chart-section {
           margin-top: 24px;
@@ -5381,7 +5387,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </div>
                     <div
                       className="setup-control-row"
-                      style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}
+                      style={{ marginTop: 16 }}
                     >
                       <label><input type="checkbox" checked={settings.enforceAgeGapCheck} onChange={async e => {
                         const enforceAgeGapCheck = e.target.checked;
@@ -6027,6 +6033,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             homeTeamId={homeTeamId}
             checkpoints={checkpoints}
             targetMatchesPerWrestler={matchesPerWrestler ?? savedMatchesPerWrestler}
+            maxMatchesPerWrestler={maxMatchesPerWrestler}
             teamCheckins={teamCheckins}
             canViewScratchMatchWorkspace={canViewScratchMatchWorkspace}
             canManageScratchEntry={canManageScratchEntry}

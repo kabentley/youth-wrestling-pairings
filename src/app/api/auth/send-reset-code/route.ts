@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { shouldDeliverEmailTo } from "@/lib/emailDelivery";
 
 const RESET_WINDOW_MS = 15 * 60 * 1000;
 const MAX_RESET_SENDS = 5;
@@ -57,6 +58,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "Email delivery is not configured." }, { status: 500 });
+  }
+  const deliveryDecision = await shouldDeliverEmailTo(email);
+  if (!deliveryDecision.allowed) {
+    return NextResponse.json({ ok: true, skipped: true });
   }
   sgMail.setApiKey(key);
   await sgMail.send({

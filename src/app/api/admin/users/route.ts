@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const UserRoleSchema = z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]);
 
@@ -172,7 +173,8 @@ export async function POST(req: Request) {
       const team = body.teamId
         ? await db.team.findUnique({ where: { id: body.teamId }, select: { name: true, symbol: true } })
         : null;
-      await sendWelcomeEmail(req, {
+      await sendWelcomeEmail({
+        request: req,
         email,
         username: user.username,
         tempPassword,
@@ -185,38 +187,4 @@ export async function POST(req: Request) {
     }
   }
   return NextResponse.json(user);
-}
-
-async function sendWelcomeEmail(
-  req: Request,
-  {
-    email,
-    username,
-    tempPassword,
-    teamLabel,
-  }: { email: string; username: string; tempPassword: string; teamLabel: string | null },
-) {
-  const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const link = `${origin}/auth/signin`;
-  const league = await db.league.findFirst({ select: { name: true } });
-  const leagueName = league?.name?.trim() ?? "the league";
-  const teamLine = teamLabel ? `Team: ${teamLabel}\n` : "";
-  const key = process.env.SENDGRID_API_KEY;
-  const from = process.env.SENDGRID_FROM;
-  if (!key || !from) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`Temp password for ${email} (${username}): ${tempPassword}`);
-      return;
-    }
-    throw new Error("WELCOME_DELIVERY_FAILED");
-  }
-
-  const sgMail = await import("@sendgrid/mail");
-  sgMail.default.setApiKey(key);
-  await sgMail.default.send({
-    to: email,
-    from,
-    subject: `Welcome to ${leagueName}`,
-    text: `Welcome! Your account has been created.\n\nUsername: ${username}\nTemporary password: ${tempPassword}\n${teamLine}\nSign in here: ${link}\nYou will be prompted to reset your password after signing in.`,
-  });
 }

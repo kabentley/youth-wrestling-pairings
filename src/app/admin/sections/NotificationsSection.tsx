@@ -47,6 +47,17 @@ const STATUS_OPTIONS = [
   { value: "SKIPPED", label: "Skipped" },
 ] as const;
 
+function normalizeEmailWhitelistInput(raw: string) {
+  return Array.from(new Set(
+    raw
+      .split(/[\s,;]+/)
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  ))
+    .sort((a, b) => a.localeCompare(b))
+    .join("\n");
+}
+
 function formatTimestamp(value?: string | null) {
   if (!value) return "Not delivered";
   const date = new Date(value);
@@ -95,6 +106,10 @@ function formatStatusClass(status: NotificationRow["status"]) {
 export default function NotificationsSection() {
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [meetOptions, setMeetOptions] = useState<MeetOption[]>([]);
+  const [emailDeliveryMode, setEmailDeliveryMode] = useState<"off" | "all" | "whitelist">("off");
+  const [emailWhitelist, setEmailWhitelist] = useState("");
+  const [savedEmailDeliveryMode, setSavedEmailDeliveryMode] = useState<"off" | "all" | "whitelist">("off");
+  const [savedEmailWhitelist, setSavedEmailWhitelist] = useState("");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [meetFilter, setMeetFilter] = useState("");
@@ -104,7 +119,58 @@ export default function NotificationsSection() {
   const [pageSize, setPageSize] = useState(25);
   const [total, setTotal] = useState(0);
   const [msg, setMsg] = useState("");
+  const [settingsMsg, setSettingsMsg] = useState("");
+  const [settingsMsgTone, setSettingsMsgTone] = useState<"success" | "error">("success");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+  async function loadEmailDeliverySettings() {
+    const res = await fetch("/api/admin/email-delivery");
+    if (!res.ok) {
+      throw new Error("Unable to load email delivery settings.");
+    }
+    const data = await res.json();
+    const nextMode = data.emailDeliveryMode === "all"
+      ? "all"
+      : data.emailDeliveryMode === "whitelist"
+        ? "whitelist"
+        : "off";
+    const nextWhitelist = normalizeEmailWhitelistInput(data.emailWhitelist ?? "");
+    setEmailDeliveryMode(nextMode);
+    setEmailWhitelist(nextWhitelist);
+    setSavedEmailDeliveryMode(nextMode);
+    setSavedEmailWhitelist(nextWhitelist);
+  }
+
+  async function saveEmailDeliverySettings(nextMode: "off" | "all" | "whitelist", nextWhitelist: string) {
+    setIsSavingSettings(true);
+    setSettingsMsg("");
+    try {
+      const normalizedWhitelist = normalizeEmailWhitelistInput(nextWhitelist);
+      const res = await fetch("/api/admin/email-delivery", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailDeliveryMode: nextMode,
+          emailWhitelist: normalizedWhitelist,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Unable to save email delivery settings.");
+      }
+      setEmailDeliveryMode(nextMode);
+      setEmailWhitelist(normalizedWhitelist);
+      setSavedEmailDeliveryMode(nextMode);
+      setSavedEmailWhitelist(normalizedWhitelist);
+      setSettingsMsg("Email delivery settings saved.");
+      setSettingsMsgTone("success");
+    } catch (error) {
+      setSettingsMsg(error instanceof Error ? error.message : "Unable to save email delivery settings.");
+      setSettingsMsgTone("error");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
 
   async function load(overrides?: {
     page?: number;
@@ -155,12 +221,91 @@ export default function NotificationsSection() {
     void load();
   }, [page, pageSize, meetFilter, eventFilter, statusFilter, debouncedQuery]);
 
+  useEffect(() => {
+    void loadEmailDeliverySettings().catch((error) => {
+      setMsg(error instanceof Error ? error.message : "Unable to load email delivery settings.");
+    });
+  }, []);
+
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [pageSize, total]);
+  const normalizedWhitelist = useMemo(() => normalizeEmailWhitelistInput(emailWhitelist), [emailWhitelist]);
+  const settingsDirty = normalizedWhitelist !== savedEmailWhitelist || emailDeliveryMode !== savedEmailDeliveryMode;
+  const canSaveSettings = !isSavingSettings && (settingsDirty || settingsMsgTone === "error");
 
   return (
     <>
       <div className="admin-header admin-users-header">
         <h1 className="admin-title">Notifications</h1>
+      </div>
+
+      <div className="admin-card admin-users-controls">
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="notification-email-delivery-mode">
+              App Email Delivery
+            </label>
+            <select
+              id="notification-email-delivery-mode"
+              value={emailDeliveryMode}
+              onChange={(event) => {
+                const nextMode = event.target.value === "all"
+                  ? "all"
+                  : event.target.value === "whitelist"
+                    ? "whitelist"
+                    : "off";
+                setEmailDeliveryMode(nextMode);
+                setSettingsMsg("");
+              }}
+              disabled={isSavingSettings}
+            >
+              <option value="off">Send to nobody</option>
+              <option value="all">Send to everyone</option>
+              <option value="whitelist">Whitelist only</option>
+            </select>
+            <div className="admin-muted" style={{ marginTop: 6 }}>
+              Off disables app email delivery entirely. In whitelist mode, only the exact email addresses listed below receive app emails.
+            </div>
+          </div>
+          <div className="admin-field" style={{ gridColumn: "1 / -1" }}>
+            <label className="admin-label" htmlFor="notification-email-whitelist">
+              Email Whitelist
+            </label>
+            <textarea
+              id="notification-email-whitelist"
+              value={emailWhitelist}
+              onChange={(event) => {
+                setEmailWhitelist(event.target.value);
+                setSettingsMsg("");
+              }}
+              onBlur={() => {
+                setEmailWhitelist((current) => normalizeEmailWhitelistInput(current));
+              }}
+              placeholder={"one@example.com\nanother@example.com"}
+              rows={5}
+              spellCheck={false}
+              disabled={isSavingSettings}
+              style={{ width: "100%", resize: "vertical" }}
+            />
+            <div className="admin-muted" style={{ marginTop: 6 }}>
+              Emails pasted with commas, spaces, tabs, or semicolons are automatically split into separate lines.
+            </div>
+          </div>
+          <div className="admin-field" style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12 }}>
+            <button
+              type="button"
+              className="admin-btn"
+              onClick={() => {
+                void saveEmailDeliverySettings(emailDeliveryMode, emailWhitelist);
+              }}
+              disabled={!canSaveSettings}
+            >
+              {isSavingSettings ? "Saving..." : "Save"}
+            </button>
+            <span style={{ color: settingsMsgTone === "error" ? "#b00020" : "#256029", minHeight: 20 }}>
+              {settingsMsg}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="admin-card admin-users-controls">

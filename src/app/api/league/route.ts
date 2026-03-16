@@ -58,18 +58,23 @@ function normalizeWebsite(value?: string | null) {
 
 export async function PUT(req: Request) {
   await requireAdmin();
-  const body = BodySchema.parse(await req.json());
+  const rawBody = await req.json();
+  const body = BodySchema.parse(rawBody);
   const existing = await db.league.findFirst({ select: { id: true } });
+  const hasField = (key: keyof typeof body) =>
+    typeof rawBody === "object" &&
+    rawBody !== null &&
+    Object.prototype.hasOwnProperty.call(rawBody, key);
 
   const data = {
-    name: body.name ?? null,
-    website: normalizeWebsite(body.website),
-    allowParentSelfSignup: body.allowParentSelfSignup,
-    ageAllowancePctPerYear: body.ageAllowancePctPerYear,
-    experienceAllowancePctPerYear: body.experienceAllowancePctPerYear,
-    skillAllowancePctPerPoint: body.skillAllowancePctPerPoint,
-    maxAgeGapYears: body.maxAgeGapYears,
-    maxWeightDiffPct: body.maxWeightDiffPct,
+    ...(hasField("name") ? { name: body.name ?? null } : {}),
+    ...(hasField("website") ? { website: normalizeWebsite(body.website) } : {}),
+    ...(hasField("allowParentSelfSignup") ? { allowParentSelfSignup: body.allowParentSelfSignup } : {}),
+    ...(hasField("ageAllowancePctPerYear") ? { ageAllowancePctPerYear: body.ageAllowancePctPerYear } : {}),
+    ...(hasField("experienceAllowancePctPerYear") ? { experienceAllowancePctPerYear: body.experienceAllowancePctPerYear } : {}),
+    ...(hasField("skillAllowancePctPerPoint") ? { skillAllowancePctPerPoint: body.skillAllowancePctPerPoint } : {}),
+    ...(hasField("maxAgeGapYears") ? { maxAgeGapYears: body.maxAgeGapYears } : {}),
+    ...(hasField("maxWeightDiffPct") ? { maxWeightDiffPct: body.maxWeightDiffPct } : {}),
   };
   if (!existing) {
     await db.league.create({ data });

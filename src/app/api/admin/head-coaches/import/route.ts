@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
+import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 export const runtime = "nodejs";
 
@@ -135,6 +136,10 @@ export async function POST(req: Request) {
   });
   const teamLookup = buildTeamLookup(teams);
   const seenTeamIds = new Set<string>();
+  const league = await db.league.findFirst({
+    select: { name: true },
+  });
+  const leagueName = league?.name?.trim() ?? null;
 
   const results: Array<{
     rowNumber: number;
@@ -277,6 +282,26 @@ export async function POST(req: Request) {
         return { created };
       });
 
+      let note = outcome.created
+        ? "Created account and assigned as head coach."
+        : "Assigned existing coach account as head coach.";
+
+      if (outcome.created && row.email.trim()) {
+        try {
+          const welcomeResult = await sendWelcomeEmail({
+            request: req,
+            email: row.email.trim().toLowerCase(),
+            username: resolvedUsername,
+            tempPassword,
+            teamLabel: `${team.name} (${team.symbol})`,
+            leagueName,
+          });
+          note = `${note} ${describeWelcomeEmailResult(welcomeResult)}`;
+        } catch {
+          note = `${note} Welcome email could not be sent.`;
+        }
+      }
+
       results.push({
         rowNumber: row.rowNumber,
         team: team.symbol,
@@ -285,9 +310,7 @@ export async function POST(req: Request) {
         username: resolvedUsername,
         temporaryPassword: outcome.created ? tempPassword : null,
         status: outcome.created ? "created" : "existing",
-        note: outcome.created
-          ? "Created account and assigned as head coach."
-          : "Assigned existing coach account as head coach.",
+        note,
       });
       if (outcome.created) {
         createdCount += 1;

@@ -42,13 +42,20 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [msg, setMsg] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [leagueName, setLeagueName] = useState("");
+  const [savedLeagueName, setSavedLeagueName] = useState("");
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
+  const [savedLeagueWebsite, setSavedLeagueWebsite] = useState("");
   const [ageAllowancePctPerYear, setAgeAllowancePctPerYear] = useState(0.5);
+  const [savedAgeAllowancePctPerYear, setSavedAgeAllowancePctPerYear] = useState(0.5);
   const [experienceAllowancePctPerYear, setExperienceAllowancePctPerYear] = useState(0.25);
+  const [savedExperienceAllowancePctPerYear, setSavedExperienceAllowancePctPerYear] = useState(0.25);
   const [skillAllowancePctPerPoint, setSkillAllowancePctPerPoint] = useState(0.4);
+  const [savedSkillAllowancePctPerPoint, setSavedSkillAllowancePctPerPoint] = useState(0.4);
   const [maxAgeGapYears, setMaxAgeGapYears] = useState(1);
+  const [savedMaxAgeGapYears, setSavedMaxAgeGapYears] = useState(1);
   const [maxWeightDiffPct, setMaxWeightDiffPct] = useState(10);
+  const [savedMaxWeightDiffPct, setSavedMaxWeightDiffPct] = useState(10);
   const [leagueStats, setLeagueStats] = useState<{
     teamCount: number;
     activeWrestlers: number;
@@ -78,7 +85,21 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [importConfirm, setImportConfirm] = useState("");
   const [importError, setImportError] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
-  const leagueTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const leagueIdentitySaveInFlight = useRef(false);
+  const pairingsSaveInFlight = useRef(false);
+  const latestLeagueIdentityRef = useRef({
+    dirty: false,
+    name: "",
+    website: "",
+  });
+  const latestPairingsRef = useRef({
+    dirty: false,
+    ageAllowancePctPerYear: 0.5,
+    experienceAllowancePctPerYear: 0.25,
+    skillAllowancePctPerPoint: 0.4,
+    maxAgeGapYears: 1,
+    maxWeightDiffPct: 10,
+  });
 
   async function load() {
     setIsLoading(true);
@@ -94,23 +115,32 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       }
       if (lRes.ok) {
         const league = await lRes.json();
-        setLeagueName(league.name ?? "");
+        const nextLeagueName = league.name ?? "";
+        const nextLeagueWebsite = league.website ?? "";
+        setLeagueName(nextLeagueName);
+        setSavedLeagueName(nextLeagueName);
         setLeagueHasLogo(Boolean(league.hasLogo));
-        setLeagueWebsite(league.website ?? "");
+        setLeagueWebsite(nextLeagueWebsite);
+        setSavedLeagueWebsite(nextLeagueWebsite);
         if (typeof league.ageAllowancePctPerYear === "number") {
           setAgeAllowancePctPerYear(league.ageAllowancePctPerYear);
+          setSavedAgeAllowancePctPerYear(league.ageAllowancePctPerYear);
         }
         if (typeof league.experienceAllowancePctPerYear === "number") {
           setExperienceAllowancePctPerYear(league.experienceAllowancePctPerYear);
+          setSavedExperienceAllowancePctPerYear(league.experienceAllowancePctPerYear);
         }
         if (typeof league.skillAllowancePctPerPoint === "number") {
           setSkillAllowancePctPerPoint(league.skillAllowancePctPerPoint);
+          setSavedSkillAllowancePctPerPoint(league.skillAllowancePctPerPoint);
         }
         if (typeof league.maxAgeGapYears === "number") {
           setMaxAgeGapYears(league.maxAgeGapYears);
+          setSavedMaxAgeGapYears(league.maxAgeGapYears);
         }
         if (typeof league.maxWeightDiffPct === "number") {
           setMaxWeightDiffPct(league.maxWeightDiffPct);
+          setSavedMaxWeightDiffPct(league.maxWeightDiffPct);
         }
       }
       if (sRes.ok) {
@@ -315,21 +345,37 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     return Math.min(max, Math.max(min, parsed));
   }
 
-  async function saveLeague(
+  async function saveLeagueIdentity(
     nextName = leagueName,
     nextWebsite = leagueWebsite,
+  ) {
+    const leagueRes = await fetch("/api/league", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: nextName,
+        website: nextWebsite,
+      }),
+    });
+    if (!leagueRes.ok) {
+      setMsg("Unable to save league.");
+      return;
+    }
+    setSavedLeagueName(nextName);
+    setSavedLeagueWebsite(nextWebsite);
+  }
+
+  async function savePairingsSettings(
     nextAgeAllowance = ageAllowancePctPerYear,
     nextExperienceAllowance = experienceAllowancePctPerYear,
     nextSkillAllowance = skillAllowancePctPerPoint,
     nextMaxAgeGapYears = maxAgeGapYears,
     nextMaxWeightDiffPct = maxWeightDiffPct,
   ) {
-    const res = await fetch("/api/league", {
+    const leagueRes = await fetch("/api/league", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: nextName,
-        website: nextWebsite,
         ageAllowancePctPerYear: nextAgeAllowance,
         experienceAllowancePctPerYear: nextExperienceAllowance,
         skillAllowancePctPerPoint: nextSkillAllowance,
@@ -337,11 +383,15 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
         maxWeightDiffPct: nextMaxWeightDiffPct,
       }),
     });
-    if (!res.ok) {
+    if (!leagueRes.ok) {
       setMsg("Unable to save league.");
       return;
     }
-    await load();
+    setSavedAgeAllowancePctPerYear(nextAgeAllowance);
+    setSavedExperienceAllowancePctPerYear(nextExperienceAllowance);
+    setSavedSkillAllowancePctPerPoint(nextSkillAllowance);
+    setSavedMaxAgeGapYears(nextMaxAgeGapYears);
+    setSavedMaxWeightDiffPct(nextMaxWeightDiffPct);
   }
 
   async function uploadLeagueLogo(file: File | null) {
@@ -370,30 +420,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       return;
     }
     void updateTeamDetails(teamId, cleanName, cleanSymbol, color, headCoachId);
-  }
-
-  function scheduleLeagueSave(
-    nextName: string,
-    nextWebsite: string,
-    nextAgeAllowance: number,
-    nextExperienceAllowance: number,
-    nextSkillAllowance: number,
-    nextMaxAgeGapYears: number,
-    nextMaxWeightDiffPct: number,
-  ) {
-    const existingLeagueTimer = leagueTimers.current.league;
-    if (existingLeagueTimer) clearTimeout(existingLeagueTimer);
-    leagueTimers.current.league = setTimeout(() => {
-      void saveLeague(
-        nextName,
-        nextWebsite,
-        nextAgeAllowance,
-        nextExperienceAllowance,
-        nextSkillAllowance,
-        nextMaxAgeGapYears,
-        nextMaxWeightDiffPct,
-      );
-    }, 500);
   }
 
   function closeResetModal() {
@@ -516,6 +542,13 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   }, [showResetModal, isResetting]);
 
   const editingTeam = editingTeamId ? teams.find((team) => team.id === editingTeamId) ?? null : null;
+  const leagueIdentityDirty = leagueName !== savedLeagueName || leagueWebsite !== savedLeagueWebsite;
+  const pairingsSettingsDirty =
+    ageAllowancePctPerYear !== savedAgeAllowancePctPerYear ||
+    experienceAllowancePctPerYear !== savedExperienceAllowancePctPerYear ||
+    skillAllowancePctPerPoint !== savedSkillAllowancePctPerPoint ||
+    maxAgeGapYears !== savedMaxAgeGapYears ||
+    maxWeightDiffPct !== savedMaxWeightDiffPct;
   const normalizedNewTeamSymbol = symbol.trim().toUpperCase();
   const isNewTeamSymbolLengthValid = normalizedNewTeamSymbol.length >= 2 && normalizedNewTeamSymbol.length <= 4;
   const isNewTeamSymbolTaken = normalizedNewTeamSymbol.length > 0 && teams.some((team) => team.symbol.trim().toUpperCase() === normalizedNewTeamSymbol);
@@ -529,6 +562,136 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   );
   const adminOverlayStyle = { zIndex: 11000 } as const;
   const adminModalStyle = { position: "relative" as const, zIndex: 11001 };
+
+  useEffect(() => {
+    latestLeagueIdentityRef.current = {
+      dirty: leagueIdentityDirty,
+      name: leagueName,
+      website: leagueWebsite,
+    };
+  }, [leagueIdentityDirty, leagueName, leagueWebsite]);
+
+  useEffect(() => {
+    latestPairingsRef.current = {
+      dirty: pairingsSettingsDirty,
+      ageAllowancePctPerYear,
+      experienceAllowancePctPerYear,
+      skillAllowancePctPerPoint,
+      maxAgeGapYears,
+      maxWeightDiffPct,
+    };
+  }, [
+    pairingsSettingsDirty,
+    ageAllowancePctPerYear,
+    experienceAllowancePctPerYear,
+    skillAllowancePctPerPoint,
+    maxAgeGapYears,
+    maxWeightDiffPct,
+  ]);
+
+  useEffect(() => {
+    if (view !== "league") return;
+
+    const flushLeagueIdentitySave = () => {
+      if (!leagueIdentityDirty || leagueIdentitySaveInFlight.current) {
+        return;
+      }
+      leagueIdentitySaveInFlight.current = true;
+      void saveLeagueIdentity(
+        leagueName,
+        leagueWebsite,
+      ).finally(() => {
+        leagueIdentitySaveInFlight.current = false;
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushLeagueIdentitySave();
+      }
+    };
+
+    window.addEventListener("blur", flushLeagueIdentitySave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", flushLeagueIdentitySave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [view, leagueIdentityDirty, leagueName, leagueWebsite]);
+
+  useEffect(() => {
+    if (view !== "pairings") return;
+
+    const flushPairingsSave = () => {
+      if (!pairingsSettingsDirty || pairingsSaveInFlight.current) {
+        return;
+      }
+      pairingsSaveInFlight.current = true;
+      void savePairingsSettings(
+        ageAllowancePctPerYear,
+        experienceAllowancePctPerYear,
+        skillAllowancePctPerPoint,
+        maxAgeGapYears,
+        maxWeightDiffPct,
+      ).finally(() => {
+        pairingsSaveInFlight.current = false;
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPairingsSave();
+      }
+    };
+
+    window.addEventListener("blur", flushPairingsSave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", flushPairingsSave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    view,
+    pairingsSettingsDirty,
+    ageAllowancePctPerYear,
+    experienceAllowancePctPerYear,
+    skillAllowancePctPerPoint,
+    maxAgeGapYears,
+    maxWeightDiffPct,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (view === "league") {
+        const latestLeagueIdentity = latestLeagueIdentityRef.current;
+        if (latestLeagueIdentity.dirty && !leagueIdentitySaveInFlight.current) {
+          leagueIdentitySaveInFlight.current = true;
+          void saveLeagueIdentity(
+            latestLeagueIdentity.name,
+            latestLeagueIdentity.website,
+          ).finally(() => {
+            leagueIdentitySaveInFlight.current = false;
+          });
+        }
+      }
+
+      if (view === "pairings") {
+        const latestPairings = latestPairingsRef.current;
+        if (latestPairings.dirty && !pairingsSaveInFlight.current) {
+          pairingsSaveInFlight.current = true;
+          void savePairingsSettings(
+            latestPairings.ageAllowancePctPerYear,
+            latestPairings.experienceAllowancePctPerYear,
+            latestPairings.skillAllowancePctPerPoint,
+            latestPairings.maxAgeGapYears,
+            latestPairings.maxWeightDiffPct,
+          ).finally(() => {
+            pairingsSaveInFlight.current = false;
+          });
+        }
+      }
+    };
+  }, [view]);
 
   return (
     <>
@@ -556,19 +719,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             <input
               id="league-name"
               value={leagueName}
-              onChange={(e) => {
-                const next = e.target.value;
-                setLeagueName(next);
-                scheduleLeagueSave(
-                  next,
-                  leagueWebsite,
-                  ageAllowancePctPerYear,
-                  experienceAllowancePctPerYear,
-                  skillAllowancePctPerPoint,
-                  maxAgeGapYears,
-                  maxWeightDiffPct,
-                );
-              }}
+              onChange={(e) => setLeagueName(e.target.value)}
               placeholder="League name"
             />
           </div>
@@ -579,19 +730,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             <input
               id="league-website"
               value={leagueWebsite}
-              onChange={(e) => {
-                const next = e.target.value;
-                setLeagueWebsite(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  next,
-                  ageAllowancePctPerYear,
-                  experienceAllowancePctPerYear,
-                  skillAllowancePctPerPoint,
-                  maxAgeGapYears,
-                  maxWeightDiffPct,
-                );
-              }}
+              onChange={(e) => setLeagueWebsite(e.target.value)}
               placeholder="https://league.example.com"
             />
           </div>
@@ -642,15 +781,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => {
                 const next = parseGap(e.target.value, maxAgeGapYears, 0.5, 2.5);
                 setMaxAgeGapYears(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  leagueWebsite,
-                  ageAllowancePctPerYear,
-                  experienceAllowancePctPerYear,
-                  skillAllowancePctPerPoint,
-                  next,
-                  maxWeightDiffPct,
-                );
               }}
             />
           </div>
@@ -669,15 +799,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => {
                 const next = parseGap(e.target.value, maxWeightDiffPct, 7.5, 15);
                 setMaxWeightDiffPct(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  leagueWebsite,
-                  ageAllowancePctPerYear,
-                  experienceAllowancePctPerYear,
-                  skillAllowancePctPerPoint,
-                  maxAgeGapYears,
-                  next,
-                );
               }}
             />
           </div>
@@ -713,15 +834,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => {
                 const next = parseAllowance(e.target.value, ageAllowancePctPerYear);
                 setAgeAllowancePctPerYear(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  leagueWebsite,
-                  next,
-                  experienceAllowancePctPerYear,
-                  skillAllowancePctPerPoint,
-                  maxAgeGapYears,
-                  maxWeightDiffPct,
-                );
               }}
             />
           </div>
@@ -740,15 +852,6 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => {
                 const next = parseAllowance(e.target.value, skillAllowancePctPerPoint);
                 setSkillAllowancePctPerPoint(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  leagueWebsite,
-                  ageAllowancePctPerYear,
-                  experienceAllowancePctPerYear,
-                  next,
-                  maxAgeGapYears,
-                  maxWeightDiffPct,
-                );
               }}
             />
           </div>
@@ -767,22 +870,12 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => {
                 const next = parseAllowance(e.target.value, experienceAllowancePctPerYear);
                 setExperienceAllowancePctPerYear(next);
-                scheduleLeagueSave(
-                  leagueName,
-                  leagueWebsite,
-                  ageAllowancePctPerYear,
-                  next,
-                  skillAllowancePctPerPoint,
-                  maxAgeGapYears,
-                  maxWeightDiffPct,
-                );
               }}
             />
           </div>
         </div>
       </div>
       )}
-
       {view === "teams" && (
       <div className="admin-card" style={{ width: "fit-content", maxWidth: "100%" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>

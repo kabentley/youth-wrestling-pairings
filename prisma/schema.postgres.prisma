@@ -54,6 +54,8 @@ model League {
   website  String?
   logoData Bytes?
   logoType String?
+  emailDeliveryMode String @default("off")
+  emailWhitelist String?
   allowParentSelfSignup Boolean @default(false)
   ageAllowancePctPerYear Float @default(0.5)
   experienceAllowancePctPerYear Float @default(0.25)

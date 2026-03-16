@@ -194,14 +194,17 @@ export default function ParentTodayMeetCards({
         <div className="today-wrestler-list">
           {group.wrestlerMatches.map(({ child, matches }) => {
             const attendanceStatus = child.attendanceStatus ?? null;
+            const isScratchedAfterCheckin =
+              child.teamCheckinCompleted === true &&
+              attendanceStatus === "ABSENT";
             const checkinBadge = child.teamCheckinCompleted
               ? attendanceStatus === "COMING"
                 ? { label: "Checked In", className: "checked-in" }
-                : attendanceStatus === "ABSENT"
+                : isScratchedAfterCheckin
                   ? { label: "Scratched", className: "scratched" }
-                : { label: "Not Checked In", className: "not-checked-in" }
+                : { label: "Not Attending", className: "not-coming" }
               : attendanceStatus === "COMING"
-                ? { label: "Coming", className: "coming" }
+                ? { label: "Attending", className: "coming" }
                 : attendanceStatus === "ABSENT"
                   ? { label: "Scratched", className: "scratched" }
                 : attendanceStatus === "NOT_COMING"
@@ -223,7 +226,7 @@ export default function ParentTodayMeetCards({
                     </span>
                   )}
                 </div>
-                {showCheckinMessage && attendanceStatus === "ABSENT" && (
+                {showCheckinMessage && isScratchedAfterCheckin && (
                   <div className="today-scratch-note">
                     If your wrestler is really at the gym, find a coach right away.
                   </div>

@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const PHONE_PATTERN = /^\+?[1-9]\d{7,14}$/;
 const MIN_USERNAME_LEN = 6;
@@ -27,6 +28,13 @@ const ImportParentsSchema = z.object({
 });
 
 type ImportParentRow = z.infer<typeof ImportParentRowSchema>;
+type TeamWrestlerLookupEntry = {
+  id: string;
+  firstNormalized: string;
+  lastNormalized: string;
+  fullNormalized: string;
+  firstTokens: string[];
+};
 
 const normalizeUsernameToken = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 const normalizeNameToken = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -92,6 +100,62 @@ const generateTemporaryPassword = () => {
   return password;
 };
 
+const buildTeamWrestlerLookup = (teamWrestlers: Array<{ id: string; first: string; last: string }>) => {
+  const entries: TeamWrestlerLookupEntry[] = teamWrestlers.map((wrestler) => {
+    const firstNormalized = normalizeNameToken(wrestler.first);
+    const lastNormalized = normalizeNameToken(wrestler.last);
+    return {
+      id: wrestler.id,
+      firstNormalized,
+      lastNormalized,
+      fullNormalized: normalizeNameToken(`${wrestler.first} ${wrestler.last}`),
+      firstTokens: firstNormalized.split(" ").filter(Boolean),
+    };
+  });
+  const byFullName = new Map(entries.map((entry) => [entry.fullNormalized, entry.id]));
+  return { entries, byFullName };
+};
+
+const resolveImportedKidName = (
+  kidName: string,
+  parentLastName: string,
+  lookup: ReturnType<typeof buildTeamWrestlerLookup>,
+) => {
+  const normalizedKid = normalizeNameToken(kidName);
+  if (!normalizedKid) {
+    return null;
+  }
+
+  const exactMatch = lookup.byFullName.get(normalizedKid);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const kidTokens = normalizedKid.split(" ").filter(Boolean);
+  if (kidTokens.length !== 1) {
+    return null;
+  }
+
+  const firstToken = kidTokens[0];
+  const normalizedParentLastName = normalizeNameToken(parentLastName);
+  const sameFamilyMatches = lookup.entries.filter((entry) =>
+    entry.lastNormalized === normalizedParentLastName &&
+    (entry.firstNormalized === firstToken || entry.firstTokens.includes(firstToken)),
+  );
+  if (sameFamilyMatches.length === 1) {
+    return sameFamilyMatches[0].id;
+  }
+
+  const uniqueFirstMatches = lookup.entries.filter((entry) =>
+    entry.firstNormalized === firstToken || entry.firstTokens.includes(firstToken),
+  );
+  if (uniqueFirstMatches.length === 1) {
+    return uniqueFirstMatches[0].id;
+  }
+
+  return null;
+};
+
 const resolveUsername = async (
   row: ImportParentRow,
   reservedUsernames: Set<string>,
@@ -129,7 +193,7 @@ export async function POST(request: Request) {
 
   const team = await db.team.findUnique({
     where: { id: teamId },
-    select: { id: true, headCoachId: true },
+    select: { id: true, name: true, symbol: true, headCoachId: true },
   });
   if (!team) {
     return NextResponse.json({ error: "Team not found." }, { status: 404 });
@@ -191,13 +255,7 @@ export async function POST(request: Request) {
     where: { teamId, active: true },
     select: { id: true, first: true, last: true },
   });
-  const wrestlerNameMap = new Map<string, string>();
-  for (const wrestler of teamWrestlers) {
-    wrestlerNameMap.set(
-      `${wrestler.first.trim().toLowerCase()} ${wrestler.last.trim().toLowerCase()}`,
-      wrestler.id,
-    );
-  }
+  const wrestlerLookup = buildTeamWrestlerLookup(teamWrestlers);
 
   for (const row of payload.rows) {
     const firstName = row.firstName.trim();
@@ -238,7 +296,7 @@ export async function POST(request: Request) {
     for (const kidName of row.kids) {
       const normalizedKid = kidName.trim().toLowerCase().replace(/\s+/g, " ");
       if (!normalizedKid) continue;
-      const wrestlerId = wrestlerNameMap.get(normalizedKid);
+      const wrestlerId = resolveImportedKidName(kidName, lastName, wrestlerLookup);
       if (!wrestlerId) {
         unknownKids.push(kidName.trim());
         continue;
@@ -352,6 +410,29 @@ export async function POST(request: Request) {
       }
       return createdUsers;
     });
+    const league = await db.league.findFirst({
+      select: { name: true },
+    });
+    const leagueName = league?.name?.trim() ?? null;
+    await Promise.all(
+      created
+        .filter((entry) => entry.email.trim().length > 0)
+        .map(async (entry) => {
+          try {
+            await sendWelcomeEmail({
+              request,
+              email: entry.email,
+              username: entry.username,
+              tempPassword: entry.temporaryPassword,
+              teamLabel: `${team.name} (${team.symbol})`,
+              leagueName,
+              mustResetPassword: useSharedPassword,
+            });
+          } catch {
+            // Keep the import successful even if one welcome email fails after commit.
+          }
+        }),
+    );
 
     return NextResponse.json({
       createdCount: created.length,

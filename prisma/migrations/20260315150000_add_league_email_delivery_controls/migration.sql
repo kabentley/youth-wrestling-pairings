@@ -1,0 +1,5 @@
+ALTER TABLE "League"
+ADD COLUMN IF NOT EXISTS "emailDeliveryMode" TEXT NOT NULL DEFAULT 'all';
+
+ALTER TABLE "League"
+ADD COLUMN IF NOT EXISTS "emailWhitelist" TEXT;

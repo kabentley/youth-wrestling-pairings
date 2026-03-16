@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const CreateTeamUserSchema = z.object({
   username: z.string().trim().min(6).max(32).refine((value) => !value.includes("@"), {
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
   }
   const team = await db.team.findUnique({
     where: { id: teamId },
-    select: { id: true, headCoachId: true },
+    select: { id: true, name: true, symbol: true, headCoachId: true },
   });
   if (!team) {
     return NextResponse.json({ error: "Team not found." }, { status: 404 });
@@ -187,6 +188,24 @@ export async function POST(request: Request) {
         staffMatNumber: true,
       },
     });
+    let welcomeEmailStatus: "not_applicable" | "sent" | "skipped" | "logged" | "failed" = "not_applicable";
+    let welcomeEmailNote: string | null = null;
+    if (created.email.trim()) {
+      try {
+        const welcomeResult = await sendWelcomeEmail({
+          request,
+          email: created.email,
+          username: created.username,
+          tempPassword: payload.password.trim(),
+          teamLabel: `${team.name} (${team.symbol})`,
+        });
+        welcomeEmailStatus = welcomeResult.status;
+        welcomeEmailNote = describeWelcomeEmailResult(welcomeResult);
+      } catch {
+        welcomeEmailStatus = "failed";
+        welcomeEmailNote = "Welcome email could not be sent.";
+      }
+    }
     return NextResponse.json({
       created: {
         id: created.id,
@@ -198,6 +217,8 @@ export async function POST(request: Request) {
         matNumber: created.staffMatNumber ?? null,
         wrestlerIds: [] as string[],
       },
+      welcomeEmailStatus,
+      welcomeEmailNote,
     });
   } catch (error: unknown) {
     if (

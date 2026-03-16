@@ -93,6 +93,7 @@ type ScratchesTabProps = {
   homeTeamId: string | null;
   checkpoints: Checkpoint[];
   targetMatchesPerWrestler: number | null;
+  maxMatchesPerWrestler: number | null;
   teamCheckins: TeamCheckin[];
   canViewScratchMatchWorkspace: boolean;
   canManageScratchEntry: boolean;
@@ -235,6 +236,7 @@ export default function ScratchesTab({
   homeTeamId,
   checkpoints,
   targetMatchesPerWrestler,
+  maxMatchesPerWrestler,
   teamCheckins,
   canViewScratchMatchWorkspace,
   canManageScratchEntry,
@@ -300,7 +302,7 @@ export default function ScratchesTab({
   const [removeLoadingId, setRemoveLoadingId] = useState<string | null>(null);
   const [autoPairingLoading, setAutoPairingLoading] = useState(false);
   const [, setNotice] = useState<string | null>(null);
-  const [currentSort, setCurrentSort] = useState<SortState>({ key: "bout", dir: "asc" });
+  const [currentSort, setCurrentSort] = useState<SortState>({ key: "score", dir: "asc" });
   const [availableSort, setAvailableSort] = useState<SortState>({ key: "score", dir: "asc" });
   const [scratchSearch, setScratchSearch] = useState("");
   const [unexpectedArrivalSearch, setUnexpectedArrivalSearch] = useState("");
@@ -584,10 +586,18 @@ export default function ScratchesTab({
   const selectedWrestler = selectedDetailWrestlerId ? wrestlerMap.get(selectedDetailWrestlerId) ?? null : null;
   const selectedCandidateWrestlerId = selectedWrestler?.id ?? null;
   const selectedTeam = selectedWrestler ? teamMap.get(selectedWrestler.teamId) ?? null : null;
+  const selectedMatchCount = selectedWrestler ? (matchCounts.get(selectedWrestler.id) ?? 0) : 0;
   useEffect(() => {
     if (!selectedCandidateWrestlerId) {
       setCandidateRows([]);
       setCandidateError(null);
+      setCandidateLoading(false);
+      return;
+    }
+    if (maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler) {
+      setCandidateRows([]);
+      setCandidateError(null);
+      setCandidateLoading(false);
       return;
     }
     let cancelled = false;
@@ -627,8 +637,10 @@ export default function ScratchesTab({
     };
   }, [
     candidateRefreshVersion,
+    maxMatchesPerWrestler,
     meetId,
     selectedCandidateWrestlerId,
+    selectedMatchCount,
     settings.allowSameTeamMatches,
     settings.enforceAgeGapCheck,
     settings.enforceWeightCheck,
@@ -666,18 +678,22 @@ export default function ScratchesTab({
         const opponentId = bout.redId === selectedWrestler.id ? bout.greenId : bout.redId;
         return {
           bout,
+          isOptimistic: bout.id.startsWith("optimistic-"),
           opponentId,
           opponent: wrestlerMap.get(opponentId),
           signedScore:
             typeof bout.pairingScore === "number"
               ? (bout.redId === selectedWrestler.id ? bout.pairingScore : -bout.pairingScore)
               : Number.NaN,
-          boutOrder: (bout.mat ?? 0) * 100 + (bout.order ?? 0),
+          boutOrder: bout.mat && bout.order ? (bout.mat * 100) + bout.order : Number.POSITIVE_INFINITY,
         };
       })
     : [];
 
   const currentSorted = [...currentMatchRows].sort((a, b) => {
+    if (currentSort.key === "bout" && a.isOptimistic !== b.isOptimistic) {
+      return a.isOptimistic ? 1 : -1;
+    }
     const getValue = (row: (typeof currentMatchRows)[number]) => {
       const opponent = row.opponent;
       if (currentSort.key === "bout") return row.boutOrder;
@@ -697,12 +713,16 @@ export default function ScratchesTab({
     return sortValueCompare(getValue(a), getValue(b), currentSort.dir);
   });
 
-  const availableFiltered = candidateRows
-    .filter((row) => !currentBouts.some((bout) => (
-      (bout.redId === row.opponent.id && bout.greenId === selectedWrestler?.id) ||
-      (bout.greenId === row.opponent.id && bout.redId === selectedWrestler?.id)
-    )))
-    .map((row) => ({ opponent: row.opponent, score: row.score }));
+  const availableFiltered = (
+    maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
+      ? []
+      : candidateRows
+          .filter((row) => !currentBouts.some((bout) => (
+            (bout.redId === row.opponent.id && bout.greenId === selectedWrestler?.id) ||
+            (bout.greenId === row.opponent.id && bout.redId === selectedWrestler?.id)
+          )))
+          .map((row) => ({ opponent: row.opponent, score: row.score }))
+  );
 
   const availableSorted = [...availableFiltered].sort((a, b) => {
     const getValue = (row: (typeof availableFiltered)[number]) => {
@@ -723,6 +743,7 @@ export default function ScratchesTab({
   });
 
   const availableDisplay = availableSorted.slice(0, 20);
+  const showCandidateLoadingState = candidateLoading && candidateRows.length === 0;
 
   function toggleSort(setter: React.Dispatch<React.SetStateAction<SortState>>, key: string) {
     setter((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -909,27 +930,41 @@ export default function ScratchesTab({
 
   async function addReplacementMatch(opponentId: string) {
     if (!selectedWrestler) return;
+    const selectedWrestlerId = selectedWrestler.id;
+    const optimisticBoutId = `optimistic-${Date.now()}-${selectedWrestlerId}-${opponentId}`;
+    const optimisticPairingScore = Math.abs(
+      candidateRows.find((row) => row.opponent.id === opponentId)?.score ?? 0,
+    );
+    const previousBouts = localBoutsRef.current;
     setNotice(null);
     setAddLoadingId(opponentId);
+    setLocalBouts((current) => [
+      ...current.filter((bout) => bout.id !== optimisticBoutId),
+      {
+        id: optimisticBoutId,
+        redId: selectedWrestlerId,
+        greenId: opponentId,
+        pairingScore: optimisticPairingScore,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
     try {
       const response = await runManagedRequest(
         () => fetch(`/api/meets/${meetId}/pairings/add`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ redId: selectedWrestler.id, greenId: opponentId }),
+          body: JSON.stringify({ redId: selectedWrestlerId, greenId: opponentId }),
         }),
         "Unable to add replacement match.",
       );
       const payload = await response.json().catch(() => null);
-      if (payload?.id && typeof payload.redId === "string" && typeof payload.greenId === "string") {
-        setLocalBouts((current) => {
-          if (current.some((bout) => bout.id === payload.id)) return current;
-          return [...current, payload as Bout];
-        });
+      if (!(payload?.id && typeof payload.redId === "string" && typeof payload.greenId === "string")) {
+        setLocalBouts((current) => current.filter((bout) => bout.id !== optimisticBoutId));
       }
       syncScratchDataInBackground();
       setNotice("Replacement match added.");
     } catch (err) {
+      setLocalBouts((current) => current.some((bout) => bout.id === optimisticBoutId) ? previousBouts : current);
       setNotice(err instanceof Error ? err.message : "Unable to add replacement match.");
     } finally {
       setAddLoadingId(null);
@@ -1570,10 +1605,10 @@ export default function ScratchesTab({
           style={{
             display: "grid",
             gridTemplateColumns: isPhoneLayout ? "minmax(0, 1fr)" : "minmax(260px, 320px) minmax(0, 1fr)",
-            gridTemplateRows: isPhoneLayout ? "auto auto auto" : "minmax(260px, 38dvh) minmax(0, 1fr)",
+            gridTemplateRows: isPhoneLayout ? "auto auto auto" : "auto auto",
             gap: isPhoneLayout ? 8 : 12,
             alignSelf: "stretch",
-            height: isPhoneLayout ? "auto" : "calc(100dvh - 220px)",
+            height: "auto",
             minHeight: 0,
           }}
         >
@@ -1741,7 +1776,7 @@ export default function ScratchesTab({
                     </div>
                     <div style={{ display: "grid", gap: 6 }}>
                       <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ maxHeight: "24dvh", overflow: "auto" }}>
+                        <div style={{ maxHeight: "min(18dvh, 200px)", overflow: "auto" }}>
                           <table cellPadding={4} style={pairingsTableStyle}>
                             <colgroup>
                               {currentColumnWidths.map((width, index) => (
@@ -1847,7 +1882,7 @@ export default function ScratchesTab({
                         Possible additional matches:
                       </h3>
                       <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
-                        <div style={{ maxHeight: "min(24dvh, 260px)", overflow: "auto" }}>
+                        <div style={{ height: "100%", minHeight: "min(26dvh, 280px)", overflow: "auto" }}>
                           <table cellPadding={4} style={pairingsTableStyle}>
                             <colgroup>
                               {availableColumnWidths.map((width, index) => (
@@ -1875,24 +1910,26 @@ export default function ScratchesTab({
                               </tr>
                             </thead>
                             <tbody>
-                              {candidateLoading && (
+                              {showCandidateLoadingState && (
                                 <tr>
                                   <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#5a6673" }}>Loading candidates...</td>
                                 </tr>
                               )}
-                              {!candidateLoading && candidateError && (
+                              {!showCandidateLoadingState && candidateError && (
                                 <tr>
                                   <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#b00020" }}>{candidateError}</td>
                                 </tr>
                               )}
-                              {!candidateLoading && !candidateError && availableDisplay.length === 0 && (
+                              {!showCandidateLoadingState && !candidateError && availableDisplay.length === 0 && (
                                 <tr>
                                   <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#666" }}>
-                                    No candidates available right now.
+                                    {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
+                                      ? "Wrestler already has maximum number of bouts"
+                                      : "No candidates available right now."}
                                   </td>
                                 </tr>
                               )}
-                              {!candidateLoading && !candidateError && availableDisplay.map(({ opponent, score }) => {
+                              {!showCandidateLoadingState && !candidateError && availableDisplay.map(({ opponent, score }) => {
                                 const matches = matchCounts.get(opponent.id) ?? 0;
                                 const loading = addLoadingId === opponent.id;
                               return (
@@ -2262,7 +2299,7 @@ export default function ScratchesTab({
 
                   <div style={{ display: "grid", gap: 0 }}>
                     <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                      <div style={{ maxHeight: "24dvh", overflow: "auto" }}>
+                      <div style={{ maxHeight: "min(18dvh, 200px)", overflow: "auto" }}>
                         <table cellPadding={4} style={pairingsTableStyle}>
                           <colgroup>
                             {currentColumnWidths.map((width, index) => (
@@ -2368,7 +2405,7 @@ export default function ScratchesTab({
                       Possible additional matches:
                     </h3>
                     <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
-                      <div style={{ maxHeight: "min(24dvh, 260px)", overflow: "auto" }}>
+                      <div style={{ height: "100%", minHeight: "min(26dvh, 280px)", overflow: "auto" }}>
                         <table cellPadding={4} style={pairingsTableStyle}>
                           <colgroup>
                             {availableColumnWidths.map((width, index) => (
@@ -2396,24 +2433,26 @@ export default function ScratchesTab({
                             </tr>
                           </thead>
                           <tbody>
-                            {candidateLoading && (
+                            {showCandidateLoadingState && (
                               <tr>
                                 <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#5a6673" }}>Loading candidates...</td>
                               </tr>
                             )}
-                            {!candidateLoading && candidateError && (
+                            {!showCandidateLoadingState && candidateError && (
                               <tr>
                                 <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#b00020" }}>{candidateError}</td>
                               </tr>
                             )}
-                            {!candidateLoading && !candidateError && availableDisplay.length === 0 && (
+                            {!showCandidateLoadingState && !candidateError && availableDisplay.length === 0 && (
                               <tr>
                                 <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#666" }}>
-                                  No candidates available right now.
+                                  {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
+                                    ? "Wrestler already has maximum number of bouts"
+                                    : "No candidates available right now."}
                                 </td>
                               </tr>
                             )}
-                            {!candidateLoading && !candidateError && availableDisplay.map(({ opponent, score }) => {
+                            {!showCandidateLoadingState && !candidateError && availableDisplay.map(({ opponent, score }) => {
                               const matches = matchCounts.get(opponent.id) ?? 0;
                               const loading = addLoadingId === opponent.id;
                               return (

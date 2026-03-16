@@ -14,7 +14,7 @@ type Props = {
 };
 
 export default async function AdminHome({ searchParams }: Props) {
-  const showNotifications = process.env.NODE_ENV !== "production";
+  const showNotifications = true;
   try {
     await requireAdmin();
   } catch (err) {

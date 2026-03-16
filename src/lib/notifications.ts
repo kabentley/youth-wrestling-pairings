@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { db } from "./db";
+import { getEmailDeliverySettings, shouldDeliverEmailTo } from "./emailDelivery";
 import { normalizeMeetPhase } from "./meetPhase";
 
 export type NotificationTransport = "off" | "log" | "live";
@@ -287,6 +288,14 @@ async function sendEmailLive(subject: string, text: string, to: string): Promise
   if (!apiKey || !from) {
     return { status: "FAILED", provider: "sendgrid", errorMessage: "SendGrid is not configured." };
   }
+  const deliveryDecision = await shouldDeliverEmailTo(to);
+  if (!deliveryDecision.allowed) {
+    return {
+      status: "SKIPPED",
+      provider: "sendgrid",
+      errorMessage: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
+    };
+  }
 
   const sgMail = await import("@sendgrid/mail");
   sgMail.default.setApiKey(apiKey);
@@ -443,6 +452,7 @@ export async function notifyMeetReadyForAttendance(
   options: { origin?: string | null } = {},
 ) : Promise<MeetReadyForAttendanceSummary> {
   const transport = resolveNotificationTransport();
+  const emailDeliverySettings = await getEmailDeliverySettings();
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -469,6 +479,10 @@ export async function notifyMeetReadyForAttendance(
 
   if (!meet || meet.deletedAt || normalizeMeetPhase(meet.status) !== "ATTENDANCE") {
     return buildEmptyMeetReadySummary(transport);
+  }
+
+  if (transport === "off" || emailDeliverySettings.mode === "off") {
+    return buildEmptyMeetReadySummary("off");
   }
 
   // This event is only for the initial creation of the meet. Reopening attendance
