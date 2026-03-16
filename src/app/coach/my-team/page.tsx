@@ -1538,7 +1538,6 @@ export default function CoachMyTeamPage() {
         });
       });
       downloadParentImportResults(teamName, importedRows, resultsByRow);
-      closeImportUsersModal(true);
       const summaryParts = [
         `Imported ${createdCount} parent account${createdCount === 1 ? "" : "s"}`,
       ];
@@ -1551,8 +1550,16 @@ export default function CoachMyTeamPage() {
       if (rowErrors.length > 0) {
         summaryParts.push(`${rowErrors.length} row${rowErrors.length === 1 ? "" : "s"} reported issues`);
       }
-      setRolesMessage(`${summaryParts.join(", ")}, and downloaded the credentials file.`);
-      setRolesMessageStatus("success");
+      const summaryMessage = `${summaryParts.join(", ")}, and downloaded the credentials file.`;
+      if (rowErrors.length > 0) {
+        setImportUsersRowErrors(rowErrors);
+        setImportUsersMessage(`${summaryMessage} Review the rows listed below.`);
+        setImportUsersMessageStatus("error");
+      } else {
+        closeImportUsersModal(true);
+        setRolesMessage(summaryMessage);
+        setRolesMessageStatus("success");
+      }
     } catch (error) {
       console.error("Import parent users failed", error);
       setImportUsersMessage("Unable to import parent accounts.");
