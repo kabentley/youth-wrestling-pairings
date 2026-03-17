@@ -13,6 +13,18 @@ function normalizeAttendanceStatus(status?: string | null): AttendanceStatus {
   return null;
 }
 
+function hasRecordedResult(bout: {
+  resultWinnerId: string | null;
+  resultType: string | null;
+  resultScore: string | null;
+  resultTime: string | null;
+}) {
+  return bout.resultWinnerId !== null
+    || (bout.resultType?.trim() ?? "") !== ""
+    || (bout.resultScore?.trim() ?? "") !== ""
+    || (bout.resultTime?.trim() ?? "") !== "";
+}
+
 export async function GET() {
   let userId: string;
   try {
@@ -239,7 +251,7 @@ export async function GET() {
         },
       };
       meetMap.get(meet.id)!.matches.push(match);
-      if (meet.date < today) {
+      if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
           meetName: meet.name ?? "Meet",
@@ -269,7 +281,7 @@ export async function GET() {
         },
       };
       meetMap.get(meet.id)!.matches.push(match);
-      if (meet.date < today) {
+      if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
           meetName: meet.name ?? "Meet",
