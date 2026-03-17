@@ -53,6 +53,18 @@ describe("resultEntry", () => {
     });
   });
 
+  it("requires a 10-point margin for major decisions", () => {
+    expect(validateBoutResult({ winnerId: "w1", type: "MAJ", score: "12-2" })).toEqual({
+      ok: true,
+      value: { winnerId: "w1", type: "MAJ", score: "12-2", time: null, notes: null },
+    });
+
+    expect(validateBoutResult({ winnerId: "w1", type: "MAJ", score: "12-3" })).toEqual({
+      ok: false,
+      error: "Major decisions require a win by at least 10 points.",
+    });
+  });
+
   it("requires time for falls", () => {
     expect(validateBoutResult({ winnerId: "w1", type: "FALL", time: "2:14" })).toEqual({
       ok: true,
@@ -69,6 +81,11 @@ describe("resultEntry", () => {
     expect(validateBoutResult({ winnerId: "w1", type: "TF", score: "15-7", time: "4:32" })).toEqual({
       ok: true,
       value: { winnerId: "w1", type: "TF", score: "15-7", time: "4:32", notes: null },
+    });
+
+    expect(validateBoutResult({ winnerId: "w1", type: "TF", score: "14-0", time: "4:32" })).toEqual({
+      ok: false,
+      error: "Technical falls require a win by at least 15 points.",
     });
 
     expect(validateBoutResult({ winnerId: "w1", type: "TF", score: "15-7", time: null })).toEqual({

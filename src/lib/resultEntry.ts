@@ -65,7 +65,7 @@ export function buildWinnerLoserScore(winnerScore?: string | null, loserScore?: 
   return `${winner}-${loser}`;
 }
 
-function validateWinnerLoserScore(score: string | null) {
+function validateWinnerLoserScore(score: string | null, type?: ResultType | null) {
   const { winnerScore, loserScore } = parseWinnerLoserScore(score);
   if (winnerScore === null || loserScore === null) {
     return { ok: false as const, error: "Enter winner and loser scores." };
@@ -75,6 +75,13 @@ function validateWinnerLoserScore(score: string | null) {
   }
   if (winnerScore <= loserScore) {
     return { ok: false as const, error: "Winner score must be greater than loser score." };
+  }
+  const margin = winnerScore - loserScore;
+  if (type === "MAJ" && margin < 10) {
+    return { ok: false as const, error: "Major decisions require a win by at least 10 points." };
+  }
+  if (type === "TF" && margin < 15) {
+    return { ok: false as const, error: "Technical falls require a win by at least 15 points." };
   }
   return { ok: true as const, value: `${winnerScore}-${loserScore}` };
 }
@@ -112,7 +119,7 @@ export function validateBoutResult(input: BoutResultInput): ValidationResult {
   }
 
   if ((type === "DEC" || type === "MAJ")) {
-    const validatedScore = validateWinnerLoserScore(score);
+    const validatedScore = validateWinnerLoserScore(score, type);
     if (!validatedScore.ok) return validatedScore;
     if (time) return { ok: false, error: "Time is only used for falls and technical falls." };
     if (notes) return { ok: false, error: "Comments are only used for DQ and forfeit results." };
@@ -123,7 +130,7 @@ export function validateBoutResult(input: BoutResultInput): ValidationResult {
   }
 
   if (type === "TF") {
-    const validatedScore = validateWinnerLoserScore(score);
+    const validatedScore = validateWinnerLoserScore(score, type);
     if (!validatedScore.ok) return validatedScore;
     if (!isValidResultTime(time)) {
       return { ok: false, error: "Enter a time in x:xx format under 10 minutes." };

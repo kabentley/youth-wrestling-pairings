@@ -186,18 +186,23 @@ function getRowValidationState(bout: BoutRow) {
   const usesScore = type === "DEC" || type === "MAJ" || type === "TF";
   const usesTime = type === "FALL" || type === "TF";
   const usesNotes = type === "DQ" || type === "FOR";
+  const scoreMargin = winnerScore !== null && loserScore !== null ? winnerScore - loserScore : null;
 
   const winnerScoreInvalid = usesScore && (
     winnerScore === null
     || winnerScore <= 0
     || winnerScore >= 25
     || (loserScore !== null && winnerScore <= loserScore)
+    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 10)
+    || (type === "TF" && scoreMargin !== null && scoreMargin < 15)
   );
   const loserScoreInvalid = usesScore && (
     loserScore === null
     || loserScore < 0
     || loserScore >= 25
     || (winnerScore !== null && loserScore >= winnerScore)
+    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 10)
+    || (type === "TF" && scoreMargin !== null && scoreMargin < 15)
   );
   const timeInvalid = usesTime && !isValidResultTime(bout.resultTime);
   const notesInvalid = usesNotes && !trimNullable(bout.resultNotes);

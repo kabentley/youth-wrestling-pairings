@@ -254,7 +254,7 @@ export async function GET() {
       if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
-          meetName: meet.name ?? "Meet",
+          meetName: meet.name,
           meetDate: meet.date,
         });
       }
@@ -284,7 +284,7 @@ export async function GET() {
       if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
-          meetName: meet.name ?? "Meet",
+          meetName: meet.name,
           meetDate: meet.date,
         });
       }
