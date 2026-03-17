@@ -2569,11 +2569,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
       void applyPairingStatusToWrestler(wrestler, "NOT_COMING", { closeContext });
       return;
     }
-    const existingBoutCount = boutsByWrestlerId.get(wrestler.id)?.length ?? 0;
-    if (existingBoutCount === 0) {
-      void applyPairingStatusToWrestler(wrestler, "NOT_COMING", { closeContext });
-      return;
-    }
     if (closeContext) {
       setPairingContext(null);
     }
@@ -6330,11 +6325,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setPairingNotAttendingConfirm(null)}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              {(() => {
+                const existingBoutCount = boutsByWrestlerId.get(pairingNotAttendingConfirm.wrestler.id)?.length ?? 0;
+                return (
+                  <>
               <h3 style={{ margin: 0 }}>
                 Mark {pairingNotAttendingConfirm.wrestler.first} {pairingNotAttendingConfirm.wrestler.last} Not Coming?
               </h3>
               <div className="ready-checkin-summary" style={{ fontSize: 16 }}>
-                All existing bouts will be removed, and no new bouts will be added unless this wrestler is marked attending again.
+                {existingBoutCount > 0
+                  ? "All existing bouts will be removed, and no new bouts will be added unless this wrestler is marked attending again."
+                  : "This wrestler will be removed from pairing suggestions, and no new bouts will be added unless this wrestler is marked attending again."}
               </div>
               <div className="ready-checkin-footer">
                 <button
@@ -6352,6 +6353,9 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   Not Coming
                 </button>
               </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </ModalPortal>

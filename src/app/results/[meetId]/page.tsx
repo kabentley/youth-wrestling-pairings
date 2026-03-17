@@ -5,10 +5,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
+import {
+  buildWinnerLoserScore,
+  isValidResultTime,
+  normalizeResultType,
+  parseWinnerLoserScore,
+  type ResultType,
+  validateBoutResult,
+} from "@/lib/resultEntry";
 
 type TeamInfo = { id: string; name: string; symbol?: string | null; color?: string | null };
 type WrestlerInfo = { id: string; first: string; last: string; teamId: string; team: TeamInfo };
-type BoutRow = {
+type BoutRowApi = {
   id: string;
   mat: number | null;
   order: number | null;
@@ -22,6 +30,10 @@ type BoutRow = {
   resultNotes: string | null;
   resultAt: string | null;
 };
+type BoutRow = BoutRowApi & {
+  resultWinnerScoreInput: string;
+  resultLoserScoreInput: string;
+};
 type MeetInfo = {
   id: string;
   name: string;
@@ -34,9 +46,169 @@ type ResultSnapshot = {
   winnerId: string | null;
   type: string | null;
   score: string | null;
+  time: string | null;
+  notes: string | null;
 };
 
-const RESULT_TYPES = ["DEC", "MAJ", "TF", "FALL", "DQ", "FOR"];
+const TYPE_OPTIONS: Array<{ value: ResultType; label: string }> = [
+  { value: "DEC", label: "DEC" },
+  { value: "MAJ", label: "MAJ" },
+  { value: "TF", label: "TF" },
+  { value: "FALL", label: "FALL" },
+  { value: "DQ", label: "DQ" },
+  { value: "FOR", label: "No Match" },
+];
+
+function trimNullable(value?: string | null) {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function formatTimeInput(value: string) {
+  let digits = value.replace(/\D/g, "");
+  if (digits.length > 3 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 3);
+  if (digits.length <= 1) return digits;
+  if (digits.length === 2) return `0:${digits}`;
+  return `${digits[0]}:${digits.slice(1, 3)}`;
+}
+
+function deriveScoreInputs(resultType: string | null, resultScore: string | null) {
+  const type = normalizeResultType(resultType);
+  if (type !== "DEC" && type !== "MAJ" && type !== "TF") {
+    return { resultWinnerScoreInput: "", resultLoserScoreInput: "" };
+  }
+  const { winnerScore, loserScore } = parseWinnerLoserScore(resultScore);
+  return {
+    resultWinnerScoreInput: winnerScore?.toString() ?? "",
+    resultLoserScoreInput: loserScore?.toString() ?? "",
+  };
+}
+
+function normalizeBoutRow(row: BoutRowApi): BoutRow {
+  const type = normalizeResultType(row.resultType);
+  const fallbackTime = !trimNullable(row.resultTime) && type === "FALL" && isValidResultTime(row.resultScore)
+    ? trimNullable(row.resultScore)
+    : trimNullable(row.resultTime);
+  return {
+    ...row,
+    resultType: type,
+    resultScore: trimNullable(row.resultScore),
+    resultTime: fallbackTime,
+    resultNotes: trimNullable(row.resultNotes),
+    ...deriveScoreInputs(type, row.resultScore),
+  };
+}
+
+function snapshotForBout(bout: BoutRow): ResultSnapshot {
+  return {
+    winnerId: bout.resultWinnerId ?? null,
+    type: normalizeResultType(bout.resultType),
+    score: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
+    time: trimNullable(bout.resultTime),
+    notes: trimNullable(bout.resultNotes),
+  };
+}
+
+function sameSnapshot(a?: ResultSnapshot, b?: ResultSnapshot) {
+  return a?.winnerId === b?.winnerId
+    && a?.type === b?.type
+    && a?.score === b?.score
+    && a?.time === b?.time
+    && a?.notes === b?.notes;
+}
+
+function hasSnapshotValue(snapshot?: ResultSnapshot) {
+  if (!snapshot) return false;
+  return snapshot.winnerId !== null
+    || snapshot.type !== null
+    || snapshot.score !== null
+    || snapshot.time !== null
+    || snapshot.notes !== null;
+}
+
+function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial<BoutRow> {
+  if (!nextType) {
+    return {
+      resultType: null,
+      resultScore: null,
+      resultTime: null,
+      resultNotes: null,
+      resultWinnerScoreInput: "",
+      resultLoserScoreInput: "",
+    };
+  }
+  if (nextType === "DEC" || nextType === "MAJ") {
+    return {
+      resultType: nextType,
+      resultScore: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
+      resultTime: null,
+      resultNotes: null,
+    };
+  }
+  if (nextType === "TF") {
+    return {
+      resultType: nextType,
+      resultScore: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
+      resultNotes: null,
+    };
+  }
+  if (nextType === "FALL") {
+    return {
+      resultType: nextType,
+      resultScore: null,
+      resultNotes: null,
+      resultWinnerScoreInput: "",
+      resultLoserScoreInput: "",
+    };
+  }
+  return {
+    resultType: nextType,
+    resultScore: null,
+    resultTime: null,
+    resultWinnerScoreInput: "",
+    resultLoserScoreInput: "",
+  };
+}
+
+function parseScoreInputValue(value: string) {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function getRowValidationState(bout: BoutRow) {
+  const type = normalizeResultType(bout.resultType);
+  const winnerScore = parseScoreInputValue(bout.resultWinnerScoreInput);
+  const loserScore = parseScoreInputValue(bout.resultLoserScoreInput);
+  const usesScore = type === "DEC" || type === "MAJ" || type === "TF";
+  const usesTime = type === "FALL" || type === "TF";
+  const usesNotes = type === "DQ" || type === "FOR";
+
+  const winnerScoreInvalid = usesScore && (
+    winnerScore === null
+    || winnerScore <= 0
+    || winnerScore >= 25
+    || (loserScore !== null && winnerScore <= loserScore)
+  );
+  const loserScoreInvalid = usesScore && (
+    loserScore === null
+    || loserScore < 0
+    || loserScore >= 25
+    || (winnerScore !== null && loserScore >= winnerScore)
+  );
+  const timeInvalid = usesTime && !isValidResultTime(bout.resultTime);
+  const notesInvalid = usesNotes && !trimNullable(bout.resultNotes);
+
+  return {
+    winnerScoreInvalid,
+    loserScoreInvalid,
+    timeInvalid,
+    notesInvalid,
+  };
+}
 
 export default function EnterResultsPage() {
   const params = useParams<{ meetId: string }>();
@@ -48,6 +220,7 @@ export default function EnterResultsPage() {
   const [matColors, setMatColors] = useState<Record<number, string | null>>({});
   const originalResultsRef = useRef<Record<string, ResultSnapshot | undefined>>({});
   const boutsRef = useRef<BoutRow[]>([]);
+  const pendingTypeAdvanceBoutIdRef = useRef<string | null>(null);
 
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -76,6 +249,70 @@ export default function EnterResultsPage() {
     });
   }
 
+  function updateWinnerSelection(id: string, winnerId: string | null) {
+    setBouts((prev) => {
+      const next = prev.map((b) => {
+        if (b.id !== id) return b;
+        if (!winnerId) {
+          return {
+            ...b,
+            resultWinnerId: null,
+            resultType: null,
+            resultScore: null,
+            resultTime: null,
+            resultNotes: null,
+            resultWinnerScoreInput: "",
+            resultLoserScoreInput: "",
+          };
+        }
+        return { ...b, resultWinnerId: winnerId };
+      });
+      boutsRef.current = next;
+      return next;
+    });
+  }
+
+  function updateTypeSelection(id: string, rawType: string) {
+    const nextType = normalizeResultType(rawType);
+    setBouts((prev) => {
+      const next = prev.map((b) => (
+        b.id === id
+          ? { ...b, ...sanitizeRowForType(b, nextType) }
+          : b
+      ));
+      boutsRef.current = next;
+      return next;
+    });
+  }
+
+  function updateScoreInput(id: string, side: "winner" | "loser", value: string) {
+    const cleaned = value.replace(/\D/g, "").slice(0, 2);
+    setBouts((prev) => {
+      const next = prev.map((b) => {
+        if (b.id !== id) return b;
+        const updated = side === "winner"
+          ? { ...b, resultWinnerScoreInput: cleaned }
+          : { ...b, resultLoserScoreInput: cleaned };
+
+        return {
+          ...updated,
+          resultScore: buildWinnerLoserScore(updated.resultWinnerScoreInput, updated.resultLoserScoreInput),
+        };
+      });
+      boutsRef.current = next;
+      return next;
+    });
+  }
+
+  function updateTimeInput(id: string, value: string) {
+    const formatted = formatTimeInput(value);
+    updateBout(id, { resultTime: formatted || null });
+  }
+
+  function updateNotesInput(id: string, value: string) {
+    updateBout(id, { resultNotes: value });
+  }
+
   async function load() {
     setMsg("");
     const res = await fetch(`/api/meets/${meetId}/results`);
@@ -86,56 +323,118 @@ export default function EnterResultsPage() {
     }
     const json = await res.json();
     setMeet(json.meet ?? null);
-    const nextBouts = Array.isArray(json.bouts) ? json.bouts : [];
+    const nextBouts = Array.isArray(json.bouts)
+      ? (json.bouts as BoutRowApi[]).map(normalizeBoutRow)
+      : [];
     setBouts(nextBouts);
     boutsRef.current = nextBouts;
-    const original: Record<string, { winnerId: string | null; type: string | null; score: string | null }> = {};
-    if (Array.isArray(json.bouts)) {
-      for (const bout of json.bouts) {
-        original[bout.id] = {
-          winnerId: bout.resultWinnerId ?? null,
-          type: bout.resultType ?? null,
-          score: bout.resultScore ?? null,
-        };
-      }
+    const original: Record<string, ResultSnapshot | undefined> = {};
+    for (const bout of nextBouts) {
+      original[bout.id] = snapshotForBout(bout);
     }
     originalResultsRef.current = original;
+  }
+
+  function handleSaveError(message: string) {
+    setMsg(message);
+  }
+
+  function handleRowSubmitKey(
+    event: React.KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
+    boutId: string,
+    index: number,
+  ) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void saveResult(boutId);
+    focusNextRow(index);
+  }
+
+  function handleAdvanceFieldKey(
+    event: React.KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
+  ) {
+    if (event.key !== " ") return;
+    event.preventDefault();
+    focusNextResultField(event.currentTarget);
+  }
+
+  function focusNextResultField(currentField: HTMLSelectElement | HTMLInputElement) {
+    const fields = Array.from(
+      document.querySelectorAll<HTMLSelectElement | HTMLInputElement>("[data-result-nav='true']:not(:disabled)"),
+    );
+    const currentIndex = fields.indexOf(currentField);
+    if (currentIndex < 0) return;
+    fields.at(currentIndex + 1)?.focus();
+  }
+
+  function handleWinnerFieldKey(
+    event: React.KeyboardEvent<HTMLSelectElement>,
+    boutId: string,
+    currentWinnerId: string | null,
+    wrestlers: Array<{ id: string; first: string; last: string }>,
+  ) {
+    if (event.key.length !== 1 || !/[a-z]/i.test(event.key)) return;
+    const letter = event.key.toUpperCase();
+    const matches = wrestlers.filter((wrestler) => (
+      wrestler.first.toUpperCase().startsWith(letter)
+      || wrestler.last.toUpperCase().startsWith(letter)
+    ));
+    if (matches.length === 0) return;
+    event.preventDefault();
+    const currentIndex = currentWinnerId ? matches.findIndex((wrestler) => wrestler.id === currentWinnerId) : -1;
+    const nextWinner = matches[(currentIndex + 1 + matches.length) % matches.length];
+    updateWinnerSelection(boutId, nextWinner.id);
+  }
+
+  function handleTypeFieldKey(
+    event: React.KeyboardEvent<HTMLSelectElement>,
+    boutId: string,
+    currentType: ResultType | null,
+  ) {
+    if (event.key.length !== 1 || !/[a-z]/i.test(event.key)) return;
+    const letter = event.key.toUpperCase();
+    const matches = TYPE_OPTIONS.filter((option) => option.label.toUpperCase().startsWith(letter));
+    if (matches.length === 0) return;
+    event.preventDefault();
+    const currentIndex = currentType ? matches.findIndex((option) => option.value === currentType) : -1;
+    const nextType = matches[(currentIndex + 1 + matches.length) % matches.length];
+    pendingTypeAdvanceBoutIdRef.current = boutId;
+    updateTypeSelection(boutId, nextType.value);
   }
 
   async function saveResult(boutId: string) {
     const bout = boutsRef.current.find((row) => row.id === boutId);
     if (!bout) return;
+    const nextSnapshot = snapshotForBout(bout);
     const original = originalResultsRef.current[bout.id];
-    const winnerId = bout.resultWinnerId ?? null;
-    const type = bout.resultType?.trim() ?? null;
-    const score = bout.resultScore?.trim() ?? null;
-    if (
-      original?.winnerId === winnerId &&
-      original.type === type &&
-      original.score === score
-    ) {
+    if (sameSnapshot(original, nextSnapshot)) {
+      return;
+    }
+    const validated = validateBoutResult(nextSnapshot);
+    if (!validated.ok) {
       return;
     }
     try {
       const res = await fetch(`/api/bouts/${bout.id}/result`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            winnerId,
-            type,
-            score,
-            period: bout.resultPeriod ?? null,
-            time: bout.resultTime?.trim() ?? null,
-            notes: bout.resultNotes?.trim() ?? null,
-          }),
+        body: JSON.stringify({
+          winnerId: validated.value.winnerId,
+          type: validated.value.type,
+          score: validated.value.score,
+          period: bout.resultPeriod ?? null,
+          time: validated.value.time,
+          notes: validated.value.notes,
+        }),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        setMsg(json?.error ?? "Unable to save result.");
+        handleSaveError(json?.error ?? "Unable to save result.");
         return;
       }
       const json = await res.json();
-      updateBout(bout.id, {
+      const patch = normalizeBoutRow({
+        ...bout,
         resultWinnerId: json.resultWinnerId ?? null,
         resultType: json.resultType ?? null,
         resultScore: json.resultScore ?? null,
@@ -144,11 +443,8 @@ export default function EnterResultsPage() {
         resultNotes: json.resultNotes ?? null,
         resultAt: json.resultAt ?? null,
       });
-      originalResultsRef.current[bout.id] = {
-        winnerId: json.resultWinnerId ?? null,
-        type: json.resultType ?? null,
-        score: json.resultScore ?? null,
-      };
+      updateBout(bout.id, patch);
+      originalResultsRef.current[bout.id] = snapshotForBout({ ...bout, ...patch });
       setMsg("");
     } finally {
       // no-op
@@ -188,6 +484,17 @@ export default function EnterResultsPage() {
       cancelled = true;
     };
   }, [meetId]);
+
+  useEffect(() => {
+    const pendingBoutId = pendingTypeAdvanceBoutIdRef.current;
+    if (!pendingBoutId) return;
+    const nextField = document.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-bout-id="${pendingBoutId}"][data-detail-first="true"]:not(:disabled)`,
+    );
+    if (!nextField) return;
+    pendingTypeAdvanceBoutIdRef.current = null;
+    nextField.focus();
+  }, [bouts]);
 
   const meetNameDisplay = meet?.name ?? "Meet";
 
@@ -429,6 +736,71 @@ export default function EnterResultsPage() {
           font-size: 14px;
           font-weight: 600;
         }
+        .details-cell {
+          min-width: 270px;
+        }
+        .details-group {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          flex: 1;
+          min-width: 0;
+        }
+        .details-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-width: 0;
+        }
+        .details-group label {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--muted);
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+        }
+        .score-mini {
+          width: 56px;
+          text-align: center;
+          font-weight: 700;
+        }
+        .time-mini {
+          width: 72px;
+          text-align: center;
+          font-weight: 700;
+        }
+        .comment-input {
+          min-width: 220px;
+        }
+        .field-invalid {
+          border-color: #c62828;
+          background: #fff2f2;
+        }
+        .details-hint {
+          color: var(--muted);
+          font-size: 12px;
+          line-height: 1.3;
+          padding-top: 6px;
+        }
+        .saved-badge {
+          display: inline-flex;
+          align-items: center;
+          border: 1px solid #9cc9a7;
+          background: #edf8f0;
+          color: #23633a;
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          white-space: nowrap;
+        }
         .wrestler {
           display: inline-flex;
           align-items: center;
@@ -570,7 +942,7 @@ export default function EnterResultsPage() {
               <th className="name-col">Wrestlers</th>
               <th>Winner</th>
               <th>Type</th>
-              <th>Score</th>
+              <th>Details</th>
             </tr>
           </thead>
           <tbody>
@@ -587,6 +959,11 @@ export default function EnterResultsPage() {
               const secondTeamLabel = second.team.symbol ?? second.team.name;
               const firstOptionColor = matTextColor(first.team.color);
               const secondOptionColor = matTextColor(second.team.color);
+              const resultType = normalizeResultType(b.resultType);
+              const validationState = getRowValidationState(b);
+              const currentSnapshot = snapshotForBout(b);
+              const savedSnapshot = originalResultsRef.current[b.id];
+              const showSavedBadge = hasSnapshotValue(savedSnapshot) && sameSnapshot(savedSnapshot, currentSnapshot);
               const winnerColor = b.resultWinnerId === b.red.id
                 ? matTextColor(b.red.team.color)
                 : b.resultWinnerId === b.green.id
@@ -614,13 +991,16 @@ export default function EnterResultsPage() {
                   <td className="winner-col">
                     <select
                       className="first-field"
+                      data-result-nav="true"
                       value={b.resultWinnerId ?? ""}
-                      onChange={(e) => updateBout(b.id, { resultWinnerId: e.target.value || null })}
+                      onChange={(e) => updateWinnerSelection(b.id, e.target.value || null)}
                       onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        void saveResult(b.id);
-                        focusNextRow(index);
+                        handleWinnerFieldKey(e, b.id, b.resultWinnerId ?? null, [
+                          { id: first.id, first: first.first, last: first.last },
+                          { id: second.id, first: second.first, last: second.last },
+                        ]);
+                        handleAdvanceFieldKey(e);
+                        handleRowSubmitKey(e, b.id, index);
                       }}
                       disabled={!canEdit}
                       style={{ color: winnerColor }}
@@ -635,35 +1015,131 @@ export default function EnterResultsPage() {
                     </select>
                   </td>
                   <td className="type-col">
-                    <select
-                      value={b.resultType ?? ""}
-                      onChange={(e) => updateBout(b.id, { resultType: e.target.value || null })}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        void saveResult(b.id);
-                        focusNextRow(index);
-                      }}
-                      disabled={!canEdit}
-                    >
-                      <option value="">-</option>
-                      {RESULT_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                    {b.resultWinnerId ? (
+                      <select
+                        data-result-nav="true"
+                        value={resultType ?? ""}
+                        onChange={(e) => updateTypeSelection(b.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          handleTypeFieldKey(e, b.id, resultType);
+                          handleAdvanceFieldKey(e);
+                          handleRowSubmitKey(e, b.id, index);
+                        }}
+                        disabled={!canEdit}
+                      >
+                        <option value="">Select type</option>
+                        {TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    ) : null}
                   </td>
-                  <td className="score-col">
-                    <input
-                      value={b.resultScore ?? ""}
-                      onChange={(e) => updateBout(b.id, { resultScore: e.target.value })}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        void saveResult(b.id);
-                        focusNextRow(index);
-                      }}
-                      disabled={!canEdit}
-                    />
+                  <td className="score-col details-cell">
+                    {!resultType ? null : (
+                      <div className="details-row">
+                        {(resultType === "DEC" || resultType === "MAJ" || resultType === "TF") && (
+                          <div className="details-group">
+                            <label>
+                              W
+                              <input
+                                data-bout-id={b.id}
+                                data-detail-first="true"
+                                data-result-nav="true"
+                                className={`score-mini${validationState.winnerScoreInvalid ? " field-invalid" : ""}`}
+                                inputMode="numeric"
+                                aria-invalid={validationState.winnerScoreInvalid}
+                                value={b.resultWinnerScoreInput}
+                                onChange={(e) => updateScoreInput(b.id, "winner", e.target.value)}
+                                onKeyDown={(e) => {
+                                  handleAdvanceFieldKey(e);
+                                  handleRowSubmitKey(e, b.id, index);
+                                }}
+                                disabled={!canEdit}
+                              />
+                            </label>
+                            <label>
+                              L
+                              <input
+                                data-result-nav="true"
+                                className={`score-mini${validationState.loserScoreInvalid ? " field-invalid" : ""}`}
+                                inputMode="numeric"
+                                aria-invalid={validationState.loserScoreInvalid}
+                                value={b.resultLoserScoreInput}
+                                onChange={(e) => updateScoreInput(b.id, "loser", e.target.value)}
+                                onKeyDown={(e) => {
+                                  handleAdvanceFieldKey(e);
+                                  handleRowSubmitKey(e, b.id, index);
+                                }}
+                                disabled={!canEdit}
+                              />
+                            </label>
+                            {resultType === "TF" && (
+                              <label>
+                                Time
+                                <input
+                                  data-bout-id={b.id}
+                                  data-detail-first="true"
+                                  data-result-nav="true"
+                                  className={`time-mini${validationState.timeInvalid ? " field-invalid" : ""}`}
+                                  inputMode="numeric"
+                                  aria-invalid={validationState.timeInvalid}
+                                  placeholder="x:xx"
+                                  value={b.resultTime ?? ""}
+                                  onChange={(e) => updateTimeInput(b.id, e.target.value)}
+                                  onKeyDown={(e) => {
+                                    handleAdvanceFieldKey(e);
+                                    handleRowSubmitKey(e, b.id, index);
+                                  }}
+                                  disabled={!canEdit}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        )}
+                        {resultType === "FALL" && (
+                          <div className="details-group">
+                            <label>
+                              Time
+                              <input
+                                data-bout-id={b.id}
+                                data-detail-first="true"
+                                data-result-nav="true"
+                                className={`time-mini${validationState.timeInvalid ? " field-invalid" : ""}`}
+                                inputMode="numeric"
+                                aria-invalid={validationState.timeInvalid}
+                                placeholder="x:xx"
+                                value={b.resultTime ?? ""}
+                                onChange={(e) => updateTimeInput(b.id, e.target.value)}
+                                onKeyDown={(e) => {
+                                  handleAdvanceFieldKey(e);
+                                  handleRowSubmitKey(e, b.id, index);
+                                }}
+                                disabled={!canEdit}
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {(resultType === "DQ" || resultType === "FOR") && (
+                          <div className="details-group">
+                            <label style={{ flex: 1 }}>
+                              Comment
+                              <input
+                                data-bout-id={b.id}
+                                data-detail-first="true"
+                                className={`comment-input${validationState.notesInvalid ? " field-invalid" : ""}`}
+                                aria-invalid={validationState.notesInvalid}
+                                placeholder={resultType === "DQ" ? "Reason for DQ" : "Reason for no match"}
+                                value={b.resultNotes ?? ""}
+                                onChange={(e) => updateNotesInput(b.id, e.target.value)}
+                                onKeyDown={(e) => handleRowSubmitKey(e, b.id, index)}
+                                disabled={!canEdit}
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {showSavedBadge && <span className="saved-badge">Saved</span>}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAnyRole } from "@/lib/rbac";
+import { validateBoutResult } from "@/lib/resultEntry";
 
 const BodySchema = z.object({
   winnerId: z.string().nullable().optional(), // null to clear
@@ -64,6 +65,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     }
   }
 
+  const validated = validateBoutResult({
+    winnerId: body.winnerId,
+    type: body.type,
+    score: body.score,
+    time: body.time,
+    notes: body.notes,
+  });
+  if (!validated.ok) {
+    return NextResponse.json({ error: validated.error }, { status: 400 });
+  }
+
   const data: {
     resultWinnerId?: string | null;
     resultType?: string | null;
@@ -74,12 +86,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     resultAt: Date;
   } = { resultAt: new Date() };
 
-  if (winnerId !== undefined) data.resultWinnerId = winnerId;
-  if (body.type !== undefined) data.resultType = body.type;
-  if (body.score !== undefined) data.resultScore = body.score;
+  data.resultWinnerId = validated.value.winnerId;
+  data.resultType = validated.value.type;
+  data.resultScore = validated.value.score;
   if (body.period !== undefined) data.resultPeriod = body.period;
-  if (body.time !== undefined) data.resultTime = body.time;
-  if (body.notes !== undefined) data.resultNotes = body.notes;
+  data.resultTime = validated.value.time;
+  data.resultNotes = validated.value.notes;
 
   const updated = await db.bout.update({
     where: { id: boutId },
