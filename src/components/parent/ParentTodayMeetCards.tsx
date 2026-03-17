@@ -100,22 +100,18 @@ export default function ParentTodayMeetCards({
       ))
       .sort((a, b) => a.meet.date.localeCompare(b.meet.date))
       .map((group) => {
-        const meetPhase = normalizeMeetPhase(group.meet.status);
         const wrestlerMatches = group.children
           .map((child) => ({
             child,
             matches: group.matches.filter((match) => match.childId === child.childId),
-          }))
-          .filter((entry) => meetPhase === "READY_FOR_CHECKIN" || entry.matches.length > 0);
+          }));
         return {
           ...group,
           wrestlerMatches,
         };
       })
       .filter((group) => {
-        const meetPhase = normalizeMeetPhase(group.meet.status);
-        if (meetPhase === "READY_FOR_CHECKIN") return group.wrestlerMatches.length > 0;
-        return group.wrestlerMatches.some((entry) => entry.matches.length > 0);
+        return group.wrestlerMatches.length > 0;
       });
   }, [meetGroups]);
 
@@ -188,12 +184,13 @@ export default function ParentTodayMeetCards({
           </div>
         ) : (
           <div className="today-meet-label">
-            Bouts for {parentDisplayName}'s {group.wrestlerMatches.length === 1 ? "wrestler" : "wrestlers"}:
+            {meetPhase === "PUBLISHED" ? "Bouts and status" : "Bouts"} for {parentDisplayName}'s {group.wrestlerMatches.length === 1 ? "wrestler" : "wrestlers"}:
           </div>
         )}
         <div className="today-wrestler-list">
           {group.wrestlerMatches.map(({ child, matches }) => {
             const attendanceStatus = child.attendanceStatus ?? null;
+            const showPublishedStatus = meetPhase === "PUBLISHED" && matches.length === 0;
             const isScratchedAfterCheckin =
               child.teamCheckinCompleted === true &&
               attendanceStatus === "ABSENT";
@@ -220,7 +217,7 @@ export default function ParentTodayMeetCards({
                     {child.first} {child.last}
                     {child.teamSymbol ? ` (${child.teamSymbol})` : child.teamName ? ` (${child.teamName})` : ""}
                   </div>
-                  {showCheckinMessage && (
+                  {(showCheckinMessage || showPublishedStatus) && (
                     <span className={`today-attendance-badge ${checkinBadge.className}`}>
                       {checkinBadge.label}
                     </span>
@@ -231,7 +228,7 @@ export default function ParentTodayMeetCards({
                     If your wrestler is really at the gym, find a coach right away.
                   </div>
                 )}
-                {!showCheckinMessage && (
+                {!showCheckinMessage && matches.length > 0 && (
                   <div className="today-bouts">
                     <div className="today-bouts-card">
                       {matches.map((match) => (
@@ -250,6 +247,9 @@ export default function ParentTodayMeetCards({
                       ))}
                     </div>
                   </div>
+                )}
+                {showPublishedStatus && (
+                  <div className="today-meta">No bout assigned for this wrestler.</div>
                 )}
               </article>
             );
