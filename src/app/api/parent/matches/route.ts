@@ -67,6 +67,7 @@ export async function GET() {
         : null,
       children: [],
       meets: [],
+      pastMatches: [],
     });
   }
 
@@ -189,6 +190,9 @@ export async function GET() {
       teamCheckinCompleted: boolean;
     }>;
   }>();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const pastMatches: Array<Record<string, unknown>> = [];
 
   for (const meet of teamMeets) {
     const linkedChildren = children
@@ -216,7 +220,7 @@ export async function GET() {
     if (childIds.includes(b.redId)) {
       const opp = wMap.get(b.greenId);
       const { opponentTeam, opponentTeamColor } = formatOpponent(opp);
-      meetMap.get(meet.id)!.matches.push({
+      const match = {
         boutId: b.id,
         childId: b.redId,
         corner: "red",
@@ -233,12 +237,20 @@ export async function GET() {
           period: b.resultPeriod ?? null,
           time: b.resultTime ?? null,
         },
-      });
+      };
+      meetMap.get(meet.id)!.matches.push(match);
+      if (meet.date < today) {
+        pastMatches.push({
+          ...match,
+          meetName: meet.name ?? "Meet",
+          meetDate: meet.date,
+        });
+      }
     }
     if (childIds.includes(b.greenId)) {
       const opp = wMap.get(b.redId);
       const { opponentTeam, opponentTeamColor } = formatOpponent(opp);
-      meetMap.get(meet.id)!.matches.push({
+      const match = {
         boutId: b.id,
         childId: b.greenId,
         corner: "green",
@@ -255,7 +267,15 @@ export async function GET() {
           period: b.resultPeriod ?? null,
           time: b.resultTime ?? null,
         },
-      });
+      };
+      meetMap.get(meet.id)!.matches.push(match);
+      if (meet.date < today) {
+        pastMatches.push({
+          ...match,
+          meetName: meet.name ?? "Meet",
+          meetDate: meet.date,
+        });
+      }
     }
   }
 
@@ -315,5 +335,6 @@ export async function GET() {
             };
           }),
     })),
+    pastMatches,
   });
 }

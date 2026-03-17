@@ -367,13 +367,11 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
       `}</style>
       <div className={`attendance-shell${embedded ? " embedded" : ""}`}>
         {embedded ? (
+          loaded && meets.length === 0 && !msg ? null : (
           <>
             <h2 className="attendance-panel-title">Upcoming Meets</h2>
             {msg && <div className={`page-message ${msgStatus ?? "error"}`}>{msg}</div>}
             {!loaded && <div>Loading...</div>}
-            {loaded && meets.length === 0 && !msg && (
-              <div>No upcoming meets.</div>
-            )}
             {meets.length > 0 && (
               <section className="meet-grid">
                 {meets.map((meet) => {
@@ -524,6 +522,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
               </section>
             )}
           </>
+          )
         ) : (
           <>
             {msg && <div className={`page-message ${msgStatus ?? "error"}`}>{msg}</div>}

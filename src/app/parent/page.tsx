@@ -158,6 +158,7 @@ const lastNameSimilarity = (a: string, b: string) => {
 export default function ParentPage() {
   const [children, setChildren] = useState<Child[]>([]);
   const [meetGroups, setMeetGroups] = useState<MeetGroup[]>([]);
+  const [pastMatches, setPastMatches] = useState<MatchWithMeet[]>([]);
   const [currentUser, setCurrentUser] = useState<ParentTodayCurrentUser | null>(null);
   const [teamWrestlers, setTeamWrestlers] = useState<TeamWrestler[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -179,6 +180,7 @@ export default function ParentPage() {
     setCurrentUser(matchesRes.ok ? matchesJson?.currentUser ?? null : null);
     setChildren(matchesJson?.children ?? []);
     setMeetGroups(matchesJson?.meets ?? []);
+    setPastMatches(Array.isArray(matchesJson?.pastMatches) ? matchesJson.pastMatches : []);
     setTeamWrestlers(teamWrestlersRes.ok && Array.isArray(teamWrestlersJson) ? teamWrestlersJson : []);
   }
 
@@ -282,27 +284,16 @@ export default function ParentPage() {
   }, [children]);
   const pastMatchesByChild = useMemo(() => {
     const map = new Map<string, MatchWithMeet[]>();
-    const childSet = new Set(children.map(c => c.id));
-    for (const group of meetGroups) {
-      const meetDate = new Date(group.meet.date);
-      if (meetDate >= today) continue;
-      for (const match of group.matches) {
-        if (!childSet.has(match.childId)) continue;
-        const entry: MatchWithMeet = {
-          ...match,
-          meetName: group.meet.name || "Meet",
-          meetDate: group.meet.date,
-        };
-        const list = map.get(match.childId) ?? [];
-        list.push(entry);
-        map.set(match.childId, list);
-      }
+    for (const match of pastMatches) {
+      const list = map.get(match.childId) ?? [];
+      list.push(match);
+      map.set(match.childId, list);
     }
     for (const list of map.values()) {
       list.sort((a, b) => new Date(a.meetDate).getTime() - new Date(b.meetDate).getTime());
     }
     return map;
-  }, [children, meetGroups, today]);
+  }, [pastMatches]);
 
   const dashboardTitle = profile?.name ? `${profile.name}'s Wrestlers` : "My Wrestlers";
   const pickerSuggestedWrestlerIds = useMemo(() => getLikelyWrestlerIds(), [teamWrestlers, profile?.name]);
