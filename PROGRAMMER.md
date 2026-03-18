@@ -43,9 +43,11 @@ API:
 
 Meet notifications are routed through `src/lib/notifications.ts`.
 
-- `NOTIFICATIONS_TRANSPORT=log` writes outbound notifications to `NotificationLog` without calling SendGrid. Use this for local development.
-- `NOTIFICATIONS_TRANSPORT=live` sends through SendGrid email delivery, then records the provider result in `NotificationLog`.
-- `NOTIFICATIONS_TRANSPORT=off` disables meet notifications.
+- App email delivery is controlled from `Admin > Notifications` for all app emails, including meet notifications, welcome emails, and password reset emails.
+- `Log` writes outbound email records to `NotificationLog` without calling SendGrid.
+- `Whitelist` sends only to whitelisted addresses and skips the rest.
+- `Everyone` sends to all recipients.
+- `None` disables app email delivery.
 
 Current event coverage:
 - `meet_ready_for_attendance` fires when a meet is created in the `ATTENDANCE` phase.
@@ -54,4 +56,4 @@ Current event coverage:
 
 Testing:
 - Unit tests: `npx vitest run src/lib/notifications.test.ts`
-- Local manual test: create a meet with `NOTIFICATIONS_TRANSPORT=log`, then inspect the `NotificationLog` table.
+- Local manual test: set app email delivery to `Log` in `Admin > Notifications`, then create a meet and inspect the `NotificationLog` table.

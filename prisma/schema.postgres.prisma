@@ -54,6 +54,10 @@ model League {
   website  String?
   logoData Bytes?
   logoType String?
+  welcomeEmailMessage String?
+  welcomeEmailSubjectTemplate String?
+  welcomeEmailBodyTemplate String?
+  welcomeEmailTransport String @default("all")
   emailDeliveryMode String @default("off")
   emailWhitelist String?
   allowParentSelfSignup Boolean @default(false)

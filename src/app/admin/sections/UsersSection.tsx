@@ -427,9 +427,9 @@ export default function UsersSection() {
         teams={teams}
         defaultTeamId={teamFilter.trim()}
         onClose={() => setCreateUserModalOpen(false)}
-        onCreated={async () => {
-          setMsg("");
+        onCreated={async (createdUser) => {
           await load();
+          setMsg(createdUser.welcomeEmailNote ?? "User created.");
         }}
       />
 

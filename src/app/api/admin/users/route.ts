@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
-import { sendWelcomeEmail } from "@/lib/welcomeEmail";
+import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const UserRoleSchema = z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]);
 
@@ -168,23 +168,36 @@ export async function POST(req: Request) {
     },
     select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
   });
+  let welcomeEmailStatus: "not_applicable" | "sent" | "skipped" | "logged" | "failed" = "not_applicable";
+  let welcomeEmailNote: string | null = email
+    ? null
+    : "User created without an email address. No welcome email was sent.";
   if (email) {
     try {
       const team = body.teamId
         ? await db.team.findUnique({ where: { id: body.teamId }, select: { name: true, symbol: true } })
         : null;
-      await sendWelcomeEmail({
+      const welcomeResult = await sendWelcomeEmail({
         request: req,
         email,
         username: user.username,
+        userId: user.id,
         tempPassword,
+        teamId: body.teamId ?? null,
+        teamName: team?.name ?? null,
         teamLabel: team ? `${team.name} (${team.symbol})`.trim() : null,
       });
-    } catch {
-      if (process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "User created, but the welcome email could not be sent." }, { status: 201 });
-      }
+      welcomeEmailStatus = welcomeResult.status;
+      welcomeEmailNote = describeWelcomeEmailResult(welcomeResult);
+    } catch (error) {
+      console.error("Failed to send admin-created welcome email", error);
+      welcomeEmailStatus = "failed";
+      welcomeEmailNote = "Welcome email could not be sent.";
     }
   }
-  return NextResponse.json(user);
+  return NextResponse.json({
+    ...user,
+    welcomeEmailStatus,
+    welcomeEmailNote,
+  });
 }

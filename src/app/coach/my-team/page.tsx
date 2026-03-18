@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import * as XLSX from "xlsx";
 
 import AppHeader from "@/components/AppHeader";
@@ -1370,6 +1370,17 @@ export default function CoachMyTeamPage() {
     setRolesMessageStatus(null);
     const query = role === "ADMIN" ? `?teamId=${encodeURIComponent(teamId)}` : "";
     try {
+      const provisionalMember: TeamMember = {
+        id: "",
+        username: newUserUsername.trim().toLowerCase(),
+        email: newUserEmail.trim(),
+        phone: newUserPhone.trim() || null,
+        name: `${newUserFirstName.trim()} ${newUserLastName.trim()}`.trim(),
+        role: newUserRole,
+        matNumber: null,
+        wrestlerIds: [],
+      };
+      const likelyWrestlerIds = newUserRole === "PARENT" ? getLikelyWrestlerIds(provisionalMember) : [];
       const res = await fetch(`/api/coach/parents${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1381,6 +1392,7 @@ export default function CoachMyTeamPage() {
           phone: newUserPhone,
           password: newUserPassword,
           role: newUserRole,
+          wrestlerIds: likelyWrestlerIds,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -1399,31 +1411,11 @@ export default function CoachMyTeamPage() {
       setNewUserEmail("");
       setNewUserPhone("");
       setNewUserRole("PARENT");
-      const created = data?.created;
-      if (created && typeof created.id === "string") {
-        const createdMember: TeamMember = {
-          id: created.id,
-          username: typeof created.username === "string" ? created.username : newUserUsername.trim().toLowerCase(),
-          email: typeof created.email === "string" ? created.email : "",
-          phone: typeof created.phone === "string" ? created.phone : null,
-          name: typeof created.name === "string" ? created.name : `${newUserFirstName.trim()} ${newUserLastName.trim()}`,
-          role: created.role === "COACH" || created.role === "TABLE_WORKER" || created.role === "PARENT"
-            ? created.role
-            : newUserRole,
-          matNumber: typeof created.matNumber === "number" ? created.matNumber : null,
-          wrestlerIds: [],
-        };
-        const likelyWrestlerIds = getLikelyWrestlerIds(createdMember);
-        if (likelyWrestlerIds.length > 0) {
-          await saveStaffAssignments(
-            createdMember.id,
-            createdMember.matNumber,
-            likelyWrestlerIds,
-          );
-        }
-      }
       await loadTeamRoles(teamId);
-      setRolesMessage("Team user created. Password reset required at first sign-in.");
+      const welcomeNote = typeof data?.welcomeEmailNote === "string" ? data.welcomeEmailNote.trim() : "";
+      setRolesMessage(welcomeNote
+        ? `Team user created. Password reset required at first sign-in. ${welcomeNote}`
+        : "Team user created. Password reset required at first sign-in.");
       setRolesMessageStatus("success");
     } catch (error) {
       console.error("Create team user failed", error);
@@ -1736,23 +1728,42 @@ export default function CoachMyTeamPage() {
       && importUsersRows.length > 0
   );
 
-  const wrestlerById = new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler]));
-  const attendanceResponderWrestlerIds = new Set(
-    [...parents, ...staff].flatMap((member) => member.wrestlerIds),
+  const wrestlerById = useMemo(
+    () => new Map(teamWrestlers.map((wrestler) => [wrestler.id, wrestler])),
+    [teamWrestlers],
   );
-  const wrestlersWithoutParent = teamWrestlers.filter((wrestler) => !attendanceResponderWrestlerIds.has(wrestler.id));
+  const attendanceResponderWrestlerIds = useMemo(
+    () => new Set([...parents, ...staff].flatMap((member) => member.wrestlerIds)),
+    [parents, staff],
+  );
+  const wrestlersWithoutParent = useMemo(
+    () => teamWrestlers.filter((wrestler) => !attendanceResponderWrestlerIds.has(wrestler.id)),
+    [attendanceResponderWrestlerIds, teamWrestlers],
+  );
   const showRolesLoading = !rolesLoaded || rolesLoading;
   const rolesFilterQuery = rolesFilter.trim();
-  const sortedRolesMembers = sortStaff([...staff, ...parents], headCoachId);
-  const filteredRolesMembers = rolesFilterQuery.length > 0
-    ? sortedRolesMembers.filter((member) => memberMatchesFuzzyQuery(member, rolesFilterQuery))
-    : sortedRolesMembers;
-  const pickerMember = wrestlerPickerMemberId
-    ? staff.find((member) => member.id === wrestlerPickerMemberId)
-      ?? parents.find((member) => member.id === wrestlerPickerMemberId)
-      ?? null
-    : null;
-  const pickerSuggestedWrestlerIds = pickerMember ? getLikelyWrestlerIds(pickerMember) : [];
+  const sortedRolesMembers = useMemo(
+    () => sortStaff([...staff, ...parents], headCoachId),
+    [headCoachId, parents, staff],
+  );
+  const filteredRolesMembers = useMemo(
+    () => (rolesFilterQuery.length > 0
+      ? sortedRolesMembers.filter((member) => memberMatchesFuzzyQuery(member, rolesFilterQuery))
+      : sortedRolesMembers),
+    [rolesFilterQuery, sortedRolesMembers],
+  );
+  const pickerMember = useMemo(
+    () => (wrestlerPickerMemberId
+      ? staff.find((member) => member.id === wrestlerPickerMemberId)
+        ?? parents.find((member) => member.id === wrestlerPickerMemberId)
+        ?? null
+      : null),
+    [parents, staff, wrestlerPickerMemberId],
+  );
+  const pickerSuggestedWrestlerIds = useMemo(
+    () => (pickerMember ? getLikelyWrestlerIds(pickerMember) : []),
+    [pickerMember, teamWrestlers],
+  );
   const rolesMessageIsError = rolesMessageStatus === "error";
   const importUsersMessageIsError = importUsersMessageStatus === "error";
   const formatAssignedWrestlers = (member: TeamMember, wrestlerIds: string[]) => {
@@ -1773,7 +1784,7 @@ export default function CoachMyTeamPage() {
     if (names.length === 0) return `${wrestlerIds.length} selected`;
     return names.join(", ");
   };
-  const renderRolesTableRows = () => {
+  const rolesTableRows = useMemo(() => {
     if (showRolesLoading) {
       return (
         <tr>
@@ -1932,7 +1943,28 @@ export default function CoachMyTeamPage() {
         </tr>
       );
     });
-  };
+  }, [
+    canDeleteTeamUsers,
+    canEditRoles,
+    currentUserId,
+    deletingMember,
+    filteredRolesMembers,
+    headCoachId,
+    matListboxDirection,
+    matListboxMemberId,
+    matListboxPosition.left,
+    matListboxPosition.top,
+    matListboxPosition.width,
+    numMats,
+    rolesLoading,
+    rolesLoaded,
+    savingAssignments,
+    savingParent,
+    staff,
+    parents,
+    teamWrestlers,
+    wrestlerById,
+  ]);
 
   return (
     <main className="coach">
@@ -2431,7 +2463,7 @@ export default function CoachMyTeamPage() {
                   <col style={{ width: 108 }} />
                 </colgroup>
                 <tbody>
-                  {renderRolesTableRows()}
+                  {rolesTableRows}
                 </tbody>
               </table>
             </div>
@@ -2555,7 +2587,7 @@ export default function CoachMyTeamPage() {
                 />
                 <button
                   type="button"
-                  className="coach-btn-secondary coach-picker-btn"
+                  className="coach-btn-secondary coach-picker-btn coach-create-user-generate-btn"
                   onClick={generateTempPassword}
                   disabled={creatingUser}
                 >
@@ -3885,6 +3917,12 @@ const coachStyles = `
     font-size: 11px;
     line-height: 1.1;
     white-space: nowrap;
+  }
+  .coach-btn-secondary.coach-create-user-generate-btn {
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.2;
+    min-height: 40px;
   }
   .coach-btn-secondary.coach-delete-user-btn {
     padding: 2px 6px;

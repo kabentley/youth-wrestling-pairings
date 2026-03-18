@@ -1,0 +1,2 @@
+ALTER TABLE "League"
+ADD COLUMN IF NOT EXISTS "welcomeEmailTransport" TEXT NOT NULL DEFAULT 'live';

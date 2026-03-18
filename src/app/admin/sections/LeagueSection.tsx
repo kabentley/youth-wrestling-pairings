@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import ColorPicker from "@/components/ColorPicker";
 import { adjustTeamTextColor } from "@/lib/contrastText";
+import { formatTeamName } from "@/lib/formatTeamName";
 
 type TeamRow = {
   id: string;
@@ -46,6 +47,25 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [leagueHasLogo, setLeagueHasLogo] = useState(false);
   const [leagueWebsite, setLeagueWebsite] = useState("");
   const [savedLeagueWebsite, setSavedLeagueWebsite] = useState("");
+  const [welcomeEmailPreviewTeamId, setWelcomeEmailPreviewTeamId] = useState("");
+  const [welcomeEmailPreviewOpen, setWelcomeEmailPreviewOpen] = useState(false);
+  const [welcomeEmailPreviewLoading, setWelcomeEmailPreviewLoading] = useState(false);
+  const [welcomeEmailPreviewError, setWelcomeEmailPreviewError] = useState("");
+  const [welcomeEmailPreviewSubject, setWelcomeEmailPreviewSubject] = useState("");
+  const [welcomeEmailPreviewText, setWelcomeEmailPreviewText] = useState("");
+  const [welcomeEmailPreviewSample, setWelcomeEmailPreviewSample] = useState<{
+    leagueName: string;
+    email: string;
+    username: string;
+    temporaryPassword: string;
+    signInUrl: string;
+    myWrestlersUrl: string;
+    coachName: string;
+    coachEmail: string;
+    teamLabel: string;
+    linkedWrestlerNames: string[];
+    passwordInstructions: string;
+  } | null>(null);
   const [ageAllowancePctPerYear, setAgeAllowancePctPerYear] = useState(0.5);
   const [savedAgeAllowancePctPerYear, setSavedAgeAllowancePctPerYear] = useState(0.5);
   const [experienceAllowancePctPerYear, setExperienceAllowancePctPerYear] = useState(0.25);
@@ -365,6 +385,38 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
     setSavedLeagueWebsite(nextWebsite);
   }
 
+  async function openWelcomeEmailPreview() {
+    setWelcomeEmailPreviewLoading(true);
+    setWelcomeEmailPreviewError("");
+    try {
+      const res = await fetch("/api/admin/welcome-email-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: welcomeEmailPreviewTeamId,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setWelcomeEmailPreviewError(typeof data?.error === "string" ? data.error : "Unable to build welcome email preview.");
+        return;
+      }
+      setWelcomeEmailPreviewSubject(typeof data?.subject === "string" ? data.subject : "");
+      setWelcomeEmailPreviewText(typeof data?.text === "string" ? data.text : "");
+      setWelcomeEmailPreviewSample(data?.sampleData ?? null);
+      setWelcomeEmailPreviewOpen(true);
+    } catch {
+      setWelcomeEmailPreviewError("Unable to build welcome email preview.");
+    } finally {
+      setWelcomeEmailPreviewLoading(false);
+    }
+  }
+
+  function closeWelcomeEmailPreview() {
+    setWelcomeEmailPreviewOpen(false);
+    setWelcomeEmailPreviewError("");
+  }
+
   async function savePairingsSettings(
     nextAgeAllowance = ageAllowancePctPerYear,
     nextExperienceAllowance = experienceAllowancePctPerYear,
@@ -542,7 +594,9 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   }, [showResetModal, isResetting]);
 
   const editingTeam = editingTeamId ? teams.find((team) => team.id === editingTeamId) ?? null : null;
-  const leagueIdentityDirty = leagueName !== savedLeagueName || leagueWebsite !== savedLeagueWebsite;
+  const leagueIdentityDirty =
+    leagueName !== savedLeagueName ||
+    leagueWebsite !== savedLeagueWebsite;
   const pairingsSettingsDirty =
     ageAllowancePctPerYear !== savedAgeAllowancePctPerYear ||
     experienceAllowancePctPerYear !== savedExperienceAllowancePctPerYear ||
@@ -569,7 +623,11 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       name: leagueName,
       website: leagueWebsite,
     };
-  }, [leagueIdentityDirty, leagueName, leagueWebsite]);
+  }, [
+    leagueIdentityDirty,
+    leagueName,
+    leagueWebsite,
+  ]);
 
   useEffect(() => {
     latestPairingsRef.current = {
@@ -617,7 +675,12 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
       window.removeEventListener("blur", flushLeagueIdentitySave);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [view, leagueIdentityDirty, leagueName, leagueWebsite]);
+  }, [
+    view,
+    leagueIdentityDirty,
+    leagueName,
+    leagueWebsite,
+  ]);
 
   useEffect(() => {
     if (view !== "pairings") return;
@@ -733,6 +796,41 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
               onChange={(e) => setLeagueWebsite(e.target.value)}
               placeholder="https://league.example.com"
             />
+          </div>
+          <div className="admin-field" style={{ gridColumn: "1 / -1" }}>
+            <div className="admin-label">Welcome Email</div>
+            <div className="admin-muted" style={{ marginTop: 6 }}>
+              Subject line: Welcome to the {leagueName || "league"} meet scheduling app for the selected team.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+              <select
+                value={welcomeEmailPreviewTeamId}
+                onChange={(e) => setWelcomeEmailPreviewTeamId(e.target.value)}
+                style={{ minWidth: 220 }}
+              >
+                <option value="">Preview without team</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {formatTeamName(team)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="admin-btn"
+                onClick={() => {
+                  void openWelcomeEmailPreview();
+                }}
+                disabled={welcomeEmailPreviewLoading}
+              >
+                {welcomeEmailPreviewLoading ? "Building Preview..." : "Preview Welcome Email"}
+              </button>
+            </div>
+            {welcomeEmailPreviewError && (
+              <div className="admin-muted" style={{ color: "#b00020", marginTop: 8 }}>
+                {welcomeEmailPreviewError}
+              </div>
+            )}
           </div>
           <div className="admin-field admin-row-tight">
             <span className="admin-label">League Logo</span>
@@ -1461,6 +1559,64 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
                 disabled={isImporting || importConfirm.trim().toUpperCase() !== "IMPORT"}
               >
                 {isImporting ? "Importing..." : "Confirm Import"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {welcomeEmailPreviewOpen && (
+        <div
+          className="reset-overlay"
+          role="presentation"
+          onClick={closeWelcomeEmailPreview}
+          style={adminOverlayStyle}
+        >
+          <div
+            className="reset-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="welcome-email-preview-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ ...adminModalStyle, maxWidth: 860, width: "100%" }}
+          >
+            <h4 id="welcome-email-preview-title">Welcome Email Preview</h4>
+            {welcomeEmailPreviewSample && (
+              <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+                <div className="admin-muted">Sample data used for this preview:</div>
+                <div className="admin-muted">Username: {welcomeEmailPreviewSample.username}</div>
+                <div className="admin-muted">Email: {welcomeEmailPreviewSample.email}</div>
+                <div className="admin-muted">Temporary password: {welcomeEmailPreviewSample.temporaryPassword}</div>
+                <div className="admin-muted">Team: {welcomeEmailPreviewSample.teamLabel || "None selected"}</div>
+                <div className="admin-muted">Coach: {welcomeEmailPreviewSample.coachName || "Not assigned"}{welcomeEmailPreviewSample.coachEmail ? ` <${welcomeEmailPreviewSample.coachEmail}>` : ""}</div>
+                <div className="admin-muted">
+                  Linked wrestlers: {welcomeEmailPreviewSample.linkedWrestlerNames.length > 0 ? welcomeEmailPreviewSample.linkedWrestlerNames.join(", ") : "None"}
+                </div>
+                <div className="admin-muted">My Wrestlers: {welcomeEmailPreviewSample.myWrestlersUrl}</div>
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 14 }}>
+              <div>
+                <div className="admin-label" style={{ marginBottom: 6 }}>Rendered Subject</div>
+                <div className="admin-card" style={{ padding: 12, background: "#fff" }}>
+                  <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{welcomeEmailPreviewSubject}</div>
+                </div>
+              </div>
+              <div>
+                <div className="admin-label" style={{ marginBottom: 6 }}>Rendered Body</div>
+                <div className="admin-card" style={{ padding: 12, background: "#fff" }}>
+                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "Consolas, 'Courier New', monospace" }}>
+                    {welcomeEmailPreviewText}
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div className="reset-actions" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={closeWelcomeEmailPreview}
+              >
+                Close
               </button>
             </div>
           </div>

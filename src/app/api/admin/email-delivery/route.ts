@@ -6,7 +6,7 @@ import { parseEmailWhitelist, serializeEmailWhitelist } from "@/lib/emailDeliver
 import { requireAdmin } from "@/lib/rbac";
 
 const BodySchema = z.object({
-  emailDeliveryMode: z.enum(["off", "all", "whitelist"]),
+  emailDeliveryMode: z.enum(["off", "log", "all", "whitelist"]),
   emailWhitelist: z.string().optional().default(""),
 });
 
@@ -16,12 +16,15 @@ export async function GET() {
     select: {
       emailDeliveryMode: true,
       emailWhitelist: true,
+      welcomeEmailTransport: true,
     },
   });
   return NextResponse.json({
     emailDeliveryMode: league?.emailDeliveryMode === "all"
       ? "all"
-      : league?.emailDeliveryMode === "whitelist"
+      : league?.emailDeliveryMode === "log"
+        ? "log"
+        : league?.emailDeliveryMode === "whitelist"
         ? "whitelist"
         : "off",
     emailWhitelist: parseEmailWhitelist(league?.emailWhitelist ?? "").join("\n"),

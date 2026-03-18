@@ -6,6 +6,8 @@ import { requireAdmin } from "@/lib/rbac";
 
 const NotificationEventSchema = z.enum([
   "meet_ready_for_attendance",
+  "welcome_email",
+  "password_reset_code",
 ]);
 const NotificationStatusSchema = z.enum(["SKIPPED", "LOGGED", "SENT", "FAILED"]);
 
@@ -158,5 +160,14 @@ export async function GET(req: Request) {
       name: meet.name,
       date: meet.date.toISOString(),
     })),
+  });
+}
+
+export async function DELETE() {
+  await requireAdmin();
+  const result = await db.notificationLog.deleteMany({});
+  return NextResponse.json({
+    ok: true,
+    deleted: result.count,
   });
 }

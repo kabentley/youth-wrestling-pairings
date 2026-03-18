@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const BodySchema = z.object({
   username: z.string().trim().min(6).max(32),
@@ -59,6 +60,13 @@ export async function POST(req: Request) {
   const phone = body.phone ? body.phone.trim() : "";
   const teamId = body.teamId.trim();
   const normalizedName = `${body.firstName.trim()} ${body.lastName.trim()}`;
+  const team = await db.team.findUnique({
+    where: { id: teamId },
+    select: { id: true, name: true, symbol: true },
+  });
+  if (!team) {
+    return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
 
   const existing = await db.user.findUnique({
     where: { username },
@@ -80,17 +88,28 @@ export async function POST(req: Request) {
           role: "PARENT",
         },
       });
+      try {
+        await sendWelcomeEmail({
+          request: req,
+          email,
+          username,
+          userId: existing.id,
+          teamId,
+          teamName: team.name,
+          teamLabel: `${team.name} (${team.symbol})`,
+          mustResetPassword: false,
+        });
+      } catch (error) {
+        console.error("Failed to send self-signup welcome email", error);
+      }
       return NextResponse.json({ ok: true, reused: true });
     }
     return NextResponse.json({ error: "Username already taken" }, { status: 409 });
   }
-  const team = await db.team.findUnique({ where: { id: teamId }, select: { id: true } });
-  if (!team) {
-    return NextResponse.json({ error: "Team not found" }, { status: 404 });
-  }
   const passwordHash = await bcrypt.hash(body.password, 10);
+  let createdUserId = "";
   try {
-    await db.user.create({
+    const createdUser = await db.user.create({
       data: {
         username,
         email,
@@ -101,12 +120,29 @@ export async function POST(req: Request) {
         emailVerified: new Date(),
         role: "PARENT",
       },
+      select: { id: true },
     });
+    createdUserId = createdUser.id;
   } catch (err: any) {
     if (err?.code === "P2002") {
       return NextResponse.json({ error: "Username already taken" }, { status: 409 });
     }
     throw err;
+  }
+
+  try {
+    await sendWelcomeEmail({
+      request: req,
+      email,
+      username,
+      userId: createdUserId,
+      teamId,
+      teamName: team.name,
+      teamLabel: `${team.name} (${team.symbol})`,
+      mustResetPassword: false,
+    });
+  } catch (error) {
+    console.error("Failed to send self-signup welcome email", error);
   }
 
   return NextResponse.json({ ok: true });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type NotificationRow = {
   id: string;
@@ -37,6 +37,8 @@ type MeetOption = {
 const EVENT_OPTIONS = [
   { value: "", label: "All events" },
   { value: "meet_ready_for_attendance", label: "Ready for Attendance" },
+  { value: "welcome_email", label: "Welcome Email" },
+  { value: "password_reset_code", label: "Password Reset Code" },
 ] as const;
 
 const STATUS_OPTIONS = [
@@ -83,6 +85,10 @@ function formatEventLabel(event: NotificationRow["event"]) {
   switch (event) {
     case "meet_ready_for_attendance":
       return "Ready for Attendance";
+    case "welcome_email":
+      return "Welcome Email";
+    case "password_reset_code":
+      return "Password Reset Code";
     default:
       return event;
   }
@@ -106,9 +112,10 @@ function formatStatusClass(status: NotificationRow["status"]) {
 export default function NotificationsSection() {
   const [rows, setRows] = useState<NotificationRow[]>([]);
   const [meetOptions, setMeetOptions] = useState<MeetOption[]>([]);
-  const [emailDeliveryMode, setEmailDeliveryMode] = useState<"off" | "all" | "whitelist">("off");
+  const [emailDeliveryMode, setEmailDeliveryMode] = useState<"off" | "log" | "all" | "whitelist">("off");
   const [emailWhitelist, setEmailWhitelist] = useState("");
-  const [savedEmailDeliveryMode, setSavedEmailDeliveryMode] = useState<"off" | "all" | "whitelist">("off");
+  const [showEveryoneConfirmModal, setShowEveryoneConfirmModal] = useState(false);
+  const [savedEmailDeliveryMode, setSavedEmailDeliveryMode] = useState<"off" | "log" | "all" | "whitelist">("off");
   const [savedEmailWhitelist, setSavedEmailWhitelist] = useState("");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -119,10 +126,22 @@ export default function NotificationsSection() {
   const [pageSize, setPageSize] = useState(25);
   const [total, setTotal] = useState(0);
   const [msg, setMsg] = useState("");
+  const [msgTone, setMsgTone] = useState<"success" | "error">("error");
   const [settingsMsg, setSettingsMsg] = useState("");
   const [settingsMsgTone, setSettingsMsgTone] = useState<"success" | "error">("success");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const settingsSaveInFlight = useRef(false);
+  const latestSettingsRef = useRef<{
+    dirty: boolean;
+    mode: "off" | "log" | "all" | "whitelist";
+    whitelist: string;
+  }>({
+    dirty: false,
+    mode: "off",
+    whitelist: "",
+  });
 
   async function loadEmailDeliverySettings() {
     const res = await fetch("/api/admin/email-delivery");
@@ -132,9 +151,11 @@ export default function NotificationsSection() {
     const data = await res.json();
     const nextMode = data.emailDeliveryMode === "all"
       ? "all"
-      : data.emailDeliveryMode === "whitelist"
-        ? "whitelist"
-        : "off";
+      : data.emailDeliveryMode === "log"
+        ? "log"
+        : data.emailDeliveryMode === "whitelist"
+          ? "whitelist"
+          : "off";
     const nextWhitelist = normalizeEmailWhitelistInput(data.emailWhitelist ?? "");
     setEmailDeliveryMode(nextMode);
     setEmailWhitelist(nextWhitelist);
@@ -142,7 +163,10 @@ export default function NotificationsSection() {
     setSavedEmailWhitelist(nextWhitelist);
   }
 
-  async function saveEmailDeliverySettings(nextMode: "off" | "all" | "whitelist", nextWhitelist: string) {
+  const saveEmailDeliverySettings = useCallback(async (
+    nextMode: "off" | "log" | "all" | "whitelist",
+    nextWhitelist: string,
+  ) => {
     setIsSavingSettings(true);
     setSettingsMsg("");
     try {
@@ -170,7 +194,7 @@ export default function NotificationsSection() {
     } finally {
       setIsSavingSettings(false);
     }
-  }
+  }, []);
 
   async function load(overrides?: {
     page?: number;
@@ -182,6 +206,7 @@ export default function NotificationsSection() {
   }) {
     setIsLoading(true);
     setMsg("");
+    setMsgTone("error");
     try {
       const params = new URLSearchParams({
         q: (overrides?.query ?? debouncedQuery).trim(),
@@ -210,6 +235,39 @@ export default function NotificationsSection() {
     }
   }
 
+  async function clearLogs() {
+    const confirmed = window.confirm(
+      "Clear all notification logs? This removes the full notification history, including one-time meet notification dispatch records.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsClearingLogs(true);
+    setMsg("");
+    setMsgTone("error");
+    try {
+      const res = await fetch("/api/admin/notifications", {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Unable to clear notifications.");
+      }
+      setRows([]);
+      setMeetOptions([]);
+      setTotal(0);
+      setPage(1);
+      setMsg(`Cleared ${Number(data?.deleted ?? 0)} notification logs.`);
+      setMsgTone("success");
+      await load({ page: 1 });
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "Unable to clear notifications.");
+      setMsgTone("error");
+    } finally {
+      setIsClearingLogs(false);
+    }
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedQuery(query);
@@ -224,13 +282,77 @@ export default function NotificationsSection() {
   useEffect(() => {
     void loadEmailDeliverySettings().catch((error) => {
       setMsg(error instanceof Error ? error.message : "Unable to load email delivery settings.");
+      setMsgTone("error");
     });
   }, []);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [pageSize, total]);
   const normalizedWhitelist = useMemo(() => normalizeEmailWhitelistInput(emailWhitelist), [emailWhitelist]);
-  const settingsDirty = normalizedWhitelist !== savedEmailWhitelist || emailDeliveryMode !== savedEmailDeliveryMode;
+  const settingsDirty =
+    normalizedWhitelist !== savedEmailWhitelist ||
+    emailDeliveryMode !== savedEmailDeliveryMode;
   const canSaveSettings = !isSavingSettings && (settingsDirty || settingsMsgTone === "error");
+
+  const flushSettingsSave = useCallback((
+    nextMode = emailDeliveryMode,
+    nextWhitelist = emailWhitelist,
+  ) => {
+    if (showEveryoneConfirmModal) {
+      return;
+    }
+    const normalizedNextWhitelist = normalizeEmailWhitelistInput(nextWhitelist);
+    const isDirty =
+      normalizedNextWhitelist !== savedEmailWhitelist ||
+      nextMode !== savedEmailDeliveryMode ||
+      settingsMsgTone === "error";
+    if (!isDirty || settingsSaveInFlight.current) {
+      return;
+    }
+    settingsSaveInFlight.current = true;
+    void saveEmailDeliverySettings(nextMode, normalizedNextWhitelist).finally(() => {
+      settingsSaveInFlight.current = false;
+    });
+  }, [
+    emailDeliveryMode,
+    emailWhitelist,
+    savedEmailDeliveryMode,
+    savedEmailWhitelist,
+    saveEmailDeliverySettings,
+    showEveryoneConfirmModal,
+    settingsMsgTone,
+  ]);
+
+  useEffect(() => {
+    latestSettingsRef.current = {
+      dirty: settingsDirty,
+      mode: emailDeliveryMode,
+      whitelist: emailWhitelist,
+    };
+  }, [emailDeliveryMode, emailWhitelist, settingsDirty]);
+
+  useEffect(() => {
+    const flushLatestSettingsSave = () => {
+      const latest = latestSettingsRef.current;
+      if (!latest.dirty || settingsSaveInFlight.current || showEveryoneConfirmModal) {
+        return;
+      }
+      flushSettingsSave(latest.mode, latest.whitelist);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushLatestSettingsSave();
+      }
+    };
+
+    window.addEventListener("blur", flushLatestSettingsSave);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", flushLatestSettingsSave);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      flushLatestSettingsSave();
+    };
+  }, [flushSettingsSave, showEveryoneConfirmModal]);
 
   return (
     <>
@@ -250,20 +372,30 @@ export default function NotificationsSection() {
               onChange={(event) => {
                 const nextMode = event.target.value === "all"
                   ? "all"
+                  : event.target.value === "log"
+                    ? "log"
                   : event.target.value === "whitelist"
                     ? "whitelist"
                     : "off";
+                if (nextMode === "all" && emailDeliveryMode !== "all") {
+                  setShowEveryoneConfirmModal(true);
+                  return;
+                }
                 setEmailDeliveryMode(nextMode);
                 setSettingsMsg("");
               }}
+              onBlur={() => {
+                flushSettingsSave();
+              }}
               disabled={isSavingSettings}
             >
-              <option value="off">Send to nobody</option>
-              <option value="all">Send to everyone</option>
-              <option value="whitelist">Whitelist only</option>
+              <option value="off">None</option>
+              <option value="log">Log</option>
+              <option value="whitelist">Whitelist</option>
+              <option value="all">Everyone</option>
             </select>
             <div className="admin-muted" style={{ marginTop: 6 }}>
-              Off disables app email delivery entirely. In whitelist mode, only the exact email addresses listed below receive app emails.
+              None disables app email delivery entirely. Log records every app email in the Notifications log without calling SendGrid. Whitelist sends only to the exact email addresses listed below.
             </div>
           </div>
           <div className="admin-field" style={{ gridColumn: "1 / -1" }}>
@@ -278,7 +410,9 @@ export default function NotificationsSection() {
                 setSettingsMsg("");
               }}
               onBlur={() => {
-                setEmailWhitelist((current) => normalizeEmailWhitelistInput(current));
+                const nextWhitelist = normalizeEmailWhitelistInput(emailWhitelist);
+                setEmailWhitelist(nextWhitelist);
+                flushSettingsSave(emailDeliveryMode, nextWhitelist);
               }}
               placeholder={"one@example.com\nanother@example.com"}
               rows={5}
@@ -383,12 +517,29 @@ export default function NotificationsSection() {
             <button className="admin-btn admin-search-submit" type="submit">
               Refresh
             </button>
+            <button
+              className="admin-btn admin-btn-danger admin-search-submit"
+              type="button"
+              onClick={() => {
+                void clearLogs();
+              }}
+              disabled={isLoading || isClearingLogs}
+            >
+              {isClearingLogs ? "Clearing..." : "Clear Logs"}
+            </button>
           </div>
           <div className="admin-search-summary admin-muted">
             {isLoading ? "Loading..." : `${total} notification logs`}
           </div>
         </form>
-        {msg && <div className="admin-error">{msg}</div>}
+        {msg && (
+          <div
+            className={msgTone === "error" ? "admin-error" : "admin-muted"}
+            style={msgTone === "success" ? { color: "#256029" } : undefined}
+          >
+            {msg}
+          </div>
+        )}
         <div className="admin-pager">
           <button
             className="admin-btn admin-btn-ghost"
@@ -476,6 +627,61 @@ export default function NotificationsSection() {
           </tbody>
         </table>
       </div>
+
+      {showEveryoneConfirmModal && (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!isSavingSettings) {
+              setShowEveryoneConfirmModal(false);
+            }
+          }}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notifications-everyone-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: "min(760px, 100%)", padding: 28 }}
+          >
+            <h3 id="notifications-everyone-confirm-title" style={{ marginTop: 0, fontSize: "1.5rem", lineHeight: 1.25 }}>
+              Enable Real Email Delivery?
+            </h3>
+            <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
+              Setting App Email Delivery to <strong>Everyone</strong> will begin sending real emails to users for welcome emails, password reset codes, and meet notifications.
+            </p>
+            <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
+              Continue only if you intend to email all eligible recipients.
+            </p>
+            <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
+              For testing, use <strong>Whitelist</strong> to send only to approved addresses or <strong>Log</strong> to record emails without sending them.
+            </p>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => setShowEveryoneConfirmModal(false)}
+                disabled={isSavingSettings}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn"
+                onClick={() => {
+                  setShowEveryoneConfirmModal(false);
+                  void saveEmailDeliverySettings("all", emailWhitelist);
+                }}
+                disabled={isSavingSettings}
+              >
+                {isSavingSettings ? "Saving..." : "Enable Everyone"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

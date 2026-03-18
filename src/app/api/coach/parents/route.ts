@@ -16,6 +16,7 @@ const CreateTeamUserSchema = z.object({
   lastName: z.string().trim().min(1).max(50),
   role: z.enum(["COACH", "TABLE_WORKER", "PARENT"]).default("TABLE_WORKER"),
   password: z.string().trim().min(1),
+  wrestlerIds: z.array(z.string().min(1)).max(400).optional().default([]),
 });
 
 export async function GET(request: Request) {
@@ -163,30 +164,59 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Username already taken." }, { status: 409 });
   }
 
+  const wrestlerIds = Array.from(new Set(payload.wrestlerIds));
+  if (wrestlerIds.length > 0) {
+    const validWrestlers = await db.wrestler.findMany({
+      where: { teamId, id: { in: wrestlerIds } },
+      select: { id: true },
+    });
+    if (validWrestlers.length !== wrestlerIds.length) {
+      return NextResponse.json(
+        { error: "One or more wrestlers are not on this team." },
+        { status: 400 },
+      );
+    }
+  }
+
   const passwordHash = await bcrypt.hash(payload.password.trim(), 10);
   const fullName = `${payload.firstName.trim()} ${payload.lastName.trim()}`;
   try {
-    const created = await db.user.create({
-      data: {
-        username,
-        email: payload.email ? payload.email.trim().toLowerCase() : "",
-        phone: payload.phone ? payload.phone.trim() : "",
-        name: fullName,
-        role: payload.role,
-        teamId,
-        passwordHash,
-        mustResetPassword: true,
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        phone: true,
-        name: true,
-        role: true,
-        teamId: true,
-        staffMatNumber: true,
-      },
+    const created = await db.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          username,
+          email: payload.email ? payload.email.trim().toLowerCase() : "",
+          phone: payload.phone ? payload.phone.trim() : "",
+          name: fullName,
+          role: payload.role,
+          teamId,
+          passwordHash,
+          mustResetPassword: true,
+        },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          name: true,
+          role: true,
+          teamId: true,
+          staffMatNumber: true,
+        },
+      });
+      if (wrestlerIds.length > 0) {
+        await Promise.all(
+          wrestlerIds.map((wrestlerId) =>
+            tx.userChild.create({
+              data: {
+                userId: createdUser.id,
+                wrestlerId,
+              },
+            }),
+          ),
+        );
+      }
+      return createdUser;
     });
     let welcomeEmailStatus: "not_applicable" | "sent" | "skipped" | "logged" | "failed" = "not_applicable";
     let welcomeEmailNote: string | null = null;
@@ -196,7 +226,10 @@ export async function POST(request: Request) {
           request,
           email: created.email,
           username: created.username,
+          userId: created.id,
           tempPassword: payload.password.trim(),
+          teamId,
+          teamName: team.name,
           teamLabel: `${team.name} (${team.symbol})`,
         });
         welcomeEmailStatus = welcomeResult.status;
@@ -215,7 +248,7 @@ export async function POST(request: Request) {
         name: created.name,
         role: created.role,
         matNumber: created.staffMatNumber ?? null,
-        wrestlerIds: [] as string[],
+        wrestlerIds,
       },
       welcomeEmailStatus,
       welcomeEmailNote,

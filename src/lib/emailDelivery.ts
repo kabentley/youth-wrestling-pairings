@@ -1,6 +1,6 @@
 import { db } from "./db";
 
-export type EmailDeliveryMode = "off" | "all" | "whitelist";
+export type EmailDeliveryMode = "off" | "log" | "all" | "whitelist";
 
 export type EmailDeliverySettings = {
   mode: EmailDeliveryMode;
@@ -34,11 +34,13 @@ export async function getEmailDeliverySettings(): Promise<EmailDeliverySettings>
     },
   });
   return {
-    mode: league?.emailDeliveryMode === "all"
-      ? "all"
-      : league?.emailDeliveryMode === "whitelist"
-        ? "whitelist"
-        : "off",
+    mode: league?.emailDeliveryMode === "log"
+      ? "log"
+      : league?.emailDeliveryMode === "all"
+        ? "all"
+        : league?.emailDeliveryMode === "whitelist"
+          ? "whitelist"
+          : "off",
     whitelist: parseEmailWhitelist(league?.emailWhitelist ?? ""),
   };
 }
@@ -60,6 +62,15 @@ export async function shouldDeliverEmailTo(email?: string | null) {
       normalizedEmail,
       whitelist: settings.whitelist,
       reason: "App email delivery is turned off.",
+    };
+  }
+  if (settings.mode === "log") {
+    return {
+      allowed: false,
+      mode: settings.mode,
+      normalizedEmail,
+      whitelist: settings.whitelist,
+      reason: "App email delivery is set to log only.",
     };
   }
   if (settings.mode === "all") {

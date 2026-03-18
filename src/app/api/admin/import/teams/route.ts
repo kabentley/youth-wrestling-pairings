@@ -36,6 +36,9 @@ type WrestlerRow = {
 type LeagueRow = {
   name?: string | null;
   website?: string | null;
+  welcomeEmailMessage?: string | null;
+  welcomeEmailSubjectTemplate?: string | null;
+  welcomeEmailBodyTemplate?: string | null;
   ageAllowancePctPerYear?: number | null;
   experienceAllowancePctPerYear?: number | null;
   skillAllowancePctPerPoint?: number | null;
@@ -87,6 +90,9 @@ export async function POST(req: Request) {
     const data = {
       name: leagueRow.name ?? undefined,
       website: leagueRow.website ?? undefined,
+      welcomeEmailMessage: leagueRow.welcomeEmailMessage ?? undefined,
+      welcomeEmailSubjectTemplate: leagueRow.welcomeEmailSubjectTemplate ?? undefined,
+      welcomeEmailBodyTemplate: leagueRow.welcomeEmailBodyTemplate ?? undefined,
       ageAllowancePctPerYear: leagueRow.ageAllowancePctPerYear ?? undefined,
       experienceAllowancePctPerYear: leagueRow.experienceAllowancePctPerYear ?? undefined,
       skillAllowancePctPerPoint: leagueRow.skillAllowancePctPerPoint ?? undefined,
@@ -98,6 +104,9 @@ export async function POST(req: Request) {
     } else if (
       leagueRow.name ||
       leagueRow.website ||
+      leagueRow.welcomeEmailMessage ||
+      leagueRow.welcomeEmailSubjectTemplate ||
+      leagueRow.welcomeEmailBodyTemplate ||
       leagueRow.ageAllowancePctPerYear != null ||
       leagueRow.experienceAllowancePctPerYear != null ||
       leagueRow.skillAllowancePctPerPoint != null ||

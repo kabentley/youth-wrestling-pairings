@@ -279,7 +279,7 @@ export async function POST(req: Request) {
           data: { headCoachId: userId },
         });
 
-        return { created };
+        return { created, userId };
       });
 
       let note = outcome.created
@@ -292,7 +292,10 @@ export async function POST(req: Request) {
             request: req,
             email: row.email.trim().toLowerCase(),
             username: resolvedUsername,
+            userId: outcome.userId,
             tempPassword,
+            teamId: team.id,
+            teamName: team.name,
             teamLabel: `${team.name} (${team.symbol})`,
             leagueName,
           });

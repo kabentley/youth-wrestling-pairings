@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { db } from "./db";
+import type { EmailDeliveryMode } from "./emailDelivery";
 import { getEmailDeliverySettings, shouldDeliverEmailTo } from "./emailDelivery";
 import { normalizeMeetPhase } from "./meetPhase";
 
@@ -30,7 +31,7 @@ export type MeetReadyForAttendanceSummary = {
 };
 
 function isNotificationLoggingEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return env.ENABLE_NOTIFICATION_LOGGING === "true";
+  return env.ENABLE_NOTIFICATION_LOGGING !== "false";
 }
 
 type NotificationLogInput = {
@@ -74,6 +75,8 @@ type MeetReadyRecipient = {
   displayName: string;
   email: string | null;
   childNames: string[];
+  headCoachName: string;
+  headCoachEmail: string;
 };
 
 type MeetReadyContent = {
@@ -91,16 +94,20 @@ type MeetReadyContext = {
   myWrestlersUrl: string;
   recipientName: string;
   childNames: string[];
+  headCoachName: string;
+  headCoachEmail: string;
 };
 
 export function resolveNotificationTransport(
-  env: NodeJS.ProcessEnv = process.env,
+  emailDeliveryMode: EmailDeliveryMode,
 ): NotificationTransport {
-  const raw = (env.NOTIFICATIONS_TRANSPORT ?? "").trim().toLowerCase();
-  if (raw === "off" || raw === "log" || raw === "live") {
-    return raw;
+  if (emailDeliveryMode === "off") {
+    return "off";
   }
-  return env.NODE_ENV === "production" ? "live" : "log";
+  if (emailDeliveryMode === "log") {
+    return "log";
+  }
+  return "live";
 }
 
 function normalizeEmail(email?: string | null) {
@@ -176,38 +183,61 @@ export function dedupeMeetRecipients(recipients: MeetReadyRecipient[]): MeetRead
 
     existing.childNames = uniqueSortedNames([...existing.childNames, ...recipient.childNames]);
     if (!existing.email && recipient.email) existing.email = recipient.email;
+    if (!existing.headCoachName && recipient.headCoachName) existing.headCoachName = recipient.headCoachName;
+    if (!existing.headCoachEmail && recipient.headCoachEmail) existing.headCoachEmail = recipient.headCoachEmail;
   }
 
   return Array.from(byUserId.values());
+}
+
+function resolveHeadCoachName(headCoach?: {
+  name: string | null;
+  username: string;
+} | null) {
+  if (headCoach == null) return "";
+  const trimmedName = headCoach.name?.trim() ?? "";
+  if (trimmedName) return trimmedName;
+  return headCoach.username.trim();
 }
 
 export function buildMeetReadyForAttendanceContent(
   context: MeetReadyContext,
 ): MeetReadyContent {
   const childLine = context.childNames.length > 0
-    ? `Linked wrestlers: ${formatList(context.childNames)}.`
-    : "Link your wrestlers on the My Wrestlers page if you do not see them yet.";
+    ? `Please indicate whether your wrestler${context.childNames.length === 1 ? "" : "s"} ${formatList(context.childNames)} will attend the upcoming meet.`
+    : "Please indicate whether your wrestlers will attend the upcoming meet. If you do not see them yet, link them on your My Wrestlers page after signing in.";
   const locationLine = context.location ? `Location: ${context.location}.` : "Location: To be announced.";
   const teamsLine = context.teamLabels.length > 0
     ? `Teams: ${formatList(context.teamLabels)}.`
     : "";
   const deadlineLine = `Attendance deadline: ${formatDeadline(context.attendanceDeadline)}`;
+  const headCoachLine = context.headCoachName && context.headCoachEmail
+    ? `If you have questions, please contact ${context.headCoachName} <${context.headCoachEmail}>.`
+    : context.headCoachName
+      ? `If you have questions, please contact ${context.headCoachName}.`
+      : context.headCoachEmail
+        ? `If you have questions, please contact <${context.headCoachEmail}>.`
+        : "";
+  const formattedMeetDate = formatMeetDate(context.meetDate);
+  const meetDetailsBlock = [
+    `Meet date: ${formattedMeetDate}.`,
+    locationLine,
+    teamsLine,
+    deadlineLine,
+  ].filter(Boolean).join("\n");
+  const linksBlock = [
+    `Reply here: ${context.attendanceUrl}`,
+  ].join("\n");
 
   return {
-    emailSubject: `Attendance open for ${context.meetName}`,
+    emailSubject: `Please respond with attendance for the upcoming wrestling meet on ${formattedMeetDate}`,
     emailText: [
-      `Hi ${context.recipientName},`,
-      "",
-      `${context.meetName} is ready for attendance.`,
-      `Meet date: ${formatMeetDate(context.meetDate)}.`,
-      locationLine,
-      teamsLine,
-      deadlineLine,
+      `Hello ${context.recipientName},`,
       childLine,
-      "",
-      `Reply here: ${context.attendanceUrl}`,
-      `My Wrestlers: ${context.myWrestlersUrl}`,
-    ].filter(Boolean).join("\n"),
+      meetDetailsBlock,
+      linksBlock,
+      headCoachLine,
+    ].filter(Boolean).join("\n\n"),
   };
 }
 
@@ -289,6 +319,12 @@ async function sendEmailLive(subject: string, text: string, to: string): Promise
     return { status: "FAILED", provider: "sendgrid", errorMessage: "SendGrid is not configured." };
   }
   const deliveryDecision = await shouldDeliverEmailTo(to);
+  if (deliveryDecision.mode === "log") {
+    return {
+      status: "LOGGED",
+      provider: "log",
+    };
+  }
   if (!deliveryDecision.allowed) {
     return {
       status: "SKIPPED",
@@ -412,6 +448,13 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
         select: {
           name: true,
           symbol: true,
+          headCoach: {
+            select: {
+              name: true,
+              username: true,
+              email: true,
+            },
+          },
         },
       },
       email: true,
@@ -444,6 +487,8 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
     ),
+    headCoachName: resolveHeadCoachName(parent.team?.headCoach),
+    headCoachEmail: normalizeEmail(parent.team?.headCoach?.email) ?? "",
   })));
 }
 
@@ -451,8 +496,8 @@ export async function notifyMeetReadyForAttendance(
   meetId: string,
   options: { origin?: string | null } = {},
 ) : Promise<MeetReadyForAttendanceSummary> {
-  const transport = resolveNotificationTransport();
   const emailDeliverySettings = await getEmailDeliverySettings();
+  const transport = resolveNotificationTransport(emailDeliverySettings.mode);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -534,6 +579,8 @@ export async function notifyMeetReadyForAttendance(
       myWrestlersUrl,
       recipientName: recipient.displayName,
       childNames: recipient.childNames,
+      headCoachName: recipient.headCoachName,
+      headCoachEmail: recipient.headCoachEmail,
     });
 
     const messages = buildPreferredMessages(recipient, {

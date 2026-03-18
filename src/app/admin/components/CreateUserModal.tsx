@@ -10,9 +10,12 @@ type UserRole = "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
 type CreatedUser = {
   id: string;
   username?: string;
+  email?: string;
   name?: string | null;
   teamId?: string | null;
   role?: UserRole;
+  welcomeEmailStatus?: "not_applicable" | "sent" | "skipped" | "logged" | "failed";
+  welcomeEmailNote?: string | null;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
