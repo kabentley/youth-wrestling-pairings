@@ -459,6 +459,7 @@ export async function POST(request: Request) {
               request,
               email: entry.email,
               username: entry.username,
+              fullName: entry.name,
               userId: entry.id,
               tempPassword: entry.temporaryPassword,
               teamId: team.id,

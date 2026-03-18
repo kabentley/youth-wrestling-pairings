@@ -226,6 +226,7 @@ export async function POST(request: Request) {
           request,
           email: created.email,
           username: created.username,
+          fullName,
           userId: created.id,
           tempPassword: payload.password.trim(),
           teamId,

@@ -292,6 +292,7 @@ export async function POST(req: Request) {
             request: req,
             email: row.email.trim().toLowerCase(),
             username: resolvedUsername,
+            fullName: coachName,
             userId: outcome.userId,
             tempPassword,
             teamId: team.id,

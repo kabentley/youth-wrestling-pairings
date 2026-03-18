@@ -13,6 +13,7 @@ export type WelcomeEmailPreview = {
   text: string;
   sampleData: {
     leagueName: string;
+    fullName: string;
     email: string;
     username: string;
     temporaryPassword: string;
@@ -30,6 +31,7 @@ type SendWelcomeEmailOptions = {
   request: Request;
   email: string;
   username: string;
+  fullName?: string | null;
   userId?: string | null;
   tempPassword?: string | null;
   teamId?: string | null;
@@ -44,6 +46,7 @@ type WelcomeEmailContentOptions = {
   leagueName: string;
   email: string;
   username: string;
+  fullName?: string | null;
   tempPassword?: string | null;
   signInUrl: string;
   myWrestlersUrl: string;
@@ -58,6 +61,7 @@ type WelcomeEmailTemplateContext = {
   leagueName: string;
   email: string;
   username: string;
+  fullName: string;
   temporaryPassword: string;
   signInUrl: string;
   myWrestlersUrl: string;
@@ -66,6 +70,7 @@ type WelcomeEmailTemplateContext = {
   teamLabel: string;
   linkedWrestlerNames: string[];
   passwordInstructions: string;
+  greetingLine: string;
   usernameLine: string;
   temporaryPasswordLine: string;
   linkedWrestlersBlock: string;
@@ -127,6 +132,7 @@ function buildWelcomeEmailTemplateContext({
   leagueName,
   email,
   username,
+  fullName,
   temporaryPassword,
   signInUrl,
   myWrestlersUrl,
@@ -139,6 +145,7 @@ function buildWelcomeEmailTemplateContext({
   leagueName: string;
   email: string;
   username: string;
+  fullName: string;
   temporaryPassword: string;
   signInUrl: string;
   myWrestlersUrl: string;
@@ -149,6 +156,7 @@ function buildWelcomeEmailTemplateContext({
   mustResetPassword: boolean;
 }): WelcomeEmailTemplateContext {
   const hasTemporaryPassword = temporaryPassword.length > 0;
+  const normalizedFullName = fullName.trim();
   const normalizedCoachName = coachName.trim();
   const normalizedCoachEmail = coachEmail.trim();
   const normalizedLinkedWrestlerNames = linkedWrestlerNames
@@ -173,6 +181,7 @@ function buildWelcomeEmailTemplateContext({
     leagueName,
     email,
     username,
+    fullName: normalizedFullName,
     temporaryPassword,
     signInUrl,
     myWrestlersUrl,
@@ -181,6 +190,9 @@ function buildWelcomeEmailTemplateContext({
     teamLabel,
     linkedWrestlerNames: normalizedLinkedWrestlerNames,
     passwordInstructions: buildPasswordInstructions(hasTemporaryPassword, mustResetPassword),
+    greetingLine: normalizedFullName
+      ? `Welcome ${normalizedFullName}! Your account has been created.`
+      : "Welcome! Your account has been created.",
     usernameLine: `Username: ${username}`,
     temporaryPasswordLine: hasTemporaryPassword ? `Temporary password: ${temporaryPassword}` : "",
     linkedWrestlersBlock,
@@ -276,7 +288,7 @@ function renderWelcomeEmailTemplate(template: string, context: WelcomeEmailTempl
 
 export function buildDefaultWelcomeEmailBodyTemplate() {
   return [
-    "Welcome! Your account has been created.",
+    "{greetingLine}",
     "",
     "{usernameLine}",
     "{temporaryPasswordLine}",
@@ -294,6 +306,7 @@ async function buildWelcomeEmailPreviewInternal({
   request,
   email,
   username,
+  fullName = null,
   userId = null,
   tempPassword = null,
   teamId = null,
@@ -316,6 +329,7 @@ async function buildWelcomeEmailPreviewInternal({
     leagueName: resolvedLeagueSettings.leagueName,
     email,
     username,
+    fullName: fullName?.trim() ?? "",
     temporaryPassword: normalizedTempPassword,
     signInUrl,
     myWrestlersUrl,
@@ -334,6 +348,7 @@ async function buildWelcomeEmailPreviewInternal({
       leagueName: resolvedLeagueSettings.leagueName,
       email,
       username,
+      fullName,
       tempPassword: normalizedTempPassword,
       signInUrl,
       myWrestlersUrl,
@@ -345,6 +360,7 @@ async function buildWelcomeEmailPreviewInternal({
     }),
     sampleData: {
       leagueName: context.leagueName,
+      fullName: context.fullName,
       email: context.email,
       username: context.username,
       temporaryPassword: context.temporaryPassword,
@@ -367,6 +383,7 @@ export function buildWelcomeEmailText({
   leagueName,
   email,
   username,
+  fullName = null,
   tempPassword = null,
   signInUrl,
   myWrestlersUrl,
@@ -382,6 +399,7 @@ export function buildWelcomeEmailText({
     leagueName,
     email,
     username,
+    fullName: fullName?.trim() ?? "",
     temporaryPassword: normalizedTempPassword,
     signInUrl,
     myWrestlersUrl,
@@ -438,6 +456,7 @@ export async function sendWelcomeEmail({
   request,
   email,
   username,
+  fullName = null,
   userId = null,
   tempPassword = null,
   teamId = null,
@@ -454,6 +473,7 @@ export async function sendWelcomeEmail({
     request,
     email,
     username,
+    fullName,
     userId,
     tempPassword,
     teamId,
@@ -465,6 +485,7 @@ export async function sendWelcomeEmail({
   });
   const signInUrl = preview.sampleData.signInUrl;
   const payload = {
+    fullName: preview.sampleData.fullName,
     signInUrl: preview.sampleData.signInUrl,
     myWrestlersUrl: preview.sampleData.myWrestlersUrl,
     linkedWrestlerNames: preview.sampleData.linkedWrestlerNames,

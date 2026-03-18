@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     request: req,
     email: "newuser@example.com",
     username: "newuser1",
+    fullName: "Sample Parent",
     tempPassword: "TempPass123!",
     teamId: team?.id ?? null,
     teamName: team?.name ?? null,

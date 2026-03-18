@@ -181,6 +181,7 @@ export async function POST(req: Request) {
         request: req,
         email,
         username: user.username,
+        fullName: user.name,
         userId: user.id,
         tempPassword,
         teamId: body.teamId ?? null,

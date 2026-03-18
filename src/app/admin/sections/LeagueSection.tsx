@@ -55,6 +55,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
   const [welcomeEmailPreviewText, setWelcomeEmailPreviewText] = useState("");
   const [welcomeEmailPreviewSample, setWelcomeEmailPreviewSample] = useState<{
     leagueName: string;
+    fullName: string;
     email: string;
     username: string;
     temporaryPassword: string;
@@ -1583,6 +1584,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
             {welcomeEmailPreviewSample && (
               <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
                 <div className="admin-muted">Sample data used for this preview:</div>
+                <div className="admin-muted">Full name: {welcomeEmailPreviewSample.fullName}</div>
                 <div className="admin-muted">Username: {welcomeEmailPreviewSample.username}</div>
                 <div className="admin-muted">Email: {welcomeEmailPreviewSample.email}</div>
                 <div className="admin-muted">Temporary password: {welcomeEmailPreviewSample.temporaryPassword}</div>

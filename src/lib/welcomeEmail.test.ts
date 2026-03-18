@@ -20,6 +20,7 @@ describe("buildWelcomeEmailText", () => {
       leagueName: "ICWL",
       email: "jdoe12@example.com",
       username: "jdoe12",
+      fullName: "Jane Doe",
       tempPassword: "123456",
       signInUrl: "https://example.com/auth/signin",
       myWrestlersUrl: "https://example.com/parent",
@@ -27,6 +28,7 @@ describe("buildWelcomeEmailText", () => {
       coachEmail: "coach@example.com",
       teamLabel: "West Chester (WC)",
     });
+    expect(text).toContain("Welcome Jane Doe! Your account has been created.");
     expect(text).toContain("Username: jdoe12");
     expect(text).toContain("Temporary password: 123456");
     expect(text).toContain("please contact your coach: Pat Coach <coach@example.com>");
@@ -38,6 +40,7 @@ describe("buildWelcomeEmailText", () => {
       leagueName: "ICWL",
       email: "jdoe12@example.com",
       username: "jdoe12",
+      fullName: "Jane Doe",
       tempPassword: "123456",
       signInUrl: "https://example.com/auth/signin",
       myWrestlersUrl: "https://example.com/parent",
@@ -52,6 +55,7 @@ describe("buildWelcomeEmailText", () => {
       leagueName: "ICWL",
       email: "jdoe12@example.com",
       username: "jdoe12",
+      fullName: "Jane Doe",
       tempPassword: "123456",
       signInUrl: "https://example.com/auth/signin",
       myWrestlersUrl: "https://example.com/parent",
@@ -70,6 +74,7 @@ describe("buildWelcomeEmailText", () => {
       leagueName: "ICWL",
       email: "jdoe12@example.com",
       username: "jdoe12",
+      fullName: "Jane Doe",
       tempPassword: "123456",
       signInUrl: "https://example.com/auth/signin",
       myWrestlersUrl: "https://example.com/parent",
@@ -82,6 +87,7 @@ describe("buildWelcomeEmailText", () => {
       leagueName: "ICWL",
       email: "jdoe12@example.com",
       username: "jdoe12",
+      fullName: "Jane Doe",
       signInUrl: "https://example.com/auth/signin",
       myWrestlersUrl: "https://example.com/parent",
       mustResetPassword: false,
@@ -96,6 +102,7 @@ describe("buildWelcomeEmailText", () => {
 describe("buildDefaultWelcomeEmailBodyTemplate", () => {
   it("includes the supported placeholders", () => {
     const template = buildDefaultWelcomeEmailBodyTemplate();
+    expect(template).toContain("{greetingLine}");
     expect(template).toContain("{usernameLine}");
     expect(template).toContain("{temporaryPasswordLine}");
     expect(template).toContain("{passwordInstructions}");
