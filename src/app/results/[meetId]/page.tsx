@@ -8,8 +8,10 @@ import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 import {
   buildWinnerLoserScore,
   isValidResultTime,
+  isValidResultPeriod,
   normalizeResultType,
   parseWinnerLoserScore,
+  PERIOD_OPTIONS,
   type ResultType,
   validateBoutResult,
 } from "@/lib/resultEntry";
@@ -46,7 +48,7 @@ type ResultSnapshot = {
   winnerId: string | null;
   type: string | null;
   score: string | null;
-  time: string | null;
+  period: number | null;
   notes: string | null;
 };
 
@@ -62,17 +64,6 @@ const TYPE_OPTIONS: Array<{ value: ResultType; label: string }> = [
 function trimNullable(value?: string | null) {
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function formatTimeInput(value: string) {
-  let digits = value.replace(/\D/g, "");
-  if (digits.length > 3 && digits.startsWith("0")) {
-    digits = digits.slice(1);
-  }
-  digits = digits.slice(0, 3);
-  if (digits.length <= 1) return digits;
-  if (digits.length === 2) return `0:${digits}`;
-  return `${digits[0]}:${digits.slice(1, 3)}`;
 }
 
 function deriveScoreInputs(resultType: string | null, resultScore: string | null) {
@@ -92,10 +83,14 @@ function normalizeBoutRow(row: BoutRowApi): BoutRow {
   const fallbackTime = !trimNullable(row.resultTime) && type === "FALL" && isValidResultTime(row.resultScore)
     ? trimNullable(row.resultScore)
     : trimNullable(row.resultTime);
+  const normalizedPeriod = type === "FALL" || type === "TF"
+    ? row.resultPeriod ?? null
+    : null;
   return {
     ...row,
     resultType: type,
     resultScore: trimNullable(row.resultScore),
+    resultPeriod: normalizedPeriod,
     resultTime: fallbackTime,
     resultNotes: trimNullable(row.resultNotes),
     ...deriveScoreInputs(type, row.resultScore),
@@ -107,7 +102,7 @@ function snapshotForBout(bout: BoutRow): ResultSnapshot {
     winnerId: bout.resultWinnerId ?? null,
     type: normalizeResultType(bout.resultType),
     score: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
-    time: trimNullable(bout.resultTime),
+    period: bout.resultPeriod ?? null,
     notes: trimNullable(bout.resultNotes),
   };
 }
@@ -116,7 +111,7 @@ function sameSnapshot(a?: ResultSnapshot, b?: ResultSnapshot) {
   return a?.winnerId === b?.winnerId
     && a?.type === b?.type
     && a?.score === b?.score
-    && a?.time === b?.time
+    && a?.period === b?.period
     && a?.notes === b?.notes;
 }
 
@@ -125,7 +120,7 @@ function hasSnapshotValue(snapshot?: ResultSnapshot) {
   return snapshot.winnerId !== null
     || snapshot.type !== null
     || snapshot.score !== null
-    || snapshot.time !== null
+    || snapshot.period !== null
     || snapshot.notes !== null;
 }
 
@@ -134,6 +129,7 @@ function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial
     return {
       resultType: null,
       resultScore: null,
+      resultPeriod: null,
       resultTime: null,
       resultNotes: null,
       resultWinnerScoreInput: "",
@@ -144,22 +140,24 @@ function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial
     return {
       resultType: nextType,
       resultScore: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
+      resultPeriod: null,
       resultTime: null,
-      resultNotes: null,
     };
   }
   if (nextType === "TF") {
     return {
       resultType: nextType,
       resultScore: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
-      resultNotes: null,
+      resultPeriod: bout.resultPeriod ?? null,
+      resultTime: null,
     };
   }
   if (nextType === "FALL") {
     return {
       resultType: nextType,
       resultScore: null,
-      resultNotes: null,
+      resultPeriod: bout.resultPeriod ?? null,
+      resultTime: null,
       resultWinnerScoreInput: "",
       resultLoserScoreInput: "",
     };
@@ -167,6 +165,7 @@ function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial
   return {
     resultType: nextType,
     resultScore: null,
+    resultPeriod: null,
     resultTime: null,
     resultWinnerScoreInput: "",
     resultLoserScoreInput: "",
@@ -184,7 +183,7 @@ function getRowValidationState(bout: BoutRow) {
   const winnerScore = parseScoreInputValue(bout.resultWinnerScoreInput);
   const loserScore = parseScoreInputValue(bout.resultLoserScoreInput);
   const usesScore = type === "DEC" || type === "MAJ" || type === "TF";
-  const usesTime = type === "FALL" || type === "TF";
+  const usesPeriod = type === "FALL" || type === "TF";
   const usesNotes = type === "DQ" || type === "FOR";
   const scoreMargin = winnerScore !== null && loserScore !== null ? winnerScore - loserScore : null;
 
@@ -193,7 +192,7 @@ function getRowValidationState(bout: BoutRow) {
     || winnerScore <= 0
     || winnerScore >= 25
     || (loserScore !== null && winnerScore <= loserScore)
-    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 10)
+    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 8)
     || (type === "TF" && scoreMargin !== null && scoreMargin < 15)
   );
   const loserScoreInvalid = usesScore && (
@@ -201,16 +200,16 @@ function getRowValidationState(bout: BoutRow) {
     || loserScore < 0
     || loserScore >= 25
     || (winnerScore !== null && loserScore >= winnerScore)
-    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 10)
+    || (type === "MAJ" && scoreMargin !== null && scoreMargin < 8)
     || (type === "TF" && scoreMargin !== null && scoreMargin < 15)
   );
-  const timeInvalid = usesTime && !isValidResultTime(bout.resultTime);
+  const periodInvalid = usesPeriod && bout.resultPeriod !== null && !isValidResultPeriod(bout.resultPeriod);
   const notesInvalid = usesNotes && !trimNullable(bout.resultNotes);
 
   return {
     winnerScoreInvalid,
     loserScoreInvalid,
-    timeInvalid,
+    periodInvalid,
     notesInvalid,
   };
 }
@@ -225,6 +224,7 @@ export default function EnterResultsPage() {
   const [matColors, setMatColors] = useState<Record<number, string | null>>({});
   const originalResultsRef = useRef<Record<string, ResultSnapshot | undefined>>({});
   const boutsRef = useRef<BoutRow[]>([]);
+  const pendingWinnerAdvanceBoutIdRef = useRef<string | null>(null);
   const pendingTypeAdvanceBoutIdRef = useRef<string | null>(null);
 
   const headerLinks = [
@@ -254,7 +254,12 @@ export default function EnterResultsPage() {
     });
   }
 
-  function updateWinnerSelection(id: string, winnerId: string | null) {
+  function updateWinnerSelection(
+    id: string,
+    winnerId: string | null,
+    options?: { advanceFocus?: boolean },
+  ) {
+    pendingWinnerAdvanceBoutIdRef.current = winnerId && options?.advanceFocus ? id : null;
     setBouts((prev) => {
       const next = prev.map((b) => {
         if (b.id !== id) return b;
@@ -264,13 +269,21 @@ export default function EnterResultsPage() {
             resultWinnerId: null,
             resultType: null,
             resultScore: null,
+            resultPeriod: null,
             resultTime: null,
             resultNotes: null,
             resultWinnerScoreInput: "",
             resultLoserScoreInput: "",
           };
         }
-        return { ...b, resultWinnerId: winnerId };
+        if (b.resultType) {
+          return { ...b, resultWinnerId: winnerId };
+        }
+        return {
+          ...b,
+          resultWinnerId: winnerId,
+          ...sanitizeRowForType(b, "DEC"),
+        };
       });
       boutsRef.current = next;
       return next;
@@ -309,9 +322,13 @@ export default function EnterResultsPage() {
     });
   }
 
-  function updateTimeInput(id: string, value: string) {
-    const formatted = formatTimeInput(value);
-    updateBout(id, { resultTime: formatted || null });
+  function updatePeriodInput(id: string, value: string) {
+    if (!value) {
+      updateBout(id, { resultPeriod: null });
+      return;
+    }
+    const parsed = Number.parseInt(value, 10);
+    updateBout(id, { resultPeriod: Number.isInteger(parsed) && isValidResultPeriod(parsed) ? parsed : null });
   }
 
   function updateNotesInput(id: string, value: string) {
@@ -372,6 +389,18 @@ export default function EnterResultsPage() {
     fields.at(currentIndex + 1)?.focus();
   }
 
+  function handleSelectTabAdvance(
+    event: React.KeyboardEvent<HTMLSelectElement>,
+    onCommit?: (value: string) => void,
+  ) {
+    if (event.key !== "Tab" || event.shiftKey) return;
+    const field = event.currentTarget;
+    window.setTimeout(() => {
+      onCommit?.(field.value);
+      focusNextResultField(field);
+    }, 0);
+  }
+
   function handleWinnerFieldKey(
     event: React.KeyboardEvent<HTMLSelectElement>,
     boutId: string,
@@ -407,6 +436,24 @@ export default function EnterResultsPage() {
     updateTypeSelection(boutId, nextType.value);
   }
 
+  function handlePeriodFieldKey(
+    event: React.KeyboardEvent<HTMLSelectElement>,
+    boutId: string,
+    currentPeriod: number | null,
+  ) {
+    if (event.key.length !== 1 || !/[0-9a-z]/i.test(event.key)) return;
+    const key = event.key.toUpperCase();
+    let matches = PERIOD_OPTIONS.filter((option) => option.label.toUpperCase().startsWith(key));
+    if (matches.length === 0 && /^[1-6]$/.test(key)) {
+      matches = PERIOD_OPTIONS.filter((option) => option.value === Number.parseInt(key, 10));
+    }
+    if (matches.length === 0) return;
+    event.preventDefault();
+    const currentIndex = currentPeriod !== null ? matches.findIndex((option) => option.value === currentPeriod) : -1;
+    const nextPeriod = matches[(currentIndex + 1 + matches.length) % matches.length];
+    updateBout(boutId, { resultPeriod: nextPeriod.value });
+  }
+
   async function saveResult(boutId: string) {
     const bout = boutsRef.current.find((row) => row.id === boutId);
     if (!bout) return;
@@ -427,8 +474,8 @@ export default function EnterResultsPage() {
           winnerId: validated.value.winnerId,
           type: validated.value.type,
           score: validated.value.score,
-          period: bout.resultPeriod ?? null,
-          time: validated.value.time,
+          period: validated.value.period,
+          time: null,
           notes: validated.value.notes,
         }),
       });
@@ -489,6 +536,17 @@ export default function EnterResultsPage() {
       cancelled = true;
     };
   }, [meetId]);
+
+  useEffect(() => {
+    const pendingBoutId = pendingWinnerAdvanceBoutIdRef.current;
+    if (!pendingBoutId) return;
+    const nextField = document.querySelector<HTMLSelectElement>(
+      `[data-bout-id="${pendingBoutId}"][data-type-field="true"]:not(:disabled)`,
+    );
+    if (!nextField) return;
+    pendingWinnerAdvanceBoutIdRef.current = null;
+    nextField.focus();
+  }, [bouts]);
 
   useEffect(() => {
     const pendingBoutId = pendingTypeAdvanceBoutIdRef.current;
@@ -671,9 +729,14 @@ export default function EnterResultsPage() {
           border: 1px solid var(--line);
           border-radius: 12px;
           padding: 12px;
-          overflow-x: auto;
           max-width: 1200px;
           margin: 0;
+        }
+        .table-scroll {
+          overflow-x: auto;
+          overflow-y: auto;
+          max-height: calc(100dvh - 220px);
+          scrollbar-gutter: stable;
         }
         .pairings-tab-bar {
           display: flex;
@@ -711,7 +774,7 @@ export default function EnterResultsPage() {
         table {
           border-collapse: collapse;
           width: 100%;
-          min-width: 720px;
+          min-width: 980px;
           table-layout: auto;
         }
         th, td {
@@ -726,6 +789,12 @@ export default function EnterResultsPage() {
           text-transform: uppercase;
           letter-spacing: 0.6px;
           color: var(--muted);
+          position: sticky;
+          top: 0;
+          background: var(--card);
+          background-clip: padding-box;
+          z-index: 2;
+          box-shadow: inset 0 -1px 0 var(--line);
         }
         .bout-num {
           font-size: 14px;
@@ -742,22 +811,23 @@ export default function EnterResultsPage() {
           font-weight: 600;
         }
         .details-cell {
-          min-width: 270px;
+          min-width: 360px;
         }
         .details-group {
           display: flex;
           align-items: center;
-          gap: 6px;
-          flex-wrap: wrap;
-          flex: 1;
-          min-width: 0;
+          gap: 4px;
+          flex-wrap: nowrap;
+          flex: 0 0 auto;
+          min-width: fit-content;
         }
         .details-row {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+          justify-content: flex-start;
+          gap: 8px;
           min-width: 0;
+          flex-wrap: nowrap;
         }
         .details-group label {
           display: inline-flex;
@@ -774,13 +844,19 @@ export default function EnterResultsPage() {
           text-align: center;
           font-weight: 700;
         }
-        .time-mini {
-          width: 72px;
-          text-align: center;
+        .period-select {
+          width: 78px;
+          text-align: left;
           font-weight: 700;
         }
+        .comment-group {
+          margin-left: auto;
+        }
         .comment-input {
-          min-width: 220px;
+          width: 132px;
+        }
+        .comment-input::placeholder {
+          color: #a8b0bd;
         }
         .field-invalid {
           border-color: #c62828;
@@ -805,6 +881,15 @@ export default function EnterResultsPage() {
           letter-spacing: 0.3px;
           text-transform: uppercase;
           white-space: nowrap;
+        }
+        .saved-badge-slot {
+          display: inline-flex;
+          justify-content: flex-end;
+          min-width: 56px;
+          flex: 0 0 56px;
+        }
+        .saved-badge.hidden {
+          visibility: hidden;
         }
         .wrestler {
           display: inline-flex;
@@ -838,6 +923,10 @@ export default function EnterResultsPage() {
           cursor: pointer;
           font-size: 12px;
         }
+        .results-entry .btn.toolbar-btn {
+          padding: 8px 14px;
+          font-size: 14px;
+        }
         .results-entry .btn:disabled {
           cursor: not-allowed;
           opacity: 0.7;
@@ -863,7 +952,8 @@ export default function EnterResultsPage() {
         }
         .name-col {
           white-space: nowrap;
-          max-width: 320px;
+          min-width: 260px;
+          max-width: none;
           overflow: hidden;
           text-overflow: ellipsis;
         }
@@ -875,8 +965,8 @@ export default function EnterResultsPage() {
         .name-col .wrestler {
           display: inline-block;
           max-width: 100%;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          overflow: visible;
+          text-overflow: clip;
           vertical-align: bottom;
         }
       `}</style>
@@ -892,8 +982,8 @@ export default function EnterResultsPage() {
         </div>
         <div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" type="button" onClick={exportResults}>Export to .xlsx</button>
-            <button className="btn" type="button" onClick={load}>Refresh</button>
+            <button className="btn toolbar-btn" type="button" onClick={exportResults}>Export to .xlsx</button>
+            <button className="btn toolbar-btn" type="button" onClick={load}>Refresh</button>
           </div>
         </div>
       </div>
@@ -940,6 +1030,7 @@ export default function EnterResultsPage() {
 
       <div className="tab-body">
         <div className="table-wrap">
+          <div className="table-scroll">
           <table>
           <thead>
             <tr>
@@ -998,12 +1089,13 @@ export default function EnterResultsPage() {
                       className="first-field"
                       data-result-nav="true"
                       value={b.resultWinnerId ?? ""}
-                      onChange={(e) => updateWinnerSelection(b.id, e.target.value || null)}
+                      onChange={(e) => updateWinnerSelection(b.id, e.target.value || null, { advanceFocus: true })}
                       onKeyDown={(e) => {
                         handleWinnerFieldKey(e, b.id, b.resultWinnerId ?? null, [
                           { id: first.id, first: first.first, last: first.last },
                           { id: second.id, first: second.first, last: second.last },
                         ]);
+                        handleSelectTabAdvance(e, (value) => updateWinnerSelection(b.id, value || null, { advanceFocus: false }));
                         handleAdvanceFieldKey(e);
                         handleRowSubmitKey(e, b.id, index);
                       }}
@@ -1022,6 +1114,8 @@ export default function EnterResultsPage() {
                   <td className="type-col">
                     {b.resultWinnerId ? (
                       <select
+                        data-bout-id={b.id}
+                        data-type-field="true"
                         data-result-nav="true"
                         value={resultType ?? ""}
                         onChange={(e) => updateTypeSelection(b.id, e.target.value)}
@@ -1080,23 +1174,26 @@ export default function EnterResultsPage() {
                             </label>
                             {resultType === "TF" && (
                               <label>
-                                Time
-                                <input
+                                Period
+                                <select
                                   data-bout-id={b.id}
-                                  data-detail-first="true"
                                   data-result-nav="true"
-                                  className={`time-mini${validationState.timeInvalid ? " field-invalid" : ""}`}
-                                  inputMode="numeric"
-                                  aria-invalid={validationState.timeInvalid}
-                                  placeholder="x:xx"
-                                  value={b.resultTime ?? ""}
-                                  onChange={(e) => updateTimeInput(b.id, e.target.value)}
+                                  className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
+                                  aria-invalid={validationState.periodInvalid}
+                                  value={b.resultPeriod?.toString() ?? ""}
+                                  onChange={(e) => updatePeriodInput(b.id, e.target.value)}
                                   onKeyDown={(e) => {
+                                    handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null);
                                     handleAdvanceFieldKey(e);
                                     handleRowSubmitKey(e, b.id, index);
                                   }}
                                   disabled={!canEdit}
-                                />
+                                >
+                                  <option value="">Select</option>
+                                  {PERIOD_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value.toString()}>{option.label}</option>
+                                  ))}
+                                </select>
                               </label>
                             )}
                           </div>
@@ -1104,45 +1201,47 @@ export default function EnterResultsPage() {
                         {resultType === "FALL" && (
                           <div className="details-group">
                             <label>
-                              Time
-                              <input
+                              Period
+                              <select
                                 data-bout-id={b.id}
                                 data-detail-first="true"
                                 data-result-nav="true"
-                                className={`time-mini${validationState.timeInvalid ? " field-invalid" : ""}`}
-                                inputMode="numeric"
-                                aria-invalid={validationState.timeInvalid}
-                                placeholder="x:xx"
-                                value={b.resultTime ?? ""}
-                                onChange={(e) => updateTimeInput(b.id, e.target.value)}
+                                className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
+                                aria-invalid={validationState.periodInvalid}
+                                value={b.resultPeriod?.toString() ?? ""}
+                                onChange={(e) => updatePeriodInput(b.id, e.target.value)}
                                 onKeyDown={(e) => {
+                                  handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null);
                                   handleAdvanceFieldKey(e);
                                   handleRowSubmitKey(e, b.id, index);
                                 }}
                                 disabled={!canEdit}
-                              />
+                              >
+                                <option value="">Select</option>
+                                {PERIOD_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value.toString()}>{option.label}</option>
+                                ))}
+                              </select>
                             </label>
                           </div>
                         )}
-                        {(resultType === "DQ" || resultType === "FOR") && (
-                          <div className="details-group">
-                            <label style={{ flex: 1 }}>
-                              Comment
-                              <input
-                                data-bout-id={b.id}
-                                data-detail-first="true"
-                                className={`comment-input${validationState.notesInvalid ? " field-invalid" : ""}`}
-                                aria-invalid={validationState.notesInvalid}
-                                placeholder={resultType === "DQ" ? "Reason for DQ" : "Reason for no match"}
-                                value={b.resultNotes ?? ""}
-                                onChange={(e) => updateNotesInput(b.id, e.target.value)}
-                                onKeyDown={(e) => handleRowSubmitKey(e, b.id, index)}
-                                disabled={!canEdit}
-                              />
-                            </label>
-                          </div>
-                        )}
-                        {showSavedBadge && <span className="saved-badge">Saved</span>}
+                        <div className="details-group comment-group">
+                          <label aria-label="Comment">
+                            <input
+                              data-bout-id={b.id}
+                              className={`comment-input${validationState.notesInvalid ? " field-invalid" : ""}`}
+                              aria-invalid={validationState.notesInvalid}
+                              placeholder="comment"
+                              value={b.resultNotes ?? ""}
+                              onChange={(e) => updateNotesInput(b.id, e.target.value)}
+                              onKeyDown={(e) => handleRowSubmitKey(e, b.id, index)}
+                              disabled={!canEdit}
+                            />
+                          </label>
+                        </div>
+                        <span className="saved-badge-slot">
+                          <span className={`saved-badge${showSavedBadge ? "" : " hidden"}`}>Saved</span>
+                        </span>
                       </div>
                     )}
                   </td>
@@ -1156,6 +1255,7 @@ export default function EnterResultsPage() {
             )}
           </tbody>
           </table>
+          </div>
         </div>
       </div>
     </main>

@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 
 import { db } from "@/lib/db";
 import { requireAnyRole } from "@/lib/rbac";
+import { formatResultPeriod } from "@/lib/resultEntry";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,12 @@ function winnerLabel(
   if (winnerId === red.id) return wrestlerLabel(red);
   if (winnerId === green.id) return wrestlerLabel(green);
   return winnerId;
+}
+
+function exportTypeLabel(resultType: string | null) {
+  const trimmed = resultType?.trim().toUpperCase() ?? "";
+  if (trimmed === "FOR") return "No Match";
+  return trimmed;
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
@@ -129,8 +136,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       Wrestler1: wrestlerLabel(red),
       Wrestler2: wrestlerLabel(green),
       Winner: winnerLabel(bout.resultWinnerId, red, green),
-      Type: bout.resultType ?? "",
+      Type: exportTypeLabel(bout.resultType),
       Score: bout.resultScore ?? "",
+      Period: formatResultPeriod(bout.resultPeriod),
+      Comment: bout.resultNotes ?? "",
     });
   }
 

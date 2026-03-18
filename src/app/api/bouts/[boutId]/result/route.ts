@@ -3,13 +3,13 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAnyRole } from "@/lib/rbac";
-import { validateBoutResult } from "@/lib/resultEntry";
+import { normalizeSavedResult, validateBoutResult } from "@/lib/resultEntry";
 
 const BodySchema = z.object({
   winnerId: z.string().nullable().optional(), // null to clear
   type: z.string().trim().min(1).max(20).nullable().optional(),
   score: z.string().trim().min(1).max(20).nullable().optional(),
-  period: z.number().int().min(1).max(10).nullable().optional(),
+  period: z.number().int().min(1).max(6).nullable().optional(),
   time: z.string().trim().min(1).max(10).nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });
@@ -69,12 +69,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     winnerId: body.winnerId,
     type: body.type,
     score: body.score,
+    period: body.period,
     time: body.time,
     notes: body.notes,
   });
   if (!validated.ok) {
     return NextResponse.json({ error: validated.error }, { status: 400 });
   }
+  const normalized = normalizeSavedResult(validated.value);
 
   const data: {
     resultWinnerId?: string | null;
@@ -86,12 +88,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     resultAt: Date;
   } = { resultAt: new Date() };
 
-  data.resultWinnerId = validated.value.winnerId;
-  data.resultType = validated.value.type;
-  data.resultScore = validated.value.score;
-  if (body.period !== undefined) data.resultPeriod = body.period;
-  data.resultTime = validated.value.time;
-  data.resultNotes = validated.value.notes;
+  data.resultWinnerId = normalized.winnerId;
+  data.resultType = normalized.type;
+  data.resultScore = normalized.score;
+  data.resultPeriod = normalized.period;
+  data.resultTime = normalized.time;
+  data.resultNotes = normalized.notes;
 
   const updated = await db.bout.update({
     where: { id: boutId },

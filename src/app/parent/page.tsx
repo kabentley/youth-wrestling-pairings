@@ -8,6 +8,7 @@ import ParentTodayMeetCards, {
   type ParentTodayCurrentUser,
   type ParentTodayMeetGroup,
 } from "@/components/parent/ParentTodayMeetCards";
+import { formatResultPeriod } from "@/lib/resultEntry";
 
 type Child = {
   id: string;
@@ -329,6 +330,10 @@ export default function ParentPage() {
       : "";
     const score = result.score?.trim() ?? "";
     const time = result.time?.trim() ?? "";
+    const rawPeriod = formatResultPeriod(result.period);
+    const period = rawPeriod === "1" || rawPeriod === "2" || rawPeriod === "3"
+      ? `P${rawPeriod}`
+      : rawPeriod;
     const rawType = result.type?.trim().toUpperCase() ?? "";
     const type =
       rawType === "PIN" ? "FALL"
@@ -340,6 +345,7 @@ export default function ParentPage() {
 
     if (type === "FALL") {
       if (time) coreParts.push(time);
+      else if (period) coreParts.push(period);
       else if (score) coreParts.push(score);
       const core = coreParts.join(" ").trim();
       return core ? `${core} (pin)` : "pin";
@@ -347,6 +353,7 @@ export default function ParentPage() {
 
     if (score) coreParts.push(score);
     if (time) coreParts.push(time);
+    else if (period && type === "TF") coreParts.push(period);
     const core = coreParts.join(" ").trim();
 
     if (type === "MAJ") return core ? `${core} (major)` : "major";

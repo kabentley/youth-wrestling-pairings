@@ -2986,6 +2986,16 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           gap: 12px 16px;
           align-items: start;
         }
+        .setup-control-row.additional-match-controls {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: flex-start;
+          justify-content: flex-start;
+          gap: 8px 18px;
+        }
+        .setup-control-row.additional-match-controls label {
+          flex: 0 0 auto;
+        }
         .tab-button {
           flex: none;
           padding: 8px 14px;
@@ -3345,10 +3355,23 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           }
         .pairings-side-card {
           min-height: calc(23 * 25px + 145px);
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          overflow: hidden;
+        }
+        .pairings-side-body {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          overflow-x: hidden;
+          padding-right: 4px;
+          scrollbar-gutter: stable;
         }
         .additional-matches-wrapper {
           margin-top: 0;
           max-height: clamp(220px, 32vh, calc(12 * 25px + 36px));
+          scrollbar-gutter: stable;
         }
         @media (max-height: 800px) {
           .pairings-table-wrapper {
@@ -3362,7 +3385,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           }
           .pairings-side-card {
             max-height: calc(16 * 25px + 120px);
-            overflow-y: visible;
           }
         }
         @media (max-height: 680px) {
@@ -3377,7 +3399,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           }
           .pairings-side-card {
             max-height: calc(12 * 25px + 110px);
-            overflow-y: visible;
           }
         }
         @media (max-width: 980px) {
@@ -3419,6 +3440,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           .pairings-table td.pairings-name-cell {
             width: 55px;
             max-width: 55px;
+          }
+        }
+        @media (max-width: 820px) {
+          .setup-control-row.additional-match-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px 10px;
+          }
+          .setup-control-row.additional-match-controls label {
+            flex: initial;
+            font-size: 13px;
           }
         }
         .pairings-table thead th {
@@ -3523,6 +3555,14 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         }
         .modal-card.ready-checkin-modal {
           width: min(760px, 94vw);
+          max-height: min(86vh, calc(100dvh - 24px));
+          grid-template-rows: auto auto minmax(0, 1fr) auto;
+        }
+        .ready-checkin-body {
+          min-height: 0;
+          overflow-y: auto;
+          padding-right: 4px;
+          scrollbar-gutter: stable;
         }
         .modal-card.edit-access-modal {
           width: min(1080px, 96vw);
@@ -3785,6 +3825,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           display: grid;
           gap: 10px;
           margin-top: 4px;
+          align-content: start;
         }
         .ready-checkin-item {
           border: 1px solid #d8dee7;
@@ -4893,6 +4934,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             )}
             </div>
           </div>
+          <div className="pairings-side-body">
           {canEdit && activePairingTarget && (
             <div
               style={{
@@ -5381,7 +5423,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                       Note: Click on wrestler name to add or remove.
                     </div>
                     <div
-                      className="setup-control-row"
+                      className="setup-control-row additional-match-controls"
                       style={{ marginTop: 16 }}
                     >
                       <label><input type="checkbox" checked={settings.enforceAgeGapCheck} onChange={async e => {
@@ -5407,19 +5449,29 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                     </div>
                   </>
                 )}
+          </div>
         </div>
       </div>
 
       <div style={{ marginTop: 20 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="nav-btn" onClick={() => setShowComments(prev => !prev)}>
-            {showComments ? "Hide Comments" : "Show Comments"}
+          <button
+            className={`nav-btn${showComments ? " primary" : ""}`}
+            onClick={() => setShowComments(prev => !prev)}
+          >
+            Comments
           </button>
-          <button className="nav-btn" onClick={() => setShowChangeLog(s => !s)}>
-            {showChangeLog ? "Hide Change Log" : "Show Change Log"}
+          <button
+            className={`nav-btn${showChangeLog ? " primary" : ""}`}
+            onClick={() => setShowChangeLog(s => !s)}
+          >
+            Change Log
           </button>
           <span style={{ fontSize: 17, fontWeight: 600, color: "#2f3237", alignSelf: "center" }}>
-            Total matches: {bouts.length}
+            Wrestlers: {attendingByTeam.length}
+          </span>
+          <span style={{ fontSize: 17, fontWeight: 600, color: "#2f3237", alignSelf: "center" }}>
+            Matches: {bouts.length}
           </span>
           {autoPairingsSummary && (
             <span style={{ fontSize: 13, color: "#4b5563", alignSelf: "center" }}>
@@ -6210,52 +6262,54 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                   ? "Review these checks before publishing the meet."
                   : "Review these checks before moving the meet out of Draft."}
               </div>
-              {readyForCheckinError && (
-                <div className="ready-checkin-error">{readyForCheckinError}</div>
-              )}
-              {readyForCheckinLoading && (
-                <div className="ready-checkin-summary">Loading checklist...</div>
-              )}
-              {!readyForCheckinLoading && readyForCheckinChecklist && (
-                <>
-                  <div className="ready-checkin-list">
-                    {readyForCheckinChecklist.items.map((item) => {
-                      const itemClass = item.ok ? "ok" : item.severity;
-                      const stateLabel = item.ok ? "OK" : item.severity === "warning" ? "Warning" : "Fix";
-                      return (
-                        <div key={item.id} className={`ready-checkin-item ${itemClass}`}>
-                          <div className="ready-checkin-item-header">
-                            <span>{item.label}</span>
-                            <span className="ready-checkin-item-state">{stateLabel}</span>
-                          </div>
-                          <div className="ready-checkin-item-detail">{renderChecklistDetail(item.detail)}</div>
-                          {!item.ok && item.action && item.actionLabel && (
-                            <div className="ready-checkin-item-actions">
-                              <button
-                                type="button"
-                                className="nav-btn secondary"
-                                onClick={() => void runReadyForCheckinAction(item.action!)}
-                                disabled={Boolean(readyForCheckinActionId) || readyForCheckinSubmitting}
-                              >
-                                {readyForCheckinActionId === item.action ? "Fixing..." : item.actionLabel}
-                              </button>
+              <div className="ready-checkin-body">
+                {readyForCheckinError && (
+                  <div className="ready-checkin-error">{readyForCheckinError}</div>
+                )}
+                {readyForCheckinLoading && (
+                  <div className="ready-checkin-summary">Loading checklist...</div>
+                )}
+                {!readyForCheckinLoading && readyForCheckinChecklist && (
+                  <>
+                    <div className="ready-checkin-list">
+                      {readyForCheckinChecklist.items.map((item) => {
+                        const itemClass = item.ok ? "ok" : item.severity;
+                        const stateLabel = item.ok ? "OK" : item.severity === "warning" ? "Warning" : "Fix";
+                        return (
+                          <div key={item.id} className={`ready-checkin-item ${itemClass}`}>
+                            <div className="ready-checkin-item-header">
+                              <span>{item.label}</span>
+                              <span className="ready-checkin-item-state">{stateLabel}</span>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="ready-checkin-summary">
-                    {readyForCheckinChecklist.ok
-                      ? (readyForCheckinTargetStatus === "PUBLISHED"
-                        ? "All blocking checks passed. You can publish the meet."
-                        : "All blocking checks passed. You can mark the meet ready for check-in.")
-                      : (readyForCheckinTargetStatus === "PUBLISHED"
-                        ? "Fix the failed checklist items before publishing the meet."
-                        : "Fix the failed checklist items before moving the meet to Check-in.")}
-                  </div>
-                </>
-              )}
+                            <div className="ready-checkin-item-detail">{renderChecklistDetail(item.detail)}</div>
+                            {!item.ok && item.action && item.actionLabel && (
+                              <div className="ready-checkin-item-actions">
+                                <button
+                                  type="button"
+                                  className="nav-btn secondary"
+                                  onClick={() => void runReadyForCheckinAction(item.action!)}
+                                  disabled={Boolean(readyForCheckinActionId) || readyForCheckinSubmitting}
+                                >
+                                  {readyForCheckinActionId === item.action ? "Fixing..." : item.actionLabel}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="ready-checkin-summary">
+                      {readyForCheckinChecklist.ok
+                        ? (readyForCheckinTargetStatus === "PUBLISHED"
+                          ? "All blocking checks passed. You can publish the meet."
+                          : "All blocking checks passed. You can mark the meet ready for check-in.")
+                        : (readyForCheckinTargetStatus === "PUBLISHED"
+                          ? "Fix the failed checklist items before publishing the meet."
+                          : "Fix the failed checklist items before moving the meet to Check-in.")}
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="ready-checkin-footer">
                 <button
                   type="button"
