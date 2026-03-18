@@ -59,10 +59,12 @@ const DEFAULT_VOLUNTEERS_FONT_SIZE = 13;
 const MIN_VOLUNTEERS_FONT_SIZE = 10;
 const MAX_VOLUNTEERS_FONT_SIZE = 22;
 
+/** Clamp persisted or user-entered font sizes to the supported slider range. */
 function clampVolunteersFontSize(value: number) {
   return Math.max(MIN_VOLUNTEERS_FONT_SIZE, Math.min(MAX_VOLUNTEERS_FONT_SIZE, Math.round(value)));
 }
 
+/** Read the last volunteers font size from local storage, with safe SSR and parse fallbacks. */
 function readStoredVolunteersFontSize() {
   if (typeof window === "undefined") return DEFAULT_VOLUNTEERS_FONT_SIZE;
   const stored = window.localStorage.getItem(VOLUNTEERS_FONT_SIZE_STORAGE_KEY);
@@ -73,22 +75,26 @@ function readStoredVolunteersFontSize() {
     : DEFAULT_VOLUNTEERS_FONT_SIZE;
 }
 
+/** Convert API role codes into the labels shown on volunteer chips. */
 function roleLabel(role: VolunteerRole) {
   if (role === "COACH") return "Coach";
   if (role === "TABLE_WORKER") return "Table Worker";
   return "Parent";
 }
 
+/** Keep volunteer ordering stable across mats and the unassigned pool. */
 function roleRank(role: VolunteerRole) {
   if (role === "COACH") return 0;
   if (role === "TABLE_WORKER") return 1;
   return 2;
 }
 
+/** Strip punctuation and case so fuzzy search works against names, roles, and kids consistently. */
 function normalizeFuzzyText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/** Match direct substrings first, then fall back to ordered-character matching for short fuzzy queries. */
 function fuzzyMatch(value: string, query: string) {
   const needle = normalizeFuzzyText(query);
   if (!needle) return true;
@@ -102,12 +108,14 @@ function fuzzyMatch(value: string, query: string) {
   return needleIndex === needle.length;
 }
 
+/** Only home-team volunteers are allowed to remain unassigned in the shared pool. */
 function canBeInUnassignedPool(volunteer: Volunteer, homeTeamId: string | null) {
   const isHomeTeam = homeTeamId ? volunteer.teamId === homeTeamId : true;
   if (!isHomeTeam) return false;
   return true;
 }
 
+/** Use a DOM clone as the drag image so the pointer keeps the same visual card during drag. */
 function setVolunteerDragImage(event: React.DragEvent<HTMLDivElement>) {
   const source = event.currentTarget;
   const rect = source.getBoundingClientRect();
@@ -262,6 +270,7 @@ export default function VolunteersTab({
     return preset.color ?? "#f2f2f2";
   };
 
+  /** Reload volunteer assignments after server-side actions that can reorder or move them. */
   async function refreshVolunteersPayload() {
     const volunteersRes = await fetch(`/api/meets/${meetId}/volunteers`);
     if (!volunteersRes.ok) return false;
@@ -270,6 +279,7 @@ export default function VolunteersTab({
     return true;
   }
 
+  /** Count bouts whose current mat does not match the volunteer's assigned mat. */
   function countWrongBoutsForVolunteer(volunteer: Volunteer) {
     const volunteerMat = volunteer.matNumber;
     if (volunteerMat === null || volunteerMat === undefined) return 0;
@@ -284,6 +294,10 @@ export default function VolunteersTab({
     return wrongCount;
   }
 
+  /**
+   * Ask the mats/people-sync endpoint for a dry-run diff so the UI can show which mats
+   * would change before the user commits a bulk "Move all".
+   */
   async function refreshDirtyMats() {
     if (!canEdit) {
       setDirtyMats([]);
@@ -318,6 +332,7 @@ export default function VolunteersTab({
     }
   }
 
+  /** Optimistically move one volunteer between mats or back into the unassigned pool, then persist it. */
   const setVolunteerMat = (volunteerId: string, matNumber: number | null) => {
     if (!payload) return;
     const next = payload.volunteers.map((volunteer) => {
@@ -370,6 +385,7 @@ export default function VolunteersTab({
     }
     for (const mat of map.keys()) {
       const sorted = (map.get(mat) ?? []).slice().sort((a, b) => {
+        // Home-team adults stay at the top of a mat, then roles and names break ties.
         const aHome = a.teamId && homeTeamId ? a.teamId === homeTeamId : false;
         const bHome = b.teamId && homeTeamId ? b.teamId === homeTeamId : false;
         if (aHome !== bHome) return aHome ? -1 : 1;
@@ -387,6 +403,7 @@ export default function VolunteersTab({
       const volunteerMat = volunteer.matNumber ?? null;
       if (volunteerMat === null) continue;
       for (const kid of volunteer.kids) {
+        // A set is enough here because the UI only cares whether a kid spans multiple parent mats.
         const mats = map.get(kid.id) ?? new Set<number>();
         mats.add(volunteerMat);
         map.set(kid.id, mats);
@@ -430,12 +447,14 @@ export default function VolunteersTab({
     ? volunteers.find((volunteer) => volunteer.id === dragPreview.volunteerId) ?? null
     : null;
 
+  /** Clear both the drag source id and the floating preview so the UI resets cleanly after drop/end. */
   const clearVolunteerDrag = () => {
     dragVolunteerIdRef.current = null;
     setDragVolunteerId(null);
     setDragPreview(null);
   };
 
+  /** Throttle preview movement to animation frames so drag-over updates stay smooth on iPad and desktop. */
   const handleVolunteerDragPreviewMove = (event: React.DragEvent<HTMLElement>) => {
     if (!dragVolunteerIdRef.current) return;
     if (event.clientX === 0 && event.clientY === 0) return;
@@ -473,6 +492,7 @@ export default function VolunteersTab({
     clearVolunteerDrag();
   };
 
+  /** Persist the current volunteer-to-mat assignments. */
   async function saveAssignments(volunteersToSave?: Volunteer[]) {
     if (!canEdit || saving) return;
     const sourceVolunteers = volunteersToSave ?? payload?.volunteers;
@@ -502,6 +522,7 @@ export default function VolunteersTab({
     }
   }
 
+  /** Ask the server to move bouts onto the mats implied by the current volunteer assignments. */
   async function updateBoutMats() {
     if (!canEdit || saving || updatingBouts || !payload) return;
     setUpdatingBouts(true);
@@ -527,6 +548,7 @@ export default function VolunteersTab({
     }
   }
 
+  /** Move only one volunteer's kids' bouts onto that volunteer's assigned mat. */
   async function moveVolunteerKids(volunteer: Volunteer) {
     if (!canEdit || saving || updatingBouts || movingVolunteerId) return;
     if (volunteer.matNumber === null || volunteer.matNumber === undefined) return;

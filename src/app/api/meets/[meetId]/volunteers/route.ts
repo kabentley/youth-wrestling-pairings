@@ -17,6 +17,7 @@ const BodySchema = z.object({
   })).max(500),
 });
 
+/** Sort home-team volunteers into coach, table worker, then parent order. */
 function roleRank(role: string) {
   if (role === "COACH") return 0;
   if (role === "TABLE_WORKER") return 1;
@@ -24,18 +25,22 @@ function roleRank(role: string) {
   return 3;
 }
 
+/** Home-team coaches can manage volunteer mat assignments for their own meet. */
 function isHomeTeamCoach(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return user.role === "COACH" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
 }
 
+/** Home-team admins share the same volunteer-management privileges. */
 function isHomeTeamAdmin(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return user.role === "ADMIN" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
 }
 
+/** Centralized permission check reused by both read and write volunteer APIs. */
 function canManageVolunteers(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return isHomeTeamCoach(user, homeTeamId) || isHomeTeamAdmin(user, homeTeamId);
 }
 
+/** Converts stored mat/order values to the compact bout number shown in the UI. */
 function formatBoutNumber(mat: number | null, order: number | null) {
   if (!mat || !order) return null;
   const displayOrder = Math.max(0, order - 1);
@@ -133,6 +138,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
         orderBy: [{ mat: "asc" }, { order: "asc" }, { id: "asc" }],
       })
     : [];
+  // Precompute each home-team kid's assigned bouts so every volunteer can be
+  // rendered with linked wrestlers and current mat locations in one pass.
   const kidBoutsMap = new Map<string, Array<{ id: string; mat: number | null; order: number | null; boutNumber: string | null }>>();
   for (const bout of bouts) {
     const mapped = {
@@ -179,6 +186,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
           .map((wrestler) => ({
             id: wrestler.id,
             name: `${wrestler.first} ${wrestler.last}`.trim(),
+            // Keep bouts sorted inside each wrestler so the volunteer card can
+            // render stable, human-readable lists without extra client work.
             bouts: (kidBoutsMap.get(wrestler.id) ?? []).slice().sort((a, b) => {
               const matA = a.mat ?? Number.MAX_SAFE_INTEGER;
               const matB = b.mat ?? Number.MAX_SAFE_INTEGER;
@@ -277,6 +286,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ error: `Invalid volunteer id for this meet: ${invalid}` }, { status: 400 });
   }
 
+  // Later assignments for the same user overwrite earlier ones so the PATCH
+  // body can be treated as the user's final desired volunteer layout.
   const byUser = new Map<string, number | null>();
   for (const assignment of body.assignments) {
     byUser.set(assignment.userId, assignment.matNumber);

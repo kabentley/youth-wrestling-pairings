@@ -26,6 +26,7 @@ export const DEFAULT_MAT_COUNT = 4;
 /** Minimum mat count enforced by the scheduler. */
 export const MIN_MATS = 1;
 
+/** Wide-open fallback rule used when a mat has no explicit age/experience filter. */
 const DEFAULT_RULE: MatRule = {
   minExperience: 0,
   maxExperience: 10,
@@ -36,11 +37,13 @@ const DEFAULT_RULE: MatRule = {
 const RANGE_PENALTY_SCALE = 50;
 const INELIGIBLE_PENALTY = 100_000;
 
+/** Returns decimal age at meet time so age rules can compare fractional years. */
 function ageInYears(birthdate: Date, onDate: Date) {
   const diff = onDate.getTime() - birthdate.getTime();
   return diff / (365.25 * 24 * 60 * 60 * 1000);
 }
 
+/** Distance outside a preferred range; zero means the value is inside it. */
 function rangePenalty(value: number, min: number, max: number) {
   if (value < min) return min - value;
   if (value > max) return value - max;
@@ -64,6 +67,12 @@ export type PeopleRuleCandidate = {
 
 export type PeopleRuleMatMap = Map<string, PeopleRuleCandidate[]>;
 
+/**
+ * Hard mat-rule eligibility check used before load balancing.
+ *
+ * Missing wrestler metadata falls back to "eligible" so assignment can
+ * continue rather than failing the entire meet.
+ */
 function matchesMatRule(bout: { redId: string; greenId: string }, rule: MatRule, wMap: Map<string, MatWrestler>, meetDate: Date) {
   const red = wMap.get(bout.redId);
   const green = wMap.get(bout.greenId);
@@ -123,6 +132,7 @@ export function getEligibleMatIndexes(
   return { indexes };
 }
 
+/** Fallback target when no rule narrows the choices: keep mats balanced by count. */
 function pickLeastLoadedMat(mats: { boutIds: string[]; rule: MatRule }[]) {
   return mats.reduce((best, _, idx) =>
     mats[idx].boutIds.length < mats[best].boutIds.length ? idx : best,
@@ -179,6 +189,9 @@ function collectPeopleRuleCandidates(
   peopleRuleMats: PeopleRuleMatMap,
   numMats: number,
 ): PeopleRuleCandidate[] {
+  // Volunteer-linked mat rules are tracked per wrestler. When both wrestlers
+  // have preferences, shared mats win; otherwise keep both ordered candidate
+  // lists so downstream selection stays deterministic.
   const redEntries = peopleRuleMats.get(bout.redId) ?? [];
   const greenEntries = peopleRuleMats.get(bout.greenId) ?? [];
   if (redEntries.length === 0 && greenEntries.length === 0) return [];

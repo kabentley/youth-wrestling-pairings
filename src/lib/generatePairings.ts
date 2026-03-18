@@ -85,6 +85,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     .flatMap(mt => mt.team.wrestlers)
     .filter(w => w.active && attendingIds.has(w.id));
   const teamOrder = (() => {
+    // Preserve stable bout direction by giving each team a fixed meet-local
+    // ordering. The home team, when present, is always considered first.
     const order = new Map<string, number>();
     const homeId = settings.homeTeamId ?? null;
     const allTeams = meetTeams.map(mt => mt.team);
@@ -162,6 +164,7 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
     return true;
   }
 
+  /** Stable wrestler ordering used only to decide red/green direction. */
   function compareWrestlers(a: typeof pool[number], b: typeof pool[number]) {
     const aOrder = teamOrder.get(a.teamId) ?? Number.MAX_SAFE_INTEGER;
     const bOrder = teamOrder.get(b.teamId) ?? Number.MAX_SAFE_INTEGER;
@@ -196,7 +199,8 @@ export async function generatePairingsForMeet(meetId: string, settings: PairingS
   }
 
 
-  // Build a per-team roster to allow per-round shuffling within each team.
+  // Keep team rosters grouped so each round can reshuffle locally without
+  // rebuilding the wrestler pool from scratch.
   const wrestlersByTeam = new Map<string, typeof pool>();
   for (const mt of meetTeams) {
     const teamWrestlers = mt.team.wrestlers

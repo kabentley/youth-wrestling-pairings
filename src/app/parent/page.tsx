@@ -90,6 +90,7 @@ type Profile = {
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 const LAST_NAME_MATCH_THRESHOLD = 0.82;
 
+/** Lowercases and strips punctuation so name matching ignores formatting noise. */
 const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
 const formatLastFirstName = (first?: string | null, last?: string | null) => {
   const firstName = (first ?? "").trim();
@@ -98,6 +99,12 @@ const formatLastFirstName = (first?: string | null, last?: string | null) => {
   return lastName || firstName;
 };
 
+/**
+ * Builds one or two last-name keys from the account holder's display name.
+ *
+ * The joined-token fallback helps with compound last names that may be stored
+ * with or without spaces.
+ */
 const extractLastNameCandidates = (fullName?: string | null) => {
   if (!fullName) return [] as string[];
   const rawTokens = fullName
@@ -119,6 +126,7 @@ const extractLastNameCandidates = (fullName?: string | null) => {
   return Array.from(new Set(candidates));
 };
 
+/** Small local edit-distance helper used for fuzzy parent-to-wrestler matching. */
 const levenshteinDistance = (a: string, b: string) => {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
@@ -141,6 +149,12 @@ const levenshteinDistance = (a: string, b: string) => {
   return prev[b.length];
 };
 
+/**
+ * Tuned similarity score for surname matching.
+ *
+ * Exact and near-exact matches get a boost so likely family matches are still
+ * suggested when the account name has a typo or surname variant.
+ */
 const lastNameSimilarity = (a: string, b: string) => {
   if (!a || !b) return 0;
   if (a === b) return 1;
@@ -168,6 +182,7 @@ export default function ParentPage() {
   const [pickerSaving, setPickerSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
+  /** Loads the parent dashboard payloads in parallel so the page paints once. */
   async function load() {
     const [profileRes, matchesRes, teamWrestlersRes] = await Promise.all([
       fetch("/api/parent/profile"),
@@ -185,6 +200,7 @@ export default function ParentPage() {
     setTeamWrestlers(teamWrestlersRes.ok && Array.isArray(teamWrestlersJson) ? teamWrestlersJson : []);
   }
 
+  /** Suggests likely linked wrestlers from the roster using fuzzy surname matching. */
   function getLikelyWrestlerIds() {
     const candidates = extractLastNameCandidates(profile?.name ?? null);
     if (candidates.length === 0) return [] as string[];
@@ -323,6 +339,12 @@ export default function ParentPage() {
     return days / daysPerYear;
   }
 
+  /**
+   * Formats historical results for the compact parent dashboard view.
+   *
+   * Falls and technical falls may carry either a time or a period depending on
+   * what was captured during results entry.
+   */
   function formatMatchResult(match: Match) {
     const result = match.result;
     const outcome = result.winnerId

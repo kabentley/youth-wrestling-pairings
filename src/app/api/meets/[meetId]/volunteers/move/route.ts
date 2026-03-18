@@ -15,14 +15,17 @@ const BodySchema = z.object({
   volunteerId: z.string().trim().min(1),
 });
 
+/** Home-team coaches can move volunteer-linked bouts before results exist. */
 function isHomeTeamCoach(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return user.role === "COACH" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
 }
 
+/** Home-team admins share the same volunteer-management privileges. */
 function isHomeTeamAdmin(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return user.role === "ADMIN" && Boolean(homeTeamId) && Boolean(user.teamId) && user.teamId === homeTeamId;
 }
 
+/** Centralized permission check reused by volunteer move and assignment routes. */
 function canManageVolunteers(user: { role: string; teamId?: string | null }, homeTeamId?: string | null) {
   return isHomeTeamCoach(user, homeTeamId) || isHomeTeamAdmin(user, homeTeamId);
 }
@@ -98,6 +101,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     return NextResponse.json({ error: "Volunteer must be assigned to a mat before moving matches." }, { status: 400 });
   }
 
+  // A volunteer move affects every linked home-team child; all of their bouts
+  // are moved together so the people-rule assignment stays coherent.
   const kidIds = volunteer.children
     .map((link) => link.wrestler)
     .filter((wrestler) => wrestler.teamId === meet.homeTeamId)
@@ -137,6 +142,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
       }),
     ),
   );
+  // Reordering is required after mat moves so order numbers remain contiguous
+  // and exported bout numbers stay meaningful.
   const reordered = await reorderBoutsForMeetUntilStable(meetId, {
     numMats: maxMat,
     maxPasses: 8,

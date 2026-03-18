@@ -1,4 +1,5 @@
 export const RESULT_TYPES = ["DEC", "MAJ", "TF", "FALL", "DQ", "FOR"] as const;
+/** Shared period choices stored as numeric codes in the database. */
 export const PERIOD_OPTIONS = [
   { value: 1, label: "1" },
   { value: 2, label: "2" },
@@ -28,14 +29,22 @@ export type ValidatedBoutResult = {
   notes: string | null;
 };
 
+/** Accepts only supported regulation/overtime period codes. */
 export function isValidResultPeriod(value?: number | null) {
   return PERIOD_OPTIONS.some((option) => option.value === value);
 }
 
+/** Maps the stored numeric period code to the UI/export label. */
 export function formatResultPeriod(value?: number | null) {
   return PERIOD_OPTIONS.find((option) => option.value === value)?.label ?? "";
 }
 
+/**
+ * Infers the saved decision type from a winner-loser score.
+ *
+ * This keeps results consistent when the UI starts at DEC and the entered
+ * margin actually qualifies as MAJ or TF.
+ */
 export function classifyDecisionTypeFromScore(score?: string | null) {
   const { winnerScore, loserScore } = parseWinnerLoserScore(score);
   if (winnerScore === null || loserScore === null || winnerScore <= loserScore) return null;
@@ -45,6 +54,7 @@ export function classifyDecisionTypeFromScore(score?: string | null) {
   return "DEC" as const;
 }
 
+/** Upgrades saved decision results to their correct type based on score margin. */
 export function normalizeSavedResult(result: ValidatedBoutResult): ValidatedBoutResult {
   if (result.type !== "DEC") return result;
   const normalizedType = classifyDecisionTypeFromScore(result.score);
@@ -70,6 +80,7 @@ function parseScorePart(value: string) {
   return Number.isInteger(parsed) ? parsed : null;
 }
 
+/** Normalizes legacy aliases and UI labels to canonical result codes. */
 export function normalizeResultType(value?: string | null): ResultType | null {
   const trimmed = trimNullable(value);
   if (!trimmed) return null;
@@ -84,6 +95,7 @@ export function isValidResultTime(value?: string | null) {
   return Boolean(trimmed && /^[0-9]:[0-5][0-9]$/.test(trimmed));
 }
 
+/** Parses the persisted `winner-loser` score format used by bout results. */
 export function parseWinnerLoserScore(value?: string | null) {
   const trimmed = trimNullable(value);
   if (!trimmed) return { winnerScore: null, loserScore: null };
@@ -123,6 +135,12 @@ function validateWinnerLoserScore(score: string | null, type?: ResultType | null
   return { ok: true as const, value: `${winnerScore}-${loserScore}` };
 }
 
+/**
+ * Validates and canonicalizes the result payload accepted by the API.
+ *
+ * This mirrors the staged UI: winner first, then type, then only the fields
+ * that apply to that result type.
+ */
 export function validateBoutResult(input: BoutResultInput): ValidationResult {
   const winnerId = trimNullable(input.winnerId) ?? null;
   const rawType = trimNullable(input.type);

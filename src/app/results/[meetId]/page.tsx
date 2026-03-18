@@ -66,6 +66,7 @@ function trimNullable(value?: string | null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** Splits the stored `winner-loser` string into the two score boxes used by the UI. */
 function deriveScoreInputs(resultType: string | null, resultScore: string | null) {
   const type = normalizeResultType(resultType);
   if (type !== "DEC" && type !== "MAJ" && type !== "TF") {
@@ -78,6 +79,12 @@ function deriveScoreInputs(resultType: string | null, resultScore: string | null
   };
 }
 
+/**
+ * Normalizes raw API rows into the shape expected by the staged editor.
+ *
+ * This keeps older saved data readable even if it used legacy aliases or put a
+ * fall time into the score field.
+ */
 function normalizeBoutRow(row: BoutRowApi): BoutRow {
   const type = normalizeResultType(row.resultType);
   const fallbackTime = !trimNullable(row.resultTime) && type === "FALL" && isValidResultTime(row.resultScore)
@@ -97,6 +104,7 @@ function normalizeBoutRow(row: BoutRowApi): BoutRow {
   };
 }
 
+/** Captures the editable portion of a row for dirty/saved comparisons. */
 function snapshotForBout(bout: BoutRow): ResultSnapshot {
   return {
     winnerId: bout.resultWinnerId ?? null,
@@ -107,6 +115,7 @@ function snapshotForBout(bout: BoutRow): ResultSnapshot {
   };
 }
 
+/** Row-level equality check for the saved badge and unsaved-change tracking. */
 function sameSnapshot(a?: ResultSnapshot, b?: ResultSnapshot) {
   return a?.winnerId === b?.winnerId
     && a?.type === b?.type
@@ -115,6 +124,7 @@ function sameSnapshot(a?: ResultSnapshot, b?: ResultSnapshot) {
     && a?.notes === b?.notes;
 }
 
+/** Treats an empty row as "not started" so it does not show as saved. */
 function hasSnapshotValue(snapshot?: ResultSnapshot) {
   if (!snapshot) return false;
   return snapshot.winnerId !== null
@@ -124,6 +134,12 @@ function hasSnapshotValue(snapshot?: ResultSnapshot) {
     || snapshot.notes !== null;
 }
 
+/**
+ * Clears fields that do not apply to the newly selected result type.
+ *
+ * The UI hides irrelevant controls, but this prevents stale hidden values from
+ * surviving type changes and being re-saved later.
+ */
 function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial<BoutRow> {
   if (!nextType) {
     return {
@@ -178,6 +194,7 @@ function parseScoreInputValue(value: string) {
   return Number.isInteger(parsed) ? parsed : null;
 }
 
+/** Mirrors server validation so invalid controls can be highlighted inline. */
 function getRowValidationState(bout: BoutRow) {
   const type = normalizeResultType(bout.resultType);
   const winnerScore = parseScoreInputValue(bout.resultWinnerScoreInput);
