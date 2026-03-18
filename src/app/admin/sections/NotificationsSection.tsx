@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type NotificationRow = {
   id: string;
@@ -132,16 +132,6 @@ export default function NotificationsSection() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
-  const settingsSaveInFlight = useRef(false);
-  const latestSettingsRef = useRef<{
-    dirty: boolean;
-    mode: "off" | "log" | "all" | "whitelist";
-    whitelist: string;
-  }>({
-    dirty: false,
-    mode: "off",
-    whitelist: "",
-  });
 
   async function loadEmailDeliverySettings() {
     const res = await fetch("/api/admin/email-delivery");
@@ -291,68 +281,7 @@ export default function NotificationsSection() {
   const settingsDirty =
     normalizedWhitelist !== savedEmailWhitelist ||
     emailDeliveryMode !== savedEmailDeliveryMode;
-  const canSaveSettings = !isSavingSettings && (settingsDirty || settingsMsgTone === "error");
-
-  const flushSettingsSave = useCallback((
-    nextMode = emailDeliveryMode,
-    nextWhitelist = emailWhitelist,
-  ) => {
-    if (showEveryoneConfirmModal) {
-      return;
-    }
-    const normalizedNextWhitelist = normalizeEmailWhitelistInput(nextWhitelist);
-    const isDirty =
-      normalizedNextWhitelist !== savedEmailWhitelist ||
-      nextMode !== savedEmailDeliveryMode ||
-      settingsMsgTone === "error";
-    if (!isDirty || settingsSaveInFlight.current) {
-      return;
-    }
-    settingsSaveInFlight.current = true;
-    void saveEmailDeliverySettings(nextMode, normalizedNextWhitelist).finally(() => {
-      settingsSaveInFlight.current = false;
-    });
-  }, [
-    emailDeliveryMode,
-    emailWhitelist,
-    savedEmailDeliveryMode,
-    savedEmailWhitelist,
-    saveEmailDeliverySettings,
-    showEveryoneConfirmModal,
-    settingsMsgTone,
-  ]);
-
-  useEffect(() => {
-    latestSettingsRef.current = {
-      dirty: settingsDirty,
-      mode: emailDeliveryMode,
-      whitelist: emailWhitelist,
-    };
-  }, [emailDeliveryMode, emailWhitelist, settingsDirty]);
-
-  useEffect(() => {
-    const flushLatestSettingsSave = () => {
-      const latest = latestSettingsRef.current;
-      if (!latest.dirty || settingsSaveInFlight.current || showEveryoneConfirmModal) {
-        return;
-      }
-      flushSettingsSave(latest.mode, latest.whitelist);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        flushLatestSettingsSave();
-      }
-    };
-
-    window.addEventListener("blur", flushLatestSettingsSave);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("blur", flushLatestSettingsSave);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      flushLatestSettingsSave();
-    };
-  }, [flushSettingsSave, showEveryoneConfirmModal]);
+  const canSaveSettings = settingsDirty || settingsMsgTone === "error";
 
   return (
     <>
@@ -360,7 +289,9 @@ export default function NotificationsSection() {
         <h1 className="admin-title">Notifications</h1>
       </div>
 
-      <div className="admin-card admin-users-controls">
+      <div
+        className="admin-card admin-users-controls"
+      >
         <div className="admin-form-grid">
           <div className="admin-field">
             <label className="admin-label" htmlFor="notification-email-delivery-mode">
@@ -384,9 +315,6 @@ export default function NotificationsSection() {
                 setEmailDeliveryMode(nextMode);
                 setSettingsMsg("");
               }}
-              onBlur={() => {
-                flushSettingsSave();
-              }}
               disabled={isSavingSettings}
             >
               <option value="off">None</option>
@@ -409,10 +337,21 @@ export default function NotificationsSection() {
                 setEmailWhitelist(event.target.value);
                 setSettingsMsg("");
               }}
-              onBlur={() => {
-                const nextWhitelist = normalizeEmailWhitelistInput(emailWhitelist);
-                setEmailWhitelist(nextWhitelist);
-                flushSettingsSave(emailDeliveryMode, nextWhitelist);
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const field = event.currentTarget;
+                  const selectionStart = field.selectionStart;
+                  const selectionEnd = field.selectionEnd;
+                  const nextValue =
+                    `${field.value.slice(0, selectionStart)}\n${field.value.slice(selectionEnd)}`;
+                  setEmailWhitelist(nextValue);
+                  setSettingsMsg("");
+                  window.requestAnimationFrame(() => {
+                    field.setSelectionRange(selectionStart + 1, selectionStart + 1);
+                  });
+                }
               }}
               placeholder={"one@example.com\nanother@example.com"}
               rows={5}
@@ -429,9 +368,13 @@ export default function NotificationsSection() {
               type="button"
               className="admin-btn"
               onClick={() => {
+                if (!canSaveSettings || isSavingSettings) {
+                  return;
+                }
                 void saveEmailDeliverySettings(emailDeliveryMode, emailWhitelist);
               }}
-              disabled={!canSaveSettings}
+              disabled={!canSaveSettings || isSavingSettings}
+              style={{ minHeight: 44, padding: "10px 18px", fontSize: 15 }}
             >
               {isSavingSettings ? "Saving..." : "Save"}
             </button>
