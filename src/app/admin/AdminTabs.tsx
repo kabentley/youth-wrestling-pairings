@@ -54,7 +54,14 @@ export default function AdminTabs({
     }
   }, [searchParams, activeTab, defaultTab, showNotifications]);
 
-  const handleTabClick = (tab: AdminTabKey) => {
+  const handleTabClick = async (tab: AdminTabKey) => {
+    const pending: Promise<unknown>[] = [];
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("admin:before-tab-change", { detail: { pending } }));
+    }
+    if (pending.length > 0) {
+      await Promise.allSettled(pending);
+    }
     router.replace(`/admin?tab=${tab}`);
   };
 
@@ -67,7 +74,7 @@ export default function AdminTabs({
           role="tab"
           aria-selected={activeTab === "users"}
           className={`admin-tab-button${activeTab === "users" ? " active" : ""}`}
-          onClick={() => handleTabClick("users")}
+          onClick={() => { void handleTabClick("users"); }}
         >
           Users
         </button>
@@ -76,7 +83,7 @@ export default function AdminTabs({
           role="tab"
           aria-selected={activeTab === "teams"}
           className={`admin-tab-button${activeTab === "teams" ? " active" : ""}`}
-          onClick={() => handleTabClick("teams")}
+          onClick={() => { void handleTabClick("teams"); }}
         >
           Teams
         </button>
@@ -85,7 +92,7 @@ export default function AdminTabs({
           role="tab"
           aria-selected={activeTab === "head-coaches"}
           className={`admin-tab-button${activeTab === "head-coaches" ? " active" : ""}`}
-          onClick={() => handleTabClick("head-coaches")}
+          onClick={() => { void handleTabClick("head-coaches"); }}
         >
           Head Coaches
         </button>
@@ -94,7 +101,7 @@ export default function AdminTabs({
           role="tab"
           aria-selected={activeTab === "league"}
           className={`admin-tab-button${activeTab === "league" ? " active" : ""}`}
-          onClick={() => handleTabClick("league")}
+          onClick={() => { void handleTabClick("league"); }}
         >
           League
         </button>
@@ -103,7 +110,7 @@ export default function AdminTabs({
           role="tab"
           aria-selected={activeTab === "pairings"}
           className={`admin-tab-button${activeTab === "pairings" ? " active" : ""}`}
-          onClick={() => handleTabClick("pairings")}
+          onClick={() => { void handleTabClick("pairings"); }}
         >
           Pairings Settings
         </button>
@@ -113,7 +120,7 @@ export default function AdminTabs({
             role="tab"
             aria-selected={activeTab === "notifications"}
             className={`admin-tab-button${activeTab === "notifications" ? " active" : ""}`}
-            onClick={() => handleTabClick("notifications")}
+            onClick={() => { void handleTabClick("notifications"); }}
           >
             Notifications
           </button>

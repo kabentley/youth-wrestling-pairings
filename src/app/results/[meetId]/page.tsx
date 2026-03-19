@@ -7,6 +7,8 @@ import AppHeader from "@/components/AppHeader";
 import { DEFAULT_MAT_RULES } from "@/lib/matRules";
 import {
   buildWinnerLoserScore,
+  formatCompactResultSummary,
+  isOvertimeResultPeriod,
   isValidResultTime,
   isValidResultPeriod,
   normalizeResultType,
@@ -30,6 +32,8 @@ type BoutRowApi = {
   resultPeriod: number | null;
   resultTime: string | null;
   resultNotes: string | null;
+  resultUpdatedBy: string | null;
+  resultUpdatedByColor: string | null;
   resultAt: string | null;
 };
 type BoutRow = BoutRowApi & {
@@ -42,6 +46,9 @@ type MeetInfo = {
   date: string;
   location?: string | null;
   status?: string | null;
+  viewerRole?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
+  resultsCompletedAt?: string | null;
+  canManageResultsCompletion?: boolean;
   homeTeamId?: string | null;
 };
 type ResultSnapshot = {
@@ -60,10 +67,28 @@ const TYPE_OPTIONS: Array<{ value: ResultType; label: string }> = [
   { value: "DQ", label: "DQ" },
   { value: "FOR", label: "No Match" },
 ];
+const OVERTIME_PERIOD_OPTIONS = PERIOD_OPTIONS.filter((option) => isOvertimeResultPeriod(option.value));
 
 function trimNullable(value?: string | null) {
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeFuzzyText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function fuzzyMatch(haystackRaw: string, queryRaw: string) {
+  const haystack = normalizeFuzzyText(haystackRaw);
+  const query = normalizeFuzzyText(queryRaw);
+  if (!query) return true;
+  if (!haystack) return false;
+  if (haystack.includes(query)) return true;
+  let queryIndex = 0;
+  for (let i = 0; i < haystack.length && queryIndex < query.length; i += 1) {
+    if (haystack[i] === query[queryIndex]) queryIndex += 1;
+  }
+  return queryIndex === query.length;
 }
 
 /** Splits the stored `winner-loser` string into the two score boxes used by the UI. */
@@ -90,7 +115,7 @@ function normalizeBoutRow(row: BoutRowApi): BoutRow {
   const fallbackTime = !trimNullable(row.resultTime) && type === "FALL" && isValidResultTime(row.resultScore)
     ? trimNullable(row.resultScore)
     : trimNullable(row.resultTime);
-  const normalizedPeriod = type === "FALL" || type === "TF"
+  const normalizedPeriod = type === "FALL" || type === "TF" || (type === "DEC" && isOvertimeResultPeriod(row.resultPeriod))
     ? row.resultPeriod ?? null
     : null;
   return {
@@ -156,7 +181,7 @@ function sanitizeRowForType(bout: BoutRow, nextType: ResultType | null): Partial
     return {
       resultType: nextType,
       resultScore: buildWinnerLoserScore(bout.resultWinnerScoreInput, bout.resultLoserScoreInput),
-      resultPeriod: null,
+      resultPeriod: nextType === "DEC" && isOvertimeResultPeriod(bout.resultPeriod) ? bout.resultPeriod : null,
       resultTime: null,
     };
   }
@@ -200,7 +225,7 @@ function getRowValidationState(bout: BoutRow) {
   const winnerScore = parseScoreInputValue(bout.resultWinnerScoreInput);
   const loserScore = parseScoreInputValue(bout.resultLoserScoreInput);
   const usesScore = type === "DEC" || type === "MAJ" || type === "TF";
-  const usesPeriod = type === "FALL" || type === "TF";
+  const usesPeriod = type === "FALL" || type === "TF" || type === "DEC";
   const usesNotes = type === "DQ" || type === "FOR";
   const scoreMargin = winnerScore !== null && loserScore !== null ? winnerScore - loserScore : null;
 
@@ -220,7 +245,9 @@ function getRowValidationState(bout: BoutRow) {
     || (type === "MAJ" && scoreMargin !== null && scoreMargin < 8)
     || (type === "TF" && scoreMargin !== null && scoreMargin < 15)
   );
-  const periodInvalid = usesPeriod && bout.resultPeriod !== null && !isValidResultPeriod(bout.resultPeriod);
+  const periodInvalid = type === "DEC"
+    ? bout.resultPeriod !== null && !isOvertimeResultPeriod(bout.resultPeriod)
+    : usesPeriod && bout.resultPeriod !== null && !isValidResultPeriod(bout.resultPeriod);
   const notesInvalid = usesNotes && !trimNullable(bout.resultNotes);
 
   return {
@@ -237,6 +264,8 @@ export default function EnterResultsPage() {
   const [meet, setMeet] = useState<MeetInfo | null>(null);
   const [bouts, setBouts] = useState<BoutRow[]>([]);
   const [msg, setMsg] = useState("");
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [readonlyQuery, setReadonlyQuery] = useState("");
   const [activeMat, setActiveMat] = useState<number | "unassigned">("unassigned");
   const [matColors, setMatColors] = useState<Record<number, string | null>>({});
   const originalResultsRef = useRef<Record<string, ResultSnapshot | undefined>>({});
@@ -254,7 +283,10 @@ export default function EnterResultsPage() {
     { href: "/admin", label: "Admin", minRole: "ADMIN" as const },
   ];
 
-  const canEdit = true;
+  const isResultsComplete = Boolean(meet?.resultsCompletedAt);
+  const canManageResultsCompletion = Boolean(meet?.canManageResultsCompletion);
+  const canEdit = !isResultsComplete;
+  const showReadonlyComments = isResultsComplete && meet?.viewerRole !== "PARENT";
 
   function boutLabel(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "Unassigned";
@@ -378,6 +410,21 @@ export default function EnterResultsPage() {
     setMsg(message);
   }
 
+  function getDirtyValidationError() {
+    for (const bout of boutsRef.current) {
+      const nextSnapshot = snapshotForBout(bout);
+      const original = originalResultsRef.current[bout.id];
+      if (sameSnapshot(original, nextSnapshot)) {
+        continue;
+      }
+      const validated = validateBoutResult(nextSnapshot);
+      if (!validated.ok) {
+        return validated.error;
+      }
+    }
+    return null;
+  }
+
   function handleRowSubmitKey(
     event: React.KeyboardEvent<HTMLSelectElement | HTMLInputElement>,
     boutId: string,
@@ -457,12 +504,13 @@ export default function EnterResultsPage() {
     event: React.KeyboardEvent<HTMLSelectElement>,
     boutId: string,
     currentPeriod: number | null,
+    options: ReadonlyArray<{ value: number; label: string }> = PERIOD_OPTIONS,
   ) {
     if (event.key.length !== 1 || !/[0-9a-z]/i.test(event.key)) return;
     const key = event.key.toUpperCase();
-    let matches = PERIOD_OPTIONS.filter((option) => option.label.toUpperCase().startsWith(key));
+    let matches = options.filter((option) => option.label.toUpperCase().startsWith(key));
     if (matches.length === 0 && /^[1-6]$/.test(key)) {
-      matches = PERIOD_OPTIONS.filter((option) => option.value === Number.parseInt(key, 10));
+      matches = options.filter((option) => option.value === Number.parseInt(key, 10));
     }
     if (matches.length === 0) return;
     event.preventDefault();
@@ -510,6 +558,8 @@ export default function EnterResultsPage() {
         resultPeriod: json.resultPeriod ?? null,
         resultTime: json.resultTime ?? null,
         resultNotes: json.resultNotes ?? null,
+        resultUpdatedBy: json.resultUpdatedBy ?? null,
+        resultUpdatedByColor: json.resultUpdatedByColor ?? null,
         resultAt: json.resultAt ?? null,
       });
       updateBout(bout.id, patch);
@@ -522,6 +572,37 @@ export default function EnterResultsPage() {
 
   function exportResults() {
     window.location.assign(`/api/meets/${meetId}/results/export`);
+  }
+
+  async function setResultsCompletion(completed: boolean) {
+    const validationError = getDirtyValidationError();
+    if (validationError) {
+      setMsg(validationError);
+      return;
+    }
+    setIsCompleting(true);
+    setMsg("");
+    try {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      for (const bout of boutsRef.current) {
+        await saveResult(bout.id);
+      }
+      const res = await fetch(`/api/meets/${meetId}/results`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        setMsg(json?.error ?? `Unable to ${completed ? "mark results complete" : "reopen results entry"}.`);
+        return;
+      }
+      await load();
+    } finally {
+      setIsCompleting(false);
+    }
   }
 
   useEffect(() => {
@@ -623,6 +704,9 @@ export default function EnterResultsPage() {
     if (stored?.trim()) return stored.trim();
     return getDefaultMatColor(matIndex);
   };
+  const tintedBadgeBackground = (color?: string | null) => (
+    color?.startsWith("#") && color.length === 7 ? `${color}22` : "#edf8f0"
+  );
 
   const mats = useMemo(() => {
     const matSet = new Set<number>();
@@ -659,11 +743,27 @@ export default function EnterResultsPage() {
   }, [activeMat, mats]);
 
   const filteredBouts = useMemo(() => {
+    if (isResultsComplete) {
+      const query = readonlyQuery.trim();
+      if (!query) return bouts;
+      const tokens = query.split(/\s+/).filter(Boolean);
+      return bouts.filter((bout) => {
+        const candidates = [
+          bout.red.first,
+          bout.red.last,
+          `${bout.red.first} ${bout.red.last}`,
+          bout.green.first,
+          bout.green.last,
+          `${bout.green.first} ${bout.green.last}`,
+        ];
+        return tokens.every((token) => candidates.some((candidate) => fuzzyMatch(candidate, token)));
+      });
+    }
     if (activeMat === "unassigned") {
       return bouts.filter(b => !b.mat || !b.order);
     }
     return bouts.filter(b => b.mat === activeMat);
-  }, [activeMat, bouts]);
+  }, [activeMat, bouts, isResultsComplete, readonlyQuery]);
 
   const focusNextRow = (index: number) => {
     const fields = Array.from(document.querySelectorAll<HTMLSelectElement | HTMLInputElement>(".first-field"));
@@ -733,6 +833,21 @@ export default function EnterResultsPage() {
           margin-bottom: 12px;
           color: #b00020;
         }
+        .readonly-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+          flex-wrap: wrap;
+        }
+        .readonly-search {
+          width: min(100%, 320px);
+        }
+        .readonly-summary {
+          color: var(--muted);
+          font-size: 12px;
+        }
         .lock {
           background: #fffaf0;
           border: 1px solid #f3c27a;
@@ -746,7 +861,7 @@ export default function EnterResultsPage() {
           border: 1px solid var(--line);
           border-radius: 12px;
           padding: 12px;
-          max-width: 1200px;
+          width: min(100%, 1280px);
           margin: 0;
         }
         .table-scroll {
@@ -791,12 +906,12 @@ export default function EnterResultsPage() {
         table {
           border-collapse: collapse;
           width: 100%;
-          min-width: 980px;
+          min-width: 1020px;
           table-layout: auto;
         }
         th, td {
           border-bottom: 1px solid var(--line);
-          padding: 4px;
+          padding: 3px 4px;
           font-size: 12px;
           text-align: left;
           vertical-align: top;
@@ -817,6 +932,10 @@ export default function EnterResultsPage() {
           font-size: 14px;
           font-weight: 700;
           letter-spacing: 0.4px;
+        }
+        .winner-col {
+          width: 210px;
+          min-width: 210px;
         }
         .winner-col select {
           font-size: 14px;
@@ -892,18 +1011,23 @@ export default function EnterResultsPage() {
           background: #edf8f0;
           color: #23633a;
           border-radius: 999px;
-          padding: 2px 8px;
-          font-size: 11px;
+          padding: 1px 6px;
+          font-size: 10px;
           font-weight: 700;
-          letter-spacing: 0.3px;
-          text-transform: uppercase;
+          letter-spacing: 0.2px;
+          line-height: 1.2;
           white-space: nowrap;
+          text-transform: none;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          box-sizing: border-box;
         }
         .saved-badge-slot {
           display: inline-flex;
           justify-content: flex-end;
-          min-width: 56px;
-          flex: 0 0 56px;
+          min-width: 92px;
+          flex: 0 0 92px;
         }
         .saved-badge.hidden {
           visibility: hidden;
@@ -967,6 +1091,36 @@ export default function EnterResultsPage() {
           color: var(--muted);
           margin-top: 6px;
         }
+        .muted-inline {
+          color: var(--muted);
+        }
+        .readonly-result {
+          font-size: 15px;
+          font-weight: 600;
+          line-height: 1.15;
+        }
+        .readonly-name-col {
+          white-space: nowrap;
+          min-width: 210px;
+          max-width: 210px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .readonly-comment-col {
+          min-width: 180px;
+          color: var(--muted);
+        }
+        .readonly-note {
+          font-size: 15px;
+          font-weight: 500;
+          line-height: 1.15;
+        }
+        .readonly-name-col .wrestler {
+          font-weight: 500;
+        }
+        .winner-col .wrestler {
+          font-weight: 600;
+        }
         .name-col {
           white-space: nowrap;
           min-width: 260px;
@@ -1001,49 +1155,88 @@ export default function EnterResultsPage() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn toolbar-btn" type="button" onClick={exportResults}>Export to .xlsx</button>
             <button className="btn toolbar-btn" type="button" onClick={load}>Refresh</button>
+            {!isResultsComplete && canManageResultsCompletion && (
+              <button
+                className="btn toolbar-btn"
+                type="button"
+                onClick={() => void setResultsCompletion(true)}
+                disabled={isCompleting}
+                title="Lock the entered results and switch this page to read-only."
+              >
+                {isCompleting ? "Completing..." : "Mark Results Complete"}
+              </button>
+            )}
+            {isResultsComplete && canManageResultsCompletion && (
+              <button
+                className="btn toolbar-btn"
+                type="button"
+                onClick={() => void setResultsCompletion(false)}
+                disabled={isCompleting}
+                title="Return this meet to editable results entry."
+              >
+                {isCompleting ? "Reopening..." : "Return To Editable"}
+              </button>
+            )}
           </div>
+          {isResultsComplete && <div className="status">Results complete</div>}
         </div>
       </div>
 
       {msg && <div style={{ marginBottom: 12 }}>{msg}</div>}
 
-      <div className="pairings-tab-bar" role="tablist" aria-label="Mat tabs">
-        {mats.ordered.map((mat) => (
-          <button
-            key={mat}
-            className={`pairing-tab ${activeMat === mat ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeMat === mat}
-            onClick={() => setActiveMat(mat)}
-            style={{
-              background: activeMat === mat
-                ? getMatColor(mat)
-                : getMatColor(mat) ? `${getMatColor(mat)}22` : undefined,
-              borderColor: getMatColor(mat),
-              color: activeMat === mat
-                ? contrastText(getMatColor(mat))
-                : matTextColor(getMatColor(mat)),
-              borderWidth: activeMat === mat ? 2 : undefined,
-              fontWeight: activeMat === mat ? 700 : undefined,
-              boxShadow: activeMat === mat ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
-            }}
-          >
-            Mat {mat}
-          </button>
-        ))}
-        {mats.hasUnassigned && (
-          <button
-            className={`pairing-tab ${activeMat === "unassigned" ? "active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeMat === "unassigned"}
-            onClick={() => setActiveMat("unassigned")}
-          >
-            Unassigned
-          </button>
-        )}
-      </div>
+      {isResultsComplete ? (
+        <div className="readonly-toolbar">
+          <input
+            className="readonly-search"
+            type="search"
+            value={readonlyQuery}
+            onChange={(event) => setReadonlyQuery(event.target.value)}
+            placeholder="Search wrestler name"
+            aria-label="Search wrestler name"
+          />
+          <div className="readonly-summary">
+            Showing {filteredBouts.length} result{filteredBouts.length === 1 ? "" : "s"}
+          </div>
+        </div>
+      ) : (
+        <div className="pairings-tab-bar" role="tablist" aria-label="Mat tabs">
+          {mats.ordered.map((mat) => (
+            <button
+              key={mat}
+              className={`pairing-tab ${activeMat === mat ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={activeMat === mat}
+              onClick={() => setActiveMat(mat)}
+              style={{
+                background: activeMat === mat
+                  ? getMatColor(mat)
+                  : getMatColor(mat) ? `${getMatColor(mat)}22` : undefined,
+                borderColor: getMatColor(mat),
+                color: activeMat === mat
+                  ? contrastText(getMatColor(mat))
+                  : matTextColor(getMatColor(mat)),
+                borderWidth: activeMat === mat ? 2 : undefined,
+                fontWeight: activeMat === mat ? 700 : undefined,
+                boxShadow: activeMat === mat ? "0 -2px 0 #ffffff inset, 0 2px 0 rgba(0,0,0,0.12)" : undefined,
+              }}
+            >
+              Mat {mat}
+            </button>
+          ))}
+          {mats.hasUnassigned && (
+            <button
+              className={`pairing-tab ${activeMat === "unassigned" ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={activeMat === "unassigned"}
+              onClick={() => setActiveMat("unassigned")}
+            >
+              Unassigned
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="tab-body">
         <div className="table-wrap">
@@ -1052,10 +1245,19 @@ export default function EnterResultsPage() {
           <thead>
             <tr>
               <th>Bout</th>
-              <th className="name-col">Wrestlers</th>
-              <th>Winner</th>
-              <th>Type</th>
-              <th>Details</th>
+              <th className={isResultsComplete ? "readonly-name-col" : "name-col"}>Wrestlers</th>
+              <th className="winner-col">Winner</th>
+              {isResultsComplete ? (
+                <>
+                  <th>Result</th>
+                  {showReadonlyComments ? <th>Comments</th> : null}
+                </>
+              ) : (
+                <>
+                  <th>Type</th>
+                  <th>Details</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -1077,22 +1279,38 @@ export default function EnterResultsPage() {
               const currentSnapshot = snapshotForBout(b);
               const savedSnapshot = originalResultsRef.current[b.id];
               const showSavedBadge = hasSnapshotValue(savedSnapshot) && sameSnapshot(savedSnapshot, currentSnapshot);
+              const savedByLabel = trimNullable(b.resultUpdatedBy) ?? "Saved";
+              const savedByColor = trimNullable(b.resultUpdatedByColor);
+              const winner = b.resultWinnerId === b.red.id
+                ? b.red
+                : b.resultWinnerId === b.green.id
+                  ? b.green
+                  : null;
+              const winnerLabel = winner ? `${winner.first} ${winner.last}` : "";
+              const winnerTeamLabel = winner ? (winner.team.symbol ?? winner.team.name) : "";
               const winnerColor = b.resultWinnerId === b.red.id
                 ? matTextColor(b.red.team.color)
                 : b.resultWinnerId === b.green.id
                   ? matTextColor(b.green.team.color)
                   : undefined;
+              const resultSummary = formatCompactResultSummary({
+                type: b.resultType,
+                score: b.resultScore,
+                period: b.resultPeriod,
+                time: b.resultTime,
+              });
               return (
                 <tr
                   key={b.id}
                   onBlur={(e) => {
+                    if (!canEdit) return;
                     const next = e.relatedTarget as HTMLElement | null;
                     if (next && e.currentTarget.contains(next)) return;
                     void saveResult(b.id);
                   }}
                 >
                   <td className="bout-num">{boutLabel(b.mat, b.order)}</td>
-                  <td className="name-col">
+                  <td className={isResultsComplete ? "readonly-name-col" : "name-col"}>
                     <span className="wrestler" style={{ color: matTextColor(first.team.color) }}>
                       {firstLabel} ({firstTeamLabel})
                     </span>
@@ -1101,173 +1319,232 @@ export default function EnterResultsPage() {
                       {secondLabel} ({secondTeamLabel})
                     </span>
                   </td>
-                  <td className="winner-col">
-                    <select
-                      className="first-field"
-                      data-result-nav="true"
-                      value={b.resultWinnerId ?? ""}
-                      onChange={(e) => updateWinnerSelection(b.id, e.target.value || null, { advanceFocus: true })}
-                      onKeyDown={(e) => {
-                        handleWinnerFieldKey(e, b.id, b.resultWinnerId ?? null, [
-                          { id: first.id, first: first.first, last: first.last },
-                          { id: second.id, first: second.first, last: second.last },
-                        ]);
-                        handleSelectTabAdvance(e, (value) => updateWinnerSelection(b.id, value || null, { advanceFocus: false }));
-                        handleAdvanceFieldKey(e);
-                        handleRowSubmitKey(e, b.id, index);
-                      }}
-                      disabled={!canEdit}
-                      style={{ color: winnerColor }}
-                    >
-                      <option value="">No winner</option>
-                      <option value={first.id} style={{ color: firstOptionColor, fontWeight: 600 }}>
-                        {firstLabel} ({firstTeamLabel})
-                      </option>
-                      <option value={second.id} style={{ color: secondOptionColor, fontWeight: 600 }}>
-                        {secondLabel} ({secondTeamLabel})
-                      </option>
-                    </select>
-                  </td>
-                  <td className="type-col">
-                    {b.resultWinnerId ? (
-                      <select
-                        data-bout-id={b.id}
-                        data-type-field="true"
-                        data-result-nav="true"
-                        value={resultType ?? ""}
-                        onChange={(e) => updateTypeSelection(b.id, e.target.value)}
-                        onKeyDown={(e) => {
-                          handleTypeFieldKey(e, b.id, resultType);
-                          handleAdvanceFieldKey(e);
-                          handleRowSubmitKey(e, b.id, index);
-                        }}
-                        disabled={!canEdit}
-                      >
-                        <option value="">Select type</option>
-                        {TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    ) : null}
-                  </td>
-                  <td className="score-col details-cell">
-                    {!resultType ? null : (
-                      <div className="details-row">
-                        {(resultType === "DEC" || resultType === "MAJ" || resultType === "TF") && (
-                          <div className="details-group">
-                            <label>
-                              W
-                              <input
-                                data-bout-id={b.id}
-                                data-detail-first="true"
-                                data-result-nav="true"
-                                className={`score-mini${validationState.winnerScoreInvalid ? " field-invalid" : ""}`}
-                                inputMode="numeric"
-                                aria-invalid={validationState.winnerScoreInvalid}
-                                value={b.resultWinnerScoreInput}
-                                onChange={(e) => updateScoreInput(b.id, "winner", e.target.value)}
-                                onKeyDown={(e) => {
-                                  handleAdvanceFieldKey(e);
-                                  handleRowSubmitKey(e, b.id, index);
-                                }}
-                                disabled={!canEdit}
-                              />
-                            </label>
-                            <label>
-                              L
-                              <input
-                                data-result-nav="true"
-                                className={`score-mini${validationState.loserScoreInvalid ? " field-invalid" : ""}`}
-                                inputMode="numeric"
-                                aria-invalid={validationState.loserScoreInvalid}
-                                value={b.resultLoserScoreInput}
-                                onChange={(e) => updateScoreInput(b.id, "loser", e.target.value)}
-                                onKeyDown={(e) => {
-                                  handleAdvanceFieldKey(e);
-                                  handleRowSubmitKey(e, b.id, index);
-                                }}
-                                disabled={!canEdit}
-                              />
-                            </label>
-                            {resultType === "TF" && (
-                              <label>
-                                Period
-                                <select
-                                  data-bout-id={b.id}
-                                  data-result-nav="true"
-                                  className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
-                                  aria-invalid={validationState.periodInvalid}
-                                  value={b.resultPeriod?.toString() ?? ""}
-                                  onChange={(e) => updatePeriodInput(b.id, e.target.value)}
-                                  onKeyDown={(e) => {
-                                    handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null);
-                                    handleAdvanceFieldKey(e);
-                                    handleRowSubmitKey(e, b.id, index);
-                                  }}
-                                  disabled={!canEdit}
+                  {isResultsComplete ? (
+                    <>
+                      <td className="winner-col">
+                        {winner ? (
+                          <span className="wrestler" style={{ color: winnerColor }}>
+                            {winnerLabel} ({winnerTeamLabel})
+                          </span>
+                        ) : (
+                          <span className="muted-inline">No winner</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="readonly-result">{resultSummary || "No result"}</div>
+                      </td>
+                      {showReadonlyComments ? (
+                        <td className="readonly-comment-col">
+                          {b.resultNotes ? <div className="readonly-note">{b.resultNotes}</div> : null}
+                        </td>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <td className="winner-col">
+                        <select
+                          className="first-field"
+                          data-result-nav="true"
+                          value={b.resultWinnerId ?? ""}
+                          onChange={(e) => updateWinnerSelection(b.id, e.target.value || null, { advanceFocus: true })}
+                          onKeyDown={(e) => {
+                            handleWinnerFieldKey(e, b.id, b.resultWinnerId ?? null, [
+                              { id: first.id, first: first.first, last: first.last },
+                              { id: second.id, first: second.first, last: second.last },
+                            ]);
+                            handleSelectTabAdvance(e, (value) => updateWinnerSelection(b.id, value || null, { advanceFocus: false }));
+                            handleAdvanceFieldKey(e);
+                            handleRowSubmitKey(e, b.id, index);
+                          }}
+                          disabled={!canEdit}
+                          style={{ color: winnerColor }}
+                        >
+                          <option value="">No winner</option>
+                          <option value={first.id} style={{ color: firstOptionColor, fontWeight: 600 }}>
+                            {firstLabel} ({firstTeamLabel})
+                          </option>
+                          <option value={second.id} style={{ color: secondOptionColor, fontWeight: 600 }}>
+                            {secondLabel} ({secondTeamLabel})
+                          </option>
+                        </select>
+                      </td>
+                      <td className="type-col">
+                        {b.resultWinnerId ? (
+                          <select
+                            data-bout-id={b.id}
+                            data-type-field="true"
+                            data-result-nav="true"
+                            value={resultType ?? ""}
+                            onChange={(e) => updateTypeSelection(b.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              handleTypeFieldKey(e, b.id, resultType);
+                              handleAdvanceFieldKey(e);
+                              handleRowSubmitKey(e, b.id, index);
+                            }}
+                            disabled={!canEdit}
+                          >
+                            <option value="">Select type</option>
+                            {TYPE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        ) : null}
+                      </td>
+                      <td className="score-col details-cell">
+                        {!resultType ? null : (
+                          <>
+                            <div className="details-row">
+                              {(resultType === "DEC" || resultType === "MAJ" || resultType === "TF") && (
+                                <div className="details-group">
+                                  <label>
+                                    W
+                                    <input
+                                      data-bout-id={b.id}
+                                      data-detail-first="true"
+                                      data-result-nav="true"
+                                      className={`score-mini${validationState.winnerScoreInvalid ? " field-invalid" : ""}`}
+                                      inputMode="numeric"
+                                      aria-invalid={validationState.winnerScoreInvalid}
+                                      value={b.resultWinnerScoreInput}
+                                      onChange={(e) => updateScoreInput(b.id, "winner", e.target.value)}
+                                      onKeyDown={(e) => {
+                                        handleAdvanceFieldKey(e);
+                                        handleRowSubmitKey(e, b.id, index);
+                                      }}
+                                      disabled={!canEdit}
+                                    />
+                                  </label>
+                                  <label>
+                                    L
+                                    <input
+                                      data-result-nav="true"
+                                      className={`score-mini${validationState.loserScoreInvalid ? " field-invalid" : ""}`}
+                                      inputMode="numeric"
+                                      aria-invalid={validationState.loserScoreInvalid}
+                                      value={b.resultLoserScoreInput}
+                                      onChange={(e) => updateScoreInput(b.id, "loser", e.target.value)}
+                                      onKeyDown={(e) => {
+                                        handleAdvanceFieldKey(e);
+                                        handleRowSubmitKey(e, b.id, index);
+                                      }}
+                                      disabled={!canEdit}
+                                    />
+                                  </label>
+                                  {resultType === "DEC" && (
+                                    <label>
+                                      OT
+                                      <select
+                                        data-bout-id={b.id}
+                                        data-result-nav="true"
+                                        className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
+                                        aria-invalid={validationState.periodInvalid}
+                                        value={b.resultPeriod?.toString() ?? ""}
+                                        onChange={(e) => updatePeriodInput(b.id, e.target.value)}
+                                        onKeyDown={(e) => {
+                                          handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null, OVERTIME_PERIOD_OPTIONS);
+                                          handleAdvanceFieldKey(e);
+                                          handleRowSubmitKey(e, b.id, index);
+                                        }}
+                                        disabled={!canEdit}
+                                      >
+                                        <option value="">None</option>
+                                        {OVERTIME_PERIOD_OPTIONS.map((option) => (
+                                          <option key={option.value} value={option.value.toString()}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  )}
+                                  {resultType === "TF" && (
+                                    <label>
+                                      Period
+                                      <select
+                                        data-bout-id={b.id}
+                                        data-result-nav="true"
+                                        className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
+                                        aria-invalid={validationState.periodInvalid}
+                                        value={b.resultPeriod?.toString() ?? ""}
+                                        onChange={(e) => updatePeriodInput(b.id, e.target.value)}
+                                        onKeyDown={(e) => {
+                                          handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null, PERIOD_OPTIONS);
+                                          handleAdvanceFieldKey(e);
+                                          handleRowSubmitKey(e, b.id, index);
+                                        }}
+                                        disabled={!canEdit}
+                                      >
+                                        <option value="">Select</option>
+                                        {PERIOD_OPTIONS.map((option) => (
+                                          <option key={option.value} value={option.value.toString()}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  )}
+                                </div>
+                              )}
+                              {resultType === "FALL" && (
+                                <div className="details-group">
+                                  <label>
+                                    Period
+                                    <select
+                                      data-bout-id={b.id}
+                                      data-detail-first="true"
+                                      data-result-nav="true"
+                                      className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
+                                      aria-invalid={validationState.periodInvalid}
+                                      value={b.resultPeriod?.toString() ?? ""}
+                                      onChange={(e) => updatePeriodInput(b.id, e.target.value)}
+                                      onKeyDown={(e) => {
+                                        handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null, PERIOD_OPTIONS);
+                                        handleAdvanceFieldKey(e);
+                                        handleRowSubmitKey(e, b.id, index);
+                                      }}
+                                      disabled={!canEdit}
+                                    >
+                                      <option value="">Select</option>
+                                      {PERIOD_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value.toString()}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+                              )}
+                              <div className="details-group comment-group">
+                                <label aria-label="Comment">
+                                  <input
+                                    data-bout-id={b.id}
+                                    className={`comment-input${validationState.notesInvalid ? " field-invalid" : ""}`}
+                                    aria-invalid={validationState.notesInvalid}
+                                    placeholder="comment"
+                                    value={b.resultNotes ?? ""}
+                                    onChange={(e) => updateNotesInput(b.id, e.target.value)}
+                                    onKeyDown={(e) => handleRowSubmitKey(e, b.id, index)}
+                                    disabled={!canEdit}
+                                  />
+                                </label>
+                              </div>
+                              <span className="saved-badge-slot">
+                                <span
+                                  className={`saved-badge${showSavedBadge ? "" : " hidden"}`}
+                                  style={savedByColor ? {
+                                    borderColor: savedByColor,
+                                    background: tintedBadgeBackground(savedByColor),
+                                    color: matTextColor(savedByColor),
+                                  } : undefined}
                                 >
-                                  <option value="">Select</option>
-                                  {PERIOD_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value.toString()}>{option.label}</option>
-                                  ))}
-                                </select>
-                              </label>
-                            )}
-                          </div>
+                                  {savedByLabel}
+                                </span>
+                              </span>
+                            </div>
+                          </>
                         )}
-                        {resultType === "FALL" && (
-                          <div className="details-group">
-                            <label>
-                              Period
-                              <select
-                                data-bout-id={b.id}
-                                data-detail-first="true"
-                                data-result-nav="true"
-                                className={`period-select${validationState.periodInvalid ? " field-invalid" : ""}`}
-                                aria-invalid={validationState.periodInvalid}
-                                value={b.resultPeriod?.toString() ?? ""}
-                                onChange={(e) => updatePeriodInput(b.id, e.target.value)}
-                                onKeyDown={(e) => {
-                                  handlePeriodFieldKey(e, b.id, b.resultPeriod ?? null);
-                                  handleAdvanceFieldKey(e);
-                                  handleRowSubmitKey(e, b.id, index);
-                                }}
-                                disabled={!canEdit}
-                              >
-                                <option value="">Select</option>
-                                {PERIOD_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value.toString()}>{option.label}</option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        )}
-                        <div className="details-group comment-group">
-                          <label aria-label="Comment">
-                            <input
-                              data-bout-id={b.id}
-                              className={`comment-input${validationState.notesInvalid ? " field-invalid" : ""}`}
-                              aria-invalid={validationState.notesInvalid}
-                              placeholder="comment"
-                              value={b.resultNotes ?? ""}
-                              onChange={(e) => updateNotesInput(b.id, e.target.value)}
-                              onKeyDown={(e) => handleRowSubmitKey(e, b.id, index)}
-                              disabled={!canEdit}
-                            />
-                          </label>
-                        </div>
-                        <span className="saved-badge-slot">
-                          <span className={`saved-badge${showSavedBadge ? "" : " hidden"}`}>Saved</span>
-                        </span>
-                      </div>
-                    )}
-                  </td>
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}
             {filteredBouts.length === 0 && (
               <tr>
-                <td colSpan={5}>No bouts available for results.</td>
+                <td colSpan={isResultsComplete ? (showReadonlyComments ? 5 : 4) : 5}>No bouts available for results.</td>
               </tr>
             )}
           </tbody>

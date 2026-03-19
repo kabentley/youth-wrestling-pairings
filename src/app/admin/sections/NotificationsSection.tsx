@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { findInvalidEmailAddresses, tokenizeEmailAddressList } from "@/lib/emailAddress";
 
 type NotificationRow = {
   id: string;
@@ -51,13 +53,15 @@ const STATUS_OPTIONS = [
 
 function normalizeEmailWhitelistInput(raw: string) {
   return Array.from(new Set(
-    raw
-      .split(/[\s,;]+/)
-      .map((value) => value.trim().toLowerCase())
-      .filter(Boolean),
+    tokenizeEmailAddressList(raw),
   ))
     .sort((a, b) => a.localeCompare(b))
     .join("\n");
+}
+
+function parseEmailWhitelistEntries(raw: string) {
+  const normalized = normalizeEmailWhitelistInput(raw);
+  return normalized ? normalized.split("\n") : [];
 }
 
 function formatTimestamp(value?: string | null) {
@@ -114,6 +118,7 @@ export default function NotificationsSection() {
   const [meetOptions, setMeetOptions] = useState<MeetOption[]>([]);
   const [emailDeliveryMode, setEmailDeliveryMode] = useState<"off" | "log" | "all" | "whitelist">("off");
   const [emailWhitelist, setEmailWhitelist] = useState("");
+  const [newWhitelistEntry, setNewWhitelistEntry] = useState("");
   const [showEveryoneConfirmModal, setShowEveryoneConfirmModal] = useState(false);
   const [savedEmailDeliveryMode, setSavedEmailDeliveryMode] = useState<"off" | "log" | "all" | "whitelist">("off");
   const [savedEmailWhitelist, setSavedEmailWhitelist] = useState("");
@@ -132,6 +137,7 @@ export default function NotificationsSection() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const whitelistImportRef = useRef<HTMLInputElement | null>(null);
 
   async function loadEmailDeliverySettings() {
     const res = await fetch("/api/admin/email-delivery");
@@ -160,6 +166,10 @@ export default function NotificationsSection() {
     setIsSavingSettings(true);
     setSettingsMsg("");
     try {
+      const invalidEntries = findInvalidEmailAddresses(nextWhitelist);
+      if (invalidEntries.length > 0) {
+        throw new Error(`Invalid email address${invalidEntries.length === 1 ? "" : "es"}: ${invalidEntries.join(", ")}`);
+      }
       const normalizedWhitelist = normalizeEmailWhitelistInput(nextWhitelist);
       const res = await fetch("/api/admin/email-delivery", {
         method: "PUT",
@@ -178,9 +188,11 @@ export default function NotificationsSection() {
       setSavedEmailWhitelist(normalizedWhitelist);
       setSettingsMsg("Email delivery settings saved.");
       setSettingsMsgTone("success");
+      return true;
     } catch (error) {
       setSettingsMsg(error instanceof Error ? error.message : "Unable to save email delivery settings.");
       setSettingsMsgTone("error");
+      return false;
     } finally {
       setIsSavingSettings(false);
     }
@@ -278,10 +290,117 @@ export default function NotificationsSection() {
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [pageSize, total]);
   const normalizedWhitelist = useMemo(() => normalizeEmailWhitelistInput(emailWhitelist), [emailWhitelist]);
+  const whitelistEntries = useMemo(
+    () => [...parseEmailWhitelistEntries(emailWhitelist)].sort((a, b) => a.localeCompare(b)),
+    [emailWhitelist],
+  );
+  const newWhitelistEntryHasValue = tokenizeEmailAddressList(newWhitelistEntry).length > 0;
+  const invalidNewWhitelistEntries = useMemo(() => findInvalidEmailAddresses(newWhitelistEntry), [newWhitelistEntry]);
   const settingsDirty =
     normalizedWhitelist !== savedEmailWhitelist ||
     emailDeliveryMode !== savedEmailDeliveryMode;
   const canSaveSettings = settingsDirty || settingsMsgTone === "error";
+
+  function addWhitelistEntries(raw: string) {
+    const invalidEntries = findInvalidEmailAddresses(raw);
+    if (invalidEntries.length > 0) {
+      setSettingsMsg(`Invalid email address${invalidEntries.length === 1 ? "" : "es"}: ${invalidEntries.join(", ")}`);
+      setSettingsMsgTone("error");
+      return;
+    }
+    const nextEntries = parseEmailWhitelistEntries(raw);
+    if (nextEntries.length === 0) {
+      setNewWhitelistEntry("");
+      return;
+    }
+    const merged = normalizeEmailWhitelistInput([emailWhitelist, ...nextEntries].join("\n"));
+    setEmailWhitelist(merged);
+    setNewWhitelistEntry("");
+    setSettingsMsg("");
+  }
+
+  function removeWhitelistEntry(entry: string) {
+    const nextWhitelist = whitelistEntries.filter((value) => value !== entry).join("\n");
+    setEmailWhitelist(nextWhitelist);
+    setSettingsMsg("");
+  }
+
+  async function importWhitelistFile(file?: File | null) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const invalidEntries = findInvalidEmailAddresses(text);
+      if (invalidEntries.length > 0) {
+        setSettingsMsg(`Invalid email address${invalidEntries.length === 1 ? "" : "es"}: ${invalidEntries.join(", ")}`);
+        setSettingsMsgTone("error");
+        return;
+      }
+      const nextEntries = parseEmailWhitelistEntries(text);
+      if (nextEntries.length === 0) {
+        setSettingsMsg("No email addresses found in the selected file.");
+        setSettingsMsgTone("error");
+        return;
+      }
+      const merged = normalizeEmailWhitelistInput([emailWhitelist, ...nextEntries].join("\n"));
+      setEmailWhitelist(merged);
+      setSettingsMsg("");
+    } catch {
+      setSettingsMsg("Unable to read the selected whitelist file.");
+      setSettingsMsgTone("error");
+    } finally {
+      if (whitelistImportRef.current) {
+        whitelistImportRef.current.value = "";
+      }
+    }
+  }
+
+  const autosaveSettings = useCallback(async () => {
+    if (isSavingSettings || showEveryoneConfirmModal) return;
+
+    const invalidEntries = findInvalidEmailAddresses(newWhitelistEntry);
+    if (invalidEntries.length > 0) {
+      setSettingsMsg(`Invalid email address${invalidEntries.length === 1 ? "" : "es"}: ${invalidEntries.join(", ")}`);
+      setSettingsMsgTone("error");
+      return;
+    }
+
+    const pendingEntries = parseEmailWhitelistEntries(newWhitelistEntry);
+    const nextWhitelist = pendingEntries.length > 0
+      ? normalizeEmailWhitelistInput([emailWhitelist, ...pendingEntries].join("\n"))
+      : emailWhitelist;
+    const nextNormalizedWhitelist = normalizeEmailWhitelistInput(nextWhitelist);
+    const nextDirty =
+      nextNormalizedWhitelist !== savedEmailWhitelist ||
+      emailDeliveryMode !== savedEmailDeliveryMode;
+
+    if (!nextDirty) return;
+
+    const saved = await saveEmailDeliverySettings(emailDeliveryMode, nextWhitelist);
+    if (saved && pendingEntries.length > 0) {
+      setNewWhitelistEntry("");
+    }
+  }, [
+    emailDeliveryMode,
+    emailWhitelist,
+    isSavingSettings,
+    newWhitelistEntry,
+    saveEmailDeliverySettings,
+    savedEmailDeliveryMode,
+    savedEmailWhitelist,
+    showEveryoneConfirmModal,
+  ]);
+
+  useEffect(() => {
+    const handleBeforeTabChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ pending?: Promise<unknown>[] }>).detail;
+      const pending = detail.pending;
+      if (pending) {
+        pending.push(autosaveSettings());
+      }
+    };
+    window.addEventListener("admin:before-tab-change", handleBeforeTabChange);
+    return () => window.removeEventListener("admin:before-tab-change", handleBeforeTabChange);
+  }, [autosaveSettings]);
 
   return (
     <>
@@ -291,6 +410,11 @@ export default function NotificationsSection() {
 
       <div
         className="admin-card admin-users-controls"
+        onBlur={(event) => {
+          const next = event.relatedTarget as Node | null;
+          if (next && event.currentTarget.contains(next)) return;
+          void autosaveSettings();
+        }}
       >
         <div className="admin-form-grid">
           <div className="admin-field">
@@ -327,43 +451,127 @@ export default function NotificationsSection() {
             </div>
           </div>
           <div className="admin-field" style={{ gridColumn: "1 / -1" }}>
-            <label className="admin-label" htmlFor="notification-email-whitelist">
-              Email Whitelist
-            </label>
-            <textarea
-              id="notification-email-whitelist"
-              value={emailWhitelist}
-              onChange={(event) => {
-                setEmailWhitelist(event.target.value);
-                setSettingsMsg("");
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const field = event.currentTarget;
-                  const selectionStart = field.selectionStart;
-                  const selectionEnd = field.selectionEnd;
-                  const nextValue =
-                    `${field.value.slice(0, selectionStart)}\n${field.value.slice(selectionEnd)}`;
-                  setEmailWhitelist(nextValue);
-                  setSettingsMsg("");
-                  window.requestAnimationFrame(() => {
-                    field.setSelectionRange(selectionStart + 1, selectionStart + 1);
-                  });
-                }
-              }}
-              placeholder={"one@example.com\nanother@example.com"}
-              rows={5}
-              spellCheck={false}
-              disabled={isSavingSettings}
-              style={{ width: "100%", resize: "vertical" }}
-            />
-            <div className="admin-muted" style={{ marginTop: 6 }}>
-              Emails pasted with commas, spaces, tabs, or semicolons are automatically split into separate lines.
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 760, gap: 12 }}>
+              <label className="admin-label" htmlFor="notification-email-whitelist-add" style={{ margin: 0 }}>
+                Email Whitelist
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  ref={whitelistImportRef}
+                  type="file"
+                  accept=".txt,text/plain"
+                  onChange={(event) => { void importWhitelistFile(event.target.files?.[0] ?? null); }}
+                  style={{ display: "none" }}
+                />
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-ghost admin-btn-compact"
+                  onClick={() => whitelistImportRef.current?.click()}
+                  disabled={isSavingSettings}
+                >
+                  Import File
+                </button>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-danger admin-btn-compact"
+                  onClick={() => {
+                    setEmailWhitelist("");
+                    setNewWhitelistEntry("");
+                    setSettingsMsg("");
+                  }}
+                  disabled={isSavingSettings || (whitelistEntries.length === 0 && newWhitelistEntry.trim().length === 0)}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
+            <div className="admin-table" style={{ maxWidth: 760 }}>
+              <table cellPadding={0} style={{ width: "100%", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col />
+                  <col style={{ width: 92 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>Email</th>
+                    <th style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>
+                      <input
+                        id="notification-email-whitelist-add"
+                        value={newWhitelistEntry}
+                        onChange={(event) => setNewWhitelistEntry(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter") return;
+                          event.preventDefault();
+                          if (isSavingSettings || !newWhitelistEntryHasValue || invalidNewWhitelistEntries.length > 0) return;
+                          addWhitelistEntries(newWhitelistEntry);
+                        }}
+                        placeholder="one@example.com"
+                        spellCheck={false}
+                        disabled={isSavingSettings}
+                        style={{ width: "100%", minHeight: 38 }}
+                        aria-invalid={newWhitelistEntryHasValue && invalidNewWhitelistEntries.length > 0}
+                      />
+                    </td>
+                    <td className="admin-actions" style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn-ghost admin-btn-compact"
+                        onClick={() => addWhitelistEntries(newWhitelistEntry)}
+                        disabled={isSavingSettings || !newWhitelistEntryHasValue || invalidNewWhitelistEntries.length > 0}
+                        style={{ minHeight: 38 }}
+                      >
+                        Add
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style={{ maxHeight: whitelistEntries.length > 5 ? 236 : undefined, overflowY: whitelistEntries.length > 5 ? "auto" : "visible" }}>
+                <table cellPadding={0} style={{ width: "100%", tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col />
+                    <col style={{ width: 92 }} />
+                  </colgroup>
+                  <tbody>
+                    {whitelistEntries.map((entry) => (
+                      <tr key={entry}>
+                        <td className="admin-code" style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>{entry}</td>
+                        <td className="admin-actions" style={{ paddingTop: 6, paddingBottom: 6, lineHeight: 1.1 }}>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn-danger admin-btn-compact"
+                            onClick={() => removeWhitelistEntry(entry)}
+                            disabled={isSavingSettings}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {whitelistEntries.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="admin-users-table-message">No whitelisted emails.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="admin-muted" style={{ marginTop: 6 }}>
+              The Add row accepts one or more emails. Commas, spaces, tabs, semicolons, and line breaks are split automatically. Import accepts a text file with one email per line.
+            </div>
+            {newWhitelistEntryHasValue && invalidNewWhitelistEntries.length > 0 ? (
+              <div style={{ marginTop: 6, color: "#b00020" }}>
+                Invalid email address{invalidNewWhitelistEntries.length === 1 ? "" : "es"}: {invalidNewWhitelistEntries.join(", ")}
+              </div>
+            ) : null}
           </div>
-          <div className="admin-field" style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="admin-field" style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "flex-start", gap: 12 }}>
             <button
               type="button"
               className="admin-btn"

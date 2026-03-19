@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
@@ -8,7 +9,7 @@ import ParentTodayMeetCards, {
   type ParentTodayCurrentUser,
   type ParentTodayMeetGroup,
 } from "@/components/parent/ParentTodayMeetCards";
-import { formatResultPeriod } from "@/lib/resultEntry";
+import { formatCompactResultSummary } from "@/lib/resultEntry";
 
 type Child = {
   id: string;
@@ -43,7 +44,12 @@ type Match = {
     time: string | null;
   };
 };
-type MatchWithMeet = Match & { meetName: string; meetDate: string };
+type MatchWithMeet = Match & {
+  meetId: string;
+  meetName: string;
+  meetDate: string;
+  resultsCompletedAt?: string | null;
+};
 type AttendanceStatus = "COMING" | "NOT_COMING" | null;
 
 type MeetGroup = {
@@ -350,40 +356,14 @@ export default function ParentPage() {
     const outcome = result.winnerId
       ? (result.winnerId === match.childId ? "W" : "L")
       : "";
-    const score = result.score?.trim() ?? "";
-    const time = result.time?.trim() ?? "";
-    const rawPeriod = formatResultPeriod(result.period);
-    const period = rawPeriod === "1" || rawPeriod === "2" || rawPeriod === "3"
-      ? `P${rawPeriod}`
-      : rawPeriod;
-    const rawType = result.type?.trim().toUpperCase() ?? "";
-    const type =
-      rawType === "PIN" ? "FALL"
-      : rawType === "MAJOR" ? "MAJ"
-      : rawType;
-
-    const coreParts: string[] = [];
-    if (outcome) coreParts.push(outcome);
-
-    if (type === "FALL") {
-      if (time) coreParts.push(time);
-      else if (period) coreParts.push(period);
-      else if (score) coreParts.push(score);
-      const core = coreParts.join(" ").trim();
-      return core ? `${core} (pin)` : "pin";
-    }
-
-    if (score) coreParts.push(score);
-    if (time) coreParts.push(time);
-    else if (period && type === "TF") coreParts.push(period);
-    const core = coreParts.join(" ").trim();
-
-    if (type === "MAJ") return core ? `${core} (major)` : "major";
-    if (type === "TF") return core ? `${core} (TF)` : "TF";
-    if (type === "FOR") return core ? `${core} (forfeit)` : "forfeit";
-    if (type === "DQ") return core ? `${core} (DQ)` : "DQ";
-    if (type === "DEC" || !type) return core;
-    return core ? `${core} (${type})` : type;
+    const summary = formatCompactResultSummary({
+      type: result.type,
+      score: result.score,
+      period: result.period,
+      time: result.time,
+    });
+    if (outcome && summary) return `${outcome} ${summary}`;
+    return outcome || summary;
   }
   const headerLinks = [
     { href: "/", label: "Home" },
@@ -863,7 +843,13 @@ export default function ParentPage() {
                 <tbody>
                   {history.map(match => (
                     <tr key={`${match.boutId}-${match.meetDate}`} style={{ borderTop: "1px solid #ddd" }}>
-                      <td>{match.meetName}</td>
+                      <td>
+                        {match.resultsCompletedAt ? (
+                          <Link href={`/results/${match.meetId}`}>{match.meetName}</Link>
+                        ) : (
+                          match.meetName
+                        )}
+                      </td>
                       <td>{new Date(match.meetDate).toLocaleDateString()}</td>
                       <td>
                         {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}

@@ -108,6 +108,7 @@ export async function GET() {
             id: true,
             name: true,
             date: true,
+            resultsCompletedAt: true,
             location: true,
             status: true,
             attendanceDeadline: true,
@@ -133,6 +134,7 @@ export async function GET() {
         id: true,
         name: true,
         date: true,
+        resultsCompletedAt: true,
         location: true,
         status: true,
         attendanceDeadline: true,
@@ -254,8 +256,10 @@ export async function GET() {
       if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
+          meetId: meet.id,
           meetName: meet.name,
           meetDate: meet.date,
+          resultsCompletedAt: meet.resultsCompletedAt,
         });
       }
     }
@@ -284,8 +288,10 @@ export async function GET() {
       if (meet.date < today || hasRecordedResult(b)) {
         pastMatches.push({
           ...match,
+          meetId: meet.id,
           meetName: meet.name,
           meetDate: meet.date,
+          resultsCompletedAt: meet.resultsCompletedAt,
         });
       }
     }

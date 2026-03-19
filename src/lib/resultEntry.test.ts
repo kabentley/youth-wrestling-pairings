@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildWinnerLoserScore,
   classifyDecisionTypeFromScore,
+  formatCompactResultSummary,
   formatResultPeriod,
   isValidResultTime,
+  isOvertimeResultPeriod,
   normalizeResultType,
   normalizeSavedResult,
   parseWinnerLoserScore,
@@ -36,6 +38,8 @@ describe("resultEntry", () => {
     expect(formatResultPeriod(4)).toBe("OT");
     expect(formatResultPeriod(5)).toBe("OT2");
     expect(formatResultPeriod(6)).toBe("OT3");
+    expect(isOvertimeResultPeriod(1)).toBe(false);
+    expect(isOvertimeResultPeriod(4)).toBe(true);
   });
 
   it("validates result time format", () => {
@@ -43,6 +47,16 @@ describe("resultEntry", () => {
     expect(isValidResultTime("9:59")).toBe(true);
     expect(isValidResultTime("10:00")).toBe(false);
     expect(isValidResultTime("2:5")).toBe(false);
+  });
+
+  it("formats compact read-only result summaries", () => {
+    expect(formatCompactResultSummary({ type: "DEC", score: "6-3", period: null, time: null })).toBe("6-3");
+    expect(formatCompactResultSummary({ type: "DEC", score: "3-1", period: 4, time: null })).toBe("3-1 (OT)");
+    expect(formatCompactResultSummary({ type: "MAJ", score: "12-4", period: null, time: null })).toBe("12-4 (MAJ)");
+    expect(formatCompactResultSummary({ type: "TF", score: "15-0", period: 3, time: null })).toBe("15-0 P3 (TF)");
+    expect(formatCompactResultSummary({ type: "FALL", score: null, period: 2, time: null })).toBe("FALL (P2)");
+    expect(formatCompactResultSummary({ type: "FALL", score: null, period: null, time: "1:23" })).toBe("FALL (1:23)");
+    expect(formatCompactResultSummary({ type: "FOR", score: null, period: null, time: null })).toBe("forfeit");
   });
 
   it("allows a winner with no type yet", () => {
@@ -71,6 +85,16 @@ describe("resultEntry", () => {
     expect(validateBoutResult({ winnerId: "w1", type: "DEC", score: "6-3", notes: "Good scramble" })).toEqual({
       ok: true,
       value: { winnerId: "w1", type: "DEC", score: "6-3", period: null, time: null, notes: "Good scramble" },
+    });
+
+    expect(validateBoutResult({ winnerId: "w1", type: "DEC", score: "3-1", period: 4 })).toEqual({
+      ok: true,
+      value: { winnerId: "w1", type: "DEC", score: "3-1", period: 4, time: null, notes: null },
+    });
+
+    expect(validateBoutResult({ winnerId: "w1", type: "DEC", score: "3-1", period: 2 })).toEqual({
+      ok: false,
+      error: "Only overtime periods are allowed for decisions.",
     });
   });
 

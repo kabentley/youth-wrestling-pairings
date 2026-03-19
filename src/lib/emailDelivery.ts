@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { normalizeEmailAddress, tokenizeEmailAddressList } from "./emailAddress";
 
 export type EmailDeliveryMode = "off" | "log" | "all" | "whitelist";
 
@@ -7,17 +8,11 @@ export type EmailDeliverySettings = {
   whitelist: string[];
 };
 
-function normalizeEmail(value?: string | null) {
-  const trimmed = value?.trim().toLowerCase();
-  return trimmed ?? null;
-}
-
 export function parseEmailWhitelist(raw?: string | null) {
   if (!raw) return [];
   return Array.from(new Set(
-    raw
-      .split(/[\r\n,;]+/)
-      .map((value) => normalizeEmail(value))
+    tokenizeEmailAddressList(raw)
+      .map((value) => normalizeEmailAddress(value))
       .filter((value): value is string => Boolean(value)),
   )).sort((a, b) => a.localeCompare(b));
 }
@@ -46,7 +41,7 @@ export async function getEmailDeliverySettings(): Promise<EmailDeliverySettings>
 }
 
 export async function shouldDeliverEmailTo(email?: string | null) {
-  const normalizedEmail = normalizeEmail(email);
+  const normalizedEmail = normalizeEmailAddress(email);
   if (!normalizedEmail) {
     return {
       allowed: false,

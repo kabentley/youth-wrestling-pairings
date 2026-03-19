@@ -26,14 +26,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     }
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
+  const editorTeam = user.teamId
+    ? await db.team.findUnique({
+      where: { id: user.teamId },
+      select: { color: true },
+    })
+    : null;
 
   const body = BodySchema.parse(await req.json());
 
   const bout = await db.bout.findUnique({
     where: { id: boutId },
-    select: { id: true, meetId: true, redId: true, greenId: true },
+    select: {
+      id: true,
+      meetId: true,
+      redId: true,
+      greenId: true,
+      meet: {
+        select: {
+          resultsCompletedAt: true,
+        },
+      },
+    },
   });
   if (!bout) return NextResponse.json({ error: "Bout not found" }, { status: 404 });
+  if (bout.meet.resultsCompletedAt) {
+    return NextResponse.json({ error: "Results have been marked complete and are now read-only." }, { status: 409 });
+  }
   if (user.role === "COACH" || user.role === "TABLE_WORKER") {
     if (!user.teamId) {
       return NextResponse.json({ error: "No team assigned." }, { status: 403 });
@@ -85,8 +104,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
     resultPeriod?: number | null;
     resultTime?: string | null;
     resultNotes?: string | null;
-    resultAt: Date;
-  } = { resultAt: new Date() };
+    resultUpdatedBy?: string | null;
+    resultAt: Date | null;
+  } = {
+    resultUpdatedBy: normalized.winnerId ? user.username : null,
+    resultAt: normalized.winnerId ? new Date() : null,
+  };
 
   data.resultWinnerId = normalized.winnerId;
   data.resultType = normalized.type;
@@ -106,9 +129,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ boutId
       resultPeriod: true,
       resultTime: true,
       resultNotes: true,
+      resultUpdatedBy: true,
       resultAt: true,
     },
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updated,
+    resultUpdatedByColor: editorTeam?.color.trim() ?? null,
+  });
 }

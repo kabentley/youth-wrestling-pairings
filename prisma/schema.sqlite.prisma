@@ -102,6 +102,7 @@ model Meet {
   deletedAt DateTime?
   deletedById String?
   deletedBy User? @relation("MeetDeletedBy", fields: [deletedById], references: [id])
+  resultsCompletedAt DateTime?
   updatedAt DateTime  @updatedAt
   updatedById String?
   updatedBy User?     @relation("MeetUpdatedBy", fields: [updatedById], references: [id])
@@ -280,6 +281,7 @@ resultScore    String?   // e.g., 6-2
 resultPeriod   Int?      // 1..3
 resultTime     String?   // mm:ss
 resultNotes    String?
+resultUpdatedBy String?
 resultAt       DateTime?
 
 }

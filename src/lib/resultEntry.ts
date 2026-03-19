@@ -34,6 +34,11 @@ export function isValidResultPeriod(value?: number | null) {
   return PERIOD_OPTIONS.some((option) => option.value === value);
 }
 
+/** Marks the saved period codes that represent overtime, not regulation. */
+export function isOvertimeResultPeriod(value?: number | null) {
+  return value === 4 || value === 5 || value === 6;
+}
+
 /** Maps the stored numeric period code to the UI/export label. */
 export function formatResultPeriod(value?: number | null) {
   return PERIOD_OPTIONS.find((option) => option.value === value)?.label ?? "";
@@ -93,6 +98,40 @@ export function normalizeResultType(value?: string | null): ResultType | null {
 export function isValidResultTime(value?: string | null) {
   const trimmed = trimNullable(value);
   return Boolean(trimmed && /^[0-9]:[0-5][0-9]$/.test(trimmed));
+}
+
+/** Formats a saved bout result using the compact wording shown in read-only views. */
+export function formatCompactResultSummary(input: Pick<BoutResultInput, "type" | "score" | "period" | "time">) {
+  const score = trimNullable(input.score) ?? "";
+  const time = trimNullable(input.time) ?? "";
+  const rawPeriod = formatResultPeriod(input.period);
+  const period = rawPeriod === "1" || rawPeriod === "2" || rawPeriod === "3"
+    ? `P${rawPeriod}`
+    : rawPeriod;
+  const type = normalizeResultType(input.type);
+
+  const coreParts: string[] = [];
+  if (type === "FALL") {
+    if (time) coreParts.push(time);
+    else if (period) coreParts.push(period);
+    else if (score) coreParts.push(score);
+    const core = coreParts.join(" ").trim();
+    return core ? `FALL (${core})` : "FALL";
+  }
+
+  if (score) coreParts.push(score);
+  if (time) coreParts.push(time);
+  else if (period && type === "TF") coreParts.push(period);
+  const core = coreParts.join(" ").trim();
+
+  if (type === "DEC" && period && isOvertimeResultPeriod(input.period)) {
+    return core ? `${core} (${period})` : period;
+  }
+  if (type === "MAJ") return core ? `${core} (MAJ)` : "MAJ";
+  if (type === "TF") return core ? `${core} (TF)` : "TF";
+  if (type === "FOR") return core ? `${core} (forfeit)` : "forfeit";
+  if (type === "DQ") return core ? `${core} (DQ)` : "DQ";
+  return core;
 }
 
 /** Parses the persisted `winner-loser` score format used by bout results. */
@@ -181,14 +220,27 @@ export function validateBoutResult(input: BoutResultInput): ValidationResult {
     return { ok: false, error: "Invalid result type." };
   }
 
-  if ((type === "DEC" || type === "MAJ")) {
+  if (type === "DEC") {
     const validatedScore = validateWinnerLoserScore(score, type);
     if (!validatedScore.ok) return validatedScore;
-    if (period !== null) return { ok: false, error: "Period is only used for falls and technical falls." };
+    if (period !== null && !isOvertimeResultPeriod(period)) {
+      return { ok: false, error: "Only overtime periods are allowed for decisions." };
+    }
     if (time) return { ok: false, error: "Time is only used for falls and technical falls." };
     return {
       ok: true,
       value: { winnerId, type, score: validatedScore.value, period, time: null, notes },
+    };
+  }
+
+  if (type === "MAJ") {
+    const validatedScore = validateWinnerLoserScore(score, type);
+    if (!validatedScore.ok) return validatedScore;
+    if (period !== null) return { ok: false, error: "Period is only used for falls, technical falls, and overtime decisions." };
+    if (time) return { ok: false, error: "Time is only used for falls and technical falls." };
+    return {
+      ok: true,
+      value: { winnerId, type, score: validatedScore.value, period: null, time: null, notes },
     };
   }
 
