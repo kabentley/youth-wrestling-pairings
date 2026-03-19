@@ -458,6 +458,13 @@ export default function ParentPage() {
           box-shadow: none;
           border-color: rgba(29, 35, 43, 0.1);
         }
+        .match-history-link {
+          color: var(--accent);
+        }
+        .match-history-link:hover {
+          color: #1769bf;
+          text-decoration: underline;
+        }
         .muted {
           color: var(--muted);
         }
@@ -845,7 +852,7 @@ export default function ParentPage() {
                     <tr key={`${match.boutId}-${match.meetDate}`} style={{ borderTop: "1px solid #ddd" }}>
                       <td>
                         {match.resultsCompletedAt ? (
-                          <Link href={`/results/${match.meetId}`}>{match.meetName}</Link>
+                          <Link className="match-history-link" href={`/results/${match.meetId}`}>{match.meetName}</Link>
                         ) : (
                           match.meetName
                         )}

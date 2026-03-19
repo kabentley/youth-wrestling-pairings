@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
  *   re-implementing role logic.
  */
 export type Role = "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
+export type AuthorizationErrorCode = "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND";
 
 /**
  * Loads the NextAuth session and verifies the user exists and token is current.
@@ -78,4 +79,65 @@ export async function requireTeamCoach(teamId: string) {
   const { session, user } = await requireRole("COACH");
   if (user.role !== "ADMIN" && user.teamId !== teamId) throw new Error("FORBIDDEN");
   return { session, user };
+}
+
+type RequireMeetParticipantOptions = {
+  roles?: Role[];
+  allowDeleted?: boolean;
+};
+
+/**
+ * Requires the current user to hold one of the allowed roles and belong to the
+ * target meet, unless they are an admin.
+ *
+ * Throws:
+ * - `UNAUTHORIZED` if no valid session.
+ * - `FORBIDDEN` if role is insufficient or the user is not on a meet team.
+ * - `NOT_FOUND` if the meet does not exist (or is deleted unless `allowDeleted` is set).
+ */
+export async function requireMeetParticipant(
+  meetId: string,
+  options: RequireMeetParticipantOptions = {},
+) {
+  const { roles = ["COACH", "ADMIN"], allowDeleted = false } = options;
+  const { session, user } = await requireAnyRole(roles);
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      id: true,
+      deletedAt: true,
+      homeTeamId: true,
+      homeTeam: { select: { headCoachId: true } },
+      meetTeams: { select: { teamId: true } },
+    },
+  });
+  if (!meet || (!allowDeleted && meet.deletedAt)) {
+    throw new Error("NOT_FOUND");
+  }
+
+  const meetTeamIds = meet.meetTeams.map((entry) => entry.teamId);
+  const coordinatorId = meet.homeTeam?.headCoachId ?? null;
+  const isCoordinator = Boolean(coordinatorId) && coordinatorId === user.id;
+  const isParticipant =
+    user.role === "ADMIN" || (Boolean(user.teamId) && meetTeamIds.includes(user.teamId ?? ""));
+
+  if (!isParticipant) {
+    throw new Error("FORBIDDEN");
+  }
+
+  return {
+    session,
+    user,
+    meet,
+    meetTeamIds: new Set(meetTeamIds),
+    isCoordinator,
+  };
+}
+
+export function getAuthorizationErrorCode(error: unknown): AuthorizationErrorCode | null {
+  if (!(error instanceof Error)) return null;
+  if (error.message === "UNAUTHORIZED") return "UNAUTHORIZED";
+  if (error.message === "FORBIDDEN") return "FORBIDDEN";
+  if (error.message === "NOT_FOUND") return "NOT_FOUND";
+  return null;
 }

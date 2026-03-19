@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const meet = await db.meet.findUnique({
-    where: { id: meetId },
-    select: { homeTeamId: true, deletedAt: true },
-  });
-  if (!meet || meet.deletedAt) {
-    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  let access: Awaited<ReturnType<typeof requireMeetParticipant>>;
+  try {
+    access = await requireMeetParticipant(meetId);
+  } catch (error) {
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    }
+    throw error;
   }
-  if (!meet.homeTeamId) {
+  if (!access.meet.homeTeamId) {
     return NextResponse.json({ rules: [] });
   }
   const rules = await db.teamMatRule.findMany({
-    where: { teamId: meet.homeTeamId },
+    where: { teamId: access.meet.homeTeamId },
     orderBy: { matIndex: "asc" },
     select: {
       matIndex: true,

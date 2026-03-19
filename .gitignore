@@ -2,6 +2,7 @@ node_modules
 .next
 .env
 dev.db
+tmp-*.db
 prisma/dev.db
 prisma/*.db
 .DS_Store

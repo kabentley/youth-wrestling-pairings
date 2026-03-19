@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { buildMeetCheckpointPayload, buildTeamSignature } from "@/lib/meetCheckpoints";
-import { requireRole } from "@/lib/rbac";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 const BodySchema = z.object({
   name: z.string().min(1).max(80),
@@ -13,25 +13,19 @@ const BodySchema = z.object({
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   try {
-    await requireRole("COACH");
+    await requireMeetParticipant(meetId);
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "UNAUTHORIZED") {
-        return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-      }
-      if (error.message === "FORBIDDEN") {
-        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-      }
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
     }
     throw error;
-  }
-
-  const meet = await db.meet.findUnique({
-    where: { id: meetId },
-    select: { deletedAt: true },
-  });
-  if (!meet || meet.deletedAt) {
-    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
 
   const checkpoints = await db.meetCheckpoint.findMany({
@@ -50,7 +44,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function POST(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const { user } = await requireRole("COACH");
+  let user: Awaited<ReturnType<typeof requireMeetParticipant>>["user"];
+  try {
+    ({ user } = await requireMeetParticipant(meetId));
+  } catch (error) {
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    }
+    throw error;
+  }
 
   const body = BodySchema.parse(await req.json());
   const trimmedName = body.name.trim();

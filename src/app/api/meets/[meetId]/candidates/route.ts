@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DAYS_PER_YEAR, DEFAULT_MAX_AGE_GAP_DAYS, MAX_MATCHES_PER_WRESTLER } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { pairingScore, weightPctDiff } from "@/lib/pairingScore";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 const boolFromQuery = z.preprocess((value) => {
   if (typeof value === "string") {
@@ -31,6 +32,21 @@ function daysBetween(a: Date, b: Date) {
 
 export async function GET(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
+  try {
+    await requireMeetParticipant(meetId);
+  } catch (error) {
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    }
+    throw error;
+  }
   const url = new URL(req.url);
   const q = QuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
   const leagueSettings = await db.league.findFirst({

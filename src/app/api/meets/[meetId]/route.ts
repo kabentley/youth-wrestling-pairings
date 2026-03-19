@@ -15,7 +15,7 @@ import {
   shouldCreateAutoCheckpoint,
 } from "@/lib/meetPhase";
 import { buildReadyForCheckinChecklist } from "@/lib/meetReadyForCheckin";
-import { requireRole } from "@/lib/rbac";
+import { getAuthorizationErrorCode, requireMeetParticipant, requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
   name: z.string().min(2).optional(),
@@ -87,11 +87,14 @@ function normalizeNullableDateTime(value?: string | null) {
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   try {
-    await requireRole("COACH");
+    await requireMeetParticipant(meetId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message === "FORBIDDEN") {
+    const code = getAuthorizationErrorCode(err);
+    if (code === "FORBIDDEN") {
       return NextResponse.json({ error: "You are not authorized to view this meet." }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
     }
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }

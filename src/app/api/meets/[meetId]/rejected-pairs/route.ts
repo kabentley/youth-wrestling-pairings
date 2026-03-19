@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 export async function GET(_: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  const meet = await db.meet.findUnique({
-    where: { id: meetId },
-    select: { deletedAt: true },
-  });
-  if (!meet || meet.deletedAt) {
-    return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+  try {
+    await requireMeetParticipant(meetId);
+  } catch (error) {
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
+    }
+    throw error;
   }
   const pairs = await db.meetRejectedPair.findMany({
     where: { meetId },

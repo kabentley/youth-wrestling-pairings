@@ -4,24 +4,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
-import { requireRole } from "@/lib/rbac";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 const BodySchema = z.object({
   allowedCoachIds: z.array(z.string().trim().min(1)).max(200),
 });
 
 type MeetContext = Awaited<ReturnType<typeof loadMeetContext>>;
-
-function authErrorResponse(error: unknown) {
-  if (!(error instanceof Error)) return null;
-  if (error.message === "UNAUTHORIZED") {
-    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  }
-  if (error.message === "FORBIDDEN") {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-  }
-  return null;
-}
 
 async function loadMeetContext(meetId: string) {
   return db.meet.findUnique({
@@ -116,14 +105,23 @@ async function loadCoachRows(teamIds: string[], coordinatorId: string | null, me
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let access: Awaited<ReturnType<typeof requireMeetParticipant>>;
   try {
-    ({ user } = await requireRole("COACH"));
+    access = await requireMeetParticipant(meetId);
   } catch (error) {
-    const response = authErrorResponse(error);
-    if (response) return response;
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found." }, { status: 404 });
+    }
     throw error;
   }
+  const { user } = access;
   const meet = await loadMeetContext(meetId);
   if (!meet || meet.deletedAt) {
     return NextResponse.json({ error: "Meet not found." }, { status: 404 });
@@ -159,14 +157,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
-  let user: Awaited<ReturnType<typeof requireRole>>["user"];
+  let access: Awaited<ReturnType<typeof requireMeetParticipant>>;
   try {
-    ({ user } = await requireRole("COACH"));
+    access = await requireMeetParticipant(meetId);
   } catch (error) {
-    const response = authErrorResponse(error);
-    if (response) return response;
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found." }, { status: 404 });
+    }
     throw error;
   }
+  const { user } = access;
   const body = BodySchema.parse(await req.json());
   const meet = await loadMeetContext(meetId);
   if (!meet || meet.deletedAt) {

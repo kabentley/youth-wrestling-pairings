@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { DAYS_PER_YEAR } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
-import { requireAnyRole } from "@/lib/rbac";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 export const runtime = "nodejs";
 
@@ -161,12 +161,15 @@ function row(cells: string[]) {
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   let userId: string;
   try {
-    const { user } = await requireAnyRole(["COACH", "ADMIN"]);
+    const { user } = await requireMeetParticipant((await params).meetId);
     userId = user.id;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message === "FORBIDDEN") {
+    const code = getAuthorizationErrorCode(err);
+    if (code === "FORBIDDEN") {
       return NextResponse.json({ error: "Coaches only." }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found." }, { status: 404 });
     }
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }

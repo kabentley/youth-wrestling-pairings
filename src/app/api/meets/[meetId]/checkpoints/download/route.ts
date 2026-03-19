@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { buildMeetCheckpointPayload } from "@/lib/meetCheckpoints";
-import { requireRole } from "@/lib/rbac";
+import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
 
 function sanitizeFilePart(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 64) || "checkpoint";
@@ -10,15 +10,17 @@ function sanitizeFilePart(value: string) {
 export async function GET(req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
   try {
-    await requireRole("COACH");
+    await requireMeetParticipant(meetId);
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "UNAUTHORIZED") {
-        return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-      }
-      if (error.message === "FORBIDDEN") {
-        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-      }
+    const code = getAuthorizationErrorCode(error);
+    if (code === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (code === "FORBIDDEN") {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    if (code === "NOT_FOUND") {
+      return NextResponse.json({ error: "Meet not found" }, { status: 404 });
     }
     throw error;
   }
