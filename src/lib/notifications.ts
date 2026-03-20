@@ -850,7 +850,7 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
             meetStatuses: {
               some: {
                 meetId,
-                status: { in: attendeeStatuses as readonly never[] },
+                status: { in: attendeeStatuses as unknown as never[] },
               },
             },
           },
@@ -868,7 +868,7 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
             meetStatuses: {
               some: {
                 meetId,
-                status: { in: attendeeStatuses as readonly never[] },
+                status: { in: attendeeStatuses as unknown as never[] },
               },
             },
           },
