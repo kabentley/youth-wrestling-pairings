@@ -840,7 +840,7 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
 }
 
 async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAttendeeMessageRecipient[]> {
-  const attendeeStatuses = ["COMING", "LATE", "EARLY"];
+  const attendeeStatuses = ["COMING", "LATE", "EARLY"] as const;
   const parents = await db.user.findMany({
     where: {
       role: "PARENT",
@@ -850,7 +850,7 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
             meetStatuses: {
               some: {
                 meetId,
-                status: { in: attendeeStatuses },
+                status: { in: attendeeStatuses as readonly never[] },
               },
             },
           },
@@ -868,7 +868,7 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
             meetStatuses: {
               some: {
                 meetId,
-                status: { in: attendeeStatuses },
+                status: { in: attendeeStatuses as readonly never[] },
               },
             },
           },
