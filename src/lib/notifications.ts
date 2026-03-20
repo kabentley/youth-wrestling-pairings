@@ -4,6 +4,7 @@ import { adjustTeamTextColor } from "./contrastText";
 import { db } from "./db";
 import type { EmailDeliveryMode } from "./emailDelivery";
 import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "./emailDelivery";
+import { formatMeetCheckinWindow } from "./meetDateTime";
 import { normalizeMeetPhase } from "./meetPhase";
 
 export type NotificationTransport = "off" | "log" | "live";
@@ -184,18 +185,8 @@ function formatDeadline(date: Date | null) {
   }).format(date);
 }
 
-function formatTime(date: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
 function formatCheckinWindow(startAt?: Date | null, durationMinutes?: number | null) {
-  if (!startAt) return "";
-  const normalizedDuration = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 30;
-  const endAt = new Date(startAt.getTime() + normalizedDuration * 60 * 1000);
-  return `${formatTime(startAt)} to ${formatTime(endAt)}`;
+  return formatMeetCheckinWindow(startAt, durationMinutes) ?? "";
 }
 
 function formatList(items: string[]) {

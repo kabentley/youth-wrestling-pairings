@@ -17,6 +17,7 @@ import { DAYS_PER_YEAR } from "@/lib/constants";
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { getCoachAttendanceEditScopeWithoutLock } from "@/lib/meetAttendanceEditScope";
+import { combineMeetDateAndTimeInput, formatMeetTimeInput } from "@/lib/meetDateTime";
 import {
   isEditableMeetPhase,
   meetPhaseLabel,
@@ -62,36 +63,12 @@ function readStoredMatboardShowTeamSymbols() {
   return window.localStorage.getItem(MATBOARD_SHOW_TEAM_SYMBOLS_STORAGE_KEY) === "true";
 }
 
-function formatDateTimeLocalInput(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
 function formatTimeInputFromDateTime(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
+  return formatMeetTimeInput(value);
 }
 
 function combineDateAndTimeInput(dateStr: string, timeStr?: string | null) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  if (!year || !month || !day) return null;
-  const trimmedTime = timeStr?.trim();
-  if (!trimmedTime) return null;
-  const [hours, minutes] = trimmedTime.split(":").map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  const combined = new Date(year, month - 1, day, hours, minutes, 0, 0);
-  return formatDateTimeLocalInput(combined.toISOString());
+  return combineMeetDateAndTimeInput(dateStr, timeStr);
 }
 
 function formatMeetDisplayDate(dateStr: string) {

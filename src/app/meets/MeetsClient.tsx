@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import NumberInput from "@/components/NumberInput";
 import { formatTeamName } from "@/lib/formatTeamName";
+import { combineMeetDateAndTimeInput, formatMeetTimeInput } from "@/lib/meetDateTime";
 import { meetPhaseLabel, normalizeMeetPhase, type MeetPhase } from "@/lib/meetPhase";
 
 type Team = {
@@ -80,25 +81,6 @@ function getDefaultCheckinDateTime(dateStr: string, hours: number, minutes: numb
 
 function getDefaultCheckinStart(dateStr: string) {
   return getDefaultCheckinDateTime(dateStr, 7, 45);
-}
-
-function formatTimeFromDateTime(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return formatTimeInput(date);
-}
-
-function combineDateAndTime(dateStr: string, timeStr?: string | null) {
-  const meetDate = parseDateInput(dateStr);
-  if (!meetDate) return null;
-  const trimmedTime = timeStr?.trim();
-  if (!trimmedTime) return null;
-  const [hours, minutes] = trimmedTime.split(":").map(Number);
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
-  const combined = new Date(meetDate);
-  combined.setHours(hours, minutes, 0, 0);
-  return formatLocalDateTime(combined);
 }
 
 function formatMeetDisplayDate(dateStr: string) {
@@ -369,7 +351,7 @@ export default function MeetsPage() {
           name: displayMeetName,
           date,
           attendanceDeadline: attendanceDeadline || null,
-          checkinStartAt: combineDateAndTime(date, checkinStartAt),
+          checkinStartAt: combineMeetDateAndTimeInput(date, checkinStartAt),
           checkinDurationMinutes,
           location,
           teamIds: normalizedTeamIds,
@@ -498,7 +480,7 @@ export default function MeetsPage() {
       setAttendanceDeadlineDirty(true);
     }
     if (restartDefaults.checkinStartAt !== undefined) {
-      setCheckinStartAt(formatTimeFromDateTime(restartDefaults.checkinStartAt));
+      setCheckinStartAt(formatMeetTimeInput(restartDefaults.checkinStartAt));
       setCheckinStartDirty(true);
     }
     if (typeof restartDefaults.checkinDurationMinutes === "number") {

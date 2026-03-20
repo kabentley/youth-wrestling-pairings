@@ -30,12 +30,13 @@ describe("buildMeetReadyForAttendanceContent", () => {
   it("builds email content with deadline and links", async () => {
     process.env.DATABASE_URL = "file:./dev.db";
     const { buildMeetReadyForAttendanceContent } = await import("./notifications");
+    const { parseMeetLocalDateTime } = await import("./meetDateTime");
     const content = buildMeetReadyForAttendanceContent({
       meetName: "Tigers-Wolves Jan 12",
       meetDate: new Date("2026-01-12T00:00:00.000Z"),
       location: "North Gym",
       attendanceDeadline: new Date("2026-01-10T22:00:00.000Z"),
-      checkinStartAt: new Date("2026-01-12T07:45:00.000Z"),
+      checkinStartAt: parseMeetLocalDateTime("2026-01-12T07:45"),
       checkinDurationMinutes: 30,
       teamLabels: ["Tigers", "Wolves"],
       attendanceUrl: "http://localhost:3000/parent/attendance",

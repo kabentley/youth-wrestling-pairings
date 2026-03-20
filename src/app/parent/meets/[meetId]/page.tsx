@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import { formatMeetCheckinWindow } from "@/lib/meetDateTime";
 
 type MeetDetail = {
   id: string;
@@ -13,19 +14,6 @@ type MeetDetail = {
   checkinStartAt?: string | null;
   checkinDurationMinutes?: number | null;
 };
-
-function formatCheckinWindow(startStr?: string | null, durationMinutes?: number | null) {
-  if (!startStr) return null;
-  const start = new Date(startStr);
-  if (Number.isNaN(start.getTime())) return null;
-  const normalizedDuration = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 30;
-  const end = new Date(start.getTime() + normalizedDuration * 60 * 1000);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${formatter.format(start)} to ${formatter.format(end)}`;
-}
 
 export default function ParentMeetDetail({ params }: { params: Promise<{ meetId: string }> }) {
   const [meet, setMeet] = useState<MeetDetail | null>(null);
@@ -66,8 +54,8 @@ export default function ParentMeetDetail({ params }: { params: Promise<{ meetId:
           <div><b>Name:</b> {meet.name}</div>
           <div><b>Date:</b> {new Date(meet.date).toISOString().slice(0, 10)}</div>
           <div><b>Location:</b> {meet.location ?? "TBD"}</div>
-          {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes) && (
-            <div><b>Checkin time:</b> {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes)}</div>
+          {formatMeetCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes) && (
+            <div><b>Checkin time:</b> {formatMeetCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes)}</div>
           )}
           {meet.homeTeam && <div><b>Home Team:</b> {meet.homeTeam}</div>}
         </div>

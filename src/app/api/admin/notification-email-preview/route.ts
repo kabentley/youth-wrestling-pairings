@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { parseMeetLocalDateTime } from "@/lib/meetDateTime";
 import { buildMeetPublishedContent, buildMeetReadyForAttendanceContent } from "@/lib/notifications";
 import { buildPasswordResetEmailContent } from "@/lib/passwordResetEmail";
 import { requireAdmin } from "@/lib/rbac";
@@ -136,6 +137,8 @@ async function resolvePreviewMeet(meetId: string, preferredStatuses: string[]) {
         date: true,
         location: true,
         attendanceDeadline: true,
+        checkinStartAt: true,
+        checkinDurationMinutes: true,
         status: true,
         deletedAt: true,
         meetTeams: {
@@ -189,6 +192,8 @@ async function resolvePreviewMeet(meetId: string, preferredStatuses: string[]) {
       date: true,
       location: true,
       attendanceDeadline: true,
+      checkinStartAt: true,
+      checkinDurationMinutes: true,
       status: true,
       deletedAt: true,
       meetTeams: {
@@ -247,7 +252,7 @@ async function buildMeetReadyPreview(request: Request, meetId: string) {
       meetDate: new Date("2026-03-21T00:00:00.000Z"),
       location: "1001 East Lincoln Highway, Exton, PA 19341",
       attendanceDeadline: new Date("2026-03-18T22:00:00.000Z"),
-      checkinStartAt: new Date("2026-03-21T07:45:00.000Z"),
+      checkinStartAt: parseMeetLocalDateTime("2026-03-21T07:45"),
       checkinDurationMinutes: 30,
       teamLabels: ["WC", "BYC", "DOW"],
       attendanceUrl: `${baseUrl}/parent/attendance`,
@@ -289,8 +294,8 @@ async function buildMeetReadyPreview(request: Request, meetId: string) {
     meetDate: meet.date,
     location: meet.location ?? null,
     attendanceDeadline: meet.attendanceDeadline ?? null,
-    checkinStartAt: new Date(new Date(meet.date).setHours(7, 45, 0, 0)),
-    checkinDurationMinutes: 30,
+    checkinStartAt: meet.checkinStartAt ?? parseMeetLocalDateTime(`${meet.date.toISOString().slice(0, 10)}T07:45`),
+    checkinDurationMinutes: meet.checkinDurationMinutes ?? 30,
     teamLabels,
     attendanceUrl: `${baseUrl}/parent/attendance`,
     recipientName: "Sample Parent",

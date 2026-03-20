@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
+import { parseMeetLocalDateTime } from "@/lib/meetDateTime";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { notifyMeetReadyForAttendance } from "@/lib/notifications";
@@ -37,7 +38,7 @@ const MeetSchema = z.object({
 function normalizeOptionalDateTime(value?: string | null) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  return new Date(trimmed);
+  return parseMeetLocalDateTime(trimmed);
 }
 
 function formatMeetDate(dateStr: string) {

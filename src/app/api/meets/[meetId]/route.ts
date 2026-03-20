@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { buildMeetCheckpointPayload, buildTeamSignature } from "@/lib/meetCheckpoints";
+import { parseMeetLocalDateTime } from "@/lib/meetDateTime";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import {
   buildAutoPhaseCheckpointName,
@@ -87,7 +88,7 @@ function normalizeNullableString(value?: string | null) {
 function normalizeNullableDateTime(value?: string | null) {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  return new Date(trimmed);
+  return parseMeetLocalDateTime(trimmed);
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
