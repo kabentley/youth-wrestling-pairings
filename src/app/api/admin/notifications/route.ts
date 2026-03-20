@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/rbac";
 const NotificationEventSchema = z.enum([
   "meet_ready_for_attendance",
   "meet_published",
+  "meet_attendees_message",
   "welcome_email",
   "password_reset_code",
 ]);
@@ -85,6 +86,11 @@ export async function GET(req: Request) {
 
   const { q, meetId, event, status, page, pageSize } = parsed.data;
   const where = {
+    NOT: {
+      channel: "system",
+      recipient: "(meet)",
+      message: "Dispatch claimed.",
+    },
     ...(meetId ? { meetId } : {}),
     ...(event ? { event } : {}),
     ...(status ? { status } : {}),

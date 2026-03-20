@@ -23,6 +23,8 @@ export type ParentTodayMeetGroup = {
     date: string;
     location?: string | null;
     status?: string | null;
+    checkinStartAt?: string | null;
+    checkinDurationMinutes?: number | null;
     homeTeamId?: string | null;
     numMats?: number | null;
   };
@@ -74,6 +76,19 @@ function formatMeetDate(dateStr: string) {
 function boutNumber(mat?: number | null, order?: number | null) {
   if (!mat || !order) return "TBD";
   return `${mat}${String(Math.max(0, order - 1)).padStart(2, "0")}`;
+}
+
+function formatCheckinWindow(startStr?: string | null, durationMinutes?: number | null) {
+  if (!startStr) return null;
+  const start = new Date(startStr);
+  if (Number.isNaN(start.getTime())) return null;
+  const normalizedDuration = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 30;
+  const end = new Date(start.getTime() + normalizedDuration * 60 * 1000);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${formatter.format(start)} to ${formatter.format(end)}`;
 }
 
 function localDateKey(date: Date) {
@@ -168,6 +183,11 @@ export default function ParentTodayMeetCards({
           </div>
           <div className="today-meta">{formatMeetDate(group.meet.date)}</div>
           <div className="today-meta">{group.meet.location ?? "Location TBD"}</div>
+          {formatCheckinWindow(group.meet.checkinStartAt, group.meet.checkinDurationMinutes) && (
+            <div className="today-meta">
+              Checkin time: {formatCheckinWindow(group.meet.checkinStartAt, group.meet.checkinDurationMinutes)}
+            </div>
+          )}
         </div>
         {showCheckinMessage && (
           <div className="today-checkin-note">
@@ -519,3 +539,7 @@ export default function ParentTodayMeetCards({
     </section>
   );
 }
+
+
+
+

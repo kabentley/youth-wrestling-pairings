@@ -13,6 +13,8 @@ type AttendanceMeet = {
   homeTeam?: string | null;
   headCoachName?: string | null;
   attendanceDeadline?: string | null;
+  checkinStartAt?: string | null;
+  checkinDurationMinutes?: number | null;
   status?: string | null;
   canEditAttendance: boolean;
   children: Array<{
@@ -50,6 +52,19 @@ function formatDeadline(dateStr?: string | null) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatCheckinWindow(startStr?: string | null, durationMinutes?: number | null) {
+  if (!startStr) return null;
+  const start = new Date(startStr);
+  if (Number.isNaN(start.getTime())) return null;
+  const normalizedDuration = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 30;
+  const end = new Date(start.getTime() + normalizedDuration * 60 * 1000);
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${formatter.format(start)} to ${formatter.format(end)}`;
 }
 
 function attendanceLabel(status: ParentAttendanceStatus) {
@@ -433,6 +448,11 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                         <div className="meet-meta">{formatMeetDate(meet.date)}</div>
                         <div className="meet-meta">{meet.location ?? "Location TBD"}</div>
                         {meet.homeTeam && <div className="meet-meta"><strong>Host:</strong> {meet.homeTeam}</div>}
+                        {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes) && (
+                          <div className="meet-meta">
+                            <strong>Checkin time:</strong> {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes)}
+                          </div>
+                        )}
                         {meet.status === "ATTENDANCE" && (
                           <div className="meet-meta">
                             <strong>Attendance deadline:</strong> {formatDeadline(meet.attendanceDeadline)}
@@ -594,6 +614,11 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                         <div className="meet-meta">{formatMeetDate(meet.date)}</div>
                         <div className="meet-meta">{meet.location ?? "Location TBD"}</div>
                         {meet.homeTeam && <div className="meet-meta"><strong>Host:</strong> {meet.homeTeam}</div>}
+                        {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes) && (
+                          <div className="meet-meta">
+                            <strong>Checkin time:</strong> {formatCheckinWindow(meet.checkinStartAt, meet.checkinDurationMinutes)}
+                          </div>
+                        )}
                         {meet.status === "ATTENDANCE" && (
                           <div className="meet-meta">
                             <strong>Attendance deadline:</strong> {formatDeadline(meet.attendanceDeadline)}
@@ -719,3 +744,7 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
     </section>
   );
 }
+
+
+
+

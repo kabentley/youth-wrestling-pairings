@@ -1,0 +1,3 @@
+-- No-op migration kept to preserve migration history.
+-- The actual check-in columns are added by:
+-- 20260320104500_add_meet_checkin_start_and_duration

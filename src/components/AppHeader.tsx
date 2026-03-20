@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useEffect, useState } from "react";
 
@@ -37,6 +38,7 @@ export default function AppHeader({
   hideLeagueBrand = false,
   disableCoachShortcut = false,
 }: Props) {
+  const pathname = usePathname();
   const [user, setUser] = useState<{
     id?: string;
     username: string;
@@ -168,6 +170,8 @@ export default function AppHeader({
     : user?.role;
   const accountLink = user ? visibleLinks.find(link => link.href === "/account") : null;
   const myWrestlersLink = user ? visibleLinks.find(link => link.href === "/parent") : null;
+  const showParentHeaderHelp = pathname.startsWith("/parent");
+  const showDefaultHeaderHelp = Boolean(myWrestlersLink && !showParentHeaderHelp);
   const mainLinks = (
     accountLink
       ? visibleLinks.filter(link => link.href !== "/account" && link.href !== "/parent")
@@ -198,6 +202,9 @@ export default function AppHeader({
           border: 1px solid transparent;
           padding: 6px 10px;
           border-radius: 6px;
+        }
+        .app-header-link-help {
+          padding: 6px 5px;
         }
         .app-header-link:hover {
           border-color: #d5dbe2;
@@ -284,6 +291,9 @@ export default function AppHeader({
           .app-header-link {
             font-size: 12px;
             padding: 4px 8px;
+          }
+          .app-header-link-help {
+            padding: 4px 4px;
           }
           .app-header-brand {
             gap: 4px;
@@ -414,9 +424,19 @@ export default function AppHeader({
                 {myWrestlersLink.label}
               </a>
             ) : null}
+            {showDefaultHeaderHelp ? (
+              <a href="/help" className="app-header-link app-header-link-help" target="_blank" rel="noreferrer">
+                Help
+              </a>
+            ) : null}
             {accountLink ? (
               <a href={accountLink.href} className="app-header-link">
                 {accountLink.label}
+              </a>
+            ) : null}
+            {showParentHeaderHelp ? (
+              <a href="/help" className="app-header-link app-header-link-help" target="_blank" rel="noreferrer">
+                Help
               </a>
             ) : null}
             <button

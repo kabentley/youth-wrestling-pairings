@@ -8,7 +8,7 @@ import { normalizeMeetPhase } from "./meetPhase";
 
 export type NotificationTransport = "off" | "log" | "live";
 export type NotificationChannel = "email" | "system";
-export type NotificationEvent = "meet_ready_for_attendance" | "meet_published";
+export type NotificationEvent = "meet_ready_for_attendance" | "meet_published" | "meet_attendees_message";
 export type NotificationStatus = "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
 export type NotificationDispatchSummary = {
   transport: NotificationTransport;
@@ -94,9 +94,10 @@ type MeetReadyContext = {
   meetDate: Date;
   location: string | null;
   attendanceDeadline: Date | null;
+  checkinStartAt?: Date | null;
+  checkinDurationMinutes?: number | null;
   teamLabels: string[];
   attendanceUrl: string;
-  myWrestlersUrl: string;
   recipientName: string;
   childNames: string[];
   headCoachName: string;
@@ -133,6 +134,15 @@ type MeetPublishedContext = {
   recipientName: string;
   children: MeetPublishedChild[];
 };
+
+type MeetAttendeeMessageRecipient = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  childNames: string[];
+};
+
+type MeetAttendeeMessageAudience = "attending" | "roster";
 
 export function resolveNotificationTransport(
   emailDeliveryMode: EmailDeliveryMode,
@@ -172,6 +182,20 @@ function formatDeadline(date: Date | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatTime(date: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatCheckinWindow(startAt?: Date | null, durationMinutes?: number | null) {
+  if (!startAt) return "";
+  const normalizedDuration = typeof durationMinutes === "number" && durationMinutes > 0 ? durationMinutes : 30;
+  const endAt = new Date(startAt.getTime() + normalizedDuration * 60 * 1000);
+  return `${formatTime(startAt)} to ${formatTime(endAt)}`;
 }
 
 function formatList(items: string[]) {
@@ -264,6 +288,7 @@ export function buildMeetReadyForAttendanceContent(
     ? `Teams: ${formatList(context.teamLabels)}.`
     : "";
   const deadlineLine = `Attendance deadline: ${formatDeadline(context.attendanceDeadline)}`;
+  const checkinLine = formatCheckinWindow(context.checkinStartAt, context.checkinDurationMinutes);
   const headCoachLine = context.headCoachName && context.headCoachEmail
     ? `If you have questions, please contact your coach: ${context.headCoachName} <${context.headCoachEmail}>.`
     : context.headCoachName
@@ -274,6 +299,7 @@ export function buildMeetReadyForAttendanceContent(
   const formattedMeetDate = formatMeetDate(context.meetDate);
   const meetDetailsBlock = [
     `Meet date: ${formattedMeetDate}.`,
+    checkinLine ? `Check-in time: ${checkinLine}.` : "",
     locationLine,
     teamsLine,
     deadlineLine,
@@ -305,6 +331,7 @@ export function buildMeetReadyForAttendanceContent(
               <div style="padding:12px 14px;background:#f7f9fc;border-bottom:1px solid #e7edf3;font-size:14px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;">Meet Details</div>
               <div style="padding:16px;">
                 <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Date:</strong> ${escapeHtml(formattedMeetDate)}</div>
+                ${checkinLine ? `<div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Check-in time:</strong> ${escapeHtml(checkinLine)}</div>` : ""}
                 <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Location:</strong> ${escapeHtml(context.location ?? "Location to be announced")}</div>
                 <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Teams:</strong> ${escapeHtml(context.teamLabels.length > 0 ? formatList(context.teamLabels) : "To be announced")}</div>
                 <div style="margin-top:14px;padding:14px 16px;border-radius:12px;background:#fff4d6;border:1px solid #f0d48a;">
@@ -812,9 +839,76 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
   }));
 }
 
+async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAttendeeMessageRecipient[]> {
+  const attendeeStatuses = ["COMING", "LATE", "EARLY"];
+  const parents = await db.user.findMany({
+    where: {
+      role: "PARENT",
+      children: {
+        some: {
+          wrestler: {
+            meetStatuses: {
+              some: {
+                meetId,
+                status: { in: attendeeStatuses },
+              },
+            },
+          },
+        },
+      },
+    },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      email: true,
+      children: {
+        where: {
+          wrestler: {
+            meetStatuses: {
+              some: {
+                meetId,
+                status: { in: attendeeStatuses },
+              },
+            },
+          },
+        },
+        select: {
+          wrestler: {
+            select: {
+              first: true,
+              last: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ username: "asc" }],
+  });
+
+  return parents.map((parent) => ({
+    userId: parent.id,
+    displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
+    email: normalizeEmail(parent.email),
+    childNames: uniqueSortedNames(
+      parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
+    ),
+  }));
+}
+
+async function getMeetRosterMessageRecipients(teamIds: string[]): Promise<MeetAttendeeMessageRecipient[]> {
+  const recipients = await getMeetReadyRecipients(teamIds);
+  return recipients.map((recipient) => ({
+    userId: recipient.userId,
+    displayName: recipient.displayName,
+    email: recipient.email,
+    childNames: recipient.childNames,
+  }));
+}
+
 export async function notifyMeetReadyForAttendance(
   meetId: string,
-  options: { origin?: string | null } = {},
+  options: { origin?: string | null; checkinStartAt?: Date | null; checkinDurationMinutes?: number | null } = {},
 ) : Promise<MeetReadyForAttendanceSummary> {
   const emailDeliverySettings = await getEmailDeliverySettings();
   const transport = resolveNotificationTransport(emailDeliverySettings.mode);
@@ -827,6 +921,8 @@ export async function notifyMeetReadyForAttendance(
       date: true,
       location: true,
       attendanceDeadline: true,
+      checkinStartAt: true,
+      checkinDurationMinutes: true,
       status: true,
       deletedAt: true,
       meetTeams: {
@@ -851,18 +947,8 @@ export async function notifyMeetReadyForAttendance(
     return buildEmptyMeetReadySummary("off");
   }
 
-  // This event is only for the initial creation of the meet. Reopening attendance
-  // should restore data, not send a new round of parent notifications.
-  const claimed = await claimMeetEventDispatch("meet_ready_for_attendance", meet.id);
-  if (!claimed) {
-    const summary = buildEmptyMeetReadySummary(transport);
-    summary.skipped = 1;
-    return summary;
-  }
-
   const baseUrl = buildBaseUrl(options.origin);
   const attendanceUrl = `${baseUrl}/parent/attendance`;
-  const myWrestlersUrl = `${baseUrl}/parent`;
   const teamIds = meet.meetTeams.map((entry) => entry.teamId);
   const teamLabels = buildTeamLabels(meet.meetTeams);
   const recipients = await getMeetReadyRecipients(teamIds);
@@ -895,9 +981,10 @@ export async function notifyMeetReadyForAttendance(
       meetDate: meet.date,
       location: meet.location ?? null,
       attendanceDeadline: meet.attendanceDeadline ?? null,
+      checkinStartAt: options.checkinStartAt ?? meet.checkinStartAt ?? null,
+      checkinDurationMinutes: options.checkinDurationMinutes ?? meet.checkinDurationMinutes ?? null,
       teamLabels,
       attendanceUrl,
-      myWrestlersUrl,
       recipientName: recipient.displayName,
       childNames: recipient.childNames,
       headCoachName: recipient.headCoachName,
@@ -909,7 +996,13 @@ export async function notifyMeetReadyForAttendance(
       emailSubject: content.emailSubject,
       emailText: content.emailText,
       emailHtml: content.emailHtml,
-      extraPayload: { attendanceUrl, myWrestlersUrl, teamLabels, childNames: recipient.childNames },
+      extraPayload: {
+        attendanceUrl,
+        teamLabels,
+        childNames: recipient.childNames,
+        checkinStartAt: (options.checkinStartAt ?? meet.checkinStartAt)?.toISOString() ?? null,
+        checkinDurationMinutes: options.checkinDurationMinutes ?? meet.checkinDurationMinutes ?? null,
+      },
     });
 
     if (messages.length === 0) {
@@ -1062,4 +1155,118 @@ export async function notifyMeetPublished(
     failed,
     skipped,
   };
+}
+
+export async function notifyMeetAttendeesMessage(
+  meetId: string,
+  input: { subject: string; body: string; audience: MeetAttendeeMessageAudience },
+): Promise<NotificationDispatchSummary> {
+  const emailDeliverySettings = await getEmailDeliverySettings();
+  const transport = resolveNotificationTransport(emailDeliverySettings.mode);
+  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      id: true,
+      deletedAt: true,
+      meetTeams: {
+        select: {
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!meet || meet.deletedAt) {
+    return buildEmptyDispatchSummary(transport);
+  }
+
+  if (transport === "off" || emailDeliverySettings.mode === "off") {
+    return buildEmptyDispatchSummary("off");
+  }
+
+  const recipients = input.audience === "roster"
+    ? await getMeetRosterMessageRecipients(meet.meetTeams.map((entry) => entry.teamId))
+    : await getMeetAttendeeMessageRecipients(meetId);
+  let attempted = 0;
+  let sent = 0;
+  let logged = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const recipient of recipients) {
+    const messages: DeliveryMessage[] = recipient.email
+      ? [{
+          channel: "email",
+          recipient: recipient.email,
+          subject: input.subject,
+          message: input.body,
+          userId: recipient.userId,
+          meetId,
+          payload: {
+            childNames: recipient.childNames,
+            source: "meet_attendees_message",
+            audience: input.audience,
+          },
+        }]
+      : [];
+
+    if (messages.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    for (const message of messages) {
+      attempted += 1;
+      const result = await deliverNotification(message, transport, "meet_attendees_message");
+      await recordDelivery("meet_attendees_message", message, result, { skipEmailLog: !shouldLogEmail });
+      if (result.status === "SENT") {
+        sent += 1;
+      } else if (result.status === "LOGGED") {
+        logged += 1;
+      } else if (result.status === "FAILED") {
+        failed += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+  }
+
+  return {
+    transport,
+    recipients: recipients.length,
+    attempted,
+    sent,
+    logged,
+    successful: sent + logged,
+    failed,
+    skipped,
+  };
+}
+
+export async function countMeetAttendeeMessageRecipients(
+  meetId: string,
+  audience: MeetAttendeeMessageAudience,
+): Promise<number> {
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      id: true,
+      deletedAt: true,
+      meetTeams: {
+        select: {
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!meet || meet.deletedAt) {
+    return 0;
+  }
+
+  const recipients = audience === "roster"
+    ? await getMeetRosterMessageRecipients(meet.meetTeams.map((entry) => entry.teamId))
+    : await getMeetAttendeeMessageRecipients(meetId);
+  return recipients.length;
 }

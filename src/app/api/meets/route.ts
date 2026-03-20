@@ -15,6 +15,11 @@ const MeetSchema = z.object({
     (value) => value == null || value === "" || !Number.isNaN(new Date(value).getTime()),
     "Invalid attendance deadline.",
   ),
+  checkinStartAt: z.string().trim().nullable().optional().refine(
+    (value) => value == null || value === "" || !Number.isNaN(new Date(value).getTime()),
+    "Invalid check-in start time.",
+  ),
+  checkinDurationMinutes: z.number().int().min(1).max(240).optional().default(30),
   location: z.string().optional(),
   teamIds: z.array(z.string()).min(2).max(5),
   homeTeamId: z.string().optional(),
@@ -171,6 +176,7 @@ export async function POST(req: Request) {
   const { user } = await requireRole("COACH");
   const body = await req.json();
   const parsed = MeetSchema.parse(body);
+  const checkinStartAt = normalizeOptionalDateTime(parsed.checkinStartAt);
   const creatorTeamId = user.teamId ?? parsed.homeTeamId ?? parsed.teamIds[0];
   if (!creatorTeamId) {
     return NextResponse.json({ error: "Creator must belong to a team" }, { status: 400 });
@@ -214,6 +220,8 @@ export async function POST(req: Request) {
       name: uniqueMeetName,
       date: new Date(parsed.date),
       attendanceDeadline: normalizeOptionalDateTime(parsed.attendanceDeadline),
+      checkinStartAt,
+      checkinDurationMinutes: parsed.checkinDurationMinutes,
       location: normalizeLocation(parsed.location),
       homeTeamId,
       numMats: parsed.numMats,

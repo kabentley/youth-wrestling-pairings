@@ -52,6 +52,8 @@ export async function GET() {
       location: true,
       status: true,
       attendanceDeadline: true,
+      checkinStartAt: true,
+      checkinDurationMinutes: true,
       homeTeam: {
         select: {
           name: true,
@@ -114,6 +116,8 @@ export async function GET() {
         headCoachName,
         status: normalizeMeetPhase(meet.status),
         attendanceDeadline: meet.attendanceDeadline,
+        checkinStartAt: meet.checkinStartAt,
+        checkinDurationMinutes: meet.checkinDurationMinutes,
         canEditAttendance: normalizeMeetPhase(meet.status) === "ATTENDANCE",
         children,
       };

@@ -21,6 +21,8 @@ type RestartDefaults = {
   name?: string;
   date?: string;
   attendanceDeadline?: string | null;
+  checkinStartAt?: string | null;
+  checkinDurationMinutes?: number | null;
   location?: string | null;
   homeTeamId?: string | null;
   teamIds?: string[];
@@ -45,6 +47,12 @@ function formatLocalDateTime(date: Date) {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+function formatTimeInput(date: Date) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 function parseDateInput(dateStr: string) {
   const [year, month, day] = dateStr.split("-").map(Number);
   if (!year || !month || !day) return null;
@@ -60,6 +68,37 @@ function getDefaultAttendanceDeadline(dateStr: string) {
   deadline.setDate(deadline.getDate() - daysBackToWednesday);
   deadline.setHours(18, 0, 0, 0);
   return formatLocalDateTime(deadline);
+}
+
+function getDefaultCheckinDateTime(dateStr: string, hours: number, minutes: number) {
+  const meetDate = parseDateInput(dateStr);
+  if (!meetDate) return "";
+  const checkinTime = new Date(meetDate);
+  checkinTime.setHours(hours, minutes, 0, 0);
+  return formatTimeInput(checkinTime);
+}
+
+function getDefaultCheckinStart(dateStr: string) {
+  return getDefaultCheckinDateTime(dateStr, 7, 45);
+}
+
+function formatTimeFromDateTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatTimeInput(date);
+}
+
+function combineDateAndTime(dateStr: string, timeStr?: string | null) {
+  const meetDate = parseDateInput(dateStr);
+  if (!meetDate) return null;
+  const trimmedTime = timeStr?.trim();
+  if (!trimmedTime) return null;
+  const [hours, minutes] = trimmedTime.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  const combined = new Date(meetDate);
+  combined.setHours(hours, minutes, 0, 0);
+  return formatLocalDateTime(combined);
 }
 
 function formatMeetDisplayDate(dateStr: string) {
@@ -159,6 +198,9 @@ export default function MeetsPage() {
   const [date, setDate] = useState(DEFAULT_DATE);
   const [attendanceDeadline, setAttendanceDeadline] = useState(getDefaultAttendanceDeadline(DEFAULT_DATE));
   const [attendanceDeadlineDirty, setAttendanceDeadlineDirty] = useState(false);
+  const [checkinStartAt, setCheckinStartAt] = useState(getDefaultCheckinStart(DEFAULT_DATE));
+  const [checkinStartDirty, setCheckinStartDirty] = useState(false);
+  const [checkinDurationMinutes, setCheckinDurationMinutes] = useState(30);
   const [location, setLocation] = useState("");
   const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -213,6 +255,9 @@ export default function MeetsPage() {
     setDate(DEFAULT_DATE);
     setAttendanceDeadline(getDefaultAttendanceDeadline(DEFAULT_DATE));
     setAttendanceDeadlineDirty(false);
+    setCheckinStartAt(getDefaultCheckinStart(DEFAULT_DATE));
+    setCheckinStartDirty(false);
+    setCheckinDurationMinutes(30);
     setLocation("");
     setTeamIds([]);
     setHomeTeamId(null);
@@ -304,6 +349,10 @@ export default function MeetsPage() {
     if (attendanceDeadlineDirty) return;
     setAttendanceDeadline(getDefaultAttendanceDeadline(date));
   }, [date, attendanceDeadlineDirty]);
+  useEffect(() => {
+    if (checkinStartDirty) return;
+    setCheckinStartAt(getDefaultCheckinStart(date));
+  }, [date, checkinStartDirty]);
 
   async function addMeet(notifyParents: boolean) {
     const normalizedTeamIds = Array.from(
@@ -320,6 +369,8 @@ export default function MeetsPage() {
           name: displayMeetName,
           date,
           attendanceDeadline: attendanceDeadline || null,
+          checkinStartAt: combineDateAndTime(date, checkinStartAt),
+          checkinDurationMinutes,
           location,
           teamIds: normalizedTeamIds,
           homeTeamId: homeTeamId ?? currentTeamId ?? null,
@@ -445,6 +496,13 @@ export default function MeetsPage() {
     if (restartDefaults.attendanceDeadline !== undefined) {
       setAttendanceDeadline(restartDefaults.attendanceDeadline ?? "");
       setAttendanceDeadlineDirty(true);
+    }
+    if (restartDefaults.checkinStartAt !== undefined) {
+      setCheckinStartAt(formatTimeFromDateTime(restartDefaults.checkinStartAt));
+      setCheckinStartDirty(true);
+    }
+    if (typeof restartDefaults.checkinDurationMinutes === "number") {
+      setCheckinDurationMinutes(Math.max(1, Math.min(240, Math.round(restartDefaults.checkinDurationMinutes))));
     }
     if (restartDefaults.location !== undefined) {
       setLocation(restartDefaults.location ?? "");
@@ -1210,17 +1268,17 @@ export default function MeetsPage() {
                 </div>
               </div>
               <div className="row">
-                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                <label style={{ display: "grid", gap: 4, flex: "1 1 220px", margin: 0 }}>
                   <span className="muted">Date</span>
                   <input className="input" type="date" value={date} onChange={e => setDate(e.target.value)} disabled={!canManageMeets} />
                 </label>
-                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                <label style={{ display: "grid", gap: 4, flex: "1 1 220px", margin: 0 }}>
                   <span className="muted">Meet Location (optional)</span>
                   <input className="input" placeholder="Location" value={location} onChange={e => setLocation(e.target.value)} disabled={!canManageMeets} />
                 </label>
               </div>
               <div className="row" style={{ marginTop: 8 }}>
-                <label className="row" style={{ flex: "1 1 220px", margin: 0 }}>
+                <label style={{ display: "grid", gap: 4, flex: "1 1 220px", margin: 0 }}>
                   <span className="muted">Attendance deadline</span>
                   <input
                     className="input"
@@ -1234,6 +1292,35 @@ export default function MeetsPage() {
                   />
                 </label>
               </div>
+              {!isEditing && (
+                <div className="row" style={{ marginTop: 8 }}>
+                  <label style={{ display: "grid", gap: 4, flex: "1 1 220px", margin: 0 }}>
+                    <span className="muted">Checkin start</span>
+                    <input
+                      className="input"
+                      type="time"
+                      value={checkinStartAt}
+                      onChange={(e) => {
+                        setCheckinStartAt(e.target.value);
+                        setCheckinStartDirty(true);
+                      }}
+                      disabled={!canManageMeets}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: 4, flex: "0 1 220px", margin: 0 }}>
+                    <span className="muted">Checkin duration (minutes)</span>
+                    <NumberInput
+                      className="input"
+                      min={1}
+                      max={240}
+                      value={checkinDurationMinutes}
+                      onValueChange={(value) => setCheckinDurationMinutes(Math.max(1, Math.min(240, Math.round(value))))}
+                      normalize={(value) => Math.round(value)}
+                      disabled={!canManageMeets}
+                    />
+                  </label>
+                </div>
+              )}
               {isEditing && (
                 <div className="row" style={{ marginTop: 8 }}>
                   <label className="row" style={{ margin: 0 }}>

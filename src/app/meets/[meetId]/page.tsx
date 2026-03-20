@@ -62,6 +62,81 @@ function readStoredMatboardShowTeamSymbols() {
   return window.localStorage.getItem(MATBOARD_SHOW_TEAM_SYMBOLS_STORAGE_KEY) === "true";
 }
 
+function formatDateTimeLocalInput(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function formatTimeInputFromDateTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function combineDateAndTimeInput(dateStr: string, timeStr?: string | null) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const trimmedTime = timeStr?.trim();
+  if (!trimmedTime) return null;
+  const [hours, minutes] = trimmedTime.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  const combined = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  return formatDateTimeLocalInput(combined.toISOString());
+}
+
+function formatMeetDisplayDate(dateStr: string) {
+  const iso = dateStr.slice(0, 10);
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return dateStr;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function buildMeetName(teamIds: string[], teams: Team[], homeTeamId?: string | null, date?: string) {
+  if (teamIds.length === 0) return "";
+  const byId = new Map(teams.map((team) => [team.id, team]));
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const pushTeam = (id: string) => {
+    if (seen.has(id)) return;
+    const team = byId.get(id);
+    if (!team) return;
+    const symbol = typeof team.symbol === "string" ? team.symbol.trim() : "";
+    const label = symbol || team.name.trim();
+    if (!label) return;
+    ordered.push(label);
+    seen.add(id);
+  };
+  if (homeTeamId) {
+    pushTeam(homeTeamId);
+  }
+  const rest = teamIds.filter((id) => id !== homeTeamId);
+  const restOrdered = rest
+    .map((id) => byId.get(id))
+    .filter((team): team is Team => Boolean(team))
+    .sort((a, b) => formatTeamName(a).localeCompare(formatTeamName(b), undefined, { sensitivity: "base" }));
+  restOrdered.forEach((team) => pushTeam(team.id));
+  if (ordered.length === 0) return "";
+  const base = ordered.join("-");
+  if (!date) return base;
+  return `${base} ${formatMeetDisplayDate(date)}`;
+}
+
 
 type Team = {
   id: string;
@@ -329,6 +404,27 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [meetName, setMeetName] = useState("");
   const [meetDate, setMeetDate] = useState<string | null>(null);
   const [attendanceDeadline, setAttendanceDeadline] = useState<string | null>(null);
+  const [checkinStartAt, setCheckinStartAt] = useState<string | null>(null);
+  const [checkinDurationMinutes, setCheckinDurationMinutes] = useState<number | null>(30);
+  const [showMeetDetailsModal, setShowMeetDetailsModal] = useState(false);
+  const [meetDetailsDraftName, setMeetDetailsDraftName] = useState("");
+  const [meetDetailsDraftDate, setMeetDetailsDraftDate] = useState("");
+  const [meetDetailsDraftLocation, setMeetDetailsDraftLocation] = useState("");
+  const [meetDetailsDraftCheckinStart, setMeetDetailsDraftCheckinStart] = useState("");
+  const [meetDetailsDraftCheckinDuration, setMeetDetailsDraftCheckinDuration] = useState("30");
+  const [meetDetailsSaving, setMeetDetailsSaving] = useState(false);
+  const [meetDetailsError, setMeetDetailsError] = useState<string | null>(null);
+  const [showAttendeeEmailModal, setShowAttendeeEmailModal] = useState(false);
+  const [showAttendeeEmailPreviewModal, setShowAttendeeEmailPreviewModal] = useState(false);
+  const [attendeeEmailAudience, setAttendeeEmailAudience] = useState<"attending" | "roster">("attending");
+  const [attendeeEmailSubject, setAttendeeEmailSubject] = useState("");
+  const [attendeeEmailBody, setAttendeeEmailBody] = useState("");
+  const [attendeeEmailPreviewRecipients, setAttendeeEmailPreviewRecipients] = useState<number | null>(null);
+  const [attendeeEmailPreviewLoading, setAttendeeEmailPreviewLoading] = useState(false);
+  const [attendeeEmailPreviewError, setAttendeeEmailPreviewError] = useState<string | null>(null);
+  const [attendeeEmailSending, setAttendeeEmailSending] = useState(false);
+  const [attendeeEmailError, setAttendeeEmailError] = useState<string | null>(null);
+  const [attendeeEmailNotice, setAttendeeEmailNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [meetStatus, setMeetStatus] = useState<MeetPhase>("DRAFT");
   const [meetLoaded, setMeetLoaded] = useState(false);
   const [matchesPerWrestler, setMatchesPerWrestler] = useState<number | null>(null);
@@ -412,9 +508,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     rejectedBadgeColWidth,
   ];
   const resizeRef = useRef<{ kind: "attendance" | "pairings" | "current" | "available"; index: number; startX: number; startWidth: number } | null>(null);
-  const lastSavedNameRef = useRef("");
-  const nameSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [isEditingName, setIsEditingName] = useState(false);
   const [pairingsTeamId, setPairingsTeamId] = useState<string | null>(null);
   const [selectedPairingId, setSelectedPairingId] = useState<string | null>(null);
   const [pairingsSort, setPairingsSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "last", dir: "asc" });
@@ -1243,9 +1336,15 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
       if (mRes.ok) {
         const meetJson = await mRes.json();
         setMeetName(meetJson.name ?? "");
-        lastSavedNameRef.current = meetJson.name ?? "";
         setMeetDate(meetJson.date ?? null);
         setAttendanceDeadline(meetJson.attendanceDeadline ?? null);
+        setCheckinStartAt(meetJson.checkinStartAt ?? null);
+        setCheckinDurationMinutes(
+          typeof meetJson.checkinDurationMinutes === "number" && meetJson.checkinDurationMinutes > 0
+            ? meetJson.checkinDurationMinutes
+            : 30,
+        );
+        setMeetDetailsError(null);
         setSettings(s => ({
           ...s,
           allowSameTeamMatches: Boolean(meetJson.allowSameTeamMatches),
@@ -1466,6 +1565,10 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
   const canChangeStatus =
     canChangeMeetPhase &&
     (isPublished || lockState.status === "acquired" || hasImplicitCheckinEdit);
+  const canManageMeetDetails =
+    (isMeetCoordinator || currentUserRole === "ADMIN") &&
+    meetStatus !== "PUBLISHED";
+  const canSendAttendeeEmail = isMeetCoordinator || currentUserRole === "ADMIN";
   const canCloseAttendanceWithoutLock = meetStatus === "ATTENDANCE" && canChangeMeetPhase;
   const canReopenAttendance = meetStatus === "DRAFT" && canChangeStatus && bouts.length === 0;
   const shouldShowAttendanceReadOnlyNotice = !(activeTab === "attendance" && (canEditAttendance || meetStatus === "ATTENDANCE"));
@@ -1649,25 +1752,6 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
       checkinDefaultTabAppliedRef.current = true;
     }
   }, [meetLoaded, meetStatus, canViewScratches]);
-
-  useEffect(() => {
-    if (!canEdit) return;
-    const trimmed = meetName.trim();
-    if (trimmed.length < 2) return;
-    if (trimmed === lastSavedNameRef.current) return;
-    if (nameSaveTimeoutRef.current) {
-      clearTimeout(nameSaveTimeoutRef.current);
-    }
-    nameSaveTimeoutRef.current = setTimeout(() => {
-      void saveMeetName();
-    }, 800);
-    return () => {
-      if (nameSaveTimeoutRef.current) {
-        clearTimeout(nameSaveTimeoutRef.current);
-        nameSaveTimeoutRef.current = null;
-      }
-    };
-  }, [meetName, canEdit]);
 
   useEffect(() => {
     // Adjust column widths based on drag position for the active table.
@@ -2326,10 +2410,9 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
     const { version: _version, ...query } = candidateFetchConfig;
     void loadCandidates(selectedPairingId, query);
   }, [selectedPairingId, candidateFetchConfig, maxMatchesPerWrestler, selectedMatchCount]);
-  const homeTeam = homeTeamId ? teams.find(t => t.id === homeTeamId) ?? null : null;
   const topMeetCoordinatorDisplay =
     coordinatorDisplay ?? (lockAccessLoaded && !coordinatorAssigned ? "Not assigned" : null);
-  const hasHomeInfo = Boolean(homeTeam ?? topMeetCoordinatorDisplay);
+  const hasHomeInfo = Boolean(topMeetCoordinatorDisplay);
 
   // Current matches for the selected wrestler.
   const currentMatchEntries = target
@@ -2452,6 +2535,11 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
       const defaults = {
         name: meetName || undefined,
         date: meetDate ? meetDate.slice(0, 10) : undefined,
+        checkinStartAt: checkinStartAt ?? undefined,
+        checkinDurationMinutes: (() => {
+          const parsed = Number(checkinDurationMinutes);
+          return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined;
+        })(),
         location: meetLocation ? meetLocation.trim() : undefined,
         homeTeamId: homeTeamId ?? undefined,
         teamIds: teams.map(team => team.id),
@@ -2726,6 +2814,142 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
     return true;
   }
 
+  function openMeetDetailsModal() {
+    setMeetDetailsDraftName(meetName);
+    setMeetDetailsDraftDate(meetDate ? meetDate.slice(0, 10) : "");
+    setMeetDetailsDraftLocation(meetLocation ?? "");
+    setMeetDetailsDraftCheckinStart(formatTimeInputFromDateTime(checkinStartAt));
+    setMeetDetailsDraftCheckinDuration(
+      typeof checkinDurationMinutes === "number" && checkinDurationMinutes > 0
+        ? String(checkinDurationMinutes)
+        : "30",
+    );
+    setMeetDetailsError(null);
+    setShowMeetDetailsModal(true);
+  }
+
+  function openAttendeeEmailModal() {
+    setAttendeeEmailAudience("attending");
+    setAttendeeEmailSubject("");
+    setAttendeeEmailBody("");
+    setAttendeeEmailError(null);
+    setAttendeeEmailPreviewRecipients(null);
+    setAttendeeEmailPreviewError(null);
+    setShowAttendeeEmailPreviewModal(false);
+    setShowAttendeeEmailModal(true);
+  }
+
+  async function openAttendeeEmailPreview() {
+    setAttendeeEmailPreviewLoading(true);
+    setAttendeeEmailPreviewError(null);
+    try {
+      const res = await fetch(`/api/meets/${meetId}/attendees-email?audience=${attendeeEmailAudience}`);
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.error ?? "Unable to load preview recipients.");
+      }
+      setAttendeeEmailPreviewRecipients(typeof payload?.recipients === "number" ? payload.recipients : 0);
+      setShowAttendeeEmailPreviewModal(true);
+    } catch (error) {
+      setAttendeeEmailPreviewError(error instanceof Error ? error.message : "Unable to load preview recipients.");
+    } finally {
+      setAttendeeEmailPreviewLoading(false);
+    }
+  }
+
+  async function saveMeetDetails() {
+    if (!canManageMeetDetails) return false;
+    if (!(await ensureMeetLock())) return false;
+    setMeetDetailsSaving(true);
+    setMeetDetailsError(null);
+    try {
+      const trimmedName = meetDetailsDraftName.trim();
+      if (trimmedName.length < 2) {
+        throw new Error("Meet name must be at least 2 characters.");
+      }
+      if (!meetDetailsDraftDate) {
+        throw new Error("Meet date is required.");
+      }
+      const parsedDuration = Number(meetDetailsDraftCheckinDuration);
+      if (!Number.isFinite(parsedDuration) || parsedDuration < 1 || parsedDuration > 240) {
+        throw new Error("Check-in duration must be between 1 and 240 minutes.");
+      }
+      const res = await fetch(`/api/meets/${meetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmedName,
+          date: meetDetailsDraftDate,
+          location: meetDetailsDraftLocation.trim() || null,
+          checkinStartAt: combineDateAndTimeInput(meetDetailsDraftDate, meetDetailsDraftCheckinStart),
+          checkinDurationMinutes: Math.round(parsedDuration),
+        }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.error ?? "Unable to save meet details.");
+      }
+      setShowMeetDetailsModal(false);
+      await load();
+      await loadActivity();
+      return true;
+    } catch (error) {
+      setMeetDetailsError(error instanceof Error ? error.message : "Unable to save meet details.");
+      return false;
+    } finally {
+      setMeetDetailsSaving(false);
+    }
+  }
+
+  async function sendAttendeeEmail() {
+    if (!canSendAttendeeEmail) return false;
+    setAttendeeEmailSending(true);
+    setAttendeeEmailError(null);
+    setAttendeeEmailNotice(null);
+    try {
+      const subject = attendeeEmailSubject.trim();
+      const body = attendeeEmailBody.trim();
+      if (!subject) {
+        throw new Error("Subject is required.");
+      }
+      if (!body) {
+        throw new Error("Email body is required.");
+      }
+      const res = await fetch(`/api/meets/${meetId}/attendees-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audience: attendeeEmailAudience, subject, body }),
+      });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(payload?.error ?? "Unable to send attendee email.");
+      }
+      const parts = [
+        `Audience: ${attendeeEmailAudience === "roster" ? "everyone on roster" : "parents of attending wrestlers"}`,
+        `Recipients: ${payload?.recipients ?? 0}`,
+        `Successful: ${payload?.successful ?? 0}`,
+      ];
+      if ((payload?.failed ?? 0) > 0) parts.push(`Failed: ${payload.failed}`);
+      if ((payload?.skipped ?? 0) > 0) parts.push(`Skipped: ${payload.skipped}`);
+      if (payload?.transport) parts.push(`Transport: ${payload.transport}`);
+      setAttendeeEmailNotice({
+        tone: "success",
+        message: `Attendee email processed. ${parts.join(". ")}.`,
+      });
+      setShowAttendeeEmailPreviewModal(false);
+      setShowAttendeeEmailModal(false);
+      await loadActivity();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to send attendee email.";
+      setAttendeeEmailError(message);
+      setAttendeeEmailNotice({ tone: "error", message });
+      return false;
+    } finally {
+      setAttendeeEmailSending(false);
+    }
+  }
+
   async function confirmReopenAsDraft() {
     setShowReopenDraftWarningModal(true);
     return false;
@@ -2844,22 +3068,6 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
     } finally {
       setReadyForCheckinActionId(null);
     }
-  }
-
-  // Persist meet name edits with debounce protection.
-  async function saveMeetName() {
-    if (!canEdit) return;
-    const trimmed = meetName.trim();
-    if (trimmed.length < 2) return;
-    if (trimmed === lastSavedNameRef.current) return;
-    await fetch(`/api/meets/${meetId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
-    });
-    lastSavedNameRef.current = trimmed;
-    await load();
-    await loadActivity();
   }
 
   // Submit a new comment and refresh activity feed.
@@ -3172,11 +3380,7 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
           border: none;
           color: var(--ink);
           padding: 0;
-          cursor: pointer;
-        }
-        .meet-name-btn:hover,
-        .meet-name-btn:focus-visible {
-          text-decoration: underline;
+          cursor: default;
         }
         .meet-metadata-inline {
           font-size: 14px;
@@ -3620,6 +3824,93 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
         }
         .modal-card.checkpoint-modal {
           width: min(760px, 94vw);
+        }
+        .modal-card.attendee-email-modal {
+          width: min(640px, 94vw);
+          min-height: 620px;
+        }
+        .email-preview-header {
+          display: grid;
+          gap: 6px;
+          padding-bottom: 6px;
+          border-bottom: 1px solid #e7edf3;
+        }
+        .email-preview-kicker {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #667384;
+        }
+        .email-preview-title {
+          margin: 0;
+          font-size: 26px;
+          line-height: 1.05;
+          color: #1f2937;
+        }
+        .email-preview-subtitle {
+          font-size: 14px;
+          line-height: 1.45;
+          color: #5f6b7a;
+        }
+        .email-preview-meta-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .email-preview-meta-card {
+          border: 1px solid #dbe3ec;
+          border-radius: 10px;
+          background: #f8fafc;
+          padding: 10px 12px;
+          display: grid;
+          gap: 4px;
+        }
+        .email-preview-meta-label {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #6b7787;
+        }
+        .email-preview-meta-value {
+          font-size: 15px;
+          font-weight: 700;
+          color: #1f2937;
+          line-height: 1.3;
+        }
+        .email-preview-field {
+          display: grid;
+          gap: 6px;
+        }
+        .email-preview-field-label {
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #667384;
+        }
+        .email-preview-field-value {
+          padding: 12px 14px;
+          border: 1px solid #d5dbe2;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #1f2937;
+          font-size: 14px;
+        }
+        .email-preview-body {
+          margin: 0;
+          min-height: 220px;
+          padding: 14px 16px;
+          border: 1px solid #d5dbe2;
+          border-radius: 10px;
+          background: #f8fafc;
+          font-size: 14px;
+          color: #1f2937;
+          line-height: 1.5;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-family: inherit;
         }
         .modal-card.ready-checkin-modal {
           width: min(760px, 94vw);
@@ -4295,61 +4586,31 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
       <div className="meet-heading-row">
         <div className="meet-heading-title">
           <div className="meet-heading-name-row">
-            {!isEditingName && !isPublished && (
-              <button
-                type="button"
-                className="meet-name-btn"
-                onClick={() => {
-                  if (!canEdit) return;
-                  setIsEditingName(true);
-                }}
-                disabled={!canEdit}
-              >
-                {meetName || "this meet"}
-              </button>
-            )}
-            {!isEditingName && isPublished && (
-              <div className="meet-name-btn" style={{ cursor: "default" }}>
-                {meetName || "this meet"}
-              </div>
-            )}
-            {isEditingName && (
-              <>
-                <input
-                  value={meetName}
-                  onChange={(e) => setMeetName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      setIsEditingName(false);
-                    }
-                  }}
-                  placeholder=""
-                  disabled={!canEdit}
-                  style={{ minWidth: 220 }}
-                />
-                <button
-                  className="nav-btn"
-                  onClick={() => setIsEditingName(false)}
-                  disabled={!canEdit}
-                >
-                  Done
-                </button>
-              </>
-            )}
+            <div className="meet-name-btn" style={{ cursor: "default" }}>
+              {meetName || "this meet"}
+            </div>
             {hasHomeInfo && (
               <div className="meet-home-info">
-                {homeTeam && (
-                  <>
-                    <span className="home-label">Home team:</span>
-                    <span className="home-team-name">
-                      {homeTeam.name}
-                      {homeTeam.symbol ? ` (${homeTeam.symbol})` : ""}
-                    </span>
-                  </>
-                )}
                 <span className="home-label">Meet coordinator:</span>
                 <span className="home-coordinator">{topMeetCoordinatorDisplay ?? "Not assigned"}</span>
+                {canManageMeetDetails && (
+                  <button
+                    type="button"
+                    className="nav-btn secondary home-coordinator-btn"
+                    onClick={openMeetDetailsModal}
+                  >
+                    Meet Details
+                  </button>
+                )}
+                {canSendAttendeeEmail && (
+                  <button
+                    type="button"
+                    className="nav-btn secondary home-coordinator-btn"
+                    onClick={openAttendeeEmailModal}
+                  >
+                    Send Email
+                  </button>
+                )}
                 {canManageLockAccess && lockAccessLoaded && (
                   <button
                     type="button"
@@ -4532,6 +4793,19 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
       {lockAccessError && !showEditAccessModal && (
         <div className="notice" style={{ marginTop: 10 }}>
           {lockAccessError}
+        </div>
+      )}
+      {attendeeEmailNotice && (
+        <div
+          className="notice"
+          style={{
+            marginTop: 10,
+            borderColor: attendeeEmailNotice.tone === "success" ? "#b8ddc0" : undefined,
+            background: attendeeEmailNotice.tone === "success" ? "#eef9f0" : undefined,
+            color: attendeeEmailNotice.tone === "success" ? "#1f5c2d" : undefined,
+          }}
+        >
+          {attendeeEmailNotice.message}
         </div>
       )}
       <div className="tab-bar">
@@ -6572,6 +6846,99 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
           </div>
         </ModalPortal>
       )}
+      {showMeetDetailsModal && (
+        <ModalPortal>
+          <div className="modal-backdrop">
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Meet Details</h3>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Meet name</span>
+                <input
+                  value={meetDetailsDraftName}
+                  onChange={(e) => setMeetDetailsDraftName(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={meetDetailsSaving}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Date</span>
+                <input
+                  type="date"
+                  value={meetDetailsDraftDate}
+                  onChange={(e) => {
+                    const nextDate = e.target.value;
+                    setMeetDetailsDraftDate(nextDate);
+                    const nextMeetName = buildMeetName(
+                      teams.map((team) => team.id),
+                      teams,
+                      homeTeamId ?? null,
+                      nextDate,
+                    );
+                    if (nextMeetName) {
+                      setMeetDetailsDraftName(nextMeetName);
+                    }
+                  }}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={meetDetailsSaving}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Meet location</span>
+                <input
+                  value={meetDetailsDraftLocation}
+                  onChange={(e) => setMeetDetailsDraftLocation(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={meetDetailsSaving}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Check-in start</span>
+                <input
+                  type="time"
+                  value={meetDetailsDraftCheckinStart}
+                  onChange={(e) => setMeetDetailsDraftCheckinStart(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={meetDetailsSaving}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Check-in duration (minutes)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={meetDetailsDraftCheckinDuration}
+                  onChange={(e) => setMeetDetailsDraftCheckinDuration(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={meetDetailsSaving}
+                />
+              </label>
+              {meetDetailsError && <div className="notice">{meetDetailsError}</div>}
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => {
+                    setShowMeetDetailsModal(false);
+                    setMeetDetailsError(null);
+                  }}
+                  disabled={meetDetailsSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => void saveMeetDetails()}
+                  disabled={meetDetailsSaving}
+                >
+                  {meetDetailsSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
       {showCheckpointModal && (
         <ModalPortal>
           <div className="modal-backdrop" onClick={() => setShowCheckpointModal(false)}>
@@ -6643,6 +7010,149 @@ function selectedSummaryNameFontSize(label: string, compact = false) {
                 <div className="checkpoint-footer-actions">
                   <button className="nav-btn" onClick={() => setShowCheckpointModal(false)}>Close</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showAttendeeEmailModal && (
+        <ModalPortal>
+          <div className="modal-backdrop">
+            <div className="modal-card attendee-email-modal" onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: 0 }}>Email Attendees</h3>
+              <div style={{ fontSize: 15, lineHeight: 1.45, color: "#4b5563" }}>
+                This sends a plain-text email to the audience you choose below.
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 12, color: "#5f6b7a" }}>Send to</div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <input
+                    type="radio"
+                    name="attendee-email-audience"
+                    checked={attendeeEmailAudience === "attending"}
+                    onChange={() => setAttendeeEmailAudience("attending")}
+                    disabled={attendeeEmailSending}
+                  />
+                  <span>
+                    <strong>Parents of attending wrestlers</strong>
+                    <br />
+                    <span style={{ color: "#5f6b7a" }}>Only wrestlers currently marked Coming.</span>
+                  </span>
+                </label>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <input
+                    type="radio"
+                    name="attendee-email-audience"
+                    checked={attendeeEmailAudience === "roster"}
+                    onChange={() => setAttendeeEmailAudience("roster")}
+                    disabled={attendeeEmailSending}
+                  />
+                  <span>
+                    <strong>Everyone on roster</strong>
+                    <br />
+                    <span style={{ color: "#5f6b7a" }}>All parents linked to wrestlers on teams in this meet.</span>
+                  </span>
+                </label>
+              </div>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Subject</span>
+                <input
+                  value={attendeeEmailSubject}
+                  onChange={(e) => setAttendeeEmailSubject(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14 }}
+                  disabled={attendeeEmailSending}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, color: "#5f6b7a" }}>Email body</span>
+                <textarea
+                  value={attendeeEmailBody}
+                  onChange={(e) => setAttendeeEmailBody(e.target.value)}
+                  style={{ minHeight: 220, padding: "10px 12px", border: "1px solid #d5dbe2", borderRadius: 8, fontSize: 14, resize: "vertical" }}
+                  disabled={attendeeEmailSending}
+                />
+              </label>
+              {attendeeEmailError && <div className="notice">{attendeeEmailError}</div>}
+              {attendeeEmailPreviewError && <div className="notice">{attendeeEmailPreviewError}</div>}
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn secondary"
+                  onClick={() => { void openAttendeeEmailPreview(); }}
+                  disabled={attendeeEmailSending || attendeeEmailPreviewLoading || !attendeeEmailSubject.trim() || !attendeeEmailBody.trim()}
+                >
+                  {attendeeEmailPreviewLoading ? "Loading..." : "Preview"}
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn"
+                  onClick={() => {
+                    if (attendeeEmailSending) return;
+                    setAttendeeEmailError(null);
+                    setShowAttendeeEmailPreviewModal(false);
+                    setShowAttendeeEmailModal(false);
+                  }}
+                  disabled={attendeeEmailSending}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+      {showAttendeeEmailPreviewModal && (
+        <ModalPortal>
+          <div className="modal-backdrop">
+            <div className="modal-card attendee-email-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="email-preview-header">
+                <div className="email-preview-kicker">Review Before Sending</div>
+                <h3 className="email-preview-title">Email Preview</h3>
+                <div className="email-preview-subtitle">
+                  Confirm the audience, subject, and plain-text message before sending.
+                </div>
+              </div>
+              <div className="email-preview-meta-grid">
+                <div className="email-preview-meta-card">
+                  <div className="email-preview-meta-label">Audience</div>
+                  <div className="email-preview-meta-value">
+                    {attendeeEmailAudience === "roster" ? "Everyone on roster" : "Parents of attending wrestlers"}
+                  </div>
+                </div>
+                <div className="email-preview-meta-card">
+                  <div className="email-preview-meta-label">Recipients</div>
+                  <div className="email-preview-meta-value">{attendeeEmailPreviewRecipients ?? 0}</div>
+                </div>
+              </div>
+              <div className="email-preview-field">
+                <div className="email-preview-field-label">Subject</div>
+                <div className="email-preview-field-value" style={{ fontWeight: 700 }}>
+                  {attendeeEmailSubject.trim()}
+                </div>
+              </div>
+              <div className="email-preview-field">
+                <div className="email-preview-field-label">Body</div>
+                <pre className="email-preview-body">
+                  {attendeeEmailBody.trim()}
+                </pre>
+              </div>
+              <div className="ready-checkin-footer">
+                <button
+                  type="button"
+                  className="nav-btn"
+                  style={{ minWidth: 110 }}
+                  onClick={() => setShowAttendeeEmailPreviewModal(false)}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  className="nav-btn primary"
+                  onClick={() => { void sendAttendeeEmail(); }}
+                  disabled={attendeeEmailSending || !attendeeEmailSubject.trim() || !attendeeEmailBody.trim()}
+                >
+                  {attendeeEmailSending ? "Sending..." : "Send Email"}
+                </button>
               </div>
             </div>
           </div>

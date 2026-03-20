@@ -112,6 +112,8 @@ export async function GET() {
             location: true,
             status: true,
             attendanceDeadline: true,
+            checkinStartAt: true,
+            checkinDurationMinutes: true,
             homeTeamId: true,
             numMats: true,
             meetTeams: { select: { teamId: true, checkinCompletedAt: true } },
@@ -138,6 +140,8 @@ export async function GET() {
         location: true,
         status: true,
         attendanceDeadline: true,
+        checkinStartAt: true,
+        checkinDurationMinutes: true,
         homeTeamId: true,
         numMats: true,
         meetTeams: { select: { teamId: true, checkinCompletedAt: true } },
@@ -185,6 +189,8 @@ export async function GET() {
       location: string | null;
       status: string | null;
       attendanceDeadline: Date | null;
+      checkinStartAt: Date | null;
+      checkinDurationMinutes: number | null;
       homeTeamId: string | null;
       numMats: number;
       meetTeams: Array<{
@@ -331,6 +337,8 @@ export async function GET() {
         location: entry.meet.location,
         status: normalizeMeetPhase(entry.meet.status),
         attendanceDeadline: entry.meet.attendanceDeadline,
+        checkinStartAt: entry.meet.checkinStartAt,
+        checkinDurationMinutes: entry.meet.checkinDurationMinutes,
         homeTeamId: entry.meet.homeTeamId,
         numMats: entry.meet.numMats,
       },

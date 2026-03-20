@@ -3,12 +3,26 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 
 
-// enums are not supported by the sqlite connector; use string fields instead.
+enum Role {
+  ADMIN
+  COACH
+  PARENT
+  TABLE_WORKER
+}
+
+enum MeetWrestlerStatusType {
+  COMING
+  NOT_COMING
+  LATE
+  EARLY
+  ABSENT
+}
+
 model Team {
   id        String     @id @default(cuid())
   name      String     @unique
@@ -98,6 +112,8 @@ model Meet {
   maxMatchesPerWrestler Int @default(5)
   restGap   Int        @default(6)
   attendanceDeadline DateTime?
+  checkinStartAt DateTime?
+  checkinDurationMinutes Int?
   status    String    @default("DRAFT")
   deletedAt DateTime?
   deletedById String?
@@ -143,8 +159,8 @@ model MeetWrestlerStatus {
   id         String   @id @default(cuid())
   meetId     String
   wrestlerId String
-  status     String
-  parentResponseStatus String?
+  status     MeetWrestlerStatusType
+  parentResponseStatus MeetWrestlerStatusType?
   lastChangedById       String?
   lastChangedByUsername String?
   lastChangedByRole     String?
@@ -289,7 +305,7 @@ resultAt       DateTime?
 
 // --- NextAuth.js models ---
 model User {
-  role          String   @default("PARENT")
+  role          Role     @default(PARENT)
   sessionVersion Int      @default(1)
   id            String   @id @default(cuid())
   name          String?
@@ -301,7 +317,6 @@ model User {
   image         String?
   teamId        String?
   team          Team?    @relation(fields: [teamId], references: [id])
-  headCoachTeam Team?   @relation("TeamHeadCoach")
 
   passwordHash  String?
   mustResetPassword Boolean @default(false)
@@ -318,8 +333,9 @@ model User {
   rejectedPairs MeetRejectedPair[] @relation("MeetRejectedPairCreatedBy")
   meetCheckpoints MeetCheckpoint[] @relation("MeetCheckpointCreatedBy")
   completedTeamCheckins MeetTeam[] @relation("MeetTeamCheckinCompletedBy")
-  notificationLogs NotificationLog[]
   children      UserChild[]
+  headCoachTeam Team?   @relation("TeamHeadCoach")
+  notificationLogs NotificationLog[]
   resetCodes    PasswordResetCode[]
 
   createdAt     DateTime @default(now())

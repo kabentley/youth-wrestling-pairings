@@ -35,9 +35,10 @@ describe("buildMeetReadyForAttendanceContent", () => {
       meetDate: new Date("2026-01-12T00:00:00.000Z"),
       location: "North Gym",
       attendanceDeadline: new Date("2026-01-10T22:00:00.000Z"),
+      checkinStartAt: new Date("2026-01-12T07:45:00.000Z"),
+      checkinDurationMinutes: 30,
       teamLabels: ["Tigers", "Wolves"],
       attendanceUrl: "http://localhost:3000/parent/attendance",
-      myWrestlersUrl: "http://localhost:3000/parent",
       recipientName: "Pat Parent",
       childNames: ["Ava Smith", "Ben Smith"],
       headCoachName: "Coach Casey",
@@ -51,6 +52,7 @@ describe("buildMeetReadyForAttendanceContent", () => {
     expect(content.emailText).toContain("North Gym");
     expect(content.emailText).toContain("http://localhost:3000/parent/attendance");
     expect(content.emailText).toContain("Attendance deadline:");
+    expect(content.emailText).toContain("Check-in time:");
     expect(content.emailText).toContain("PM\n\nReply here: http://localhost:3000/parent/attendance\n\nIf you have questions, please contact your coach: Coach Casey <coach@example.com>.");
     expect(content.emailText).not.toContain("My Wrestlers:");
     expect(content.emailText).toContain("Coach Casey <coach@example.com>");
@@ -60,6 +62,7 @@ describe("buildMeetReadyForAttendanceContent", () => {
     expect(content.emailHtml).toContain("<strong>Ava Smith and Ben Smith</strong>");
     expect(content.emailHtml).toContain("<strong>Date:</strong> Monday, January 12, 2026");
     expect(content.emailHtml).toContain("<strong>Location:</strong> North Gym");
+    expect(content.emailHtml).toContain("<strong>Check-in time:</strong>");
     expect(content.emailHtml).toContain("Attendance Deadline");
     expect(content.emailHtml).toContain("http://localhost:3000/parent/attendance");
   });
@@ -74,7 +77,6 @@ describe("buildMeetReadyForAttendanceContent", () => {
       attendanceDeadline: null,
       teamLabels: [],
       attendanceUrl: "http://localhost:3000/parent/attendance",
-      myWrestlersUrl: "http://localhost:3000/parent",
       recipientName: "Parent",
       childNames: [],
       headCoachName: "",
@@ -95,7 +97,6 @@ describe("buildMeetReadyForAttendanceContent", () => {
       attendanceDeadline: new Date("2026-01-30T22:00:00.000Z"),
       teamLabels: ["Tigers"],
       attendanceUrl: "http://localhost:3000/parent/attendance",
-      myWrestlersUrl: "http://localhost:3000/parent",
       recipientName: "Parent",
       childNames: ["Ava Smith"],
       headCoachName: "Coach Casey",

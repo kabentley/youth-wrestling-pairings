@@ -25,6 +25,11 @@ const PatchSchema = z.object({
     (value) => value == null || value === "" || !Number.isNaN(new Date(value).getTime()),
     "Invalid attendance deadline.",
   ),
+  checkinStartAt: z.string().trim().nullable().optional().refine(
+    (value) => value == null || value === "" || !Number.isNaN(new Date(value).getTime()),
+    "Invalid check-in start time.",
+  ),
+  checkinDurationMinutes: z.number().int().min(1).max(240).nullable().optional(),
   location: z.string().optional().nullable(),
   homeTeamId: z.string().nullable().optional(),
   numMats: z.number().int().min(1).max(8).optional(),
@@ -106,6 +111,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       name: true,
       date: true,
       attendanceDeadline: true,
+      checkinStartAt: true,
+      checkinDurationMinutes: true,
       location: true,
       homeTeamId: true,
       numMats: true,
@@ -289,6 +296,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
     name?: string;
     date?: Date;
     attendanceDeadline?: Date | null;
+    checkinStartAt?: Date | null;
+    checkinDurationMinutes?: number | null;
     location?: string | null;
     homeTeamId?: string | null;
     numMats?: number;
@@ -305,6 +314,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   if (body.name) data.name = body.name.trim();
   if (body.date) data.date = new Date(body.date);
   if (body.attendanceDeadline !== undefined) data.attendanceDeadline = normalizeNullableDateTime(body.attendanceDeadline);
+  if (body.checkinStartAt !== undefined) data.checkinStartAt = normalizeNullableDateTime(body.checkinStartAt);
+  if (body.checkinDurationMinutes !== undefined) data.checkinDurationMinutes = body.checkinDurationMinutes;
   if (body.location !== undefined) data.location = normalizeNullableString(body.location);
   if (body.homeTeamId !== undefined) data.homeTeamId = body.homeTeamId;
   if (body.numMats !== undefined) data.numMats = body.numMats;
@@ -448,6 +459,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
         name: true,
         date: true,
         attendanceDeadline: true,
+        checkinStartAt: true,
+        checkinDurationMinutes: true,
         location: true,
         homeTeamId: true,
         numMats: true,
@@ -497,6 +510,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
   }
   if (body.date) otherChanges.push("date");
   if (body.attendanceDeadline !== undefined) otherChanges.push("attendance deadline");
+  if (body.checkinStartAt !== undefined || body.checkinDurationMinutes !== undefined) otherChanges.push("check-in time");
   if (body.location !== undefined) otherChanges.push("location");
   if (body.homeTeamId !== undefined) otherChanges.push("home team");
   if (body.numMats !== undefined) otherChanges.push("mats");

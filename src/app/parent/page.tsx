@@ -60,6 +60,8 @@ type MeetGroup = {
     location?: string | null;
     status?: string | null;
     attendanceDeadline?: string | null;
+    checkinStartAt?: string | null;
+    checkinDurationMinutes?: number | null;
   };
   matches: Match[];
   children: Array<{

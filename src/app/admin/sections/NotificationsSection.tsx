@@ -66,6 +66,7 @@ const EVENT_OPTIONS = [
   { value: "", label: "All events" },
   { value: "meet_ready_for_attendance", label: "Ready for Attendance" },
   { value: "meet_published", label: "Meet Published" },
+  { value: "meet_attendees_message", label: "Meet Attendees Message" },
   { value: "welcome_email", label: "Welcome Email" },
   { value: "password_reset_code", label: "Password Reset Code" },
 ] as const;
@@ -120,6 +121,8 @@ function formatEventLabel(event: NotificationRow["event"]) {
       return "Welcome Email";
     case "meet_published":
       return "Meet Published";
+    case "meet_attendees_message":
+      return "Meet Attendees Message";
     case "password_reset_code":
       return "Password Reset Code";
     default:
