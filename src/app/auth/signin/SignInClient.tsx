@@ -25,6 +25,12 @@ export default function SignInClient() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    const presetUsername = (sp.get("username") ?? "").trim();
+    if (!presetUsername) return;
+    setUsername((current) => current || presetUsername);
+  }, [sp]);
+
+  useEffect(() => {
     let active = true;
     fetch("/api/league")
       .then(res => res.ok ? res.json() : null)

@@ -51,9 +51,17 @@ describe("buildMeetReadyForAttendanceContent", () => {
     expect(content.emailText).toContain("North Gym");
     expect(content.emailText).toContain("http://localhost:3000/parent/attendance");
     expect(content.emailText).toContain("Attendance deadline:");
-    expect(content.emailText).toContain("PM\n\nReply here: http://localhost:3000/parent/attendance\n\nIf you have questions, please contact Coach Casey <coach@example.com>.");
+    expect(content.emailText).toContain("PM\n\nReply here: http://localhost:3000/parent/attendance\n\nIf you have questions, please contact your coach: Coach Casey <coach@example.com>.");
     expect(content.emailText).not.toContain("My Wrestlers:");
     expect(content.emailText).toContain("Coach Casey <coach@example.com>");
+    expect(content.emailHtml).toContain("Attendance Request");
+    expect(content.emailHtml).toContain("Reply to Attendance");
+    expect(content.emailHtml).not.toContain("My Wrestlers");
+    expect(content.emailHtml).toContain("<strong>Ava Smith and Ben Smith</strong>");
+    expect(content.emailHtml).toContain("<strong>Date:</strong> Monday, January 12, 2026");
+    expect(content.emailHtml).toContain("<strong>Location:</strong> North Gym");
+    expect(content.emailHtml).toContain("Attendance Deadline");
+    expect(content.emailHtml).toContain("http://localhost:3000/parent/attendance");
   });
 
   it("falls back when no linked wrestlers are listed", async () => {
@@ -137,6 +145,54 @@ describe("buildPreferredMessages", () => {
     );
 
     expect(messages).toHaveLength(0);
+  });
+});
+
+describe("buildMeetPublishedContent", () => {
+  it("builds text and html content with grouped published bouts", async () => {
+    process.env.DATABASE_URL = "file:./dev.db";
+    const { buildMeetPublishedContent } = await import("./notifications");
+    const content = buildMeetPublishedContent({
+      meetName: "WC-CON Mar 21, 2026",
+      meetDate: new Date("2026-03-21T00:00:00.000Z"),
+      location: "1001 East Lincoln Highway, Exton, PA 19341",
+      todayUrl: "http://localhost:3000/parent/today",
+      recipientName: "Pat Parent",
+      children: [
+        {
+          childId: "child_1",
+          fullName: "Alden Bentley",
+          teamLabel: "WC",
+          matches: [
+            {
+              boutId: "bout_1",
+              boutNumber: "105",
+              opponentName: "Wyatt Nadler",
+              opponentTeam: "PB",
+            },
+          ],
+        },
+        {
+          childId: "child_2",
+          fullName: "Brendan Bradley",
+          teamLabel: "WC",
+          matches: [],
+        },
+      ],
+    });
+
+    expect(content.emailSubject).toBe("Meet is ready to start: WC-CON Mar 21, 2026");
+    expect(content.emailText).toContain("Hello Pat Parent,");
+    expect(content.emailText).toContain("Today's bouts:");
+    expect(content.emailText).toContain("Bout 105: Wyatt Nadler (PB)");
+    expect(content.emailText).toContain("Brendan Bradley (WC)");
+    expect(content.emailText).toContain("No bout assigned yet.");
+    expect(content.emailText).toContain("http://localhost:3000/parent/today");
+    expect(content.emailHtml).toContain("Open Today Page");
+    expect(content.emailHtml).toContain("Today's bouts:");
+    expect(content.emailHtml).toContain("Alden Bentley");
+    expect(content.emailHtml).toContain("Wyatt Nadler");
+    expect(content.emailHtml).toContain("No bout assigned yet.");
   });
 });
 

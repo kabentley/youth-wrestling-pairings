@@ -156,6 +156,16 @@ function sexColor(isGirl?: boolean) {
   return undefined;
 }
 
+function selectedSummaryNameFontSize(label: string, compact = false) {
+  const length = label.trim().length;
+  const maxSize = compact ? 18 : 26;
+  const minSize = compact ? 13 : 15;
+  const shrinkStart = compact ? 16 : 14;
+  const shrinkPerChar = compact ? 0.4 : 0.75;
+  if (length <= shrinkStart) return maxSize;
+  return Math.max(minSize, Math.round((maxSize - ((length - shrinkStart) * shrinkPerChar)) * 10) / 10);
+}
+
 function sortValueCompare(a: string | number | null | undefined, b: string | number | null | undefined, dir: "asc" | "desc") {
   if (a == null && b == null) return 0;
   if (a == null) return 1;
@@ -587,6 +597,22 @@ export default function ScratchesTab({
   const selectedCandidateWrestlerId = selectedWrestler?.id ?? null;
   const selectedTeam = selectedWrestler ? teamMap.get(selectedWrestler.teamId) ?? null : null;
   const selectedMatchCount = selectedWrestler ? (matchCounts.get(selectedWrestler.id) ?? 0) : 0;
+  const selectedWrestlerAge = selectedWrestler ? ageYears(selectedWrestler.birthdate)?.toFixed(1) ?? "--" : "--";
+  const selectedSummaryNameLabel = selectedWrestler
+    ? `${wrestlerName(selectedWrestler)}${selectedTeam ? ` (${selectedTeam.symbol ?? selectedTeam.name})` : ""}`
+    : "";
+  const selectedSummaryNameSize = selectedWrestler
+    ? selectedSummaryNameFontSize(selectedSummaryNameLabel, isPhoneLayout)
+    : (isPhoneLayout ? 18 : 26);
+  const selectedScratchSummaryFields = selectedWrestler
+    ? [
+        { label: "Girl", value: selectedWrestler.isGirl ? "Yes" : "No", color: sexColor(selectedWrestler.isGirl) },
+        { label: "Age", value: selectedWrestlerAge, color: sexColor(selectedWrestler.isGirl) },
+        { label: "Weight", value: String(selectedWrestler.weight) },
+        { label: "Exp", value: String(selectedWrestler.experienceYears) },
+        { label: "Skill", value: String(selectedWrestler.skill) },
+      ]
+    : [];
   useEffect(() => {
     if (!selectedCandidateWrestlerId) {
       setCandidateRows([]);
@@ -1109,6 +1135,49 @@ export default function ScratchesTab({
     padding: isPhoneLayout ? "2px 4px" : "3px 6px",
     lineHeight: isPhoneLayout ? 1.05 : 1.2,
     fontSize: scratchesTableFontSize,
+  };
+  const selectedSummaryTableStyle = {
+    ...pairingsTableStyle,
+    marginBottom: 10,
+  };
+  const selectedSummaryCellStyle = {
+    padding: isPhoneLayout ? "2px 4px" : "2px 6px",
+    lineHeight: isPhoneLayout ? 1.05 : 1.2,
+    fontSize: scratchesTableFontSize,
+    border: "none",
+    verticalAlign: "top" as const,
+  };
+  const selectedSummaryNameBadgeStyle = {
+    fontWeight: 800,
+    fontSize: selectedSummaryNameSize,
+    color: selectedWrestler ? teamTextColor(selectedWrestler.teamId) : "#243041",
+    background: "#f7f9fc",
+    border: "1px solid #d7dee8",
+    borderRadius: 8,
+    padding: isPhoneLayout ? "6px 10px" : "4px 8px",
+    minWidth: 0,
+    maxWidth: "100%",
+    display: "inline-block",
+    whiteSpace: "nowrap" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    verticalAlign: "top" as const,
+  };
+  const selectedSummaryLabelStyle = {
+    ...selectedSummaryCellStyle,
+    color: "#5a6673",
+    fontSize: Math.max(11, scratchesHeaderFontSize - 1),
+    fontWeight: 700,
+    letterSpacing: "0.1px",
+    whiteSpace: "nowrap" as const,
+    paddingBottom: 0,
+  };
+  const selectedSummaryValueStyle = {
+    ...selectedSummaryCellStyle,
+    color: "#243041",
+    fontWeight: 700,
+    whiteSpace: "nowrap" as const,
+    paddingTop: 0,
   };
   const useTouchModalLayout = isPhoneLayout || isTouchDevice;
   const modalCardStyle = {
@@ -1717,66 +1786,88 @@ export default function ScratchesTab({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
 
-              <div style={{ display: "none" }}>
+          <div
+            style={{
+              border: "1px solid #d5dbe2",
+              borderRadius: 12,
+              background: "#ffffff",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              gridColumn: isPhoneLayout ? 1 : 2,
+              gridRow: isPhoneLayout ? 2 : 1,
+            }}
+          >
+              <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", gap: 6, overflow: "hidden" }}>
                 {!selectedWrestler && (
                   <div style={{ color: "#5a6673", fontSize: 13 }}>Select a wrestler to review current and replacement matches.</div>
                 )}
                 {selectedWrestler && (
                   <>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        flexWrap: "wrap",
-                        minWidth: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 800,
-                          fontSize: 18,
-                          color: teamTextColor(selectedWrestler.teamId),
-                          background: "#f7f9fc",
-                          border: "1px solid #d7dee8",
-                          borderRadius: 10,
-                          padding: "6px 10px",
-                          minWidth: 0,
-                        }}
-                      >
-                        {wrestlerName(selectedWrestler)}
-                        {selectedTeam ? ` (${selectedTeam.symbol ?? selectedTeam.name})` : ""}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 12,
-                          fontSize: 18,
-                          fontWeight: 800,
-                          color: "#444",
-                          flexWrap: "wrap",
-                          minWidth: 0,
-                        }}
-                      >
-                        <span>
-                          Age: <span style={{ color: sexColor(selectedWrestler.isGirl) }}>{ageYears(selectedWrestler.birthdate)?.toFixed(1) ?? "—"}</span>
-                        </span>
-                        <span>Weight: {selectedWrestler.weight}</span>
-                        <span>Exp: {selectedWrestler.experienceYears}</span>
-                        <span>Skill: {selectedWrestler.skill}</span>
-                        <span
-                          style={{ fontSize: 14, fontWeight: 600, color: "#5a6673" }}
-                          title={lostScratchOpponentsText(selectedWrestler.id)}
-                        >
-                          Lost matches: {lostScratchOpponentsText(selectedWrestler.id)}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ maxHeight: "min(18dvh, 200px)", overflow: "auto" }}>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                          <table cellPadding={0} style={selectedSummaryTableStyle}>
+                            <colgroup>
+                              {currentColumnWidths.map((width, index) => (
+                                <col key={`selected-summary-col-${index}`} style={{ width }} />
+                              ))}
+                            </colgroup>
+                            <tbody>
+                              <tr>
+                                <td
+                                  rowSpan={2}
+                                  colSpan={3}
+                                  style={{
+                                    ...selectedSummaryCellStyle,
+                                    paddingRight: isPhoneLayout ? 8 : 16,
+                                    verticalAlign: "middle",
+                                  }}
+                                >
+                                  <span
+                                    style={selectedSummaryNameBadgeStyle}
+                                    title={selectedSummaryNameLabel}
+                                  >
+                                    {selectedSummaryNameLabel}
+                                  </span>
+                                </td>
+                                {selectedScratchSummaryFields.map((field) => (
+                                  <td key={`selected-summary-label-${field.label}`} style={selectedSummaryLabelStyle}>
+                                    {field.label}
+                                  </td>
+                                ))}
+                                <td
+                                  rowSpan={2}
+                                  colSpan={4}
+                                  style={{
+                                    ...selectedSummaryCellStyle,
+                                    paddingLeft: isPhoneLayout ? 4 : 6,
+                                    whiteSpace: "normal",
+                                  }}
+                                >
+                                  <span
+                                    style={{ fontSize: isPhoneLayout ? 14 : 15, fontWeight: 600, color: "#5a6673", lineHeight: 1.25 }}
+                                    title={lostScratchOpponentsText(selectedWrestler.id)}
+                                  >
+                                    Lost matches: {lostScratchOpponentsText(selectedWrestler.id)}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                {selectedScratchSummaryFields.map((field) => (
+                                  <td
+                                    key={`selected-summary-value-${field.label}`}
+                                    style={field.color ? { ...selectedSummaryValueStyle, color: field.color } : selectedSummaryValueStyle}
+                                  >
+                                    {field.value}
+                                  </td>
+                                ))}
+                              </tr>
+                            </tbody>
+                          </table>
                           <table cellPadding={4} style={pairingsTableStyle}>
                             <colgroup>
                               {currentColumnWidths.map((width, index) => (
@@ -1816,19 +1907,19 @@ export default function ScratchesTab({
                                 const sourceBackground = sourceColor ?? "#f7f9fc";
                                 const sourceBorder = sourceColor ?? "#e4e9f2";
                                 return (
-                                    <tr
-                                      key={bout.id}
-                                      onClick={() => {
-                                        if (!canManageScratchMatches || removeLoadingId === bout.id) return;
-                                        void removeReplacementMatch(bout.id);
-                                      }}
-                                      style={{
-                                        borderTop: "1px solid #eee",
-                                        cursor: canManageScratchMatches ? "pointer" : "default",
-                                        background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
-                                      }}
-                                      title={canManageScratchMatches ? "Click to remove this match." : undefined}
-                                    >
+                                  <tr
+                                    key={bout.id}
+                                    onClick={() => {
+                                      if (!canManageScratchMatches || removeLoadingId === bout.id) return;
+                                      void removeReplacementMatch(bout.id);
+                                    }}
+                                    style={{
+                                      borderTop: "1px solid #eee",
+                                      cursor: canManageScratchMatches ? "pointer" : "default",
+                                      background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
+                                    }}
+                                    title={canManageScratchMatches ? "Click to remove this match." : undefined}
+                                  >
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
                                     <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
                                     <td style={pairingsBodyCellStyle}>
@@ -1873,12 +1964,11 @@ export default function ScratchesTab({
                               })}
                             </tbody>
                           </table>
-                        </div>
                       </div>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 0, flex: 1 }}>
-                      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#243041" }}>
+                      <h3 style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, color: "#243041" }}>
                         Possible additional matches:
                       </h3>
                       <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
@@ -1932,10 +2022,10 @@ export default function ScratchesTab({
                               {!showCandidateLoadingState && !candidateError && availableDisplay.map(({ opponent, score }) => {
                                 const matches = matchCounts.get(opponent.id) ?? 0;
                                 const loading = addLoadingId === opponent.id;
-                              return (
-                                <tr
-                                  key={opponent.id}
-                                  onClick={() => {
+                                return (
+                                  <tr
+                                    key={opponent.id}
+                                    onClick={() => {
                                       if (!canManageScratchMatches || loading) return;
                                       void addReplacementMatch(opponent.id);
                                     }}
@@ -2038,7 +2128,6 @@ export default function ScratchesTab({
                 )}
               </div>
             </div>
-          </div>
 
           <div
             style={{
@@ -2068,498 +2157,155 @@ export default function ScratchesTab({
                   Click on wrestler names to add or remove matches for them.
                 </div>
               </div>
-            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 10 }}>
-              {baselineLoading && (
-                <div style={{ color: "#5a6673", fontSize: 13 }}>Loading Check-in checkpoint...</div>
-              )}
-              {!baselineLoading && baselineError && (
-                <div style={{ color: "#5a6673", fontSize: 13 }}>{baselineError}</div>
-              )}
-              {!baselineLoading && !baselineError && newMatches.length === 0 && (
-                <div style={{ color: "#5a6673", fontSize: 13 }}>No new matches have been added.</div>
-              )}
-              {!baselineLoading && !baselineError && newMatches.length > 0 && (
-                <div style={{ border: "1px solid #d5dbe2", borderRadius: 8, overflow: isPhoneLayout ? "auto" : "hidden", background: "#ffffff" }}>
-                  <table cellPadding={4} style={pairingsTableStyle}>
-                    <colgroup>
-                      {newMatchesColumnWidths.map((width, index) => (
-                        <col key={`new-matches-col-${index}`} style={{ width }} />
-                      ))}
-                    </colgroup>
-                    <thead>
-                      <tr style={{ background: "#f7f9fc" }}>
-                        <th align="left" style={pairingsHeaderCellStyle}>Wrestler 1</th>
-                        <th align="left" style={pairingsHeaderCellStyle}>Wrestler 2</th>
-                        <th align="left" style={pairingsHeaderCellStyle}>Bout #</th>
-                        <th align="left" style={pairingsHeaderCellStyle}>Δ</th>
-                        <th align="left" style={pairingsHeaderCellStyle}>Added By</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {newMatches.map(({ bout, red, green }) => {
-                        const addedBy = bout.sourceUser?.username ?? "Auto";
-                        const sourceColor = bout.sourceUser?.teamColor ?? null;
-                        const sourceText = sourceColor ? contrastTextColor(sourceColor) : "#6a7483";
-                        const sourceBackground = sourceColor ?? "#f7f9fc";
-                        const sourceBorder = sourceColor ?? "#e4e9f2";
-                        const redSelected = red?.id === selectedDetailWrestlerId;
-                        const greenSelected = green?.id === selectedDetailWrestlerId;
-                        const redLabel = red ? `${wrestlerName(red)}${teamSymbol(red.teamId) ? ` (${teamSymbol(red.teamId)})` : ""}` : bout.redId;
-                        const greenLabel = green ? `${wrestlerName(green)}${teamSymbol(green.teamId) ? ` (${teamSymbol(green.teamId)})` : ""}` : bout.greenId;
-                        return (
-                          <tr key={bout.id} style={{ borderTop: "1px solid #eee" }}>
-                            <td
-                              onClick={() => {
-                                if (red) setSelectedDetailWrestlerId(red.id);
-                              }}
-                              style={{
-                                ...pairingsBodyCellStyle,
-                                color: red ? teamTextColor(red.teamId) : undefined,
-                                background: redSelected ? "#f2f8ff" : undefined,
-                                cursor: red ? "pointer" : "default",
-                              }}
-                              title={redLabel}
-                            >
-                              {red ? (
-                                <span
-                                  style={{
-                                    display: "block",
-                                    fontWeight: redSelected ? 700 : 500,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                  title={`Show ${redLabel}`}
-                                >
-                                  {redLabel}
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    display: "block",
-                                    fontWeight: redSelected ? 700 : 500,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {redLabel}
-                                </span>
-                              )}
-                            </td>
-                            <td
-                              onClick={() => {
-                                if (green) setSelectedDetailWrestlerId(green.id);
-                              }}
-                              style={{
-                                ...pairingsBodyCellStyle,
-                                color: green ? teamTextColor(green.teamId) : undefined,
-                                background: greenSelected ? "#f2f8ff" : undefined,
-                                cursor: green ? "pointer" : "default",
-                              }}
-                              title={greenLabel}
-                            >
-                              {green ? (
-                                <span
-                                  style={{
-                                    display: "block",
-                                    fontWeight: greenSelected ? 700 : 500,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                  title={`Show ${greenLabel}`}
-                                >
-                                  {greenLabel}
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    display: "block",
-                                    fontWeight: greenSelected ? 700 : 500,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {greenLabel}
-                                </span>
-                              )}
-                            </td>
-                            <td style={pairingsBodyCellStyle}>{formatBoutNumber(bout.mat, bout.order)}</td>
-                            <td
-                              style={{
-                                ...pairingsBodyCellStyle,
-                                color: typeof bout.pairingScore === "number" ? deltaColor(bout.pairingScore) : undefined,
-                              }}
-                            >
-                              {typeof bout.pairingScore === "number" ? bout.pairingScore.toFixed(2) : ""}
-                            </td>
-                            <td style={pairingsBodyCellStyle}>
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  letterSpacing: "0.2px",
-                                  color: sourceText,
-                                  background: sourceBackground,
-                                  border: `1px solid ${sourceBorder}`,
-                                  padding: "1px 6px",
-                                  borderRadius: 999,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  whiteSpace: "nowrap",
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 10 }}>
+                {baselineLoading && (
+                  <div style={{ color: "#5a6673", fontSize: 13 }}>Loading Check-in checkpoint...</div>
+                )}
+                {!baselineLoading && baselineError && (
+                  <div style={{ color: "#5a6673", fontSize: 13 }}>{baselineError}</div>
+                )}
+                {!baselineLoading && !baselineError && newMatches.length === 0 && (
+                  <div style={{ color: "#5a6673", fontSize: 13 }}>No new matches have been added.</div>
+                )}
+                {!baselineLoading && !baselineError && newMatches.length > 0 && (
+                  <div style={{ border: "1px solid #d5dbe2", borderRadius: 8, overflow: isPhoneLayout ? "auto" : "hidden", background: "#ffffff" }}>
+                    <table cellPadding={4} style={pairingsTableStyle}>
+                      <colgroup>
+                        {newMatchesColumnWidths.map((width, index) => (
+                          <col key={`new-matches-col-${index}`} style={{ width }} />
+                        ))}
+                      </colgroup>
+                      <thead>
+                        <tr style={{ background: "#f7f9fc" }}>
+                          <th align="left" style={pairingsHeaderCellStyle}>Wrestler 1</th>
+                          <th align="left" style={pairingsHeaderCellStyle}>Wrestler 2</th>
+                          <th align="left" style={pairingsHeaderCellStyle}>Bout #</th>
+                          <th align="left" style={pairingsHeaderCellStyle}>Δ</th>
+                          <th align="left" style={pairingsHeaderCellStyle}>Added By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {newMatches.map(({ bout, red, green }) => {
+                          const addedBy = bout.sourceUser?.username ?? "Auto";
+                          const sourceColor = bout.sourceUser?.teamColor ?? null;
+                          const sourceText = sourceColor ? contrastTextColor(sourceColor) : "#6a7483";
+                          const sourceBackground = sourceColor ?? "#f7f9fc";
+                          const sourceBorder = sourceColor ?? "#e4e9f2";
+                          const redSelected = red?.id === selectedDetailWrestlerId;
+                          const greenSelected = green?.id === selectedDetailWrestlerId;
+                          const redLabel = red ? `${wrestlerName(red)}${teamSymbol(red.teamId) ? ` (${teamSymbol(red.teamId)})` : ""}` : bout.redId;
+                          const greenLabel = green ? `${wrestlerName(green)}${teamSymbol(green.teamId) ? ` (${teamSymbol(green.teamId)})` : ""}` : bout.greenId;
+                          return (
+                            <tr key={bout.id} style={{ borderTop: "1px solid #eee" }}>
+                              <td
+                                onClick={() => {
+                                  if (red) setSelectedDetailWrestlerId(red.id);
                                 }}
+                                style={{
+                                  ...pairingsBodyCellStyle,
+                                  color: red ? teamTextColor(red.teamId) : undefined,
+                                  background: redSelected ? "#f2f8ff" : undefined,
+                                  cursor: red ? "pointer" : "default",
+                                }}
+                                title={redLabel}
                               >
-                                {addedBy}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div
-            style={{
-              border: "1px solid #d5dbe2",
-              borderRadius: 12,
-              background: "#ffffff",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              minHeight: 0,
-              gridColumn: isPhoneLayout ? 1 : 2,
-              gridRow: isPhoneLayout ? 2 : 1,
-            }}
-          >
-            <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", gap: 6, overflow: "hidden" }}>
-              {!selectedWrestler && (
-                <div style={{ color: "#5a6673", fontSize: 13 }}>Select a wrestler to review current and replacement matches.</div>
-              )}
-              {selectedWrestler && (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      minWidth: 0,
-                    }}
-                  >
-                    <span style={{ fontSize: 18, lineHeight: "20px", fontWeight: 700, color: "#243041" }}>
-                      Current matches:
-                    </span>
-                    <div
-                      style={{
-                        fontWeight: 800,
-                        fontSize: 18,
-                        color: teamTextColor(selectedWrestler.teamId),
-                        background: "#f7f9fc",
-                        border: "1px solid #d7dee8",
-                        borderRadius: 10,
-                        padding: "6px 10px",
-                        minWidth: 0,
-                      }}
-                    >
-                      {wrestlerName(selectedWrestler)}
-                      {selectedTeam ? ` (${selectedTeam.symbol ?? selectedTeam.name})` : ""}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        fontSize: 18,
-                        fontWeight: 800,
-                        color: "#444",
-                        flexWrap: "wrap",
-                        minWidth: 0,
-                      }}
-                    >
-                      <span>
-                        Age: <span style={{ color: sexColor(selectedWrestler.isGirl) }}>{ageYears(selectedWrestler.birthdate)?.toFixed(1) ?? "â€”"}</span>
-                      </span>
-                      <span>Weight: {selectedWrestler.weight}</span>
-                      <span>Exp: {selectedWrestler.experienceYears}</span>
-                      <span>Skill: {selectedWrestler.skill}</span>
-                      <span
-                        style={{ fontSize: 14, fontWeight: 600, color: "#5a6673" }}
-                        title={lostScratchOpponentsText(selectedWrestler.id)}
-                      >
-                        Lost matches: {lostScratchOpponentsText(selectedWrestler.id)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 0 }}>
-                    <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden" }}>
-                      <div style={{ maxHeight: "min(18dvh, 200px)", overflow: "auto" }}>
-                        <table cellPadding={4} style={pairingsTableStyle}>
-                          <colgroup>
-                            {currentColumnWidths.map((width, index) => (
-                              <col key={`current-col-${index}`} style={{ width }} />
-                            ))}
-                          </colgroup>
-                          <thead>
-                            <tr style={{ background: "#f7f9fc" }}>
-                              {currentColumnDefs.map((column) => (
-                                <th
-                                  key={column.key}
-                                  align={column.key === "score" ? "center" : "left"}
-                                  style={pairingsHeaderCellStyle}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleSort(setCurrentSort, column.key)}
-                                    style={{ all: "unset", cursor: "pointer" }}
+                                {red ? (
+                                  <span
+                                    style={{
+                                      display: "block",
+                                      fontWeight: redSelected ? 700 : 500,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                    title={`Show ${redLabel}`}
                                   >
-                                    {column.label}
-                                    {sortIndicator(currentSort, column.key)}
-                                  </button>
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {currentSorted.length === 0 && (
-                              <tr>
-                                <td colSpan={12} style={{ ...pairingsBodyCellStyle, color: "#666" }}>None</td>
-                              </tr>
-                            )}
-                            {currentSorted.map(({ bout, opponentId, opponent, signedScore }) => {
-                              const opponentColor = opponent ? teamTextColor(opponent.teamId) : undefined;
-                              const sourceColor = bout.sourceUser?.teamColor ?? null;
-                              const sourceText = sourceColor ? contrastTextColor(sourceColor) : "#6a7483";
-                              const sourceBackground = sourceColor ?? "#f7f9fc";
-                              const sourceBorder = sourceColor ?? "#e4e9f2";
-                              return (
-                                <tr
-                                  key={bout.id}
-                                  onClick={() => {
-                                    if (!canManageScratchMatches || removeLoadingId === bout.id) return;
-                                    void removeReplacementMatch(bout.id);
-                                  }}
-                                  style={{
-                                    borderTop: "1px solid #eee",
-                                    cursor: canManageScratchMatches ? "pointer" : "default",
-                                    background: removeLoadingId === bout.id ? "#faf7f2" : "#ffffff",
-                                  }}
-                                  title={canManageScratchMatches ? "Click to remove this match." : undefined}
-                                >
-                                  <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.last ?? ""}</td>
-                                  <td style={{ ...pairingsBodyCellStyle, color: opponentColor }}>{opponent?.first ?? ""}</td>
-                                  <td style={pairingsBodyCellStyle}>
-                                    {opponent && (
-                                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                        <span style={{ width: 10, height: 10, background: teamColor(opponent.teamId), display: "inline-block" }} />
-                                        {teamSymbol(opponent.teamId)}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: sexColor(opponent?.isGirl) }}>{opponent?.isGirl ? "Yes" : "No"}</td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: sexColor(opponent?.isGirl) }}>{ageYears(opponent?.birthdate)?.toFixed(1) ?? ""}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent?.weight ?? ""}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent?.experienceYears ?? ""}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent?.skill ?? ""}</td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: Number.isFinite(signedScore) ? deltaColor(signedScore) : undefined }}>
-                                    {Number.isFinite(signedScore) ? signedScore.toFixed(2) : ""}
-                                  </td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{matchCounts.get(opponentId) ?? 0}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{formatBoutNumber(bout.mat, bout.order)}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>
-                                    <span
-                                      style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        letterSpacing: "0.2px",
-                                        color: sourceText,
-                                        background: sourceBackground,
-                                        border: `1px solid ${sourceBorder}`,
-                                        padding: "1px 6px",
-                                        borderRadius: 999,
-                                        display: "inline-flex",
-                                        alignItems: "center",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {removeLoadingId === bout.id ? "Removing..." : (bout.sourceUser?.username ?? "Auto")}
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 0, flex: 1 }}>
-                    <h3 style={{ margin: "4px 0 0", fontSize: 18, fontWeight: 700, color: "#243041" }}>
-                      Possible additional matches:
-                    </h3>
-                    <div style={{ border: "1px solid #d7dee8", borderRadius: 10, overflow: "hidden", minHeight: 0, flex: 1 }}>
-                      <div style={{ height: "100%", minHeight: "min(26dvh, 280px)", overflow: "auto" }}>
-                        <table cellPadding={4} style={pairingsTableStyle}>
-                          <colgroup>
-                            {availableColumnWidths.map((width, index) => (
-                              <col key={`available-col-${index}`} style={{ width }} />
-                            ))}
-                          </colgroup>
-                          <thead>
-                            <tr style={{ background: "#f7f9fc" }}>
-                              {availableColumnDefs.map((column) => (
-                                <th
-                                  key={column.key}
-                                  align={column.key === "score" ? "center" : "left"}
-                                  style={pairingsHeaderCellStyle}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleSort(setAvailableSort, column.key)}
-                                    style={{ all: "unset", cursor: "pointer" }}
+                                    {redLabel}
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      display: "block",
+                                      fontWeight: redSelected ? 700 : 500,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
                                   >
-                                    {column.label}
-                                    {sortIndicator(availableSort, column.key)}
-                                  </button>
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {showCandidateLoadingState && (
-                              <tr>
-                                <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#5a6673" }}>Loading candidates...</td>
-                              </tr>
-                            )}
-                            {!showCandidateLoadingState && candidateError && (
-                              <tr>
-                                <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#b00020" }}>{candidateError}</td>
-                              </tr>
-                            )}
-                            {!showCandidateLoadingState && !candidateError && availableDisplay.length === 0 && (
-                              <tr>
-                                <td colSpan={10} style={{ ...pairingsBodyCellStyle, color: "#666" }}>
-                                  {maxMatchesPerWrestler !== null && selectedMatchCount >= maxMatchesPerWrestler
-                                    ? "Wrestler already has maximum number of bouts"
-                                    : "No candidates available right now."}
-                                </td>
-                              </tr>
-                            )}
-                            {!showCandidateLoadingState && !candidateError && availableDisplay.map(({ opponent, score }) => {
-                              const matches = matchCounts.get(opponent.id) ?? 0;
-                              const loading = addLoadingId === opponent.id;
-                              return (
-                                <tr
-                                  key={opponent.id}
-                                  onClick={() => {
-                                    if (!canManageScratchMatches || loading) return;
-                                    void addReplacementMatch(opponent.id);
-                                  }}
+                                    {redLabel}
+                                  </span>
+                                )}
+                              </td>
+                              <td
+                                onClick={() => {
+                                  if (green) setSelectedDetailWrestlerId(green.id);
+                                }}
+                                style={{
+                                  ...pairingsBodyCellStyle,
+                                  color: green ? teamTextColor(green.teamId) : undefined,
+                                  background: greenSelected ? "#f2f8ff" : undefined,
+                                  cursor: green ? "pointer" : "default",
+                                }}
+                                title={greenLabel}
+                              >
+                                {green ? (
+                                  <span
+                                    style={{
+                                      display: "block",
+                                      fontWeight: greenSelected ? 700 : 500,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                    title={`Show ${greenLabel}`}
+                                  >
+                                    {greenLabel}
+                                  </span>
+                                ) : (
+                                  <span
+                                    style={{
+                                      display: "block",
+                                      fontWeight: greenSelected ? 700 : 500,
+                                      whiteSpace: "nowrap",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                  >
+                                    {greenLabel}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={pairingsBodyCellStyle}>{formatBoutNumber(bout.mat, bout.order)}</td>
+                              <td style={{ ...pairingsBodyCellStyle, color: typeof bout.pairingScore === "number" ? deltaColor(bout.pairingScore) : undefined }}>
+                                {typeof bout.pairingScore === "number" ? bout.pairingScore.toFixed(2) : ""}
+                              </td>
+                              <td style={pairingsBodyCellStyle}>
+                                <span
                                   style={{
-                                    borderTop: "1px solid #eee",
-                                    cursor: canManageScratchMatches ? "pointer" : "default",
-                                    background: loading ? "#eef6ff" : "#ffffff",
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.2px",
+                                    color: sourceText,
+                                    background: sourceBackground,
+                                    border: `1px solid ${sourceBorder}`,
+                                    padding: "1px 6px",
+                                    borderRadius: 999,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    whiteSpace: "nowrap",
                                   }}
-                                  title={canManageScratchMatches ? "Click to add this match." : undefined}
                                 >
-                                  <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.last}</td>
-                                  <td style={{ ...pairingsBodyCellStyle, color: teamTextColor(opponent.teamId) }}>{opponent.first}</td>
-                                  <td style={pairingsBodyCellStyle}>
-                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                                      <span style={{ width: 10, height: 10, background: teamColor(opponent.teamId), display: "inline-block" }} />
-                                      {teamSymbol(opponent.teamId)}
-                                    </span>
-                                  </td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: sexColor(opponent.isGirl) }}>{opponent.isGirl ? "Yes" : "No"}</td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: sexColor(opponent.isGirl) }}>{ageYears(opponent.birthdate)?.toFixed(1) ?? ""}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent.weight}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent.experienceYears}</td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{opponent.skill}</td>
-                                  <td align="left" style={{ ...pairingsBodyCellStyle, color: Number.isFinite(score) ? deltaColor(score) : undefined }}>
-                                    {loading ? "Adding..." : Number.isFinite(score) ? score.toFixed(2) : ""}
-                                  </td>
-                                  <td align="left" style={pairingsBodyCellStyle}>{matches}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    <div
-                      style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}
-                    >
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settings.enforceAgeGapCheck}
-                          onChange={(e) => {
-                            const enforceAgeGapCheck = e.target.checked;
-                            setSettings((current) => ({ ...current, enforceAgeGapCheck }));
-                          }}
-                        />{" "}
-                        Enforce Age check
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settings.enforceWeightCheck}
-                          onChange={(e) => {
-                            const enforceWeightCheck = e.target.checked;
-                            setSettings((current) => ({ ...current, enforceWeightCheck }));
-                          }}
-                        />{" "}
-                        Enforce Weight check
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settings.firstYearOnlyWithFirstYear}
-                          onChange={(e) => {
-                            const firstYearOnlyWithFirstYear = e.target.checked;
-                            setSettings((current) => ({ ...current, firstYearOnlyWithFirstYear }));
-                          }}
-                        />{" "}
-                        First-year only rule
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settings.girlsWrestleGirls}
-                          onChange={(e) => {
-                            const girlsWrestleGirls = e.target.checked;
-                            setSettings((current) => ({ ...current, girlsWrestleGirls }));
-                          }}
-                        />{" "}
-                        Girls wrestle girls
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settings.allowSameTeamMatches}
-                          onChange={(e) => {
-                            const allowSameTeamMatches = e.target.checked;
-                            setSettings((current) => ({ ...current, allowSameTeamMatches }));
-                          }}
-                        />{" "}
-                        Include same team
-                      </label>
-                    </div>
+                                  {addedBy}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-
-                  <div style={{ fontSize: 13, color: "#666" }}>
-                    Note: Click a row to add or remove a match.
-                  </div>
-                </>
-              )}
-            </div>
+                )}
+              </div>
           </div>
         </div>
       ) : (
@@ -2781,3 +2527,4 @@ export default function ScratchesTab({
     </section>
   );
 }
+

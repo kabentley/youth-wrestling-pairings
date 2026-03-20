@@ -1,7 +1,8 @@
 import type { Prisma } from "@prisma/client";
 
+import { adjustTeamTextColor } from "./contrastText";
 import { db } from "./db";
-import { shouldDeliverEmailTo } from "./emailDelivery";
+import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "./emailDelivery";
 
 export type WelcomeEmailResult =
   | { status: "sent"; reason: null }
@@ -11,6 +12,7 @@ export type WelcomeEmailResult =
 export type WelcomeEmailPreview = {
   subject: string;
   text: string;
+  html?: string;
   sampleData: {
     leagueName: string;
     fullName: string;
@@ -26,6 +28,15 @@ export type WelcomeEmailPreview = {
     passwordInstructions: string;
   };
 };
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 type SendWelcomeEmailOptions = {
   request: Request;
@@ -55,6 +66,9 @@ type WelcomeEmailContentOptions = {
   teamLabel?: string | null;
   linkedWrestlerNames?: string[] | null;
   mustResetPassword?: boolean;
+  leagueLogoUrl?: string | null;
+  teamLogoUrl?: string | null;
+  teamColor?: string | null;
 };
 
 type WelcomeEmailTemplateContext = {
@@ -90,6 +104,7 @@ async function resolveLeagueWelcomeSettings(explicitLeagueName?: string | null) 
   const league = await db.league.findFirst({
     select: {
       name: true,
+      logoData: true,
     },
   });
   const storedLeagueName = league?.name?.trim() ?? "";
@@ -100,6 +115,7 @@ async function resolveLeagueWelcomeSettings(explicitLeagueName?: string | null) 
       : "the league";
   return {
     leagueName,
+    hasLeagueLogo: Boolean(league?.logoData),
   };
 }
 
@@ -166,8 +182,6 @@ function buildWelcomeEmailTemplateContext({
     ? [
       "This account has been linked to the following wrestlers:",
       ...normalizedLinkedWrestlerNames.map((name) => `- ${name}`),
-      "",
-      `After you sign in, you can correct any errors and keep track of your wrestlers on your My Wrestlers page: ${myWrestlersUrl}`,
     ].join("\n")
     : "";
   const coachContactLine = normalizedCoachName && normalizedCoachEmail
@@ -211,6 +225,8 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
   const team = await db.team.findUnique({
     where: { id: normalizedTeamId },
     select: {
+      logoData: true,
+      color: true,
       headCoach: {
         select: {
           name: true,
@@ -228,6 +244,8 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
   return {
     coachName,
     coachEmail,
+    hasTeamLogo: Boolean(team?.logoData),
+    teamColor: team?.color.trim() ?? "",
   };
 }
 
@@ -316,8 +334,9 @@ async function buildWelcomeEmailPreviewInternal({
   linkedWrestlerNames = null,
   mustResetPassword = true,
 }: SendWelcomeEmailOptions): Promise<WelcomeEmailPreview> {
-  const signInUrl = `${resolveBaseUrl(request)}/auth/signin`;
-  const myWrestlersUrl = `${resolveBaseUrl(request)}/parent`;
+  const baseUrl = resolveBaseUrl(request);
+  const signInUrl = `${baseUrl}/auth/signin?username=${encodeURIComponent(username)}`;
+  const myWrestlersUrl = `${baseUrl}/parent`;
   const resolvedLeagueSettings = await resolveLeagueWelcomeSettings(leagueName);
   const normalizedTempPassword = tempPassword?.trim() ?? "";
   const coachContext = await resolveWelcomeEmailCoachContext(teamId);
@@ -357,6 +376,23 @@ async function buildWelcomeEmailPreviewInternal({
       teamLabel,
       linkedWrestlerNames: resolvedLinkedWrestlerNames,
       mustResetPassword,
+    }),
+    html: buildWelcomeEmailHtml({
+      leagueName: resolvedLeagueSettings.leagueName,
+      email,
+      username,
+      fullName,
+      tempPassword: normalizedTempPassword,
+      signInUrl,
+      myWrestlersUrl,
+      coachName: coachContext.coachName,
+      coachEmail: coachContext.coachEmail,
+      teamLabel,
+      linkedWrestlerNames: resolvedLinkedWrestlerNames,
+      mustResetPassword,
+      leagueLogoUrl: resolvedLeagueSettings.hasLeagueLogo ? `${baseUrl}/api/league/logo/file` : null,
+      teamLogoUrl: teamId && coachContext.hasTeamLogo ? `${baseUrl}/api/teams/${teamId}/logo/file` : null,
+      teamColor: coachContext.teamColor,
     }),
     sampleData: {
       leagueName: context.leagueName,
@@ -412,6 +448,95 @@ export function buildWelcomeEmailText({
   return renderWelcomeEmailTemplate(normalizedTemplate, context);
 }
 
+export function buildWelcomeEmailHtml({
+  leagueName,
+  email,
+  username,
+  fullName = null,
+  tempPassword = null,
+  signInUrl,
+  myWrestlersUrl,
+  coachName = null,
+  coachEmail = null,
+  teamLabel,
+  linkedWrestlerNames = null,
+  mustResetPassword = true,
+  leagueLogoUrl = null,
+  teamLogoUrl = null,
+  teamColor = null,
+}: WelcomeEmailContentOptions) {
+  const normalizedTempPassword = tempPassword?.trim() ?? "";
+  const context = buildWelcomeEmailTemplateContext({
+    leagueName,
+    email,
+    username,
+    fullName: fullName?.trim() ?? "",
+    temporaryPassword: normalizedTempPassword,
+    signInUrl,
+    myWrestlersUrl,
+    coachName: coachName?.trim() ?? "",
+    coachEmail: coachEmail?.trim() ?? "",
+    teamLabel: teamLabel?.trim() ?? "",
+    linkedWrestlerNames: linkedWrestlerNames ?? [],
+    mustResetPassword,
+  });
+  const linkedWrestlersHtml = context.linkedWrestlerNames.length > 0
+    ? `
+        <div style="margin-top:20px;border:1px solid #d9e1e8;border-radius:14px;overflow:hidden;background:#ffffff;">
+          <div style="padding:12px 14px;background:#f7f9fc;border-bottom:1px solid #e7edf3;font-size:14px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;">Linked Wrestlers</div>
+          <div style="padding:14px 16px;display:grid;gap:10px;">
+            ${context.linkedWrestlerNames.map((name) => `
+              <div style="font-size:22px;line-height:1.2;font-weight:800;color:#243041;background:#fcfdff;border:1px solid #e7edf3;border-radius:12px;padding:12px 14px;">
+                ${escapeHtml(name)}
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `
+    : "";
+  const coachLine = context.coachContactLine
+    ? `<p style="margin:18px 0 0;font-size:15px;line-height:1.5;color:#465567;">${escapeHtml(context.coachContactLine)}</p>`
+    : "";
+  const adjustedTeamColor = adjustTeamTextColor(teamColor);
+
+  return `
+    <div style="background:#f4f7fb;padding:24px;font-family:Arial,sans-serif;color:#1f2937;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9e1e8;border-radius:18px;overflow:hidden;">
+        <div style="padding:24px 24px 18px;background:linear-gradient(180deg,#f8fbff 0%,#ffffff 100%);border-bottom:1px solid #e7edf3;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:18px;">
+            <div style="min-width:0;">
+              <h1 style="margin:0;font-size:30px;line-height:1.1;color:#243041;">Welcome to the ${escapeHtml(context.leagueName)} meet scheduling app</h1>
+            </div>
+            ${leagueLogoUrl ? `<img src="${escapeHtml(leagueLogoUrl)}" alt="League logo" style="width:72px;height:72px;object-fit:contain;flex:0 0 auto;" />` : ""}
+          </div>
+          ${context.teamLabel || teamLogoUrl ? `
+            <div style="margin-top:16px;display:flex;align-items:center;gap:14px;">
+              ${teamLogoUrl ? `<img src="${escapeHtml(teamLogoUrl)}" alt="${escapeHtml(context.teamLabel || "Team")} logo" style="width:56px;height:56px;object-fit:contain;flex:0 0 auto;" />` : ""}
+              ${context.teamLabel ? `<div style="font-size:26px;line-height:1.15;font-weight:800;color:${escapeHtml(adjustedTeamColor)};">${escapeHtml(context.teamLabel)}</div>` : ""}
+            </div>
+          ` : ""}
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 12px;font-size:18px;line-height:1.5;">Welcome, ${context.fullName ? `<strong>${escapeHtml(context.fullName)}</strong>` : "there"}. Your account has been created.</p>
+          <div style="border:1px solid #d9e1e8;border-radius:14px;background:#ffffff;overflow:hidden;">
+            <div style="padding:12px 14px;background:#f7f9fc;border-bottom:1px solid #e7edf3;font-size:14px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;">Account Details</div>
+            <div style="padding:16px;">
+              <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Username:</strong> ${escapeHtml(context.username)}</div>
+              ${context.temporaryPassword ? `<div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Temporary password:</strong> ${escapeHtml(context.temporaryPassword)}</div>` : ""}
+              <div style="font-size:15px;line-height:1.6;color:#465567;margin-top:10px;">${escapeHtml(context.passwordInstructions)}</div>
+              <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">
+                <a href="${escapeHtml(context.signInUrl)}" style="display:inline-block;background:#2f7fe7;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:10px;">Sign In</a>
+              </div>
+            </div>
+          </div>
+          ${linkedWrestlersHtml}
+          ${coachLine}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function describeWelcomeEmailResult(result: WelcomeEmailResult) {
   if (result.status === "sent") {
     return "Welcome email sent.";
@@ -434,14 +559,15 @@ async function writeWelcomeEmailLog(input: {
   deliveredAt?: Date | null;
   payload?: Prisma.InputJsonValue;
 }) {
+  const message = input.subject.trim() || input.message;
   await db.notificationLog.create({
     data: {
       event: "welcome_email",
       channel: "email",
       status: input.status,
       recipient: input.recipient,
-      subject: input.subject,
-      message: input.message,
+      subject: null,
+      message,
       provider: input.provider ?? null,
       providerMessageId: input.providerMessageId ?? null,
       errorMessage: input.errorMessage ?? null,
@@ -469,6 +595,8 @@ export async function sendWelcomeEmail({
   const key = process.env.SENDGRID_API_KEY;
   const from = process.env.SENDGRID_FROM;
   const normalizedTempPassword = tempPassword?.trim() ?? "";
+  const emailDeliverySettings = await getEmailDeliverySettings();
+  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
   const preview = await buildWelcomeEmailPreviewInternal({
     request,
     email,
@@ -494,17 +622,19 @@ export async function sendWelcomeEmail({
   };
 
   if (!key || !from) {
-    await writeWelcomeEmailLog({
-      status: "LOGGED",
-      recipient: email,
-      subject: preview.subject,
-      message: preview.text,
-      userId,
-      provider: "log",
-      errorMessage: "SendGrid is not configured.",
-      deliveredAt: new Date(),
-      payload,
-    });
+    if (shouldLogEmail) {
+      await writeWelcomeEmailLog({
+        status: "LOGGED",
+        recipient: email,
+        subject: preview.subject,
+        message: preview.text,
+        userId,
+        provider: "log",
+        errorMessage: "SendGrid is not configured.",
+        deliveredAt: new Date(),
+        payload,
+      });
+    }
     if (process.env.NODE_ENV !== "production") {
       if (normalizedTempPassword) {
         console.log(`Temp password for ${email} (${username}): ${normalizedTempPassword}`);
@@ -539,16 +669,18 @@ export async function sendWelcomeEmail({
     };
   }
   if (!deliveryDecision.allowed) {
-    await writeWelcomeEmailLog({
-      status: "SKIPPED",
-      recipient: email,
-      subject: preview.subject,
-      message: preview.text,
-      userId,
-      provider: deliveryDecision.mode === "off" ? "disabled" : "sendgrid",
-      errorMessage: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
-      payload,
-    });
+    if (shouldLogEmail) {
+      await writeWelcomeEmailLog({
+        status: "SKIPPED",
+        recipient: email,
+        subject: preview.subject,
+        message: preview.text,
+        userId,
+        provider: deliveryDecision.mode === "off" ? "disabled" : "sendgrid",
+        errorMessage: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
+        payload,
+      });
+    }
     return {
       status: "skipped",
       reason: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
@@ -563,29 +695,34 @@ export async function sendWelcomeEmail({
       from,
       subject: preview.subject,
       text: preview.text,
+      ...(preview.html ? { html: preview.html } : {}),
     });
-    await writeWelcomeEmailLog({
-      status: "SENT",
-      recipient: email,
-      subject: preview.subject,
-      message: preview.text,
-      userId,
-      provider: "sendgrid",
-      providerMessageId: response.headers["x-message-id"] ?? null,
-      deliveredAt: new Date(),
-      payload,
-    });
+    if (shouldLogEmail) {
+      await writeWelcomeEmailLog({
+        status: "SENT",
+        recipient: email,
+        subject: preview.subject,
+        message: preview.text,
+        userId,
+        provider: "sendgrid",
+        providerMessageId: response.headers["x-message-id"] ?? null,
+        deliveredAt: new Date(),
+        payload,
+      });
+    }
   } catch (error) {
-    await writeWelcomeEmailLog({
-      status: "FAILED",
-      recipient: email,
-      subject: preview.subject,
-      message: preview.text,
-      userId,
-      provider: "sendgrid",
-      errorMessage: error instanceof Error ? error.message : "Unknown welcome email delivery error.",
-      payload,
-    });
+    if (shouldLogEmail) {
+      await writeWelcomeEmailLog({
+        status: "FAILED",
+        recipient: email,
+        subject: preview.subject,
+        message: preview.text,
+        userId,
+        provider: "sendgrid",
+        errorMessage: error instanceof Error ? error.message : "Unknown welcome email delivery error.",
+        payload,
+      });
+    }
     throw error;
   }
 

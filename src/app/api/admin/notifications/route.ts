@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/rbac";
 
 const NotificationEventSchema = z.enum([
   "meet_ready_for_attendance",
+  "meet_published",
   "welcome_email",
   "password_reset_code",
 ]);

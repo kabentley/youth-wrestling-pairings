@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { Suspense, useEffect, useState } from "react";
 
 function ForceResetInner() {
@@ -14,8 +14,14 @@ function ForceResetInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { status } = useSession();
   const searchParams = useSearchParams();
+  const isAuthenticated = status === "authenticated";
+  const nextPath = (() => {
+    const raw = searchParams.get("callbackUrl") ?? "/auth/post-login";
+    return raw.startsWith("/") ? raw : "/auth/post-login";
+  })();
 
   useEffect(() => {
     const preset = searchParams.get("username") ?? "";
@@ -41,6 +47,14 @@ function ForceResetInner() {
   async function submit() {
     setErr("");
     setMsg("");
+    if (!username.trim()) {
+      setErr("Enter your username.");
+      return;
+    }
+    if (!isAuthenticated && !currentPassword.trim()) {
+      setErr("Enter your current password.");
+      return;
+    }
     if (!password.trim()) {
       setErr("Enter a new password.");
       return;
@@ -54,23 +68,39 @@ function ForceResetInner() {
       return;
     }
 
-    const res = await fetch("/api/auth/force-reset", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, currentPassword, password }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const message = json?.error ?? "Unable to reset password. Please sign in again.";
-      setErr(message);
-      if (res.status === 401) {
-        window.location.href = "/auth/signin?callbackUrl=/auth/force-reset";
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/force-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, currentPassword, password }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = json?.error ?? "Unable to reset password. Please sign in again.";
+        setErr(message);
+        if (res.status === 401) {
+          window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent("/auth/force-reset")}`;
+        }
+        return;
       }
-      return;
-    }
 
-    setMsg("Password updated. Please sign in again.");
-    await signOut({ callbackUrl: "/auth/signin" });
+      setMsg("Password updated. Signing you in...");
+      const loginResult = await signIn("credentials", {
+        redirect: false,
+        username: username.trim(),
+        password,
+        callbackUrl: nextPath,
+      });
+      if (loginResult?.error) {
+        setErr("Password updated, but automatic sign-in failed. Please sign in with your new password.");
+        window.location.href = `/auth/signin?username=${encodeURIComponent(username.trim())}`;
+        return;
+      }
+      window.location.href = loginResult?.url ?? nextPath;
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -98,18 +128,23 @@ function ForceResetInner() {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              disabled={submitting}
             />
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Current password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
+            {!isAuthenticated && (
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={submitting}
+              />
+            )}
             <input
               type={showPassword ? "text" : "password"}
               placeholder="New password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={submitting}
             />
             <div className="strength">
               <span
@@ -125,20 +160,24 @@ function ForceResetInner() {
               placeholder="Confirm password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
+              disabled={submitting}
             />
             <label className="auth-radio">
               <input
                 type="checkbox"
                 checked={showPassword}
                 onChange={(e) => setShowPassword(e.target.checked)}
+                disabled={submitting}
               />{" "}
               Show password
             </label>
-            <button className="auth-btn" type="submit">
-              Update Password
+            <button className="auth-btn" type="submit" disabled={submitting}>
+              {submitting ? "Updating..." : "Update Password"}
             </button>
             <div className="auth-muted">
-              Enter your username and current password to continue.
+              {isAuthenticated
+                ? "Your temporary-password session is active. Choose a new password to continue."
+                : "Enter your username and current password to continue."}
             </div>
             {status === "loading" && (
               <div className="auth-muted">Signing you in...</div>

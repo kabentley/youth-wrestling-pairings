@@ -296,7 +296,7 @@ function CheckpointSaveRow({ onSave }: CheckpointSaveRowProps) {
   );
 }
 
-const INACTIVITY_RELEASE_MS = 5 * 60 * 1000;
+const INACTIVITY_RELEASE_MS = 15 * 60 * 1000;
 
 const CURRENT_SHARED_COLUMN_MAP: Record<number, number | undefined> = {
   0: 0,
@@ -464,7 +464,7 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const [autoMatchesPerWrestler, setAutoMatchesPerWrestler] = useState<number | null>(null);
   const [autoMaxMatchesPerWrestler, setAutoMaxMatchesPerWrestler] = useState<number | null>(null);
   const [autoPairingsLoading, setAutoPairingsLoading] = useState(false);
-  const [, setAutoPairingsError] = useState<string | null>(null);
+  const [autoPairingsError, setAutoPairingsError] = useState<string | null>(null);
   const [autoPairingsSummary, setAutoPairingsSummary] = useState<string | null>(null);
   const [autoPairingsSlow, setAutoPairingsSlow] = useState(false);
   const autoPairingsSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1090,11 +1090,21 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     return days / daysPerYear;
   }
   // Provide a consistent accent color for girl/boy labels.
-  function sexColor(isGirl?: boolean) {
-    if (isGirl === true) return "#d81b60";
-    if (isGirl === false) return "#1565c0";
-    return undefined;
-  }
+function sexColor(isGirl?: boolean) {
+  if (isGirl === true) return "#d81b60";
+  if (isGirl === false) return "#1565c0";
+  return undefined;
+}
+
+function selectedSummaryNameFontSize(label: string, compact = false) {
+  const length = label.trim().length;
+  const maxSize = compact ? 18 : 26;
+  const minSize = compact ? 13 : 15;
+  const shrinkStart = compact ? 16 : 14;
+  const shrinkPerChar = compact ? 0.4 : 0.75;
+  if (length <= shrinkStart) return maxSize;
+  return Math.max(minSize, Math.round((maxSize - ((length - shrinkStart) * shrinkPerChar)) * 10) / 10);
+}
   // Format a mat+order into a human-friendly bout number.
   function boutNumber(mat?: number | null, order?: number | null) {
     if (!mat || !order) return "";
@@ -2328,6 +2338,17 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
   const currentMatches = currentMatchEntries.map((entry) => entry.bout);
   const currentOpponentIds = new Set(currentMatchEntries.map((entry) => entry.opponentId));
   const targetMatchCount = target ? getMatchCount(target.id) : 0;
+  const targetSummaryNameLabel = target ? `${target.first} ${target.last} (${teamSymbolById(target.teamId)})` : "";
+  const targetSummaryNameSize = target ? selectedSummaryNameFontSize(targetSummaryNameLabel) : 26;
+  const targetSummaryFields = target
+    ? [
+        { label: "Girl", value: target.isGirl ? "Yes" : "No", color: sexColor(target.isGirl) },
+        { label: "Age", value: targetAge ?? "--", color: sexColor(target.isGirl) },
+        { label: "Weight", value: String(target.weight) },
+        { label: "Exp", value: String(target.experienceYears) },
+        { label: "Skill", value: String(target.skill) },
+      ]
+    : [];
   // Normalize current matches into rows with opponent + derived scores.
   const currentMatchRows = currentMatchEntries.map(({ bout: b, opponentId }) => {
     const signedScore = target
@@ -3278,6 +3299,12 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           width: fit-content;
           max-width: 100%;
         }
+        .pairings-selected-summary-table {
+          table-layout: fixed;
+          width: fit-content;
+          max-width: 100%;
+          margin-bottom: 10px;
+        }
         .pairings-pane.readonly {
           user-select: none;
         }
@@ -3292,6 +3319,47 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
           padding: 3px 6px;
           line-height: 1.2;
           font-size: var(--pairings-table-font-size, 14px);
+        }
+        .pairings-selected-summary-table td {
+          padding: 2px 6px;
+          line-height: 1.2;
+          font-size: var(--pairings-table-font-size, 14px);
+          border: none;
+          vertical-align: top;
+        }
+        .pairings-selected-summary-name-cell {
+          padding-right: 16px;
+          vertical-align: middle;
+        }
+        .pairings-selected-summary-name-badge {
+          display: inline-block;
+          font-size: 26px;
+          font-weight: 800;
+          background: #f7f9fb;
+          border: 1px solid #d5dbe2;
+          border-radius: 8px;
+          padding: 4px 8px;
+          min-width: 0;
+          max-width: 100%;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          vertical-align: top;
+        }
+        .pairings-selected-summary-label {
+          color: var(--muted);
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.1px;
+          white-space: nowrap;
+          padding-bottom: 0;
+        }
+        .pairings-selected-summary-value {
+          color: #2f3237;
+          font-size: var(--pairings-table-font-size, 14px);
+          font-weight: 700;
+          white-space: nowrap;
+          padding-top: 0;
         }
         .attendance-table th,
         .attendance-table td {
@@ -4873,67 +4941,6 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
         </div>
 
         <div className="pairings-side-card" style={{ border: "1px solid #ddd", padding: 12, borderRadius: 10 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              marginBottom: 10,
-              minWidth: 0,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
-              <h3 className="pairings-heading" style={{ margin: 0 }}>
-                Current Matches For
-              </h3>
-              {target && (
-                <>
-                <span
-                  style={{
-                    color: "#111111",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 26,
-                    fontWeight: 800,
-                    background: "#f7f9fb",
-                    border: "1px solid #d5dbe2",
-                    borderRadius: 8,
-                    padding: "4px 8px",
-                    minWidth: 0,
-                  }}
-                >
-                  {target.first} {target.last}
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#555" }}>
-                    ({teamSymbolById(target.teamId)})
-                  </span>
-                  <span style={{ width: 14, height: 14, background: teamColor(target.teamId), display: "inline-block", borderRadius: 3 }} />
-                </span>
-                <div
-                   style={{
-                     display: "flex",
-                     alignItems: "center",
-                     gap: 12,
-                     fontSize: 18,
-                     fontWeight: 800,
-                     color: "#444",
-                     flexWrap: "wrap",
-                     paddingLeft: 10,
-                     minWidth: 0,
-                   }}
-                 >
-                   <span>{target.isGirl ? <span style={{ color: sexColor(true) }}>Girl</span> : ""}</span>
-                   <span>Age: <span style={{ color: sexColor(target.isGirl) }}>{targetAge ? `${targetAge}` : "—"}</span></span>
-                   <span>Weight: {target.weight}</span>
-                   <span>Exp: {target.experienceYears}</span>
-                   <span>Skill: {target.skill}</span>
-                </div>
-              </>
-            )}
-            </div>
-          </div>
           <div className="pairings-side-body">
           {canEdit && activePairingTarget && (
             <div
@@ -4995,6 +5002,48 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
                 <>
                 <div style={{ marginBottom: 10 }}>
                     <div className="current-matches-scroll">
+                    <table className="pairings-selected-summary-table" cellPadding={0} style={{ borderCollapse: "collapse" }}>
+                    <colgroup>
+                      {currentColumnWidthsForView.map((w, idx) => (
+                        <col key={`current-summary-col-${idx}`} style={{ width: w }} />
+                      ))}
+                    </colgroup>
+                      <tbody>
+                        <tr>
+                          <td
+                            className="pairings-selected-summary-name-cell"
+                            rowSpan={2}
+                            colSpan={3}
+                          >
+                            <span
+                              className="pairings-selected-summary-name-badge"
+                              style={{ color: teamTextColor(target.teamId), fontSize: targetSummaryNameSize }}
+                              title={targetSummaryNameLabel}
+                            >
+                              {targetSummaryNameLabel}
+                            </span>
+                          </td>
+                          {targetSummaryFields.map((field) => (
+                            <td key={`target-summary-label-${field.label}`} className="pairings-selected-summary-label">
+                              {field.label}
+                            </td>
+                          ))}
+                          <td colSpan={4} />
+                        </tr>
+                        <tr>
+                          {targetSummaryFields.map((field) => (
+                            <td
+                              key={`target-summary-value-${field.label}`}
+                              className="pairings-selected-summary-value"
+                              style={field.color ? { color: field.color } : undefined}
+                            >
+                              {field.value}
+                            </td>
+                          ))}
+                          <td colSpan={4} />
+                        </tr>
+                      </tbody>
+                    </table>
                     <table className="pairings-table" cellPadding={4} style={{ borderCollapse: "collapse" }}>
                     <colgroup>
                       {currentColumnWidthsForView.map((w, idx) => (
@@ -5479,6 +5528,11 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
             </span>
           )}
         </div>
+        {autoPairingsError && (
+          <div className="notice" style={{ marginTop: 10 }}>
+            {autoPairingsError}
+          </div>
+        )}
         {showComments && (
           <div className="panel fill" style={{ marginTop: 10 }}>
             <h3 className="panel-title">Comments</h3>
@@ -6732,4 +6786,5 @@ export default function MeetDetail({ params }: { params: Promise<{ meetId: strin
     </main>
   );
 }
+
 

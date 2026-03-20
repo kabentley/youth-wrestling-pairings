@@ -152,7 +152,6 @@ type Meet = {
 
 export default function MeetsPage() {
   const { data: session } = useSession();
-  const showNotificationControls = process.env.NODE_ENV !== "production";
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
   const [isLoadingMeets, setIsLoadingMeets] = useState(true);
@@ -173,8 +172,9 @@ export default function MeetsPage() {
   const [maxMatchesPerWrestler, setMaxMatchesPerWrestler] = useState(5);
   const [restGap, setRestGap] = useState(4);
   const [allCoachesHaveLockAccess, setAllCoachesHaveLockAccess] = useState(false);
-  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(showNotificationControls);
+  const [sendNotificationsToParents, setSendNotificationsToParents] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreateNotificationModalOpen, setIsCreateNotificationModalOpen] = useState(false);
   const [editingMeet, setEditingMeet] = useState<Meet | null>(null);
   const [deletingMeetId, setDeletingMeetId] = useState<string | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{
@@ -223,12 +223,13 @@ export default function MeetsPage() {
     setMaxMatchesPerWrestler(5);
     setRestGap(6);
     setAllCoachesHaveLockAccess(false);
-    setSendNotificationsToParents(showNotificationControls);
+    setSendNotificationsToParents(true);
     setEditingMeet(null);
-  }, [showNotificationControls]);
+  }, []);
 
   const closeCreateModal = useCallback((options?: { skipCreateQueryCleanup?: boolean }) => {
     setIsCreateModalOpen(false);
+    setIsCreateNotificationModalOpen(false);
     resetFormFields();
     if (hasCreateQuery && !options?.skipCreateQueryCleanup) {
       router.replace("/meets");
@@ -304,7 +305,7 @@ export default function MeetsPage() {
     setAttendanceDeadline(getDefaultAttendanceDeadline(date));
   }, [date, attendanceDeadlineDirty]);
 
-  async function addMeet() {
+  async function addMeet(notifyParents: boolean) {
     const normalizedTeamIds = Array.from(
       new Set([
         ...(currentTeamId ? [currentTeamId] : []),
@@ -327,7 +328,7 @@ export default function MeetsPage() {
           restGap,
           autoPairings: true,
           allCoachesHaveLockAccess,
-          sendNotificationsToParents: showNotificationControls ? sendNotificationsToParents : false,
+          sendNotificationsToParents: notifyParents,
         }),
     });
     const payload = await res.json().catch(() => null);
@@ -355,7 +356,7 @@ export default function MeetsPage() {
         matchesPerWrestler,
         maxMatchesPerWrestler,
         restGap,
-        ...(showNotificationControls ? { sendNotificationsToParents } : {}),
+        sendNotificationsToParents,
       }),
     });
     const payload = await res.json().catch(() => null);
@@ -373,11 +374,20 @@ export default function MeetsPage() {
         await updateMeet(editingMeet.id);
         closeCreateModal({ skipCreateQueryCleanup: true });
       } else {
-        const created = await addMeet();
-        closeCreateModal({ skipCreateQueryCleanup: true });
-        if (created.id) {
-          router.push(`/meets/${created.id}?edit=1&autopair=1&autogen=1`);
-        }
+        setIsCreateNotificationModalOpen(true);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleCreateWithNotifications = async (notifyParents: boolean) => {
+    try {
+      setSendNotificationsToParents(notifyParents);
+      const created = await addMeet(notifyParents);
+      closeCreateModal({ skipCreateQueryCleanup: true });
+      if (created.id) {
+        router.push(`/meets/${created.id}?edit=1`);
       }
     } catch (error) {
       console.error(error);
@@ -1224,7 +1234,7 @@ export default function MeetsPage() {
                   />
                 </label>
               </div>
-              {showNotificationControls && (
+              {isEditing && (
                 <div className="row" style={{ marginTop: 8 }}>
                   <label className="row" style={{ margin: 0 }}>
                     <input
@@ -1233,7 +1243,7 @@ export default function MeetsPage() {
                       onChange={e => setSendNotificationsToParents(e.target.checked)}
                       disabled={!canManageMeets}
                     />
-                    <span className="muted">Enable parent meet-event notifications</span>
+                    <span className="muted">Send parents notification emails about this meet</span>
                   </label>
                 </div>
               )}
@@ -1344,6 +1354,29 @@ export default function MeetsPage() {
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {isCreateNotificationModalOpen && !isEditing && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setIsCreateNotificationModalOpen(false)}>
+          <div className="modal delete-modal" role="document" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Send meet notification emails?</h3>
+            </div>
+            <div className="modal-body">
+              <p>Should parents receive notification emails for this meet after it is created and when the meet is published?</p>
+            </div>
+            <div className="modal-actions">
+              <button className="nav-btn" onClick={() => setIsCreateNotificationModalOpen(false)}>
+                Cancel
+              </button>
+              <button className="nav-btn" onClick={() => { void handleCreateWithNotifications(false); }}>
+                Create Without Emails
+              </button>
+              <button className="nav-btn primary" onClick={() => { void handleCreateWithNotifications(true); }}>
+                Create And Send Emails
+              </button>
             </div>
           </div>
         </div>

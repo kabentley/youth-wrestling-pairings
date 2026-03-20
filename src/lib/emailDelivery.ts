@@ -85,3 +85,7 @@ export async function shouldDeliverEmailTo(email?: string | null) {
     reason: allowed ? null : "Recipient email is not on the admin whitelist.",
   };
 }
+
+export function shouldWriteEmailLogs(mode: EmailDeliveryMode) {
+  return mode !== "all";
+}

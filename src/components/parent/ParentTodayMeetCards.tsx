@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo } from "react";
 
 import { adjustTeamTextColor } from "@/lib/contrastText";
@@ -161,7 +162,10 @@ export default function ParentTodayMeetCards({
     return (
       <section key={group.meet.id} className="today-card">
         <div className="today-meet-header">
-          <h2 className="today-meet-name">{group.meet.name}</h2>
+          <div className="today-meet-header-top">
+            <h2 className="today-meet-name">{group.meet.name}</h2>
+            <Link href="/parent" className="today-header-link">My Wrestlers</Link>
+          </div>
           <div className="today-meta">{formatMeetDate(group.meet.date)}</div>
           <div className="today-meta">{group.meet.location ?? "Location TBD"}</div>
         </div>
@@ -316,9 +320,51 @@ export default function ParentTodayMeetCards({
           display: grid;
           gap: 16px;
         }
+        .today-empty-card {
+          gap: 14px;
+        }
+        .today-empty-card-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .today-empty-message {
+          color: #586473;
+          font-size: 17px;
+          line-height: 1.4;
+        }
         .today-meet-header {
           display: grid;
           gap: 6px;
+        }
+        .today-meet-header-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .today-header-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 40px;
+          padding: 8px 14px;
+          border-radius: 999px;
+          border: 1px solid #c9d7e5;
+          background: #f8fbff;
+          color: #1e4f7a;
+          font-size: 15px;
+          font-weight: 700;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+        .today-header-link:hover {
+          border-color: #1e88e5;
+          color: #155a9c;
+          background: #eef6ff;
         }
         .today-meet-label {
           font-size: 14px;
@@ -461,7 +507,12 @@ export default function ParentTodayMeetCards({
         {msg && <div className="today-message">{msg}</div>}
         {!loaded && !msg && <div>Loading...</div>}
         {loaded && !msg && upcomingGroups.length === 0 && showEmptyState && (
-          <div className="today-card">{emptyMessage}</div>
+          <div className="today-card today-empty-card">
+            <div className="today-empty-card-top">
+              <div className="today-empty-message">{emptyMessage}</div>
+              <Link href="/parent" className="today-header-link">My Wrestlers</Link>
+            </div>
+          </div>
         )}
         {meetCards}
       </div>

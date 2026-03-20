@@ -36,9 +36,36 @@ type MeetOption = {
   date: string;
 };
 
+type EmailPreviewEvent =
+  | "welcome_email"
+  | "meet_ready_for_attendance"
+  | "meet_published"
+  | "password_reset_code";
+
+type EmailPreviewOption = {
+  id: string;
+  label: string;
+  status?: string;
+};
+
+type EmailPreviewResponse = {
+  event: EmailPreviewEvent;
+  title: string;
+  subject: string;
+  text: string;
+  html?: string;
+  selectedTeamId: string;
+  selectedMeetId: string;
+  sampleData: Array<{
+    label: string;
+    value: string;
+  }>;
+};
+
 const EVENT_OPTIONS = [
   { value: "", label: "All events" },
   { value: "meet_ready_for_attendance", label: "Ready for Attendance" },
+  { value: "meet_published", label: "Meet Published" },
   { value: "welcome_email", label: "Welcome Email" },
   { value: "password_reset_code", label: "Password Reset Code" },
 ] as const;
@@ -91,6 +118,8 @@ function formatEventLabel(event: NotificationRow["event"]) {
       return "Ready for Attendance";
     case "welcome_email":
       return "Welcome Email";
+    case "meet_published":
+      return "Meet Published";
     case "password_reset_code":
       return "Password Reset Code";
     default:
@@ -137,6 +166,16 @@ export default function NotificationsSection() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [previewEvent, setPreviewEvent] = useState<EmailPreviewEvent>("welcome_email");
+  const [previewTeamOptions, setPreviewTeamOptions] = useState<EmailPreviewOption[]>([]);
+  const [previewMeetOptions, setPreviewMeetOptions] = useState<EmailPreviewOption[]>([]);
+  const [previewTeamId, setPreviewTeamId] = useState("");
+  const [previewMeetId, setPreviewMeetId] = useState("");
+  const [previewData, setPreviewData] = useState<EmailPreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isLoadingPreviewOptions, setIsLoadingPreviewOptions] = useState(true);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const whitelistImportRef = useRef<HTMLInputElement | null>(null);
 
   async function loadEmailDeliverySettings() {
@@ -157,6 +196,23 @@ export default function NotificationsSection() {
     setEmailWhitelist(nextWhitelist);
     setSavedEmailDeliveryMode(nextMode);
     setSavedEmailWhitelist(nextWhitelist);
+  }
+
+  async function loadPreviewOptions() {
+    setIsLoadingPreviewOptions(true);
+    try {
+      const res = await fetch("/api/admin/notification-email-preview");
+      if (!res.ok) {
+        throw new Error("Unable to load email preview options.");
+      }
+      const data = await res.json();
+      setPreviewTeamOptions(Array.isArray(data.teams) ? data.teams : []);
+      setPreviewMeetOptions(Array.isArray(data.meets) ? data.meets : []);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Unable to load email preview options.");
+    } finally {
+      setIsLoadingPreviewOptions(false);
+    }
   }
 
   const saveEmailDeliverySettings = useCallback(async (
@@ -270,6 +326,37 @@ export default function NotificationsSection() {
     }
   }
 
+  async function openEmailPreview() {
+    setIsPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const res = await fetch("/api/admin/notification-email-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: previewEvent,
+          teamId: previewEvent === "welcome_email" ? previewTeamId : "",
+          meetId: previewEvent === "meet_ready_for_attendance" || previewEvent === "meet_published"
+            ? previewMeetId
+            : "",
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Unable to build email preview.");
+      }
+      setPreviewData(data as EmailPreviewResponse);
+      setPreviewTeamId(typeof data?.selectedTeamId === "string" ? data.selectedTeamId : "");
+      setPreviewMeetId(typeof data?.selectedMeetId === "string" ? data.selectedMeetId : "");
+      setShowPreviewModal(true);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Unable to build email preview.");
+      setShowPreviewModal(false);
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedQuery(query);
@@ -286,6 +373,9 @@ export default function NotificationsSection() {
       setMsg(error instanceof Error ? error.message : "Unable to load email delivery settings.");
       setMsgTone("error");
     });
+    void loadPreviewOptions().catch((error) => {
+      setPreviewError(error instanceof Error ? error.message : "Unable to load email preview options.");
+    });
   }, []);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [pageSize, total]);
@@ -294,6 +384,8 @@ export default function NotificationsSection() {
     () => [...parseEmailWhitelistEntries(emailWhitelist)].sort((a, b) => a.localeCompare(b)),
     [emailWhitelist],
   );
+  const previewNeedsTeam = previewEvent === "welcome_email";
+  const previewNeedsMeet = previewEvent === "meet_ready_for_attendance" || previewEvent === "meet_published";
   const newWhitelistEntryHasValue = tokenizeEmailAddressList(newWhitelistEntry).length > 0;
   const invalidNewWhitelistEntries = useMemo(() => findInvalidEmailAddresses(newWhitelistEntry), [newWhitelistEntry]);
   const settingsDirty =
@@ -594,6 +686,92 @@ export default function NotificationsSection() {
       </div>
 
       <div className="admin-card admin-users-controls">
+        <div className="admin-form-grid">
+          <div className="admin-field">
+            <label className="admin-label" htmlFor="notification-preview-event">
+              Email Preview
+            </label>
+            <select
+              id="notification-preview-event"
+              value={previewEvent}
+              onChange={(event) => {
+                setPreviewEvent(event.target.value as EmailPreviewEvent);
+                setPreviewError("");
+              }}
+              disabled={isPreviewLoading}
+            >
+              <option value="welcome_email">Welcome Email</option>
+              <option value="meet_ready_for_attendance">Ready for Attendance</option>
+              <option value="meet_published">Meet Published</option>
+              <option value="password_reset_code">Password Reset Code</option>
+            </select>
+            <div className="admin-muted" style={{ marginTop: 6 }}>
+              Builds a sample email from the live template without sending anything.
+            </div>
+          </div>
+          {previewNeedsTeam ? (
+            <div className="admin-field">
+              <label className="admin-label" htmlFor="notification-preview-team">
+                Team
+              </label>
+              <select
+                id="notification-preview-team"
+                value={previewTeamId}
+                onChange={(event) => {
+                  setPreviewTeamId(event.target.value);
+                  setPreviewError("");
+                }}
+                disabled={isPreviewLoading || isLoadingPreviewOptions}
+              >
+                <option value="">Auto-select team</option>
+                {previewTeamOptions.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {previewNeedsMeet ? (
+            <div className="admin-field">
+              <label className="admin-label" htmlFor="notification-preview-meet">
+                Meet
+              </label>
+              <select
+                id="notification-preview-meet"
+                value={previewMeetId}
+                onChange={(event) => {
+                  setPreviewMeetId(event.target.value);
+                  setPreviewError("");
+                }}
+                disabled={isPreviewLoading || isLoadingPreviewOptions}
+              >
+                <option value="">Auto-select meet</option>
+                {previewMeetOptions.map((meet) => (
+                  <option key={meet.id} value={meet.id}>
+                    {meet.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          <div className="admin-field" style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="admin-btn"
+              onClick={() => { void openEmailPreview(); }}
+              disabled={isPreviewLoading || isLoadingPreviewOptions}
+            >
+              {isPreviewLoading ? "Building..." : "Preview Email"}
+            </button>
+            <span style={{ color: previewError ? "#b00020" : "#5a6673", minHeight: 20 }}>
+              {previewError || (isLoadingPreviewOptions ? "Loading preview options..." : "Preview uses sample recipient data and the live email template.")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="admin-card admin-users-controls">
         <form
           className="admin-search"
           onSubmit={(event) => {
@@ -778,6 +956,80 @@ export default function NotificationsSection() {
           </tbody>
         </table>
       </div>
+
+      {showPreviewModal && previewData && (
+        <div
+          className="admin-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!isPreviewLoading) {
+              setShowPreviewModal(false);
+            }
+          }}
+        >
+          <div
+            className="admin-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notification-email-preview-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{ width: "min(1120px, 100%)" }}
+          >
+            <h4 id="notification-email-preview-title">{previewData.title}</h4>
+            <div style={{ padding: 16, overflowY: "auto", display: "grid", gap: 16 }}>
+              {previewData.sampleData.length > 0 ? (
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="admin-muted">Sample data used for this preview:</div>
+                  {previewData.sampleData.map((entry) => (
+                    <div key={entry.label} className="admin-muted">
+                      {entry.label}: {entry.value}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div>
+                <div className="admin-label" style={{ marginBottom: 6 }}>Rendered Subject</div>
+                <div className="admin-card" style={{ padding: 12, background: "#fff" }}>
+                  <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{previewData.subject}</div>
+                </div>
+              </div>
+              <div>
+                <div className="admin-label" style={{ marginBottom: 6 }}>Rendered HTML</div>
+                <div className="admin-card" style={{ padding: 0, background: "#fff", overflow: "hidden" }}>
+                  {previewData.html ? (
+                    <iframe
+                      title={`${previewData.title} HTML preview`}
+                      srcDoc={previewData.html}
+                      style={{ width: "100%", height: 560, border: 0, background: "#f4f7fb" }}
+                    />
+                  ) : (
+                    <div style={{ padding: 12 }} className="admin-muted">
+                      This email currently sends text only.
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="admin-label" style={{ marginBottom: 6 }}>Rendered Text</div>
+                <div className="admin-card" style={{ padding: 12, background: "#fff" }}>
+                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "Consolas, 'Courier New', monospace" }}>
+                    {previewData.text}
+                  </pre>
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-ghost"
+                onClick={() => setShowPreviewModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEveryoneConfirmModal && (
         <div

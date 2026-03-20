@@ -458,6 +458,23 @@ export default function ParentPage() {
           box-shadow: none;
           border-color: rgba(29, 35, 43, 0.1);
         }
+        .match-history-table-wrap {
+          width: 100%;
+          overflow-x: auto;
+        }
+        .match-history-table {
+          border-collapse: collapse;
+          width: 100%;
+          margin-top: 8px;
+          table-layout: fixed;
+        }
+        .match-history-table th,
+        .match-history-table td {
+          padding: 6px;
+          text-align: left;
+          vertical-align: top;
+          overflow-wrap: anywhere;
+        }
         .match-history-link {
           color: var(--accent);
         }
@@ -838,34 +855,42 @@ export default function ParentPage() {
             {history.length === 0 ? (
               <div style={{ marginTop: 8 }}>No matches recorded.</div>
             ) : (
-              <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%", marginTop: 8 }}>
-                <thead>
-                  <tr>
-                    <th align="left">Meet</th>
-                    <th align="left">Date</th>
-                    <th align="left">Opponent</th>
-                    <th align="left">Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map(match => (
-                    <tr key={`${match.boutId}-${match.meetDate}`} style={{ borderTop: "1px solid #ddd" }}>
-                      <td>
-                        {match.resultsCompletedAt ? (
-                          <Link className="match-history-link" href={`/results/${match.meetId}`}>{match.meetName}</Link>
-                        ) : (
-                          match.meetName
-                        )}
-                      </td>
-                      <td>{new Date(match.meetDate).toLocaleDateString()}</td>
-                      <td>
-                        {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
-                      </td>
-                      <td>{formatMatchResult(match)}</td>
+              <div className="match-history-table-wrap">
+                <table className="match-history-table">
+                  <colgroup>
+                    <col style={{ width: "36%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "20%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Meet</th>
+                      <th>Date</th>
+                      <th>Opponent</th>
+                      <th>Result</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {history.map(match => (
+                      <tr key={`${match.boutId}-${match.meetDate}`} style={{ borderTop: "1px solid #ddd" }}>
+                        <td>
+                          {match.resultsCompletedAt ? (
+                            <Link className="match-history-link" href={`/results/${match.meetId}`}>{match.meetName}</Link>
+                          ) : (
+                            match.meetName
+                          )}
+                        </td>
+                        <td>{new Date(match.meetDate).toLocaleDateString()}</td>
+                        <td>
+                          {nameChip(match.opponentName, match.opponentTeam, match.opponentTeamColor ?? "#000000")}
+                        </td>
+                        <td>{formatMatchResult(match)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         );

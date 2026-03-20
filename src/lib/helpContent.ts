@@ -153,7 +153,7 @@ export const HELP_PAGES: HelpPage[] = [
           "The lock is not used for every workflow. During Attendance, the Meet Coordinator can edit every team and other coaches can edit their own team. During Check-in, coaches who were granted edit access can enter scratches for their own team without the lock, and the Meet Coordinator can manage cross-team Check-in work without the lock [Meet > Attendance, Meet > Scratches].",
           "Outside Draft, editing is much tighter. After the meet leaves Draft, team coaches keep only the team-specific Check-in scratch tools, while the Meet Coordinator and admins keep the broader meet-level Check-in controls [Meet > Coordinator, Meet > Scratches].",
           "Locks expire if they are not refreshed. The timeout is 2 minutes, so the lock clears if the tab closes, the device sleeps, the network drops, the page is backgrounded, or the session expires.",
-          "The app also releases your lock after inactivity. The inactivity timer is 5 minutes, and you will see a countdown near the top of the meet page. Move the mouse, click, or tap to reset it.",
+          "The app also releases your lock after inactivity. The inactivity timer is 15 minutes, and you will see a countdown near the top of the meet page. Move the mouse, click, or tap to reset it.",
         ],
       },
       {

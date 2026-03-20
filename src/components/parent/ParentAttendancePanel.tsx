@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type ParentAttendanceStatus = "COMING" | "NOT_COMING" | null;
@@ -243,6 +244,13 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
           gap: 8px;
           margin-bottom: 14px;
         }
+        .meet-header-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
         .meet-name {
           margin: 0;
           font-family: "Oswald", Arial, sans-serif;
@@ -250,6 +258,26 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
           letter-spacing: 0.03em;
           font-size: clamp(24px, 4.4vw, 34px);
           line-height: 1;
+        }
+        .meet-header-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 40px;
+          padding: 8px 14px;
+          border-radius: 999px;
+          border: 1px solid #c9d7e5;
+          background: #f8fbff;
+          color: #1e4f7a;
+          font-size: 15px;
+          font-weight: 700;
+          text-decoration: none;
+          white-space: nowrap;
+        }
+        .meet-header-link:hover {
+          border-color: #1e88e5;
+          color: #155a9c;
+          background: #eef6ff;
         }
         .meet-meta {
           color: #586473;
@@ -398,7 +426,10 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                       }}
                     >
                       <div className="meet-header">
-                        <h2 className="meet-name">{meet.name}</h2>
+                        <div className="meet-header-top">
+                          <h2 className="meet-name">{meet.name}</h2>
+                          <Link href="/parent" className="meet-header-link">My Wrestlers</Link>
+                        </div>
                         <div className="meet-meta">{formatMeetDate(meet.date)}</div>
                         <div className="meet-meta">{meet.location ?? "Location TBD"}</div>
                         {meet.homeTeam && <div className="meet-meta"><strong>Host:</strong> {meet.homeTeam}</div>}
@@ -556,7 +587,10 @@ export default function ParentAttendancePanel({ embedded = false }: ParentAttend
                       }}
                     >
                       <div className="meet-header">
-                        <h2 className="meet-name">{meet.name}</h2>
+                        <div className="meet-header-top">
+                          <h2 className="meet-name">{meet.name}</h2>
+                          <Link href="/parent" className="meet-header-link">My Wrestlers</Link>
+                        </div>
                         <div className="meet-meta">{formatMeetDate(meet.date)}</div>
                         <div className="meet-meta">{meet.location ?? "Location TBD"}</div>
                         {meet.homeTeam && <div className="meet-meta"><strong>Host:</strong> {meet.homeTeam}</div>}

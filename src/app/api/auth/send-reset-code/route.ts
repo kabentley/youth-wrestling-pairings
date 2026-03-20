@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { shouldDeliverEmailTo } from "@/lib/emailDelivery";
+import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "@/lib/emailDelivery";
+import { buildPasswordResetEmailContent } from "@/lib/passwordResetEmail";
 
 const RESET_WINDOW_MS = 15 * 60 * 1000;
 const MAX_RESET_SENDS = 5;
@@ -30,14 +31,15 @@ async function writePasswordResetEmailLog(input: {
   errorMessage?: string | null;
   deliveredAt?: Date | null;
 }) {
+  const message = input.subject.trim() || input.message;
   await db.notificationLog.create({
     data: {
       event: "password_reset_code",
       channel: "email",
       status: input.status,
       recipient: input.recipient,
-      subject: input.subject,
-      message: input.message,
+      subject: null,
+      message,
       provider: input.provider ?? null,
       providerMessageId: input.providerMessageId ?? null,
       errorMessage: input.errorMessage ?? null,
@@ -78,22 +80,27 @@ export async function POST(req: Request) {
     },
   });
 
-  const subject = "Your password reset code";
-  const message = `Your password reset code is ${code}. It expires in 15 minutes.`;
+  const emailContent = buildPasswordResetEmailContent({ code, expiresInMinutes: 15 });
+  const subject = emailContent.subject;
+  const message = emailContent.text;
+  const emailDeliverySettings = await getEmailDeliverySettings();
+  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
 
   const key = process.env.SENDGRID_API_KEY;
   const from = process.env.SENDGRID_FROM;
   if (!key || !from) {
-    await writePasswordResetEmailLog({
-      status: "LOGGED",
-      recipient: email,
-      subject,
-      message,
-      userId: user.id,
-      provider: "log",
-      errorMessage: "SendGrid is not configured.",
-      deliveredAt: new Date(),
-    });
+    if (shouldLogEmail) {
+      await writePasswordResetEmailLog({
+        status: "LOGGED",
+        recipient: email,
+        subject,
+        message,
+        userId: user.id,
+        provider: "log",
+        errorMessage: "SendGrid is not configured.",
+        deliveredAt: new Date(),
+      });
+    }
     if (process.env.NODE_ENV !== "production") {
       console.log(`Password reset code for ${email}: ${code}`);
       return NextResponse.json({ ok: true });
@@ -114,15 +121,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, logged: true });
   }
   if (!deliveryDecision.allowed) {
-    await writePasswordResetEmailLog({
-      status: "SKIPPED",
-      recipient: email,
-      subject,
-      message,
-      userId: user.id,
-      provider: deliveryDecision.mode === "off" ? "disabled" : "sendgrid",
-      errorMessage: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
-    });
+    if (shouldLogEmail) {
+      await writePasswordResetEmailLog({
+        status: "SKIPPED",
+        recipient: email,
+        subject,
+        message,
+        userId: user.id,
+        provider: deliveryDecision.mode === "off" ? "disabled" : "sendgrid",
+        errorMessage: deliveryDecision.reason ?? "Recipient email is not allowed by the current delivery settings.",
+      });
+    }
     return NextResponse.json({ ok: true, skipped: true });
   }
   sgMail.setApiKey(key);
@@ -132,27 +141,32 @@ export async function POST(req: Request) {
       from,
       subject,
       text: message,
+      html: emailContent.html,
     });
-    await writePasswordResetEmailLog({
-      status: "SENT",
-      recipient: email,
-      subject,
-      message,
-      userId: user.id,
-      provider: "sendgrid",
-      providerMessageId: response.headers["x-message-id"] ?? null,
-      deliveredAt: new Date(),
-    });
+    if (shouldLogEmail) {
+      await writePasswordResetEmailLog({
+        status: "SENT",
+        recipient: email,
+        subject,
+        message,
+        userId: user.id,
+        provider: "sendgrid",
+        providerMessageId: response.headers["x-message-id"] ?? null,
+        deliveredAt: new Date(),
+      });
+    }
   } catch (error) {
-    await writePasswordResetEmailLog({
-      status: "FAILED",
-      recipient: email,
-      subject,
-      message,
-      userId: user.id,
-      provider: "sendgrid",
-      errorMessage: error instanceof Error ? error.message : "Unknown password reset delivery error.",
-    });
+    if (shouldLogEmail) {
+      await writePasswordResetEmailLog({
+        status: "FAILED",
+        recipient: email,
+        subject,
+        message,
+        userId: user.id,
+        provider: "sendgrid",
+        errorMessage: error instanceof Error ? error.message : "Unknown password reset delivery error.",
+      });
+    }
     throw error;
   }
 

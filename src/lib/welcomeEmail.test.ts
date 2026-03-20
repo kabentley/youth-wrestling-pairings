@@ -12,7 +12,7 @@ vi.mock("./emailDelivery", () => ({
   shouldDeliverEmailTo: vi.fn(),
 }));
 
-const { buildDefaultWelcomeEmailBodyTemplate, buildWelcomeEmailSubject, buildWelcomeEmailText, describeWelcomeEmailResult } = await import("./welcomeEmail");
+const { buildDefaultWelcomeEmailBodyTemplate, buildWelcomeEmailHtml, buildWelcomeEmailSubject, buildWelcomeEmailText, describeWelcomeEmailResult } = await import("./welcomeEmail");
 
 describe("buildWelcomeEmailText", () => {
   it("includes account credentials and sign-in link", () => {
@@ -64,9 +64,8 @@ describe("buildWelcomeEmailText", () => {
     expect(text).toContain("This account has been linked to the following wrestlers:");
     expect(text).toContain("- Ava Doe");
     expect(text).toContain("- Mia Doe");
-    expect(text).not.toContain("review these links");
-    expect(text).toContain("correct any errors");
-    expect(text).toContain("https://example.com/parent");
+    expect(text).not.toContain("correct any errors");
+    expect(text).not.toContain("https://example.com/parent");
   });
 
   it("uses a non-reset note when the account will not be forced to reset", () => {
@@ -97,6 +96,36 @@ describe("buildWelcomeEmailText", () => {
     expect(text).toContain("Use the password you set during sign-up.");
   });
 
+});
+
+describe("buildWelcomeEmailHtml", () => {
+  it("builds html with sign-in and my wrestlers actions", () => {
+    const html = buildWelcomeEmailHtml({
+      leagueName: "ICWL",
+      email: "jdoe12@example.com",
+      username: "jdoe12",
+      fullName: "Jane Doe",
+      tempPassword: "123456",
+      signInUrl: "https://example.com/auth/signin",
+      myWrestlersUrl: "https://example.com/parent",
+      coachName: "Pat Coach",
+      coachEmail: "coach@example.com",
+      linkedWrestlerNames: ["Ava Doe", "Mia Doe"],
+      teamLabel: "West Chester (WC)",
+      leagueLogoUrl: "https://example.com/api/league/logo/file",
+      teamLogoUrl: "https://example.com/api/teams/team_1/logo/file",
+    });
+    expect(html).toContain("Sign In");
+    expect(html).not.toContain("My Wrestlers</a>");
+    expect(html).toContain("Ava Doe");
+    expect(html).toContain("Mia Doe");
+    expect(html).toContain("Pat Coach");
+    expect(html).toContain("https://example.com/auth/signin");
+    expect(html).toContain("Welcome to the ICWL meet scheduling app");
+    expect(html).toContain("https://example.com/api/league/logo/file");
+    expect(html).toContain("https://example.com/api/teams/team_1/logo/file");
+    expect(html).toContain("<strong>Jane Doe</strong>");
+  });
 });
 
 describe("buildDefaultWelcomeEmailBodyTemplate", () => {

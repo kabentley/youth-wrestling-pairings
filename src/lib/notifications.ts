@@ -1,14 +1,25 @@
 import { Prisma } from "@prisma/client";
 
+import { adjustTeamTextColor } from "./contrastText";
 import { db } from "./db";
 import type { EmailDeliveryMode } from "./emailDelivery";
-import { getEmailDeliverySettings, shouldDeliverEmailTo } from "./emailDelivery";
+import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "./emailDelivery";
 import { normalizeMeetPhase } from "./meetPhase";
 
 export type NotificationTransport = "off" | "log" | "live";
 export type NotificationChannel = "email" | "system";
-export type NotificationEvent = "meet_ready_for_attendance";
+export type NotificationEvent = "meet_ready_for_attendance" | "meet_published";
 export type NotificationStatus = "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
+export type NotificationDispatchSummary = {
+  transport: NotificationTransport;
+  recipients: number;
+  attempted: number;
+  sent: number;
+  logged: number;
+  successful: number;
+  failed: number;
+  skipped: number;
+};
 export type NotificationTeamSummary = {
   teamId: string;
   teamLabel: string;
@@ -18,15 +29,7 @@ export type NotificationTeamSummary = {
   failedCount: number;
   skippedCount: number;
 };
-export type MeetReadyForAttendanceSummary = {
-  transport: NotificationTransport;
-  recipients: number;
-  attempted: number;
-  sent: number;
-  logged: number;
-  successful: number;
-  failed: number;
-  skipped: number;
+export type MeetReadyForAttendanceSummary = NotificationDispatchSummary & {
   teams: NotificationTeamSummary[];
 };
 
@@ -56,6 +59,7 @@ type DeliveryMessage = {
   recipient: string;
   subject?: string;
   message: string;
+  html?: string;
   userId?: string | null;
   meetId?: string | null;
   payload: Prisma.InputJsonValue;
@@ -82,6 +86,7 @@ type MeetReadyRecipient = {
 type MeetReadyContent = {
   emailSubject: string;
   emailText: string;
+  emailHtml?: string;
 };
 
 type MeetReadyContext = {
@@ -96,6 +101,37 @@ type MeetReadyContext = {
   childNames: string[];
   headCoachName: string;
   headCoachEmail: string;
+};
+
+type MeetPublishedMatch = {
+  boutId: string;
+  boutNumber: string;
+  opponentName: string;
+  opponentTeam: string;
+  opponentTeamColor?: string | null;
+};
+
+type MeetPublishedChild = {
+  childId: string;
+  fullName: string;
+  teamLabel: string;
+  matches: MeetPublishedMatch[];
+};
+
+type MeetPublishedRecipient = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  children: MeetPublishedChild[];
+};
+
+type MeetPublishedContext = {
+  meetName: string;
+  meetDate: Date;
+  location: string | null;
+  todayUrl: string;
+  recipientName: string;
+  children: MeetPublishedChild[];
 };
 
 export function resolveNotificationTransport(
@@ -145,6 +181,15 @@ function formatList(items: string[]) {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function uniqueSortedNames(names: string[]) {
   return Array.from(new Set(names.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
@@ -166,6 +211,11 @@ function buildTeamLabels(
 
 function buildTeamLabel(team: { symbol?: string | null; name?: string | null }) {
   return (team.symbol ?? team.name ?? "Team").trim() || "Team";
+}
+
+function formatBoutNumber(mat?: number | null, order?: number | null) {
+  if (!mat || !order) return "TBD";
+  return `${mat}${String(Math.max(0, order - 1)).padStart(2, "0")}`;
 }
 
 export function dedupeMeetRecipients(recipients: MeetReadyRecipient[]): MeetReadyRecipient[] {
@@ -205,18 +255,21 @@ export function buildMeetReadyForAttendanceContent(
 ): MeetReadyContent {
   const childLine = context.childNames.length > 0
     ? `Please indicate whether your wrestler${context.childNames.length === 1 ? "" : "s"} ${formatList(context.childNames)} will attend the upcoming meet.`
-    : "Please indicate whether your wrestlers will attend the upcoming meet. If you do not see them yet, link them on your My Wrestlers page after signing in.";
+    : "Please indicate whether your wrestlers will attend the upcoming meet.";
+  const childLineHtml = context.childNames.length > 0
+    ? `Please indicate whether your wrestler${context.childNames.length === 1 ? "" : "s"} <strong>${escapeHtml(formatList(context.childNames))}</strong> will attend the upcoming meet.`
+    : "Please indicate whether your wrestlers will attend the upcoming meet.";
   const locationLine = context.location ? `Location: ${context.location}.` : "Location: To be announced.";
   const teamsLine = context.teamLabels.length > 0
     ? `Teams: ${formatList(context.teamLabels)}.`
     : "";
   const deadlineLine = `Attendance deadline: ${formatDeadline(context.attendanceDeadline)}`;
   const headCoachLine = context.headCoachName && context.headCoachEmail
-    ? `If you have questions, please contact ${context.headCoachName} <${context.headCoachEmail}>.`
+    ? `If you have questions, please contact your coach: ${context.headCoachName} <${context.headCoachEmail}>.`
     : context.headCoachName
-      ? `If you have questions, please contact ${context.headCoachName}.`
+      ? `If you have questions, please contact your coach: ${context.headCoachName}.`
       : context.headCoachEmail
-        ? `If you have questions, please contact <${context.headCoachEmail}>.`
+        ? `If you have questions, please contact your coach: <${context.headCoachEmail}>.`
         : "";
   const formattedMeetDate = formatMeetDate(context.meetDate);
   const meetDetailsBlock = [
@@ -238,6 +291,116 @@ export function buildMeetReadyForAttendanceContent(
       linksBlock,
       headCoachLine,
     ].filter(Boolean).join("\n\n"),
+    emailHtml: `
+      <div style="background:#f4f7fb;padding:24px;font-family:Arial,sans-serif;color:#1f2937;">
+        <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9e1e8;border-radius:18px;overflow:hidden;">
+          <div style="padding:24px 24px 18px;background:linear-gradient(180deg,#f8fbff 0%,#ffffff 100%);border-bottom:1px solid #e7edf3;">
+            <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#5a6673;">Attendance Request</div>
+            <h1 style="margin:8px 0 0;font-size:30px;line-height:1.1;color:#243041;">${escapeHtml(context.meetName)}</h1>
+          </div>
+          <div style="padding:24px;">
+            <p style="margin:0 0 12px;font-size:16px;line-height:1.5;">Hello ${escapeHtml(context.recipientName)},</p>
+            <p style="margin:0;font-size:16px;line-height:1.5;">${childLineHtml}</p>
+            <div style="margin-top:18px;border:1px solid #d9e1e8;border-radius:14px;background:#ffffff;overflow:hidden;">
+              <div style="padding:12px 14px;background:#f7f9fc;border-bottom:1px solid #e7edf3;font-size:14px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;">Meet Details</div>
+              <div style="padding:16px;">
+                <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Date:</strong> ${escapeHtml(formattedMeetDate)}</div>
+                <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Location:</strong> ${escapeHtml(context.location ?? "Location to be announced")}</div>
+                <div style="font-size:15px;line-height:1.6;color:#243041;"><strong>Teams:</strong> ${escapeHtml(context.teamLabels.length > 0 ? formatList(context.teamLabels) : "To be announced")}</div>
+                <div style="margin-top:14px;padding:14px 16px;border-radius:12px;background:#fff4d6;border:1px solid #f0d48a;">
+                  <div style="font-size:12px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#8a5a00;">Attendance Deadline</div>
+                  <div style="margin-top:6px;font-size:20px;line-height:1.25;font-weight:800;color:#243041;">${escapeHtml(formatDeadline(context.attendanceDeadline))}</div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;">
+              <a href="${escapeHtml(context.attendanceUrl)}" style="display:inline-block;background:#2f7fe7;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:10px;">Reply to Attendance</a>
+            </div>
+            ${headCoachLine ? `<p style="margin:18px 0 0;font-size:15px;line-height:1.5;color:#465567;">${escapeHtml(headCoachLine)}</p>` : ""}
+          </div>
+        </div>
+      </div>
+    `,
+  };
+}
+
+export function buildMeetPublishedContent(
+  context: MeetPublishedContext,
+): MeetReadyContent {
+  const formattedMeetDate = formatMeetDate(context.meetDate);
+  const locationLine = context.location ? `Location: ${context.location}` : "Location: To be announced";
+  const childBlocks = context.children.map((child) => {
+    const matchLines = child.matches.length > 0
+      ? child.matches.map((match) => `- Bout ${match.boutNumber}: ${match.opponentName}${match.opponentTeam ? ` (${match.opponentTeam})` : ""}`)
+      : ["- No bout assigned yet."];
+    return [`${child.fullName}${child.teamLabel ? ` (${child.teamLabel})` : ""}`, ...matchLines].join("\n");
+  });
+
+  const emailText = [
+    `Hello ${context.recipientName},`,
+    `Meet: ${context.meetName}`,
+    `Meet date: ${formattedMeetDate}`,
+    locationLine,
+    "Today's bouts:",
+    childBlocks.join("\n\n"),
+    `View updates here: ${context.todayUrl}`,
+  ].filter(Boolean).join("\n\n");
+
+  const childCardsHtml = context.children.map((child) => {
+    const rowsHtml = child.matches.length > 0
+      ? child.matches.map((match) => `
+            <tr>
+              <td style="padding:10px 12px;border-top:1px solid #e7edf3;font-weight:700;color:#243041;white-space:nowrap;">Bout ${escapeHtml(match.boutNumber)}</td>
+              <td style="padding:10px 12px;border-top:1px solid #e7edf3;color:#243041;"><span style="color:${escapeHtml(adjustTeamTextColor(match.opponentTeamColor))};font-weight:700;">${escapeHtml(match.opponentName)}</span>${match.opponentTeam ? ` <span style="color:${escapeHtml(adjustTeamTextColor(match.opponentTeamColor))};">(${escapeHtml(match.opponentTeam)})</span>` : ""}</td>
+            </tr>
+          `).join("")
+      : `
+            <tr>
+              <td colspan="2" style="padding:12px;border-top:1px solid #e7edf3;color:#5a6673;">No bout assigned yet.</td>
+            </tr>
+          `;
+    return `
+      <section style="border:1px solid #d9e1e8;border-radius:14px;background:#ffffff;overflow:hidden;margin-top:14px;">
+        <div style="padding:12px 14px;background:#f7f9fc;border-bottom:1px solid #e7edf3;">
+          <div style="font-size:20px;font-weight:800;color:#243041;">${escapeHtml(child.fullName)}${child.teamLabel ? ` <span style="font-size:14px;font-weight:700;color:#5a6673;">(${escapeHtml(child.teamLabel)})</span>` : ""}</div>
+        </div>
+        <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th align="left" style="padding:10px 12px;font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;background:#fcfdff;">Bout</th>
+              <th align="left" style="padding:10px 12px;font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#5a6673;background:#fcfdff;">Opponent</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </section>
+    `;
+  }).join("");
+
+  const emailHtml = `
+    <div style="background:#f4f7fb;padding:24px;font-family:Arial,sans-serif;color:#1f2937;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9e1e8;border-radius:18px;overflow:hidden;">
+        <div style="padding:24px 24px 18px;background:linear-gradient(180deg,#f8fbff 0%,#ffffff 100%);border-bottom:1px solid #e7edf3;">
+          <h1 style="margin:0;font-size:30px;line-height:1.1;color:#243041;">${escapeHtml(context.meetName)}</h1>
+          <div style="margin-top:12px;font-size:16px;color:#465567;">${escapeHtml(formattedMeetDate)}</div>
+          <div style="margin-top:4px;font-size:16px;color:#465567;">${escapeHtml(context.location ?? "Location to be announced")}</div>
+        </div>
+        <div style="padding:24px;">
+          <p style="margin:0 0 12px;font-size:16px;line-height:1.5;">Hello ${escapeHtml(context.recipientName)},</p>
+          <h2 style="margin:0 0 14px;font-size:24px;line-height:1.2;color:#243041;">Today's bouts:</h2>
+          ${childCardsHtml}
+          <div style="margin-top:22px;">
+            <a href="${escapeHtml(context.todayUrl)}" style="display:inline-block;background:#2f7fe7;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:10px;">Open Today Page</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return {
+    emailSubject: `Meet is ready to start: ${context.meetName}`,
+    emailText,
+    emailHtml,
   };
 }
 
@@ -249,6 +412,17 @@ function getNotificationLogDelegate() {
     );
   }
   return delegate as typeof db.notificationLog;
+}
+
+function buildNotificationLogMessage(input: Pick<NotificationLogInput, "channel" | "subject" | "message">) {
+  if (input.channel !== "email") return input.message;
+  const subject = input.subject?.trim();
+  return subject && subject.length > 0 ? subject : input.message;
+}
+
+function buildNotificationLogSubject(input: Pick<NotificationLogInput, "channel" | "subject">) {
+  if (input.channel === "email") return null;
+  return input.subject ?? null;
 }
 
 function buildEmptyMeetReadySummary(transport: NotificationTransport): MeetReadyForAttendanceSummary {
@@ -265,12 +439,26 @@ function buildEmptyMeetReadySummary(transport: NotificationTransport): MeetReady
   };
 }
 
+function buildEmptyDispatchSummary(transport: NotificationTransport): NotificationDispatchSummary {
+  return {
+    transport,
+    recipients: 0,
+    attempted: 0,
+    sent: 0,
+    logged: 0,
+    successful: 0,
+    failed: 0,
+    skipped: 0,
+  };
+}
+
 export function buildPreferredMessages(
   recipient: Pick<MeetReadyRecipient, "userId" | "email">,
   payload: {
     meetId: string;
     emailSubject: string;
     emailText: string;
+    emailHtml?: string;
     extraPayload: Prisma.InputJsonObject;
   },
 ): DeliveryMessage[] {
@@ -280,6 +468,7 @@ export function buildPreferredMessages(
       recipient: recipient.email,
       subject: payload.emailSubject,
       message: payload.emailText,
+      html: payload.emailHtml,
       userId: recipient.userId,
       meetId: payload.meetId,
       payload: payload.extraPayload,
@@ -299,8 +488,8 @@ async function writeNotificationLog(input: NotificationLogInput) {
       status: input.status,
       recipient: input.recipient,
       dedupeKey: input.dedupeKey ?? null,
-      subject: input.subject ?? null,
-      message: input.message,
+      subject: buildNotificationLogSubject(input),
+      message: buildNotificationLogMessage(input),
       provider: input.provider ?? null,
       providerMessageId: input.providerMessageId ?? null,
       errorMessage: input.errorMessage ?? null,
@@ -312,7 +501,7 @@ async function writeNotificationLog(input: NotificationLogInput) {
   });
 }
 
-async function sendEmailLive(subject: string, text: string, to: string): Promise<DeliveryResult> {
+async function sendEmailLive(subject: string, text: string, to: string, html?: string): Promise<DeliveryResult> {
   const apiKey = process.env.SENDGRID_API_KEY;
   const from = process.env.SENDGRID_FROM;
   if (!apiKey || !from) {
@@ -340,6 +529,7 @@ async function sendEmailLive(subject: string, text: string, to: string): Promise
     from,
     subject,
     text,
+    ...(html ? { html } : {}),
   });
   return {
     status: "SENT",
@@ -366,7 +556,7 @@ async function deliverNotification(
   }
 
   try {
-    return await sendEmailLive(message.subject ?? "(no subject)", message.message, message.recipient);
+    return await sendEmailLive(message.subject ?? "(no subject)", message.message, message.recipient, message.html);
   } catch (error) {
     return {
       status: "FAILED",
@@ -380,7 +570,11 @@ async function recordDelivery(
   event: NotificationEvent,
   message: DeliveryMessage,
   result: DeliveryResult,
+  options?: { skipEmailLog?: boolean },
 ) {
+  if (options?.skipEmailLog && message.channel === "email") {
+    return;
+  }
   await writeNotificationLog({
     event,
     channel: message.channel,
@@ -492,12 +686,139 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
   })));
 }
 
+async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Promise<MeetPublishedRecipient[]> {
+  const parents = await db.user.findMany({
+    where: {
+      role: "PARENT",
+      children: {
+        some: {
+          wrestler: {
+            teamId: { in: teamIds },
+          },
+        },
+      },
+    },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      email: true,
+      children: {
+        where: {
+          wrestler: {
+            teamId: { in: teamIds },
+          },
+        },
+        select: {
+          wrestler: {
+            select: {
+              id: true,
+              first: true,
+              last: true,
+              teamId: true,
+              team: {
+                select: {
+                  name: true,
+                  symbol: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ username: "asc" }],
+  });
+
+  const childIds = Array.from(new Set(
+    parents.flatMap((parent) => parent.children.map((entry) => entry.wrestler.id)),
+  ));
+  const childIdSet = new Set(childIds);
+  const bouts = childIds.length > 0
+    ? await db.bout.findMany({
+        where: {
+          meetId,
+          OR: [{ redId: { in: childIds } }, { greenId: { in: childIds } }],
+        },
+        select: {
+          id: true,
+          redId: true,
+          greenId: true,
+          mat: true,
+          order: true,
+        },
+        orderBy: [{ mat: "asc" }, { order: "asc" }, { createdAt: "asc" }],
+      })
+    : [];
+
+  const wrestlerIds = new Set<string>();
+  for (const bout of bouts) {
+    wrestlerIds.add(bout.redId);
+    wrestlerIds.add(bout.greenId);
+  }
+
+  const wrestlers = wrestlerIds.size > 0
+    ? await db.wrestler.findMany({
+        where: { id: { in: Array.from(wrestlerIds) } },
+        select: {
+          id: true,
+          first: true,
+          last: true,
+          team: {
+            select: {
+              name: true,
+              symbol: true,
+              color: true,
+            },
+          },
+        },
+      })
+    : [];
+  const wrestlerMap = new Map(wrestlers.map((wrestler) => [wrestler.id, wrestler]));
+  const matchesByChildId = new Map<string, MeetPublishedMatch[]>();
+
+  for (const bout of bouts) {
+    const pushMatch = (childId: string, opponentId: string) => {
+      const opponent = wrestlerMap.get(opponentId);
+      const match: MeetPublishedMatch = {
+        boutId: bout.id,
+        boutNumber: formatBoutNumber(bout.mat, bout.order),
+        opponentName: opponent ? `${opponent.first} ${opponent.last}`.trim() : opponentId,
+        opponentTeam: opponent ? buildTeamLabel(opponent.team) : "",
+        opponentTeamColor: opponent?.team.color ?? null,
+      };
+      matchesByChildId.set(childId, [...(matchesByChildId.get(childId) ?? []), match]);
+    };
+
+    if (childIdSet.has(bout.redId)) pushMatch(bout.redId, bout.greenId);
+    if (childIdSet.has(bout.greenId)) pushMatch(bout.greenId, bout.redId);
+  }
+
+  return parents.map((parent) => ({
+    userId: parent.id,
+    displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
+    email: normalizeEmail(parent.email),
+    children: parent.children
+      .map((entry) => {
+        const wrestler = entry.wrestler;
+        return {
+          childId: wrestler.id,
+          fullName: `${wrestler.first} ${wrestler.last}`.trim(),
+          teamLabel: buildTeamLabel(wrestler.team),
+          matches: matchesByChildId.get(wrestler.id) ?? [],
+        };
+      })
+      .sort((a, b) => a.fullName.localeCompare(b.fullName)),
+  }));
+}
+
 export async function notifyMeetReadyForAttendance(
   meetId: string,
   options: { origin?: string | null } = {},
 ) : Promise<MeetReadyForAttendanceSummary> {
   const emailDeliverySettings = await getEmailDeliverySettings();
   const transport = resolveNotificationTransport(emailDeliverySettings.mode);
+  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -587,6 +908,7 @@ export async function notifyMeetReadyForAttendance(
       meetId: meet.id,
       emailSubject: content.emailSubject,
       emailText: content.emailText,
+      emailHtml: content.emailHtml,
       extraPayload: { attendanceUrl, myWrestlersUrl, teamLabels, childNames: recipient.childNames },
     });
 
@@ -601,7 +923,7 @@ export async function notifyMeetReadyForAttendance(
     for (const message of messages) {
       attempted += 1;
       const result = await deliverNotification(message, transport, "meet_ready_for_attendance");
-      await recordDelivery("meet_ready_for_attendance", message, result);
+      await recordDelivery("meet_ready_for_attendance", message, result, { skipEmailLog: !shouldLogEmail });
       if (message.channel === "email" && recipientTeam) recipientTeam.emailCount += 1;
       if (result.status === "SENT") {
         sent += 1;
@@ -629,5 +951,115 @@ export async function notifyMeetReadyForAttendance(
     failed,
     skipped,
     teams: Array.from(teamSummaryMap.values()),
+  };
+}
+
+export async function notifyMeetPublished(
+  meetId: string,
+  options: { origin?: string | null } = {},
+): Promise<NotificationDispatchSummary> {
+  const emailDeliverySettings = await getEmailDeliverySettings();
+  const transport = resolveNotificationTransport(emailDeliverySettings.mode);
+  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
+  const meet = await db.meet.findUnique({
+    where: { id: meetId },
+    select: {
+      id: true,
+      name: true,
+      date: true,
+      location: true,
+      status: true,
+      deletedAt: true,
+      sendNotificationsToParents: true,
+      meetTeams: {
+        select: {
+          teamId: true,
+        },
+      },
+    },
+  });
+
+  if (!meet || meet.deletedAt || normalizeMeetPhase(meet.status) !== "PUBLISHED" || !meet.sendNotificationsToParents) {
+    return buildEmptyDispatchSummary(transport);
+  }
+
+  if (transport === "off" || emailDeliverySettings.mode === "off") {
+    return buildEmptyDispatchSummary("off");
+  }
+
+  const claimed = await claimMeetEventDispatch("meet_published", meet.id);
+  if (!claimed) {
+    const summary = buildEmptyDispatchSummary(transport);
+    summary.skipped = 1;
+    return summary;
+  }
+
+  const baseUrl = buildBaseUrl(options.origin);
+  const todayUrl = `${baseUrl}/parent/today`;
+  const teamIds = meet.meetTeams.map((entry) => entry.teamId);
+  const recipients = await getMeetPublishedRecipients(meet.id, teamIds);
+
+  let attempted = 0;
+  let sent = 0;
+  let logged = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const recipient of recipients) {
+    const content = buildMeetPublishedContent({
+      meetName: meet.name,
+      meetDate: meet.date,
+      location: meet.location ?? null,
+      todayUrl,
+      recipientName: recipient.displayName,
+      children: recipient.children,
+    });
+
+    const messages = buildPreferredMessages(recipient, {
+      meetId: meet.id,
+      emailSubject: content.emailSubject,
+      emailText: content.emailText,
+      emailHtml: content.emailHtml,
+      extraPayload: {
+        todayUrl,
+        children: recipient.children.map((child) => ({
+          childId: child.childId,
+          fullName: child.fullName,
+          teamLabel: child.teamLabel,
+          matches: child.matches,
+        })),
+      },
+    });
+
+    if (messages.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    for (const message of messages) {
+      attempted += 1;
+      const result = await deliverNotification(message, transport, "meet_published");
+      await recordDelivery("meet_published", message, result, { skipEmailLog: !shouldLogEmail });
+      if (result.status === "SENT") {
+        sent += 1;
+      } else if (result.status === "LOGGED") {
+        logged += 1;
+      } else if (result.status === "FAILED") {
+        failed += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+  }
+
+  return {
+    transport,
+    recipients: recipients.length,
+    attempted,
+    sent,
+    logged,
+    successful: sent + logged,
+    failed,
+    skipped,
   };
 }

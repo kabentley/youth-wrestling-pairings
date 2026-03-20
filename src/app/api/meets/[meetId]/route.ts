@@ -15,6 +15,7 @@ import {
   shouldCreateAutoCheckpoint,
 } from "@/lib/meetPhase";
 import { buildReadyForCheckinChecklist } from "@/lib/meetReadyForCheckin";
+import { notifyMeetPublished } from "@/lib/notifications";
 import { getAuthorizationErrorCode, requireMeetParticipant, requireRole } from "@/lib/rbac";
 
 const PatchSchema = z.object({
@@ -450,6 +451,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
         location: true,
         homeTeamId: true,
         numMats: true,
+        sendNotificationsToParents: true,
         allowSameTeamMatches: true,
         girlsWrestleGirls: true,
         matchesPerWrestler: true,
@@ -528,6 +530,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ meetId
       user.id,
       `Reopened as Draft and restored checkpoint: ${reopenCheckpoint.name}.`,
     );
+  }
+
+  if (currentStatus === "READY_FOR_CHECKIN" && nextStatus === "PUBLISHED" && updated.sendNotificationsToParents) {
+    try {
+      await notifyMeetPublished(meetId, {
+        origin: req.headers.get("origin"),
+      });
+    } catch (error) {
+      console.error("Failed to send meet_published notifications", error);
+    }
   }
 
   revalidatePath(`/meets/${meetId}`);
