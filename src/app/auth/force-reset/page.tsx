@@ -15,7 +15,7 @@ function ForceResetInner() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const isAuthenticated = status === "authenticated";
   const nextPath = (() => {
@@ -24,11 +24,11 @@ function ForceResetInner() {
   })();
 
   useEffect(() => {
-    const preset = searchParams.get("username") ?? "";
+    const preset = (searchParams.get("username") ?? session?.user?.username ?? "").trim();
     if (preset && !username) {
       setUsername(preset);
     }
-  }, [searchParams, username]);
+  }, [searchParams, session?.user?.username, username]);
 
   useEffect(() => {
     let active = true;

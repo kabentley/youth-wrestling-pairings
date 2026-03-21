@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
 
 const BodySchema = z.object({
-  username: z.string().trim().min(6).optional(),
+  username: z.string().trim().optional(),
   currentPassword: z.string().min(1).optional(),
   password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
 });
@@ -14,7 +14,14 @@ const BodySchema = z.object({
 export async function POST(req: Request) {
   const parsed = BodySchema.safeParse(await req.json());
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid password." }, { status: 400 });
+    const issue = parsed.error.issues[0];
+    const message =
+      issue.path[0] === "password"
+        ? issue.message
+        : issue.path[0] === "username"
+          ? "Invalid username."
+          : "Invalid password.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
   let userId: string | undefined;
   try {
