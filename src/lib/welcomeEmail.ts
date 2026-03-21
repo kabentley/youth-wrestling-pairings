@@ -66,6 +66,8 @@ type WelcomeEmailContentOptions = {
   teamLabel?: string | null;
   linkedWrestlerNames?: string[] | null;
   mustResetPassword?: boolean;
+  leagueLogoUrl?: string | null;
+  teamLogoUrl?: string | null;
   teamColor?: string | null;
 };
 
@@ -102,6 +104,7 @@ async function resolveLeagueWelcomeSettings(explicitLeagueName?: string | null) 
   const league = await db.league.findFirst({
     select: {
       name: true,
+      logoData: true,
     },
   });
   const storedLeagueName = league?.name?.trim() ?? "";
@@ -112,6 +115,7 @@ async function resolveLeagueWelcomeSettings(explicitLeagueName?: string | null) 
       : "the league";
   return {
     leagueName,
+    hasLeagueLogo: Boolean(league?.logoData),
   };
 }
 
@@ -221,6 +225,7 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
   const team = await db.team.findUnique({
     where: { id: normalizedTeamId },
     select: {
+      logoData: true,
       color: true,
       headCoach: {
         select: {
@@ -239,6 +244,7 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
   return {
     coachName,
     coachEmail,
+    hasTeamLogo: Boolean(team?.logoData),
     teamColor: team?.color.trim() ?? "",
   };
 }
@@ -384,6 +390,8 @@ async function buildWelcomeEmailPreviewInternal({
       teamLabel,
       linkedWrestlerNames: resolvedLinkedWrestlerNames,
       mustResetPassword,
+      leagueLogoUrl: resolvedLeagueSettings.hasLeagueLogo ? `${baseUrl}/api/league/logo/file` : null,
+      teamLogoUrl: teamId && coachContext.hasTeamLogo ? `${baseUrl}/api/teams/${teamId}/logo/file` : null,
       teamColor: coachContext.teamColor,
     }),
     sampleData: {
@@ -453,6 +461,8 @@ export function buildWelcomeEmailHtml({
   teamLabel,
   linkedWrestlerNames = null,
   mustResetPassword = true,
+  leagueLogoUrl = null,
+  teamLogoUrl = null,
   teamColor = null,
 }: WelcomeEmailContentOptions) {
   const normalizedTempPassword = tempPassword?.trim() ?? "";
@@ -493,9 +503,43 @@ export function buildWelcomeEmailHtml({
     <div style="background:#f4f7fb;padding:24px;font-family:Arial,sans-serif;color:#1f2937;">
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9e1e8;border-radius:18px;overflow:hidden;">
         <div style="padding:24px 24px 18px;background:linear-gradient(180deg,#f8fbff 0%,#ffffff 100%);border-bottom:1px solid #e7edf3;">
-          <h1 style="margin:0;font-size:30px;line-height:1.1;color:#243041;">Welcome to the ${escapeHtml(context.leagueName)} meet scheduling app</h1>
-          ${context.teamLabel ? `
-            <div style="margin-top:16px;font-size:26px;line-height:1.15;font-weight:800;color:${escapeHtml(adjustedTeamColor)};">${escapeHtml(context.teamLabel)}</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
+            <tr>
+              <td style="vertical-align:middle;padding:0;">
+                <h1 style="margin:0;font-size:30px;line-height:1.1;color:#243041;">Welcome to the ${escapeHtml(context.leagueName)} meet scheduling app</h1>
+              </td>
+              ${leagueLogoUrl ? `
+                <td style="vertical-align:middle;padding:0 0 0 18px;width:72px;" align="right">
+                  <img
+                    src="${escapeHtml(leagueLogoUrl)}"
+                    alt="League logo"
+                    width="72"
+                    style="display:block;width:72px;height:auto;border:0;outline:none;text-decoration:none;"
+                  />
+                </td>
+              ` : ""}
+            </tr>
+          </table>
+          ${context.teamLabel || teamLogoUrl ? `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;border-collapse:collapse;">
+              <tr>
+                ${teamLogoUrl ? `
+                  <td style="vertical-align:middle;padding:0 14px 0 0;width:56px;">
+                    <img
+                      src="${escapeHtml(teamLogoUrl)}"
+                      alt="${escapeHtml(context.teamLabel || "Team")} logo"
+                      width="56"
+                      style="display:block;width:56px;height:auto;border:0;outline:none;text-decoration:none;"
+                    />
+                  </td>
+                ` : ""}
+                ${context.teamLabel ? `
+                  <td style="vertical-align:middle;padding:0;">
+                    <div style="font-size:26px;line-height:1.15;font-weight:800;color:${escapeHtml(adjustedTeamColor)};">${escapeHtml(context.teamLabel)}</div>
+                  </td>
+                ` : ""}
+              </tr>
+            </table>
           ` : ""}
         </div>
         <div style="padding:24px;">

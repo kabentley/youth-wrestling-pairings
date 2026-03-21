@@ -1192,6 +1192,7 @@ export default function LeagueSection({ view = "league" }: { view?: "league" | "
                       src={`/api/teams/${editingTeam.id}/logo/file?v=${teamLogoVersions[editingTeam.id] ?? 0}`}
                       alt={`${editingTeam.name} logo`}
                       className="admin-team-logo"
+                      style={{ width: 72, height: 72 }}
                     />
                   ) : (
                     <span className="admin-muted">Set Logo</span>

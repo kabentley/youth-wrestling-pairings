@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES, normalizeLogoUpload } from "@/lib/logoUpload";
 import { requireSession } from "@/lib/rbac";
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/avif"]);
-const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: Request, { params }: { params: Promise<{ teamId: string }> }) {
   const { teamId } = await params;
@@ -28,17 +27,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ teamId:
     return NextResponse.json({ error: "File required" }, { status: 400 });
   }
 
-  if (!ALLOWED_TYPES.has(file.type)) {
+  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
     return NextResponse.json({ error: "Unsupported file type" }, { status: 400 });
   }
   if (file.size > MAX_LOGO_BYTES) {
     return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 400 });
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
+  let bytes: Buffer;
+  try {
+    bytes = await normalizeLogoUpload(file);
+  } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_IMAGE") {
+      return NextResponse.json({ error: "Unable to process image." }, { status: 400 });
+    }
+    throw error;
+  }
   await db.team.update({
     where: { id: teamId },
-    data: { logoData: bytes, logoType: file.type },
+    data: { logoData: bytes, logoType: "image/jpeg" },
   });
 
   return NextResponse.json({ ok: true });
