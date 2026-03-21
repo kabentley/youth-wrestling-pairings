@@ -113,7 +113,7 @@ describe("buildWelcomeEmailHtml", () => {
       linkedWrestlerNames: ["Ava Doe", "Mia Doe"],
       teamLabel: "West Chester (WC)",
       leagueLogoUrl: "https://example.com/api/league/logo/file",
-      teamLogoUrl: "https://example.com/api/teams/team_1/logo/file",
+      teamLogoUrl: "https://example.com/api/public/teams/team_1/logo",
     });
     expect(html).toContain("Sign In");
     expect(html).not.toContain("My Wrestlers</a>");
@@ -123,7 +123,7 @@ describe("buildWelcomeEmailHtml", () => {
     expect(html).toContain("https://example.com/auth/signin");
     expect(html).toContain("Welcome to the ICWL meet scheduling app");
     expect(html).toContain("https://example.com/api/league/logo/file");
-    expect(html).toContain("https://example.com/api/teams/team_1/logo/file");
+    expect(html).toContain("https://example.com/api/public/teams/team_1/logo");
     expect(html).toContain("<strong>Jane Doe</strong>");
   });
 });

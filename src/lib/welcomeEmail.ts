@@ -391,7 +391,7 @@ async function buildWelcomeEmailPreviewInternal({
       linkedWrestlerNames: resolvedLinkedWrestlerNames,
       mustResetPassword,
       leagueLogoUrl: resolvedLeagueSettings.hasLeagueLogo ? `${baseUrl}/api/league/logo/file` : null,
-      teamLogoUrl: teamId && coachContext.hasTeamLogo ? `${baseUrl}/api/teams/${teamId}/logo/file` : null,
+      teamLogoUrl: teamId && coachContext.hasTeamLogo ? `${baseUrl}/api/public/teams/${teamId}/logo` : null,
       teamColor: coachContext.teamColor,
     }),
     sampleData: {
