@@ -10,6 +10,7 @@ import ParentTodayMeetCards, {
   type ParentTodayMeetGroup,
 } from "@/components/parent/ParentTodayMeetCards";
 import { formatCompactResultSummary } from "@/lib/resultEntry";
+import { extractLastNameCandidates, lastNameSimilarity, normalizeSurnameToken } from "@/lib/surnameMatching";
 
 type Child = {
   id: string;
@@ -95,87 +96,13 @@ type Profile = {
   team: string | null;
 };
 
-const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
 const LAST_NAME_MATCH_THRESHOLD = 0.82;
 
-/** Lowercases and strips punctuation so name matching ignores formatting noise. */
-const normalizeNameToken = (value: string) => value.toLowerCase().replace(/[^a-z]/g, "");
 const formatLastFirstName = (first?: string | null, last?: string | null) => {
   const firstName = (first ?? "").trim();
   const lastName = (last ?? "").trim();
   if (lastName && firstName) return `${lastName}, ${firstName}`;
   return lastName || firstName;
-};
-
-/**
- * Builds one or two last-name keys from the account holder's display name.
- *
- * The joined-token fallback helps with compound last names that may be stored
- * with or without spaces.
- */
-const extractLastNameCandidates = (fullName?: string | null) => {
-  if (!fullName) return [] as string[];
-  const rawTokens = fullName
-    .trim()
-    .split(/\s+/)
-    .map(normalizeNameToken)
-    .filter(Boolean);
-  if (rawTokens.length === 0) return [] as string[];
-  const tokens = [...rawTokens];
-  if (tokens.length > 1 && NAME_SUFFIXES.has(tokens[tokens.length - 1])) {
-    tokens.pop();
-  }
-  if (tokens.length === 0) return [] as string[];
-  const last = tokens[tokens.length - 1];
-  const candidates = [last];
-  if (tokens.length >= 2) {
-    candidates.push(`${tokens[tokens.length - 2]}${last}`);
-  }
-  return Array.from(new Set(candidates));
-};
-
-/** Small local edit-distance helper used for fuzzy parent-to-wrestler matching. */
-const levenshteinDistance = (a: string, b: string) => {
-  if (a === b) return 0;
-  if (a.length === 0) return b.length;
-  if (b.length === 0) return a.length;
-  const prev = new Array(b.length + 1);
-  const curr = new Array(b.length + 1);
-  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
-  for (let i = 1; i <= a.length; i += 1) {
-    curr[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(
-        prev[j] + 1,
-        curr[j - 1] + 1,
-        prev[j - 1] + cost,
-      );
-    }
-    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
-  }
-  return prev[b.length];
-};
-
-/**
- * Tuned similarity score for surname matching.
- *
- * Exact and near-exact matches get a boost so likely family matches are still
- * suggested when the account name has a typo or surname variant.
- */
-const lastNameSimilarity = (a: string, b: string) => {
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  if (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) {
-    return 0.92;
-  }
-  const dist = levenshteinDistance(a, b);
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0) return 0;
-  const ratio = 1 - dist / maxLen;
-  if (dist <= 1 && maxLen >= 5) return Math.max(ratio, 0.88);
-  if (dist === 2 && maxLen >= 7) return Math.max(ratio, 0.8);
-  return ratio;
 };
 
 export default function ParentPage() {
@@ -214,7 +141,7 @@ export default function ParentPage() {
     if (candidates.length === 0) return [] as string[];
     return teamWrestlers
       .filter((wrestler) => {
-        const wrestlerLast = normalizeNameToken(wrestler.last);
+        const wrestlerLast = normalizeSurnameToken(wrestler.last);
         if (!wrestlerLast) return false;
         const score = candidates.reduce((best, candidate) => {
           const next = lastNameSimilarity(candidate, wrestlerLast);
