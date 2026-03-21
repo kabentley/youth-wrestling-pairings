@@ -19,9 +19,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 400 });
   }
 
-  let bytes: Buffer;
+  let bytes: Uint8Array<ArrayBuffer>;
   try {
-    bytes = await normalizeLogoUpload(file);
+    bytes = new Uint8Array(await normalizeLogoUpload(file));
   } catch (error) {
     if (error instanceof Error && error.message === "INVALID_IMAGE") {
       return NextResponse.json({ error: "Unable to process image." }, { status: 400 });
