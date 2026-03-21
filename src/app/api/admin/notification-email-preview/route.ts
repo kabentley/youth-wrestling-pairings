@@ -257,7 +257,7 @@ async function buildMeetReadyPreview(request: Request, meetId: string) {
       teamLabels: ["WC", "BYC", "DOW"],
       attendanceUrl: `${baseUrl}/parent/attendance`,
       recipientName: "Sample Parent",
-      childNames: ["Alden Bentley", "Brendan Bradley"],
+      childNames: ["Kevin Benson", "Brendan Bradley"],
       headCoachName: "Sample Coach",
       headCoachEmail: "coach@example.com",
     });
@@ -273,7 +273,7 @@ async function buildMeetReadyPreview(request: Request, meetId: string) {
         ["Meet", "Sample Meet"],
         ["Teams", "WC, BYC, DOW"],
         ["Recipient", "Sample Parent"],
-        ["Linked wrestlers", "Alden Bentley, Brendan Bradley"],
+        ["Linked wrestlers", "Kevin Benson, Brendan Bradley"],
       ]),
     };
   }

@@ -163,7 +163,7 @@ describe("buildMeetPublishedContent", () => {
       children: [
         {
           childId: "child_1",
-          fullName: "Alden Bentley",
+          fullName: "Kevin Benson",
           teamLabel: "WC",
           matches: [
             {
@@ -192,7 +192,7 @@ describe("buildMeetPublishedContent", () => {
     expect(content.emailText).toContain("http://localhost:3000/parent/today");
     expect(content.emailHtml).toContain("Open Today Page");
     expect(content.emailHtml).toContain("Today's bouts:");
-    expect(content.emailHtml).toContain("Alden Bentley");
+    expect(content.emailHtml).toContain("Kevin Benson");
     expect(content.emailHtml).toContain("Wyatt Nadler");
     expect(content.emailHtml).toContain("No bout assigned yet.");
   });

@@ -29,8 +29,95 @@ type SearchUserRow = {
   lastLoginAt: Date | null;
 };
 
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+const LAST_NAME_MATCH_THRESHOLD = 0.88;
+
 function normalizeFuzzyText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeNameToken(value: string | null | undefined) {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function extractLastNameCandidates(name: string | null | undefined) {
+  const rawTokens = (name ?? "")
+    .split(/\s+/)
+    .map(normalizeNameToken)
+    .filter(Boolean);
+  if (rawTokens.length === 0) return [] as string[];
+  const tokens = [...rawTokens];
+  if (tokens.length > 1 && NAME_SUFFIXES.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  if (tokens.length === 0) return [] as string[];
+  const last = tokens[tokens.length - 1];
+  const candidates = [last];
+  if (tokens.length >= 2) {
+    candidates.push(`${tokens[tokens.length - 2]}${last}`);
+  }
+  return Array.from(new Set(candidates));
+}
+
+function levenshteinDistance(a: string, b: string) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+function lastNameSimilarity(a: string, b: string) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) {
+    return 0.92;
+  }
+  const dist = levenshteinDistance(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 0;
+  const ratio = 1 - dist / maxLen;
+  if (dist <= 1 && maxLen >= 5) return Math.max(ratio, 0.88);
+  if (dist === 2 && maxLen >= 7) return Math.max(ratio, 0.8);
+  return ratio;
+}
+
+async function findAutoLinkedWrestlers(teamId: string, fullName: string) {
+  const candidates = extractLastNameCandidates(fullName);
+  if (candidates.length === 0) return [] as Array<{ id: string; fullName: string }>;
+  const wrestlers = await db.wrestler.findMany({
+    where: { teamId, active: true },
+    select: { id: true, first: true, last: true },
+    orderBy: [{ last: "asc" }, { first: "asc" }],
+  });
+  return wrestlers
+    .filter((wrestler) => {
+      const wrestlerLast = normalizeNameToken(wrestler.last);
+      if (!wrestlerLast) return false;
+      const score = candidates.reduce((best, candidate) => {
+        const next = lastNameSimilarity(candidate, wrestlerLast);
+        return next > best ? next : best;
+      }, 0);
+      return score >= LAST_NAME_MATCH_THRESHOLD;
+    })
+    .map((wrestler) => ({
+      id: wrestler.id,
+      fullName: `${wrestler.first} ${wrestler.last}`.trim(),
+    }));
 }
 
 function fuzzyMatch(haystackRaw: string, queryRaw: string) {
@@ -154,19 +241,34 @@ export async function POST(req: Request) {
   }
   const tempPassword = body.password.trim();
   const passwordHash = await bcrypt.hash(tempPassword, 10);
-  const user = await db.user.create({
-    data: {
-      username: body.username.toLowerCase(),
-      email,
-      phone: phone === "" ? "" : phone,
-      name: body.name,
-      passwordHash,
-      role: body.role,
-      emailVerified: new Date(),
-      ...(body.teamId ? { team: { connect: { id: body.teamId } } } : {}),
-      mustResetPassword: true,
-    },
-    select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
+  const autoLinkedWrestlers =
+    body.role === "PARENT" && body.teamId
+      ? await findAutoLinkedWrestlers(body.teamId, body.name)
+      : [];
+  const user = await db.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        username: body.username.toLowerCase(),
+        email,
+        phone: phone === "" ? "" : phone,
+        name: body.name,
+        passwordHash,
+        role: body.role,
+        emailVerified: new Date(),
+        ...(body.teamId ? { team: { connect: { id: body.teamId } } } : {}),
+        mustResetPassword: true,
+      },
+      select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
+    });
+    if (autoLinkedWrestlers.length > 0) {
+      await tx.userChild.createMany({
+        data: autoLinkedWrestlers.map((wrestler) => ({
+          userId: created.id,
+          wrestlerId: wrestler.id,
+        })),
+      });
+    }
+    return created;
   });
   let welcomeEmailStatus: "not_applicable" | "sent" | "skipped" | "logged" | "failed" = "not_applicable";
   let welcomeEmailNote: string | null = email
@@ -187,6 +289,7 @@ export async function POST(req: Request) {
         teamId: body.teamId ?? null,
         teamName: team?.name ?? null,
         teamLabel: team ? `${team.name} (${team.symbol})`.trim() : null,
+        linkedWrestlerNames: autoLinkedWrestlers.map((wrestler) => wrestler.fullName),
       });
       welcomeEmailStatus = welcomeResult.status;
       welcomeEmailNote = describeWelcomeEmailResult(welcomeResult);

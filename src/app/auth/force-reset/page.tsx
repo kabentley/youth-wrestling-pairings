@@ -62,8 +62,8 @@ function ForceResetInner() {
       setErr("Enter your username.");
       return;
     }
-    if (!isAuthenticated && !currentPassword.trim()) {
-      setErr("Enter your current password.");
+    if (!currentPassword.trim()) {
+      setErr("Enter your temporary password.");
       return;
     }
     if (!password.trim()) {
@@ -155,15 +155,13 @@ function ForceResetInner() {
               onChange={(e) => setUsername(e.target.value)}
               disabled={submitting}
             />
-            {!isAuthenticated && (
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Current password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                disabled={submitting}
-              />
-            )}
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Temporary password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              disabled={submitting}
+            />
             <input
               type={showPassword ? "text" : "password"}
               placeholder="New password"
@@ -201,8 +199,8 @@ function ForceResetInner() {
             </button>
             <div className="auth-muted">
               {isAuthenticated
-                ? "Your temporary-password session is active. Choose a new password to continue."
-                : "Enter your username and current password to continue."}
+                ? "Enter the temporary password from the welcome email, then choose a new password."
+                : "Enter your username, temporary password, and new password to continue."}
             </div>
             {status === "loading" && (
               <div className="auth-muted">Signing you in...</div>
