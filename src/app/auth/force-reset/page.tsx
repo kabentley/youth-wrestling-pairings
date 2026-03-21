@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { Suspense, useEffect, useState } from "react";
 
 function ForceResetInner() {
@@ -24,11 +24,22 @@ function ForceResetInner() {
   })();
 
   useEffect(() => {
-    const preset = (searchParams.get("username") ?? session?.user?.username ?? "").trim();
+    const storedUsername =
+      typeof window !== "undefined" ? window.sessionStorage.getItem("force-reset-username") ?? "" : "";
+    const preset = (searchParams.get("username") ?? session?.user?.username ?? storedUsername).trim();
     if (preset && !username) {
       setUsername(preset);
     }
   }, [searchParams, session?.user?.username, username]);
+
+  useEffect(() => {
+    if (currentPassword) return;
+    if (typeof window === "undefined") return;
+    const storedPassword = window.sessionStorage.getItem("force-reset-current-password") ?? "";
+    if (storedPassword) {
+      setCurrentPassword(storedPassword);
+    }
+  }, [currentPassword]);
 
   useEffect(() => {
     let active = true;
@@ -73,19 +84,27 @@ function ForceResetInner() {
       const res = await fetch("/api/auth/force-reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, currentPassword, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          ...(currentPassword.trim() ? { currentPassword } : {}),
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         const message = json?.error ?? "Unable to reset password. Please sign in again.";
         setErr(message);
         if (res.status === 401) {
-          window.location.href = `/auth/signin?callbackUrl=${encodeURIComponent("/auth/force-reset")}`;
+          setErr("Your reset session expired. Enter your temporary password and try again.");
         }
         return;
       }
 
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("force-reset-current-password");
+      }
       setMsg("Password updated. Signing you in...");
+      await signOut({ redirect: false });
       const loginResult = await signIn("credentials", {
         redirect: false,
         username: username.trim(),
@@ -94,8 +113,14 @@ function ForceResetInner() {
       });
       if (loginResult?.error) {
         setErr("Password updated, but automatic sign-in failed. Please sign in with your new password.");
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem("force-reset-username");
+        }
         window.location.href = `/auth/signin?username=${encodeURIComponent(username.trim())}`;
         return;
+      }
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("force-reset-username");
       }
       window.location.href = loginResult?.url ?? nextPath;
     } finally {

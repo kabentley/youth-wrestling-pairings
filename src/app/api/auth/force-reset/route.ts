@@ -24,18 +24,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
   let userId: string | undefined;
-  try {
-    ({ userId } = await requireSession());
-  } catch {
-    userId = undefined;
-  }
+  const username = parsed.data.username?.trim().toLowerCase() ?? "";
+  const currentPassword = parsed.data.currentPassword ?? "";
 
-  if (!userId) {
-    const username = parsed.data.username?.trim().toLowerCase() ?? "";
-    const currentPassword = parsed.data.currentPassword ?? "";
-    if (!username || !currentPassword) {
-      return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-    }
+  if (username && currentPassword) {
     const user = await db.user.findUnique({
       where: { username },
       select: { id: true, passwordHash: true },
@@ -48,6 +40,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid username or password." }, { status: 400 });
     }
     userId = user.id;
+  }
+
+  if (!userId) {
+    try {
+      ({ userId } = await requireSession());
+    } catch {
+      userId = undefined;
+    }
+  }
+
+  if (!userId) {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);

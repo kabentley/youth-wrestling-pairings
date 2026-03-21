@@ -59,7 +59,17 @@ export default function SignInClient() {
         setErr("Sign-in failed. Check username/password.");
         return;
       }
-      window.location.href = res?.url ?? resolvedCallbackUrl;
+      const targetUrl = res?.url ?? resolvedCallbackUrl;
+      if (typeof window !== "undefined") {
+        if (targetUrl.includes("/auth/force-reset")) {
+          window.sessionStorage.setItem("force-reset-username", username.trim());
+          window.sessionStorage.setItem("force-reset-current-password", password);
+        } else {
+          window.sessionStorage.removeItem("force-reset-username");
+          window.sessionStorage.removeItem("force-reset-current-password");
+        }
+      }
+      window.location.href = targetUrl;
     } finally {
       setSubmitting(false);
     }
