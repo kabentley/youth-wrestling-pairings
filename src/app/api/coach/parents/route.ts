@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { buildFullName, getUserFullName, LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const CreateTeamUserSchema = z.object({
@@ -17,6 +18,14 @@ const CreateTeamUserSchema = z.object({
   role: z.enum(["COACH", "TABLE_WORKER", "PARENT"]).default("TABLE_WORKER"),
   password: z.string().trim().min(1),
   wrestlerIds: z.array(z.string().min(1)).max(400).optional().default([]),
+}).superRefine((value, ctx) => {
+  if (lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 export async function GET(request: Request) {
@@ -43,7 +52,8 @@ export async function GET(request: Request) {
   const memberSelect = {
     id: true,
     username: true,
-    name: true,
+    firstName: true,
+    lastName: true,
     email: true,
     phone: true,
     staffMatNumber: true,
@@ -64,7 +74,8 @@ export async function GET(request: Request) {
   const mapMember = (member: {
     id: string;
     username: string;
-    name: string | null;
+    firstName: string | null;
+    lastName: string | null;
     email: string;
     phone: string;
     staffMatNumber: number | null;
@@ -78,7 +89,9 @@ export async function GET(request: Request) {
     return {
       id: member.id,
       username: member.username,
-      name: member.name,
+      firstName: member.firstName,
+      lastName: member.lastName,
+      name: getUserFullName(member),
       email: member.email,
       phone: member.phone,
       matNumber: member.staffMatNumber ?? null,
@@ -179,7 +192,6 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(payload.password.trim(), 10);
-  const fullName = `${payload.firstName.trim()} ${payload.lastName.trim()}`;
   try {
     const created = await db.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
@@ -187,7 +199,8 @@ export async function POST(request: Request) {
           username,
           email: payload.email ? payload.email.trim().toLowerCase() : "",
           phone: payload.phone ? payload.phone.trim() : "",
-          name: fullName,
+          firstName: payload.firstName.trim(),
+          lastName: payload.lastName.trim(),
           role: payload.role,
           teamId,
           passwordHash,
@@ -196,9 +209,10 @@ export async function POST(request: Request) {
         select: {
           id: true,
           username: true,
+          firstName: true,
+          lastName: true,
           email: true,
           phone: true,
-          name: true,
           role: true,
           teamId: true,
           staffMatNumber: true,
@@ -226,7 +240,7 @@ export async function POST(request: Request) {
           request,
           email: created.email,
           username: created.username,
-          fullName,
+          fullName: buildFullName(created.firstName, created.lastName),
           userId: created.id,
           tempPassword: payload.password.trim(),
           teamId,
@@ -244,9 +258,11 @@ export async function POST(request: Request) {
       created: {
         id: created.id,
         username: created.username,
+        firstName: created.firstName,
+        lastName: created.lastName,
         email: created.email,
         phone: created.phone,
-        name: created.name,
+        name: getUserFullName(created),
         role: created.role,
         matNumber: created.staffMatNumber ?? null,
         wrestlerIds,

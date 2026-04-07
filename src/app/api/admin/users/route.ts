@@ -5,6 +5,13 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
 import { extractLastNameCandidates, lastNameSimilarity, normalizeSurnameToken } from "@/lib/surnameMatching";
+import {
+  buildFullName,
+  getUserFullName,
+  LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+  lastNameHasDisallowedSuffix,
+  resolveStoredUserName,
+} from "@/lib/userName";
 import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const UserRoleSchema = z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]);
@@ -13,10 +20,33 @@ const CreateSchema = z.object({
   username: z.string().trim().min(6),
   email: z.string().trim().email().optional().or(z.literal("")),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
-  name: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(60).optional(),
+  lastName: z.string().trim().min(1).max(60).optional(),
   role: UserRoleSchema.default("COACH"),
   teamId: z.string().nullable().optional(),
   password: z.string().min(1),
+}).superRefine((value, ctx) => {
+  if (!value.firstName) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["firstName"],
+      message: "First name is required.",
+    });
+  }
+  if (!value.lastName) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: "Last name is required.",
+    });
+  }
+  if (value.lastName && lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 type SearchUserRow = {
@@ -24,7 +54,8 @@ type SearchUserRow = {
   username: string;
   email: string;
   phone: string | null;
-  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   role: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
   teamId: string | null;
   lastLoginAt: Date | null;
@@ -90,7 +121,8 @@ function fuzzyUserScore(user: SearchUserRow, queryRaw: string) {
   const tokens = query.split(/\s+/).map(normalizeFuzzyText).filter(Boolean);
   if (tokens.length === 0) return 1;
 
-  const fields = [user.username, user.email, user.name ?? "", user.phone ?? ""];
+  const fullName = getUserFullName(user) ?? "";
+  const fields = [user.username, user.email, fullName, user.firstName ?? "", user.lastName ?? "", user.phone ?? ""];
   let score = 0;
   for (const token of tokens) {
     let bestForToken = 0;
@@ -104,7 +136,7 @@ function fuzzyUserScore(user: SearchUserRow, queryRaw: string) {
     score += bestForToken;
   }
 
-  const combined = `${user.username} ${user.email} ${user.name ?? ""} ${user.phone ?? ""}`.trim();
+  const combined = `${user.username} ${user.email} ${fullName} ${user.firstName ?? ""} ${user.lastName ?? ""} ${user.phone ?? ""}`.trim();
   if (fuzzyMatch(combined, query)) {
     score += 20;
   }
@@ -140,7 +172,17 @@ export async function GET(req: Request) {
   const [allUsers, adminCount] = await Promise.all([
     db.user.findMany({
       where,
-      select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true, lastLoginAt: true },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        phone: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        teamId: true,
+        lastLoginAt: true,
+      },
       orderBy: { username: "asc" },
     }) as Promise<SearchUserRow[]>,
     db.user.count({ where: { role: "ADMIN" } }),
@@ -159,7 +201,12 @@ export async function GET(req: Request) {
 
   const total = filtered.length;
   const pageStart = (page - 1) * pageSize;
-  const items = filtered.slice(pageStart, pageStart + pageSize);
+  const items = filtered
+    .slice(pageStart, pageStart + pageSize)
+    .map((user) => ({
+      ...user,
+      name: getUserFullName(user),
+    }));
 
   return NextResponse.json({ items, total, page, pageSize, adminCount });
 }
@@ -171,6 +218,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
   const body = parsed.data;
+  const resolvedName = resolveStoredUserName({
+    firstName: body.firstName,
+    lastName: body.lastName,
+  });
   const email = body.email ? body.email.trim().toLowerCase() : "";
   const phone = body.phone ? body.phone.trim() : "";
   if (body.role === "COACH" && !body.teamId) {
@@ -183,7 +234,7 @@ export async function POST(req: Request) {
   const passwordHash = await bcrypt.hash(tempPassword, 10);
   const autoLinkedWrestlers =
     body.role === "PARENT" && body.teamId
-      ? await findAutoLinkedWrestlers(body.teamId, body.name)
+      ? await findAutoLinkedWrestlers(body.teamId, buildFullName(resolvedName.firstName, resolvedName.lastName) ?? "")
       : [];
   const user = await db.$transaction(async (tx) => {
     const created = await tx.user.create({
@@ -191,14 +242,15 @@ export async function POST(req: Request) {
         username: body.username.toLowerCase(),
         email,
         phone: phone === "" ? "" : phone,
-        name: body.name,
+        firstName: resolvedName.firstName,
+        lastName: resolvedName.lastName,
         passwordHash,
         role: body.role,
         emailVerified: new Date(),
         ...(body.teamId ? { team: { connect: { id: body.teamId } } } : {}),
         mustResetPassword: true,
       },
-      select: { id: true, username: true, email: true, name: true, role: true, teamId: true, lastLoginAt: true },
+      select: { id: true, username: true, firstName: true, lastName: true, email: true, role: true, teamId: true, lastLoginAt: true },
     });
     if (autoLinkedWrestlers.length > 0) {
       await tx.userChild.createMany({
@@ -223,7 +275,7 @@ export async function POST(req: Request) {
         request: req,
         email,
         username: user.username,
-        fullName: user.name,
+        fullName: resolvedName.fullName,
         userId: user.id,
         tempPassword,
         teamId: body.teamId ?? null,
@@ -241,6 +293,7 @@ export async function POST(req: Request) {
   }
   return NextResponse.json({
     ...user,
+    name: getUserFullName(user),
     welcomeEmailStatus,
     welcomeEmailNote,
   });

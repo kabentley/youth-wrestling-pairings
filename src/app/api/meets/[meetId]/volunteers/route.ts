@@ -6,6 +6,7 @@ import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
+import { getUserDisplayName } from "@/lib/userName";
 
 const HomeVolunteerRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
 const HomeVolunteerRolesForQuery = [...HomeVolunteerRoles];
@@ -90,7 +91,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
     select: {
       id: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       role: true,
       teamId: true,
       staffMatNumber: true,
@@ -167,8 +169,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       const matNumber = typeof rawMat === "number" && rawMat >= 1 && rawMat <= maxMat
         ? rawMat
         : null;
-      const trimmedName = (entry.name ?? "").trim();
-      const displayName = trimmedName.length > 0 ? trimmedName : entry.username;
+      const displayName = getUserDisplayName(entry);
       return {
         id: entry.id,
         displayName,

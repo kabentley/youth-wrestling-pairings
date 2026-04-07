@@ -40,7 +40,7 @@ type EmailPreviewEvent =
   | "welcome_email"
   | "meet_ready_for_attendance"
   | "meet_published"
-  | "password_reset_code";
+  | "password_reset";
 
 type EmailPreviewOption = {
   id: string;
@@ -68,7 +68,8 @@ const EVENT_OPTIONS = [
   { value: "meet_published", label: "Meet Published" },
   { value: "meet_attendees_message", label: "Meet Attendees Message" },
   { value: "welcome_email", label: "Welcome Email" },
-  { value: "password_reset_code", label: "Password Reset Code" },
+  { value: "password_reset", label: "Password Reset Email" },
+  { value: "password_reset_code", label: "Password Reset Code (Legacy)" },
 ] as const;
 
 const STATUS_OPTIONS = [
@@ -78,6 +79,13 @@ const STATUS_OPTIONS = [
   { value: "FAILED", label: "Failed" },
   { value: "SKIPPED", label: "Skipped" },
 ] as const;
+
+function formatDisplayName(person?: { username?: string | null; name?: string | null } | null) {
+  if (!person) return "";
+  const name = person.name?.trim();
+  if (name && name.length > 0) return name;
+  return person.username ?? "";
+}
 
 function normalizeEmailWhitelistInput(raw: string) {
   return Array.from(new Set(
@@ -123,6 +131,8 @@ function formatEventLabel(event: NotificationRow["event"]) {
       return "Meet Published";
     case "meet_attendees_message":
       return "Meet Attendees Message";
+    case "password_reset":
+      return "Password Reset Email";
     case "password_reset_code":
       return "Password Reset Code";
     default:
@@ -702,12 +712,12 @@ export default function NotificationsSection() {
                 setPreviewError("");
               }}
               disabled={isPreviewLoading}
-            >
-              <option value="welcome_email">Welcome Email</option>
-              <option value="meet_ready_for_attendance">Ready for Attendance</option>
-              <option value="meet_published">Meet Published</option>
-              <option value="password_reset_code">Password Reset Code</option>
-            </select>
+              >
+                <option value="welcome_email">Welcome Email</option>
+                <option value="meet_ready_for_attendance">Ready for Attendance</option>
+                <option value="meet_published">Meet Published</option>
+                <option value="password_reset">Password Reset Email</option>
+              </select>
             <div className="admin-muted" style={{ marginTop: 6 }}>
               Builds a sample email from the live template without sending anything.
             </div>
@@ -938,7 +948,7 @@ export default function NotificationsSection() {
                 <td data-label="User">
                   {row.user ? (
                     <>
-                      <div>{row.user.name?.trim() ? row.user.name.trim() : row.user.username}</div>
+                      <div>{formatDisplayName(row.user)}</div>
                       <div className="admin-muted">@{row.user.username}</div>
                     </>
                   ) : (
@@ -1055,9 +1065,9 @@ export default function NotificationsSection() {
             <h3 id="notifications-everyone-confirm-title" style={{ marginTop: 0, fontSize: "1.5rem", lineHeight: 1.25 }}>
               Enable Real Email Delivery?
             </h3>
-            <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
-              Setting App Email Delivery to <strong>Everyone</strong> will begin sending real emails to users for welcome emails, password reset codes, and meet notifications.
-            </p>
+              <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
+                Setting App Email Delivery to <strong>Everyone</strong> will begin sending real emails to users for welcome emails, password reset emails, and meet notifications.
+              </p>
             <p className="admin-muted" style={{ marginTop: 0, fontSize: "1.05rem", lineHeight: 1.6 }}>
               Continue only if you intend to email all eligible recipients.
             </p>

@@ -10,6 +10,7 @@ import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { DEFAULT_MAT_RULES, type MatRule } from "@/lib/matRules";
 import { extractLastNameCandidates, lastNameSimilarity, normalizeSurnameToken } from "@/lib/surnameMatching";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 const CONFIGURED_MATS = 8;
 const MIN_MATS = 1;
@@ -62,6 +63,8 @@ type TeamMember = {
   username: string;
   email: string;
   phone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   name?: string | null;
   role: "PARENT" | "COACH" | "TABLE_WORKER";
   matNumber: number | null;
@@ -136,18 +139,57 @@ const formatLastFirstName = (first?: string | null, last?: string | null) => {
   return lastName || firstName;
 };
 
+const CANONICAL_SUFFIXES = new Map<string, string>([
+  ["JR", "Jr."],
+  ["SR", "Sr."],
+  ["II", "II"],
+  ["III", "III"],
+  ["IV", "IV"],
+  ["V", "V"],
+  ["VI", "VI"],
+]);
+
+const parseKnownSuffix = (value?: string | null) => {
+  const normalized = (value ?? "").trim();
+  if (!normalized) return null;
+  const compact = normalized.replace(/\./g, "").toUpperCase();
+  return CANONICAL_SUFFIXES.get(compact) ?? null;
+};
+
 const splitFullName = (fullName: string) => {
   const tokens = fullName.trim().split(/\s+/).filter(Boolean);
+  let suffix: string | null = null;
+  const parsedSuffix = parseKnownSuffix(tokens[tokens.length - 1]);
+  if (parsedSuffix) {
+    suffix = parsedSuffix;
+    tokens.pop();
+  }
   if (tokens.length <= 1) {
     return {
-      firstName: tokens[0] ?? "",
+      firstName: [tokens[0] ?? "", suffix ?? ""].filter(Boolean).join(" "),
       lastName: "",
     };
   }
   return {
-    firstName: tokens.slice(0, -1).join(" "),
-    lastName: tokens[tokens.length - 1] ?? "",
+    firstName: [tokens.slice(0, -1).join(" "), suffix ?? ""].filter(Boolean).join(" "),
+    lastName: (tokens[tokens.length - 1] ?? "").replace(/[.,;:]+$/g, ""),
   };
+};
+
+const formatMemberListName = (name?: string | null) => {
+  const fullName = (name ?? "").trim();
+  if (!fullName) return "";
+  const { firstName, lastName } = splitFullName(fullName);
+  return formatLastFirstName(firstName, lastName);
+};
+
+const getMemberFullName = (member: Pick<TeamMember, "firstName" | "lastName" | "name">) => {
+  const firstName = (member.firstName ?? "").trim();
+  const lastName = (member.lastName ?? "").trim();
+  if (firstName || lastName) {
+    return [firstName, lastName].filter(Boolean).join(" ");
+  }
+  return (member.name ?? "").trim();
 };
 
 const downloadParentImportResults = (
@@ -228,7 +270,7 @@ const memberMatchesFuzzyQuery = (member: TeamMember, rawQuery: string) => {
     .split(/\s+/)
     .map(normalizeUsernameToken)
     .filter(Boolean);
-  const collapsed = normalizeUsernameToken(`${member.name ?? ""} ${member.username}`);
+  const collapsed = normalizeUsernameToken(`${getMemberFullName(member)} ${member.username}`);
   if (collapsed.includes(query)) return true;
 
   const candidateTokens = new Set<string>();
@@ -238,7 +280,7 @@ const memberMatchesFuzzyQuery = (member: TeamMember, rawQuery: string) => {
     const normalized = normalizeUsernameToken(token);
     if (normalized) candidateTokens.add(normalized);
   }
-  for (const token of (member.name ?? "").toLowerCase().split(/\s+/)) {
+  for (const token of getMemberFullName(member).toLowerCase().split(/\s+/)) {
     const normalized = normalizeUsernameToken(token);
     if (normalized) candidateTokens.add(normalized);
   }
@@ -357,7 +399,11 @@ export default function CoachMyTeamPage() {
       const orderA = rank(a);
       const orderB = rank(b);
       if (orderA !== orderB) return orderA - orderB;
-      return a.username.localeCompare(b.username);
+      const nameA = formatMemberListName(a.name) || a.username;
+      const nameB = formatMemberListName(b.name) || b.username;
+      const nameComparison = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+      if (nameComparison !== 0) return nameComparison;
+      return a.username.localeCompare(b.username, undefined, { sensitivity: "base" });
     });
 
   useEffect(() => {
@@ -544,8 +590,10 @@ export default function CoachMyTeamPage() {
       ): TeamMember => ({
         id: item.id,
         username: item.username,
+        firstName: item.firstName ?? null,
+        lastName: item.lastName ?? null,
         email: item.email ?? "",
-        name: item.name ?? null,
+        name: item.name ?? (getMemberFullName(item as TeamMember) || null),
         phone: item.phone ?? null,
         role: nextRole,
         matNumber: typeof item.matNumber === "number" ? item.matNumber : null,
@@ -853,7 +901,7 @@ export default function CoachMyTeamPage() {
   };
 
   const getLikelyWrestlerIds = (member: TeamMember) => {
-    const candidates = extractLastNameCandidates(member.name);
+    const candidates = extractLastNameCandidates(getMemberFullName(member));
     if (candidates.length === 0) return [] as string[];
     return teamWrestlers
       .filter((wrestler) => {
@@ -959,7 +1007,9 @@ export default function CoachMyTeamPage() {
   };
 
   const openEditUserModal = (member: TeamMember) => {
-    const split = splitFullName(member.name ?? "");
+    const split = member.firstName || member.lastName
+      ? { firstName: member.firstName ?? "", lastName: member.lastName ?? "" }
+      : splitFullName(member.name ?? "");
     setEditUserFirstName(split.firstName);
     setEditUserLastName(split.lastName);
     setEditUserUsername(member.username);
@@ -1268,13 +1318,15 @@ export default function CoachMyTeamPage() {
     const updated = payload?.updated;
     if (!updated) return;
     const existing = [...parents, ...staff].find((item) => item.id === member.id);
-    const normalized: TeamMember = {
-      id: updated.id,
-      username: updated.username,
-      email: updated.email ?? "",
-      name: updated.name ?? null,
-      phone: updated.phone ?? null,
-      role: updated.role,
+      const normalized: TeamMember = {
+        id: updated.id,
+        username: updated.username,
+        firstName: updated.firstName ?? null,
+        lastName: updated.lastName ?? null,
+        email: updated.email ?? "",
+        name: updated.name ?? (getMemberFullName(updated) || null),
+        phone: updated.phone ?? null,
+        role: updated.role,
       matNumber: existing?.matNumber ?? null,
       wrestlerIds: existing?.wrestlerIds ?? [],
     };
@@ -1306,6 +1358,12 @@ export default function CoachMyTeamPage() {
       return;
     }
     if (!teamId) return;
+    const lastName = newUserLastName.trim();
+    if (lastNameHasDisallowedSuffix(lastName)) {
+      setRolesMessage(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
+      setRolesMessageStatus("error");
+      return;
+    }
     setCreatingUser(true);
     setRolesMessage(null);
     setRolesMessageStatus(null);
@@ -1314,6 +1372,8 @@ export default function CoachMyTeamPage() {
       const provisionalMember: TeamMember = {
         id: "",
         username: newUserUsername.trim().toLowerCase(),
+        firstName: newUserFirstName.trim(),
+        lastName: newUserLastName.trim(),
         email: newUserEmail.trim(),
         phone: newUserPhone.trim() || null,
         name: `${newUserFirstName.trim()} ${newUserLastName.trim()}`.trim(),
@@ -1513,6 +1573,11 @@ export default function CoachMyTeamPage() {
       setRolesMessageStatus("error");
       return;
     }
+    if (lastNameHasDisallowedSuffix(lastName)) {
+      setRolesMessage(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
+      setRolesMessageStatus("error");
+      return;
+    }
 
     setSavingEditedUser(true);
     setRolesMessage(null);
@@ -1523,7 +1588,8 @@ export default function CoachMyTeamPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: `${firstName} ${lastName}`,
+          firstName,
+          lastName,
           username,
           email: editUserEmail,
           phone: editUserPhone,
@@ -1544,6 +1610,8 @@ export default function CoachMyTeamPage() {
       const nextMember: TeamMember = {
         id: updated.id,
         username: typeof updated.username === "string" ? updated.username : username.toLowerCase(),
+        firstName: typeof updated.firstName === "string" ? updated.firstName : firstName,
+        lastName: typeof updated.lastName === "string" ? updated.lastName : lastName,
         email: typeof updated.email === "string" ? updated.email : editUserEmail.trim().toLowerCase(),
         phone: typeof updated.phone === "string" ? updated.phone : editUserPhone.trim(),
         name: typeof updated.name === "string" ? updated.name : `${firstName} ${lastName}`,
@@ -1595,7 +1663,9 @@ export default function CoachMyTeamPage() {
         setRolesMessageStatus("error");
         return;
       }
-      setRolesMessage("Temporary password set. The user will need to reset it at sign-in.");
+      setRolesMessage(typeof data?.message === "string"
+        ? data.message
+        : "Temporary password set. The user will need to reset it at sign-in.");
       setRolesMessageStatus("success");
     } catch (error) {
       console.error("Reset password failed", error);
@@ -1660,6 +1730,7 @@ export default function CoachMyTeamPage() {
       && !creatingUser
       && newUserFirstName.trim()
       && newUserLastName.trim()
+      && !lastNameHasDisallowedSuffix(newUserLastName.trim())
       && newUserUsername.trim()
       && newUserPassword.trim(),
   );
@@ -1709,7 +1780,7 @@ export default function CoachMyTeamPage() {
   const importUsersMessageIsError = importUsersMessageStatus === "error";
   const formatAssignedWrestlers = (member: TeamMember, wrestlerIds: string[]) => {
     if (wrestlerIds.length === 0) return "None";
-    const memberLastNameCandidates = extractLastNameCandidates(member.name);
+    const memberLastNameCandidates = extractLastNameCandidates(getMemberFullName(member));
     const names = wrestlerIds
       .map((id) => wrestlerById.get(id))
       .filter((wrestler): wrestler is TeamWrestler => Boolean(wrestler))
@@ -1749,10 +1820,11 @@ export default function CoachMyTeamPage() {
     }
     return filteredRolesMembers.map((member) => {
       const suggestedWrestlerIds = member.wrestlerIds.length === 0 ? getLikelyWrestlerIds(member) : [];
+      const memberListName = formatMemberListName(getMemberFullName(member));
       return (
         <tr key={member.id}>
           <td>
-            {member.name ? `${member.name} (@${member.username})` : `@${member.username}`}
+            {memberListName ? `${memberListName} (@${member.username})` : `@${member.username}`}
           </td>
           <td>
             <select
@@ -1798,7 +1870,7 @@ export default function CoachMyTeamPage() {
                 <div
                   className={`coach-mat-listbox${matListboxDirection === "up" ? " open-up" : ""}`}
                   role="listbox"
-                  aria-label={`Select mat for ${member.name ?? member.username}`}
+                  aria-label={`Select mat for ${getMemberFullName(member) || member.username}`}
                   style={{
                     top: matListboxPosition.top,
                     left: matListboxPosition.left,

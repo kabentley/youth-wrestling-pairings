@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { formatTeamName } from "@/lib/formatTeamName";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 export default function SignUpPage() {
   const [leagueName, setLeagueName] = useState("Wrestling Scheduler");
@@ -190,6 +191,11 @@ export default function SignUpPage() {
     }
     if (!lastName.trim()) {
       setMsg("Last Name is required.");
+      setMsgTone("error");
+      return;
+    }
+    if (lastNameHasDisallowedSuffix(lastName)) {
+      setMsg(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
       setMsgTone("error");
       return;
     }
@@ -668,6 +674,9 @@ export default function SignUpPage() {
                     onChange={(e) => setLastName(e.target.value)}
                     required
                   />
+                  {lastNameHasDisallowedSuffix(lastName) && (
+                    <div className="msg-error">{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label htmlFor="team">Team</label>

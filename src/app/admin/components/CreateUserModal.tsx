@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { formatTeamName } from "@/lib/formatTeamName";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 type TeamRow = { id: string; name: string; symbol: string };
 type UserRole = "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
@@ -193,7 +194,6 @@ export default function CreateUserModal({
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedPhone = phone.trim();
     const normalizedPassword = password.trim();
-    const normalizedName = `${trimmedFirstName} ${trimmedLastName}`.trim();
     const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
     const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
     const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
@@ -203,13 +203,16 @@ export default function CreateUserModal({
       normalizedUsername.length <= MAX_USERNAME_LEN &&
       trimmedFirstName.length > 0 &&
       trimmedLastName.length > 0 &&
-      normalizedName.length <= 120 &&
       normalizedPassword.length > 0 &&
       hasValidEmail &&
       hasValidPhone &&
       hasValidTeam;
     if (!isValid) {
       setErrorMsg("Fill all required fields with valid values.");
+      return;
+    }
+    if (lastNameHasDisallowedSuffix(trimmedLastName)) {
+      setErrorMsg(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
       return;
     }
     setCreatingUser(true);
@@ -221,7 +224,8 @@ export default function CreateUserModal({
           username: normalizedUsername,
           email: normalizedEmail,
           phone: normalizedPhone,
-          name: normalizedName,
+          firstName: trimmedFirstName,
+          lastName: trimmedLastName,
           role,
           teamId: teamId || null,
           password: normalizedPassword || null,
@@ -249,22 +253,21 @@ export default function CreateUserModal({
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedPhone = phone.trim();
   const normalizedPassword = password.trim();
-  const normalizedName = `${trimmedFirstName} ${trimmedLastName}`.trim();
   const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
   const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
   const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
   const hasValidTeam = !requiresTeam || teamId.trim().length > 0;
-  const hasValidName = normalizedName.length > 0 && normalizedName.length <= 120;
+  const hasValidLastNameSuffix = !lastNameHasDisallowedSuffix(trimmedLastName);
   const canCreateUser = Boolean(
     normalizedUsername.length >= MIN_USERNAME_LEN &&
     normalizedUsername.length <= MAX_USERNAME_LEN &&
     trimmedFirstName.length > 0 &&
     trimmedLastName.length > 0 &&
     normalizedPassword.length > 0 &&
-    hasValidName &&
     hasValidEmail &&
     hasValidPhone &&
-    hasValidTeam
+    hasValidTeam &&
+    hasValidLastNameSuffix
   );
 
   return (
@@ -327,6 +330,7 @@ export default function CreateUserModal({
             </select>
           </div>
         </div>
+        {lastNameHasDisallowedSuffix(trimmedLastName) && <div className="admin-error" style={{ margin: "0 16px 8px" }}>{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</div>}
         {errorMsg && <div className="admin-error" style={{ margin: "0 16px 8px" }}>{errorMsg}</div>}
         <div className="admin-modal-actions">
           <button className="admin-btn admin-btn-ghost" type="button" onClick={onClose} disabled={creatingUser}>

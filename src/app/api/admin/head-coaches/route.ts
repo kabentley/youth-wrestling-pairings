@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
+import { getUserDisplayName, getUserFullName } from "@/lib/userName";
 
 const UpdateHeadCoachSchema = z.object({
   teamId: z.string().trim().min(1),
@@ -26,18 +27,20 @@ export async function GET() {
           select: {
             id: true,
             username: true,
-            name: true,
+            firstName: true,
+            lastName: true,
           },
         },
       },
     }),
     db.user.findMany({
       where: { role: "COACH" },
-      orderBy: [{ name: "asc" }, { username: "asc" }],
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { username: "asc" }],
       select: {
         id: true,
         username: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         teamId: true,
         team: {
           select: {
@@ -66,14 +69,14 @@ export async function GET() {
         ? {
             id: team.headCoach.id,
             username: team.headCoach.username,
-            name: team.headCoach.name,
+            name: getUserFullName(team.headCoach),
           }
         : null,
     })),
     coaches: coaches.map((coach) => ({
       id: coach.id,
       username: coach.username,
-      name: coach.name,
+      name: getUserDisplayName(coach),
       teamId: coach.teamId ?? null,
       teamSymbol: coach.team?.symbol ?? null,
       headCoachTeamId: coach.headCoachTeam?.id ?? null,
@@ -109,7 +112,7 @@ export async function PUT(req: Request) {
           select: {
             id: true,
             headCoachId: true,
-            headCoach: { select: { id: true, username: true, name: true } },
+            headCoach: { select: { id: true, username: true, firstName: true, lastName: true } },
           },
         });
         return updated;
@@ -148,7 +151,7 @@ export async function PUT(req: Request) {
         select: {
           id: true,
           headCoachId: true,
-          headCoach: { select: { id: true, username: true, name: true } },
+          headCoach: { select: { id: true, username: true, firstName: true, lastName: true } },
         },
       });
       return updated;

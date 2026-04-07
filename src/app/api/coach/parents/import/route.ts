@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { getUserFullName, LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const PHONE_PATTERN = /^\+?[1-9]\d{7,14}$/;
@@ -20,6 +21,14 @@ const ImportParentRowSchema = z.object({
   email: z.string().trim().optional().default(""),
   phone: z.string().trim().optional().default(""),
   kids: z.array(z.string().trim().min(1)).max(20).optional().default([]),
+}).superRefine((value, ctx) => {
+  if (value.lastName && lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 const ImportParentsSchema = z.object({
@@ -244,7 +253,8 @@ export async function POST(request: Request) {
       select: {
         id: true,
         username: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
       },
@@ -256,8 +266,9 @@ export async function POST(request: Request) {
   const reservedUsernames = new Set(existingUsers.map((entry) => entry.username));
   const existingByName = new Map(
     existingTeamUsers
-      .filter((user) => user.name && user.name.trim().length > 0)
-      .map((user) => [normalizeNameToken(user.name ?? ""), user] as const),
+      .map((user) => ({ user, fullName: getUserFullName(user) }))
+      .filter((entry) => entry.fullName && entry.fullName.trim().length > 0)
+      .map((entry) => [normalizeNameToken(entry.fullName ?? ""), entry.user] as const),
   );
   const teamWrestlers = await db.wrestler.findMany({
     where: { teamId, active: true },
@@ -285,7 +296,7 @@ export async function POST(request: Request) {
       skippedRows.push({
         rowNumber: row.rowNumber,
         username: existingUser.username,
-        name: existingUser.name,
+        name: getUserFullName(existingUser),
         email: existingUser.email,
         phone: existingUser.phone,
         reason: "Existing account",
@@ -390,7 +401,7 @@ export async function POST(request: Request) {
       id: string;
       username: string;
       email: string;
-      name: string | null;
+      fullName: string | null;
       temporaryPassword: string;
     }> = [];
     for (const row of plannedRows) {
@@ -405,7 +416,8 @@ export async function POST(request: Request) {
               username: row.username,
               email: row.email,
               phone: row.phone,
-              name: `${row.firstName} ${row.lastName}`,
+              firstName: row.firstName,
+              lastName: row.lastName,
               role: "PARENT",
               teamId,
               passwordHash,
@@ -415,7 +427,8 @@ export async function POST(request: Request) {
               id: true,
               username: true,
               email: true,
-              name: true,
+              firstName: true,
+              lastName: true,
             },
           });
           if (row.wrestlerIds.length > 0) {
@@ -434,7 +447,10 @@ export async function POST(request: Request) {
         });
         created.push({
           rowNumber: row.rowNumber,
-          ...createdUser,
+          id: createdUser.id,
+          username: createdUser.username,
+          email: createdUser.email,
+          fullName: getUserFullName(createdUser),
           temporaryPassword: row.temporaryPassword,
         });
       } catch (error: unknown) {
@@ -459,7 +475,7 @@ export async function POST(request: Request) {
               request,
               email: entry.email,
               username: entry.username,
-              fullName: entry.name,
+              fullName: entry.fullName,
               userId: entry.id,
               tempPassword: entry.temporaryPassword,
               teamId: team.id,
@@ -484,7 +500,7 @@ export async function POST(request: Request) {
         id: entry.id,
         username: entry.username,
         email: entry.email,
-        name: entry.name,
+        name: entry.fullName,
         temporaryPassword: entry.temporaryPassword,
       })),
       skipped: skippedRows,

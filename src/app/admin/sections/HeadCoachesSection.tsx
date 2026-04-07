@@ -50,15 +50,18 @@ type ImportResultRow = {
 
 type MessageTone = "error" | "success";
 
+function formatDisplayName(person?: { username?: string | null; name?: string | null } | null) {
+  if (!person) return "None";
+  const name = person.name?.trim();
+  return name ? `${name} (@${person.username})` : `@${person.username}`;
+}
+
 function formatCoachLabel(coach: CoachRow) {
-  const name = coach.name?.trim();
-  return name ? `${name} (@${coach.username})` : `@${coach.username}`;
+  return formatDisplayName(coach);
 }
 
 function formatCurrentHeadCoach(team: TeamRow) {
-  if (!team.headCoach) return "None";
-  const name = team.headCoach.name?.trim();
-  return name ? `${name} (@${team.headCoach.username})` : `@${team.headCoach.username}`;
+  return formatDisplayName(team.headCoach);
 }
 
 function parseCsv(text: string) {

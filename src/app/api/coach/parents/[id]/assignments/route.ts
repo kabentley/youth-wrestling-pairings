@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const AssignmentSchema = z.object({
   matNumber: z.number().int().nullable(),
@@ -111,7 +112,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       select: {
         id: true,
         username: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         role: true,
@@ -146,7 +148,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     updated: {
       id: updated.id,
       username: updated.username,
-      name: updated.name,
+      name: getUserFullName(updated),
       email: updated.email,
       phone: updated.phone,
       role: updated.role,

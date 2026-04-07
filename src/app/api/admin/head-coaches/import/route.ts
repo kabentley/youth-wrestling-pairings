@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 export const runtime = "nodejs";
@@ -17,6 +18,14 @@ const ImportRowSchema = z.object({
   email: z.string().trim().optional().default(""),
   phone: z.string().trim().optional().default(""),
   password: z.string().optional().default(""),
+}).superRefine((value, ctx) => {
+  if (lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 const ImportSchema = z.object({

@@ -7,6 +7,7 @@ import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { isEditableMeetPhase } from "@/lib/meetPhase";
 import { requireRole } from "@/lib/rbac";
 import { reorderBoutsForMeetUntilStable } from "@/lib/reorderBouts";
+import { getUserDisplayName } from "@/lib/userName";
 
 const HomeVolunteerRoles = ["COACH", "TABLE_WORKER", "PARENT"] as const;
 const HomeVolunteerRolesForQuery = [...HomeVolunteerRoles];
@@ -78,7 +79,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     select: {
       id: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       staffMatNumber: true,
       children: {
         select: {
@@ -149,7 +151,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
     maxPasses: 8,
   });
 
-  const volunteerLabel = volunteer.name?.trim() ? volunteer.name.trim() : `@${volunteer.username}`;
+  const volunteerDisplayName = getUserDisplayName(volunteer);
+  const volunteerLabel = volunteerDisplayName || `@${volunteer.username}`;
   await logMeetChange(
     meetId,
     user.id,

@@ -2,7 +2,8 @@ import type { Prisma } from "@prisma/client";
 
 import { adjustTeamTextColor } from "./contrastText";
 import { db } from "./db";
-import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "./emailDelivery";
+import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLog, shouldWriteEmailLogs } from "./emailDelivery";
+import { getUserDisplayName } from "./userName";
 
 export type WelcomeEmailResult =
   | { status: "sent"; reason: null }
@@ -229,7 +230,8 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
       color: true,
       headCoach: {
         select: {
-          name: true,
+          firstName: true,
+          lastName: true,
           username: true,
           email: true,
         },
@@ -237,9 +239,7 @@ async function resolveWelcomeEmailCoachContext(teamId?: string | null) {
     },
   });
   const headCoach = team?.headCoach;
-  const coachName = headCoach
-    ? ((headCoach.name ? headCoach.name.trim() : "") || (headCoach.username ? headCoach.username.trim() : ""))
-    : "";
+  const coachName = headCoach ? getUserDisplayName(headCoach) : "";
   const coachEmail = headCoach?.email ? headCoach.email.trim() : "";
   return {
     coachName,
@@ -674,6 +674,18 @@ export async function sendWelcomeEmail({
           : "Welcome email not configured; sign-in details logged locally.",
       };
     }
+    if (shouldWriteEmailLog(emailDeliverySettings.mode, "FAILED")) {
+      await writeWelcomeEmailLog({
+        status: "FAILED",
+        recipient: email,
+        subject: preview.subject,
+        message: preview.text,
+        userId,
+        provider: "sendgrid",
+        errorMessage: "SendGrid is not configured.",
+        payload,
+      });
+    }
     throw new Error("WELCOME_DELIVERY_FAILED");
   }
 
@@ -695,7 +707,7 @@ export async function sendWelcomeEmail({
     };
   }
   if (!deliveryDecision.allowed) {
-    if (shouldLogEmail) {
+    if (shouldWriteEmailLog(emailDeliverySettings.mode, "SKIPPED")) {
       await writeWelcomeEmailLog({
         status: "SKIPPED",
         recipient: email,
@@ -723,7 +735,7 @@ export async function sendWelcomeEmail({
       text: preview.text,
       ...(preview.html ? { html: preview.html } : {}),
     });
-    if (shouldLogEmail) {
+    if (shouldWriteEmailLog(emailDeliverySettings.mode, "SENT")) {
       await writeWelcomeEmailLog({
         status: "SENT",
         recipient: email,
@@ -737,7 +749,7 @@ export async function sendWelcomeEmail({
       });
     }
   } catch (error) {
-    if (shouldLogEmail) {
+    if (shouldWriteEmailLog(emailDeliverySettings.mode, "FAILED")) {
       await writeWelcomeEmailLog({
         status: "FAILED",
         recipient: email,

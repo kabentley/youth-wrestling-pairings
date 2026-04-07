@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const TeamSchema = z.object({
   name: z.string().trim().min(2),
@@ -43,7 +44,7 @@ export async function GET() {
       address: true,
       website: true,
       headCoachId: true,
-      headCoach: { select: { id: true, username: true, name: true } },
+      headCoach: { select: { id: true, username: true, firstName: true, lastName: true } },
       coaches: { where: { role: "COACH" }, select: { id: true, username: true } },
       _count: { select: { wrestlers: true } },
     },
@@ -92,7 +93,7 @@ export async function GET() {
       girlsCount: girlsMap.get(t.id) ?? 0,
       wrestlerCount: t._count.wrestlers,
       headCoachId: t.headCoachId ?? null,
-      headCoach: t.headCoach ? { id: t.headCoach.id, username: t.headCoach.username, name: t.headCoach.name } : null,
+      headCoach: t.headCoach ? { id: t.headCoach.id, username: t.headCoach.username, name: getUserFullName(t.headCoach) } : null,
       coaches: t.coaches.map((c) => ({ id: c.id, username: c.username })),
     })),
   );

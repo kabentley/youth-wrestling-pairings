@@ -3,12 +3,14 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const NotificationEventSchema = z.enum([
   "meet_ready_for_attendance",
   "meet_published",
   "meet_attendees_message",
   "welcome_email",
+  "password_reset",
   "password_reset_code",
 ]);
 const NotificationStatusSchema = z.enum(["SKIPPED", "LOGGED", "SENT", "FAILED"]);
@@ -35,6 +37,8 @@ type SearchNotificationRow = {
   user: {
     id: string;
     username: string;
+    firstName: string | null;
+    lastName: string | null;
     name: string | null;
   } | null;
 };
@@ -124,7 +128,8 @@ export async function GET(req: Request) {
           select: {
             id: true,
             username: true,
-            name: true,
+            firstName: true,
+            lastName: true,
           },
         },
       },
@@ -158,7 +163,15 @@ export async function GET(req: Request) {
   const items = filtered.slice(pageStart, pageStart + pageSize);
 
   return NextResponse.json({
-    items,
+    items: items.map((item) => ({
+      ...item,
+      user: item.user
+        ? {
+            ...item.user,
+            name: getUserFullName(item.user),
+          }
+        : null,
+    })),
     total,
     page,
     pageSize,

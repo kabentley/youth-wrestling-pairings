@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { getAuthorizationErrorCode, requireMeetParticipant } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const BodySchema = z.object({
   allowedCoachIds: z.array(z.string().trim().min(1)).max(200),
@@ -38,7 +39,8 @@ async function loadMeetContext(meetId: string) {
             select: {
               id: true,
               username: true,
-              name: true,
+              firstName: true,
+              lastName: true,
             },
           },
         },
@@ -61,7 +63,8 @@ async function loadCoachRows(teamIds: string[], coordinatorId: string | null, me
       select: {
         id: true,
         username: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         teamId: true,
         team: {
           select: {
@@ -86,7 +89,7 @@ async function loadCoachRows(teamIds: string[], coordinatorId: string | null, me
     .map((coach) => ({
       id: coach.id,
       username: coach.username,
-      name: coach.name ?? null,
+      name: getUserFullName(coach),
       teamId: coach.teamId ?? null,
       teamName: coach.team?.name ?? null,
       teamSymbol: coach.team?.symbol ?? null,
@@ -145,7 +148,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ meetId:
       ? {
           id: meet.homeTeam.headCoach.id,
           username: meet.homeTeam.headCoach.username,
-          name: meet.homeTeam.headCoach.name ?? null,
+          name: getUserFullName(meet.homeTeam.headCoach),
         }
       : null,
     coordinatorAssigned: Boolean(coordinatorId),

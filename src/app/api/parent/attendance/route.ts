@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireSession } from "@/lib/rbac";
+import { getUserDisplayName } from "@/lib/userName";
 
 type ParentAttendanceStatus = "COMING" | "NOT_COMING" | null;
 
@@ -59,7 +60,7 @@ export async function GET() {
           name: true,
           symbol: true,
           address: true,
-          headCoach: { select: { name: true, username: true } },
+          headCoach: { select: { firstName: true, lastName: true, username: true } },
         },
       },
       meetTeams: { select: { teamId: true } },
@@ -85,10 +86,10 @@ export async function GET() {
   const parentTeam = user.teamId
     ? await db.team.findUnique({
         where: { id: user.teamId },
-        select: { headCoach: { select: { name: true, username: true } } },
+        select: { headCoach: { select: { firstName: true, lastName: true, username: true } } },
       })
     : null;
-  const headCoachName = parentTeam?.headCoach?.name?.trim() ?? parentTeam?.headCoach?.username ?? null;
+  const headCoachName = parentTeam?.headCoach ? getUserDisplayName(parentTeam.headCoach) : null;
 
   return NextResponse.json({
     meets: meets.map((meet) => {

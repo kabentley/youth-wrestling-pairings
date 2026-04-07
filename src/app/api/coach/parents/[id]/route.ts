@@ -4,14 +4,26 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { getUserFullName, LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
 const PatchSchema = z.object({
   username: z.string().trim().min(6).max(32).refine((value) => !value.includes("@"), {
     message: "Username may not contain @.",
   }),
-  name: z.string().trim().min(1).max(120),
+  firstName: z.string().trim().min(1).max(60).optional(),
+  lastName: z.string().trim().min(1).max(60).optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).default(""),
   phone: z.union([z.string().trim().regex(/^\+?[1-9]\d{7,14}$/), z.literal("")]).default(""),
+}).superRefine((value, ctx) => {
+  if (!value.firstName) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["firstName"], message: "First name is required." });
+  }
+  if (!value.lastName) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["lastName"], message: "Last name is required." });
+  }
+  if (value.lastName && lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["lastName"], message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE });
+  }
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -53,7 +65,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       teamId: true,
       role: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       email: true,
       phone: true,
     },
@@ -67,20 +80,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (user.role !== "ADMIN" && target.role === "ADMIN") {
     return NextResponse.json({ error: "Only admins can edit admin accounts here." }, { status: 403 });
   }
+  const resolvedName = resolveStoredUserName({
+    firstName: parsed.data.firstName ?? target.firstName,
+    lastName: parsed.data.lastName ?? target.lastName,
+  });
 
   try {
     const updated = await db.user.update({
       where: { id },
       data: {
         username: parsed.data.username.trim().toLowerCase(),
-        name: parsed.data.name.trim(),
+        firstName: resolvedName.firstName,
+        lastName: resolvedName.lastName,
         email: parsed.data.email.trim().toLowerCase(),
         phone: parsed.data.phone.trim(),
       },
       select: {
         id: true,
         username: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         email: true,
         phone: true,
         role: true,
@@ -101,7 +120,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       updated: {
         id: updated.id,
         username: updated.username,
-        name: updated.name,
+        firstName: updated.firstName,
+        lastName: updated.lastName,
+        name: getUserFullName(updated),
         email: updated.email,
         phone: updated.phone,
         role: updated.role,

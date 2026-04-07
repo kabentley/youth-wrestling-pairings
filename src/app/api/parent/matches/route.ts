@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireSession } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 type AttendanceStatus = "COMING" | "NOT_COMING" | "ABSENT" | null;
 
@@ -38,7 +39,8 @@ export async function GET() {
       where: { id: userId },
       select: {
         id: true,
-        name: true,
+        firstName: true,
+        lastName: true,
         username: true,
         role: true,
         teamId: true,
@@ -70,7 +72,7 @@ export async function GET() {
       currentUser: currentUser
         ? {
           id: currentUser.id,
-          name: currentUser.name,
+          name: getUserFullName(currentUser),
           username: currentUser.username,
           role: currentUser.role,
           teamId: currentUser.teamId,
@@ -309,7 +311,7 @@ export async function GET() {
     currentUser: currentUser
       ? {
         id: currentUser.id,
-        name: currentUser.name,
+        name: getUserFullName(currentUser),
         username: currentUser.username,
         role: currentUser.role,
         teamId: currentUser.teamId,

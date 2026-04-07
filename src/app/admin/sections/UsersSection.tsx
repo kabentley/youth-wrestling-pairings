@@ -5,12 +5,15 @@ import type { FormEvent } from "react";
 
 import CreateUserModal from "@/app/admin/components/CreateUserModal";
 import { formatTeamName } from "@/lib/formatTeamName";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 type UserRow = {
   id: string;
   username: string;
   email: string;
   phone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   name: string | null;
   role: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
   teamId: string | null;
@@ -42,10 +45,13 @@ export default function UsersSection() {
   const [editUsername, setEditUsername] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
-  const [editName, setEditName] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
   const [editRole, setEditRole] = useState<UserRow["role"]>("COACH");
   const [editTeamId, setEditTeamId] = useState("");
   const [savingEditUser, setSavingEditUser] = useState(false);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<UserRow | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   async function load(overrides?: {
     page?: number;
@@ -131,7 +137,8 @@ export default function UsersSection() {
         setEditUsername("");
         setEditEmail("");
         setEditPhone("");
-        setEditName("");
+        setEditFirstName("");
+        setEditLastName("");
         setEditRole("COACH");
         setEditTeamId("");
       }
@@ -151,7 +158,8 @@ export default function UsersSection() {
     setEditUsername(user.username);
     setEditEmail(user.email);
     setEditPhone(user.phone ?? "");
-    setEditName(user.name ?? "");
+    setEditFirstName(user.firstName ?? "");
+    setEditLastName(user.lastName ?? "");
     setEditRole(user.role);
     setEditTeamId(user.teamId ?? "");
   }
@@ -161,7 +169,8 @@ export default function UsersSection() {
     setEditUsername("");
     setEditEmail("");
     setEditPhone("");
-    setEditName("");
+    setEditFirstName("");
+    setEditLastName("");
     setEditRole("COACH");
     setEditTeamId("");
   }
@@ -177,12 +186,14 @@ export default function UsersSection() {
     const normalizedUsername = editUsername.trim().toLowerCase();
     const normalizedEmail = editEmail.trim().toLowerCase();
     const normalizedPhone = editPhone.trim();
-    const normalizedName = editName.trim();
+    const normalizedFirstName = editFirstName.trim();
+    const normalizedLastName = editLastName.trim();
     const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
     const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
     const requiresTeam = editRole === "COACH" || editRole === "PARENT" || editRole === "TABLE_WORKER";
     const hasValidTeam = !requiresTeam || editTeamId.trim().length > 0;
-    const hasValidName = normalizedName.length <= 120;
+    const hasValidFirstName = normalizedFirstName.length <= 60;
+    const hasValidLastName = normalizedLastName.length <= 60;
     const hasValidUsername =
       normalizedUsername.length >= MIN_USERNAME_LEN &&
       normalizedUsername.length <= MAX_USERNAME_LEN &&
@@ -192,9 +203,14 @@ export default function UsersSection() {
       hasValidEmail &&
       hasValidPhone &&
       hasValidTeam &&
-      hasValidName;
+      hasValidFirstName &&
+      hasValidLastName;
     if (!canSave) {
       setMsg("Fill all required fields with valid values.");
+      return;
+    }
+    if (lastNameHasDisallowedSuffix(normalizedLastName)) {
+      setMsg(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
       return;
     }
     setSavingEditUser(true);
@@ -206,7 +222,8 @@ export default function UsersSection() {
           username: normalizedUsername,
           email: normalizedEmail,
           phone: normalizedPhone,
-          name: normalizedName.length > 0 ? normalizedName : null,
+          firstName: normalizedFirstName.length > 0 ? normalizedFirstName : null,
+          lastName: normalizedLastName.length > 0 ? normalizedLastName : null,
           role: editRole,
           teamId: editTeamId || null,
         }),
@@ -242,19 +259,21 @@ export default function UsersSection() {
       setMsg(errorMsg);
       return;
     }
-    setMsg("Password reset.");
+    setMsg(typeof data?.message === "string" ? data.message : "Password reset.");
   }
 
-  async function deleteUser(id: string, label: string) {
+  async function deleteUser(id: string) {
     setMsg("");
-    const ok = confirm(`Remove ${label}? This deletes the account and active sessions.`);
-    if (!ok) return;
+    setDeletingUserId(id);
     const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       setMsg(formatError(data?.error) ?? "Unable to delete user.");
+      setDeletingUserId(null);
       return;
     }
+    setPendingDeleteUser(null);
+    setDeletingUserId(null);
     setMsg("User removed.");
     await load();
   }
@@ -276,12 +295,15 @@ export default function UsersSection() {
   const normalizedEditUsername = editUsername.trim().toLowerCase();
   const normalizedEditEmail = editEmail.trim().toLowerCase();
   const normalizedEditPhone = editPhone.trim();
-  const normalizedEditName = editName.trim();
+  const normalizedEditFirstName = editFirstName.trim();
+  const normalizedEditLastName = editLastName.trim();
   const requiresEditTeam = editRole === "COACH" || editRole === "PARENT" || editRole === "TABLE_WORKER";
   const hasValidEditTeam = !requiresEditTeam || editTeamId.trim().length > 0;
   const hasValidEditEmail = normalizedEditEmail === "" || EMAIL_REGEX.test(normalizedEditEmail);
   const hasValidEditPhone = normalizedEditPhone === "" || PHONE_REGEX.test(normalizedEditPhone);
-  const hasValidEditName = normalizedEditName.length <= 120;
+  const hasValidEditFirstName = normalizedEditFirstName.length <= 60;
+  const hasValidEditLastName = normalizedEditLastName.length <= 60;
+  const hasValidEditLastNameSuffix = !lastNameHasDisallowedSuffix(normalizedEditLastName);
   const hasValidEditUsername =
     normalizedEditUsername.length >= MIN_USERNAME_LEN &&
     normalizedEditUsername.length <= MAX_USERNAME_LEN &&
@@ -291,7 +313,9 @@ export default function UsersSection() {
     hasValidEditEmail &&
     hasValidEditPhone &&
     hasValidEditTeam &&
-    hasValidEditName;
+    hasValidEditFirstName &&
+    hasValidEditLastName &&
+    hasValidEditLastNameSuffix;
 
   const showingFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const showingTo = Math.min(total, page * pageSize);
@@ -300,6 +324,13 @@ export default function UsersSection() {
     const team = teams.find((item) => item.id === currentTeamId);
     return team ? team.symbol : "Unknown";
   };
+  const getTeamName = (currentTeamId: string | null) => {
+    if (!currentTeamId) return "None";
+    const team = teams.find((item) => item.id === currentTeamId);
+    return team ? team.name.trim() : "Unknown";
+  };
+  const pendingDeleteTeamLabel = pendingDeleteUser ? getTeamName(pendingDeleteUser.teamId) : "";
+  const pendingDeleteDisplayName = pendingDeleteUser?.name?.trim();
 
   return (
     <>
@@ -446,6 +477,16 @@ export default function UsersSection() {
             <h4>Edit User</h4>
             <div className="admin-edit-user-modal-grid">
               <input
+                placeholder="First Name"
+                value={editFirstName}
+                onChange={(event) => setEditFirstName(event.target.value)}
+              />
+              <input
+                placeholder="Last Name"
+                value={editLastName}
+                onChange={(event) => setEditLastName(event.target.value)}
+              />
+              <input
                 placeholder="Username"
                 value={editUsername}
                 onChange={(event) => setEditUsername(event.target.value)}
@@ -463,11 +504,6 @@ export default function UsersSection() {
                 placeholder="Phone"
                 value={editPhone}
                 onChange={(event) => setEditPhone(event.target.value)}
-              />
-              <input
-                placeholder="Name"
-                value={editName}
-                onChange={(event) => setEditName(event.target.value)}
               />
               <div className="admin-create-user-role-team">
                 <select
@@ -492,6 +528,7 @@ export default function UsersSection() {
               </div>
             </div>
             <div className="admin-modal-actions">
+              {lastNameHasDisallowedSuffix(normalizedEditLastName) && <span className="admin-error" style={{ marginRight: "auto" }}>{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</span>}
               <button
                 className="admin-btn admin-btn-ghost"
                 type="button"
@@ -548,7 +585,7 @@ export default function UsersSection() {
                       <button
                         className="admin-btn admin-btn-danger admin-btn-compact"
                         type="button"
-                        onClick={() => deleteUser(u.id, u.username)}
+                        onClick={() => setPendingDeleteUser(u)}
                         disabled={u.role === "ADMIN" && adminCount <= 1}
                         title={u.role === "ADMIN" && adminCount <= 1 ? "Cannot delete the last admin" : undefined}
                       >
@@ -567,6 +604,84 @@ export default function UsersSection() {
           </tbody>
         </table>
       </div>
+
+      {pendingDeleteUser && (
+        <div className="admin-modal-backdrop" onClick={() => {
+          if (deletingUserId) return;
+          setPendingDeleteUser(null);
+        }}>
+          <div
+            className="admin-modal admin-create-user-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete User"
+          >
+            <div style={{ padding: "18px 20px 12px", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.08em", color: "#b42318", textTransform: "uppercase" }}>
+                Delete User
+              </div>
+              <h4 style={{ margin: "6px 0 0" }}>Remove this account?</h4>
+            </div>
+            <div style={{ padding: "18px 20px", display: "grid", gap: 14 }}>
+              <div
+                style={{
+                  border: "1px solid #f3d2cf",
+                  background: "#fff7f6",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 10, alignItems: "baseline" }}>
+                  <div className="admin-muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Username</div>
+                  <div style={{ fontWeight: 700 }}>{pendingDeleteUser.username}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 10, alignItems: "baseline" }}>
+                  <div className="admin-muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Full Name</div>
+                  <div>{pendingDeleteDisplayName && pendingDeleteDisplayName.length > 0 ? pendingDeleteDisplayName : "None"}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 10, alignItems: "baseline" }}>
+                  <div className="admin-muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Team</div>
+                  <div>{pendingDeleteTeamLabel}</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  border: "1px solid var(--line)",
+                  background: "#f8fafc",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  color: "var(--muted)",
+                  fontSize: 14,
+                  lineHeight: 1.45,
+                }}
+              >
+                This will permanently delete the account and clear active sessions.
+              </div>
+            </div>
+            <div className="admin-modal-actions">
+              <button
+                className="admin-btn admin-btn-ghost"
+                type="button"
+                onClick={() => setPendingDeleteUser(null)}
+                disabled={Boolean(deletingUserId)}
+              >
+                Cancel
+              </button>
+              <button
+                className="admin-btn admin-btn-danger"
+                type="button"
+                onClick={() => void deleteUser(pendingDeleteUser.id)}
+                disabled={Boolean(deletingUserId)}
+              >
+                {deletingUserId === pendingDeleteUser.id ? "Deleting..." : "Delete User"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

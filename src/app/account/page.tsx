@@ -4,11 +4,13 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 export default function AccountPage() {
   const { status } = useSession();
   const [username, setUsername] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -38,7 +40,8 @@ export default function AccountPage() {
       .then((json) => {
         if (!active) return;
         setUsername(String(json.username ?? ""));
-        setName(String(json.name ?? ""));
+        setFirstName(String(json.firstName ?? ""));
+        setLastName(String(json.lastName ?? ""));
         setEmail(String(json.email ?? ""));
         setPhone(String(json.phone ?? ""));
       })
@@ -52,10 +55,14 @@ export default function AccountPage() {
   async function saveProfile() {
     setProfileMsg("");
     setProfileErr("");
+    if (lastNameHasDisallowedSuffix(lastName)) {
+      setProfileErr(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
+      return;
+    }
     const res = await fetch("/api/account", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, phone }),
+      body: JSON.stringify({ firstName, lastName, email, phone }),
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
@@ -130,13 +137,23 @@ export default function AccountPage() {
               <input type="text" value={username} readOnly />
             </label>
             <label className="account-field">
-              <span className="account-label">Full Name</span>
+              <span className="account-label">First Name</span>
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Full name"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="First name"
               />
+            </label>
+            <label className="account-field">
+              <span className="account-label">Last Name</span>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Last name"
+              />
+              {lastNameHasDisallowedSuffix(lastName) && <span className="account-error">{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</span>}
             </label>
             <label className="account-field">
               <span className="account-label">Email Address</span>

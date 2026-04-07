@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireAdmin, requireRole } from "@/lib/rbac";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
 const PatchSchema = z.object({
   role: z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]).optional(),
@@ -11,9 +12,18 @@ const PatchSchema = z.object({
   username: z.string().trim().min(6).refine((value) => !value.includes("@"), {
     message: "Username must not include @",
   }).optional(),
-  name: z.string().trim().max(120).nullable().optional(),
+  firstName: z.string().trim().max(60).nullable().optional(),
+  lastName: z.string().trim().max(60).nullable().optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
   phone: z.union([z.string().trim().regex(/^\+?[1-9]\d{7,14}$/), z.literal("")]).optional(),
+}).superRefine((value, ctx) => {
+  if (value.lastName !== undefined && lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +32,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = PatchSchema.parse(await req.json());
   const existing = await db.user.findUnique({
     where: { id },
-    select: { role: true, teamId: true },
+    select: { role: true, teamId: true, firstName: true, lastName: true },
   });
   if (!existing) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
@@ -51,9 +61,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const trimmedPhone = body.phone.trim();
     data.phone = trimmedPhone.length > 0 ? trimmedPhone : "";
   }
-  if (body.name !== undefined) {
-    const trimmed = body.name?.trim();
-    data.name = trimmed && trimmed.length > 0 ? trimmed : null;
+  if (body.firstName !== undefined || body.lastName !== undefined) {
+    const resolvedName = resolveStoredUserName({
+      firstName: body.firstName !== undefined ? body.firstName : existing.firstName,
+      lastName: body.lastName !== undefined ? body.lastName : existing.lastName,
+    });
+    data.firstName = resolvedName.firstName;
+    data.lastName = resolvedName.lastName;
   }
   if (body.role) {
     data.role = body.role;
@@ -78,7 +92,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const updatedUser = await tx.user.update({
         where: { id },
         data,
-        select: { id: true, username: true, email: true, phone: true, name: true, role: true, teamId: true },
+        select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, role: true, teamId: true },
       });
       const currentHeadTeamRecord = await tx.team.findFirst({
         where: { headCoachId: id },
@@ -124,7 +138,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     throw error;
   }
-  return NextResponse.json(user);
+  return NextResponse.json({
+    ...user,
+    name: resolveStoredUserName({ firstName: user.firstName, lastName: user.lastName }).fullName,
+  });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { MEET_LOCK_TTL_MS } from "@/lib/meetLock";
 import { normalizeMeetPhase } from "@/lib/meetPhase";
 import { requireAnyRole } from "@/lib/rbac";
+import { getUserDisplayName } from "@/lib/userName";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ meetId: string }> }) {
   const { meetId } = await params;
@@ -67,7 +68,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
       homeTeam: {
         select: {
           headCoachId: true,
-          headCoach: { select: { name: true, username: true } },
+          headCoach: { select: { firstName: true, lastName: true, username: true } },
         },
       },
       lockAccesses: {
@@ -80,7 +81,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ meetId
     return NextResponse.json({ error: "Meet not found" }, { status: 404 });
   }
   const coordinatorId = meetForAccess.homeTeam?.headCoachId ?? null;
-  const coordinatorName = meetForAccess.homeTeam?.headCoach?.name ?? null;
+  const coordinatorName = meetForAccess.homeTeam?.headCoach
+    ? getUserDisplayName(meetForAccess.homeTeam.headCoach)
+    : null;
   const coordinatorUsername = meetForAccess.homeTeam?.headCoach?.username ?? null;
   const meetTeamIds = new Set(meetForAccess.meetTeams.map((entry) => entry.teamId));
   const isCoordinator = Boolean(coordinatorId) && user.id === coordinatorId;

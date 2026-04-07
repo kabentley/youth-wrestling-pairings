@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
+import { getUserFullName } from "@/lib/userName";
 
 export async function GET() {
   const teams = await db.team.findMany({
@@ -10,7 +11,7 @@ export async function GET() {
       name: true,
       symbol: true,
       logoData: true,
-      headCoach: { select: { username: true, name: true } },
+      headCoach: { select: { username: true, firstName: true, lastName: true } },
     },
   });
   return NextResponse.json(
@@ -22,7 +23,7 @@ export async function GET() {
       headCoach: team.headCoach
         ? {
             username: team.headCoach.username,
-            name: team.headCoach.name ?? null,
+            name: getUserFullName(team.headCoach),
           }
         : null,
     })),

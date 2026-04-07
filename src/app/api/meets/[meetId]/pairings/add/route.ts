@@ -9,6 +9,7 @@ import { formatWrestlerLabel } from "@/lib/meetChangeFormat";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { pairingScore } from "@/lib/pairingScore";
 import { requireAnyRole } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const BodySchema = z.object({ redId: z.string().min(1), greenId: z.string().min(1) });
 
@@ -141,13 +142,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ meetId:
   const updatedBout = await db.bout.findUnique({ where: { id: bout.id } });
   const sourceRecord = await db.user.findUnique({
     where: { id: user.id },
-    select: { id: true, username: true, name: true, teamId: true, team: { select: { color: true } } },
+    select: { id: true, username: true, firstName: true, lastName: true, teamId: true, team: { select: { color: true } } },
   });
   const sourceUser = sourceRecord
     ? {
       id: sourceRecord.id,
       username: sourceRecord.username,
-      name: sourceRecord.name,
+      name: getUserFullName(sourceRecord),
       teamId: sourceRecord.teamId,
       teamColor: sourceRecord.team?.color ?? null,
     }

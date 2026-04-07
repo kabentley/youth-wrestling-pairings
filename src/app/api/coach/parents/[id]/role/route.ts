@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const RoleSchema = z.object({
   role: z.enum(["COACH", "TABLE_WORKER", "PARENT"]),
@@ -58,7 +59,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       teamId,
       staffMatNumber: parsed.data.role === "PARENT" ? null : undefined,
     },
-    select: { id: true, username: true, role: true, email: true, name: true, phone: true },
+    select: { id: true, username: true, firstName: true, lastName: true, role: true, email: true, phone: true },
   });
   if (parsed.data.role === "COACH" && !team.headCoachId) {
     await db.team.update({
@@ -66,5 +67,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       data: { headCoachId: id },
     });
   }
-  return NextResponse.json({ updated });
+  return NextResponse.json({
+    updated: {
+      ...updated,
+      name: getUserFullName(updated),
+    },
+  });
 }

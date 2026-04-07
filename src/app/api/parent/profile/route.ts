@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 export async function GET() {
   const { userId } = await requireSession();
@@ -9,7 +10,8 @@ export async function GET() {
     where: { id: userId },
     select: {
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       role: true,
       team: { select: { name: true, symbol: true } },
     },
@@ -18,7 +20,9 @@ export async function GET() {
 
   return NextResponse.json({
     username: user.username,
-    name: user.name ?? null,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
+    name: getUserFullName(user),
     role: user.role,
     team: user.team ? `${user.team.name} (${user.team.symbol})`.trim() : null,
   });

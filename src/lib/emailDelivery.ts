@@ -8,6 +8,8 @@ export type EmailDeliverySettings = {
   whitelist: string[];
 };
 
+export type EmailLogStatus = "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
+
 export function parseEmailWhitelist(raw?: string | null) {
   if (!raw) return [];
   return Array.from(new Set(
@@ -88,4 +90,8 @@ export async function shouldDeliverEmailTo(email?: string | null) {
 
 export function shouldWriteEmailLogs(mode: EmailDeliveryMode) {
   return mode !== "all";
+}
+
+export function shouldWriteEmailLog(mode: EmailDeliveryMode, status: EmailLogStatus) {
+  return mode !== "all" || status === "FAILED";
 }

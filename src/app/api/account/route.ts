@@ -3,12 +3,22 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/rbac";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, getUserFullName, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
 const BodySchema = z.object({
-  name: z.string().trim().max(80).optional(),
+  firstName: z.string().trim().max(60).nullable().optional(),
+  lastName: z.string().trim().max(60).nullable().optional(),
   email: z.string().trim().email().optional(),
   phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
   teamId: z.string().trim().optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.lastName !== undefined && lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 export async function GET() {
@@ -17,7 +27,8 @@ export async function GET() {
     where: { id: user.id },
     select: {
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       email: true,
       phone: true,
       role: true,
@@ -29,7 +40,9 @@ export async function GET() {
   const teamLabel = full.team ? `${full.team.name} (${full.team.symbol})`.trim() : null;
   return NextResponse.json({
     username: full.username,
-    name: full.name,
+    firstName: full.firstName,
+    lastName: full.lastName,
+    name: getUserFullName(full),
     email: full.email,
     phone: full.phone,
     role: full.role,
@@ -44,12 +57,28 @@ export async function PATCH(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input." }, { status: 400 });
   }
-  const { name, email, phone, teamId } = parsed.data;
+  const { firstName, lastName, email, phone, teamId } = parsed.data;
 
-  const data: { name?: string | null; email?: string; phone?: string; teamId?: string | null } = {};
-  if (name !== undefined) {
-    const trimmed = name.trim();
-    data.name = trimmed ? trimmed : null;
+  const current = await db.user.findUnique({
+    where: { id: user.id },
+    select: { firstName: true, lastName: true },
+  });
+  if (!current) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+  const data: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string;
+    phone?: string;
+    teamId?: string | null;
+  } = {};
+  if (firstName !== undefined || lastName !== undefined) {
+    const resolvedName = resolveStoredUserName({
+      firstName: firstName !== undefined ? firstName : current.firstName,
+      lastName: lastName !== undefined ? lastName : current.lastName,
+    });
+    data.firstName = resolvedName.firstName;
+    data.lastName = resolvedName.lastName;
   }
   if (email) {
     data.email = email.trim().toLowerCase();
@@ -76,7 +105,10 @@ export async function PATCH(req: Request) {
   const updated = await db.user.update({
     where: { id: user.id },
     data,
-    select: { username: true, email: true, phone: true, role: true, teamId: true },
+    select: { username: true, firstName: true, lastName: true, email: true, phone: true, role: true, teamId: true },
   });
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updated,
+    name: getUserFullName(updated),
+  });
 }

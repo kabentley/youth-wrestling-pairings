@@ -5,6 +5,8 @@ declare module "next-auth" {
       id?: string;
       username?: string | null;
       email?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
       name?: string | null;
       role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
       teamId?: string | null;
@@ -20,6 +22,8 @@ declare module "next-auth/next" {
       id?: string;
       username?: string | null;
       email?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
       name?: string | null;
       role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
       teamId?: string | null;

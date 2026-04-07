@@ -3,9 +3,10 @@ import { Prisma } from "@prisma/client";
 import { adjustTeamTextColor } from "./contrastText";
 import { db } from "./db";
 import type { EmailDeliveryMode } from "./emailDelivery";
-import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLogs } from "./emailDelivery";
+import { getEmailDeliverySettings, shouldDeliverEmailTo, shouldWriteEmailLog } from "./emailDelivery";
 import { formatMeetCheckinWindow } from "./meetDateTime";
 import { normalizeMeetPhase } from "./meetPhase";
+import { getUserDisplayName } from "./userName";
 
 export type NotificationTransport = "off" | "log" | "live";
 export type NotificationChannel = "email" | "system";
@@ -256,13 +257,12 @@ export function dedupeMeetRecipients(recipients: MeetReadyRecipient[]): MeetRead
 }
 
 function resolveHeadCoachName(headCoach?: {
-  name: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   username: string;
 } | null) {
   if (headCoach == null) return "";
-  const trimmedName = headCoach.name?.trim() ?? "";
-  if (trimmedName) return trimmedName;
-  return headCoach.username.trim();
+  return getUserDisplayName(headCoach);
 }
 
 export function buildMeetReadyForAttendanceContent(
@@ -654,7 +654,8 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     select: {
       id: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       teamId: true,
       team: {
         select: {
@@ -662,7 +663,8 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
           symbol: true,
           headCoach: {
             select: {
-              name: true,
+              firstName: true,
+              lastName: true,
               username: true,
               email: true,
             },
@@ -694,7 +696,7 @@ async function getMeetReadyRecipients(teamIds: string[]): Promise<MeetReadyRecip
     userId: parent.id,
     teamId: parent.teamId ?? "",
     teamLabel: buildTeamLabel(parent.team ?? {}),
-    displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
+    displayName: getUserDisplayName(parent),
     email: normalizeEmail(parent.email),
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
@@ -719,7 +721,8 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
     select: {
       id: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       email: true,
       children: {
         where: {
@@ -814,7 +817,7 @@ async function getMeetPublishedRecipients(meetId: string, teamIds: string[]): Pr
 
   return parents.map((parent) => ({
     userId: parent.id,
-    displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
+    displayName: getUserDisplayName(parent),
     email: normalizeEmail(parent.email),
     children: parent.children
       .map((entry) => {
@@ -851,7 +854,8 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
     select: {
       id: true,
       username: true,
-      name: true,
+      firstName: true,
+      lastName: true,
       email: true,
       children: {
         where: {
@@ -879,7 +883,7 @@ async function getMeetAttendeeMessageRecipients(meetId: string): Promise<MeetAtt
 
   return parents.map((parent) => ({
     userId: parent.id,
-    displayName: parent.name?.trim() ? parent.name.trim() : parent.username,
+    displayName: getUserDisplayName(parent),
     email: normalizeEmail(parent.email),
     childNames: uniqueSortedNames(
       parent.children.map((entry) => `${entry.wrestler.first} ${entry.wrestler.last}`.trim()),
@@ -903,7 +907,6 @@ export async function notifyMeetReadyForAttendance(
 ) : Promise<MeetReadyForAttendanceSummary> {
   const emailDeliverySettings = await getEmailDeliverySettings();
   const transport = resolveNotificationTransport(emailDeliverySettings.mode);
-  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -1007,7 +1010,9 @@ export async function notifyMeetReadyForAttendance(
     for (const message of messages) {
       attempted += 1;
       const result = await deliverNotification(message, transport, "meet_ready_for_attendance");
-      await recordDelivery("meet_ready_for_attendance", message, result, { skipEmailLog: !shouldLogEmail });
+      await recordDelivery("meet_ready_for_attendance", message, result, {
+        skipEmailLog: !shouldWriteEmailLog(emailDeliverySettings.mode, result.status),
+      });
       if (message.channel === "email" && recipientTeam) recipientTeam.emailCount += 1;
       if (result.status === "SENT") {
         sent += 1;
@@ -1044,7 +1049,6 @@ export async function notifyMeetPublished(
 ): Promise<NotificationDispatchSummary> {
   const emailDeliverySettings = await getEmailDeliverySettings();
   const transport = resolveNotificationTransport(emailDeliverySettings.mode);
-  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -1123,7 +1127,9 @@ export async function notifyMeetPublished(
     for (const message of messages) {
       attempted += 1;
       const result = await deliverNotification(message, transport, "meet_published");
-      await recordDelivery("meet_published", message, result, { skipEmailLog: !shouldLogEmail });
+      await recordDelivery("meet_published", message, result, {
+        skipEmailLog: !shouldWriteEmailLog(emailDeliverySettings.mode, result.status),
+      });
       if (result.status === "SENT") {
         sent += 1;
       } else if (result.status === "LOGGED") {
@@ -1154,7 +1160,6 @@ export async function notifyMeetAttendeesMessage(
 ): Promise<NotificationDispatchSummary> {
   const emailDeliverySettings = await getEmailDeliverySettings();
   const transport = resolveNotificationTransport(emailDeliverySettings.mode);
-  const shouldLogEmail = shouldWriteEmailLogs(emailDeliverySettings.mode);
   const meet = await db.meet.findUnique({
     where: { id: meetId },
     select: {
@@ -1210,7 +1215,9 @@ export async function notifyMeetAttendeesMessage(
     for (const message of messages) {
       attempted += 1;
       const result = await deliverNotification(message, transport, "meet_attendees_message");
-      await recordDelivery("meet_attendees_message", message, result, { skipEmailLog: !shouldLogEmail });
+      await recordDelivery("meet_attendees_message", message, result, {
+        skipEmailLog: !shouldWriteEmailLog(emailDeliverySettings.mode, result.status),
+      });
       if (result.status === "SENT") {
         sent += 1;
       } else if (result.status === "LOGGED") {

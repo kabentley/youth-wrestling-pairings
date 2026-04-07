@@ -4,15 +4,16 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { parseMeetLocalDateTime } from "@/lib/meetDateTime";
 import { buildMeetPublishedContent, buildMeetReadyForAttendanceContent } from "@/lib/notifications";
-import { buildPasswordResetEmailContent } from "@/lib/passwordResetEmail";
+import { buildPasswordResetEmailPreview } from "@/lib/passwordResetEmail";
 import { requireAdmin } from "@/lib/rbac";
+import { getUserDisplayName } from "@/lib/userName";
 import { buildWelcomeEmailPreview } from "@/lib/welcomeEmail";
 
 const PreviewEventSchema = z.enum([
   "welcome_email",
   "meet_ready_for_attendance",
   "meet_published",
-  "password_reset_code",
+  "password_reset",
 ]);
 
 const BodySchema = z.object({
@@ -150,7 +151,8 @@ async function resolvePreviewMeet(meetId: string, preferredStatuses: string[]) {
                 symbol: true,
                 headCoach: {
                   select: {
-                    name: true,
+                    firstName: true,
+                    lastName: true,
                     username: true,
                     email: true,
                   },
@@ -205,7 +207,8 @@ async function resolvePreviewMeet(meetId: string, preferredStatuses: string[]) {
               symbol: true,
               headCoach: {
                 select: {
-                  name: true,
+                  firstName: true,
+                  lastName: true,
                   username: true,
                   email: true,
                 },
@@ -285,9 +288,7 @@ async function buildMeetReadyPreview(request: Request, meetId: string) {
   const previewChildren = allChildNames.slice(0, 3);
   const coachTeam = meet.meetTeams.find((entry) => entry.team.headCoach) ?? meet.meetTeams[0];
   const headCoach = coachTeam.team.headCoach;
-  const headCoachName = headCoach
-    ? (headCoach.name?.trim() ?? headCoach.username.trim())
-    : "";
+  const headCoachName = headCoach ? getUserDisplayName(headCoach) : "";
   const headCoachEmail = headCoach ? headCoach.email.trim() : "";
   const content = buildMeetReadyForAttendanceContent({
     meetName: meet.name,
@@ -486,24 +487,30 @@ async function buildMeetPublishedPreview(request: Request, meetId: string) {
   };
 }
 
-function buildPasswordResetPreview() {
-  const content = buildPasswordResetEmailContent({
-    code: "483921",
-    expiresInMinutes: 15,
+async function buildPasswordResetPreview(request: Request) {
+  const content = await buildPasswordResetEmailPreview({
+    request,
+    email: "newuser@example.com",
+    username: "newuser1",
+    fullName: "Sample Parent",
+    tempPassword: "TempPass123!",
   });
 
   return {
-    event: "password_reset_code" as const,
-    title: "Password Reset Code Email",
+    event: "password_reset" as const,
+    title: "Password Reset Email",
     subject: content.subject,
     text: content.text,
     html: content.html,
     selectedTeamId: "",
     selectedMeetId: "",
     sampleData: buildSampleData([
-      ["Recipient", "newuser@example.com"],
-      ["Reset code", "483921"],
-      ["Expires in", "15 minutes"],
+      ["League", content.sampleData.leagueName],
+      ["Recipient", content.sampleData.email],
+      ["Full name", content.sampleData.fullName],
+      ["Username", content.sampleData.username],
+      ["Temporary password", content.sampleData.temporaryPassword],
+      ["Sign-in URL", content.sampleData.signInUrl],
     ]),
   };
 }
@@ -563,7 +570,7 @@ export async function POST(req: Request) {
       ? await buildMeetReadyPreview(req, meetId)
       : event === "meet_published"
         ? await buildMeetPublishedPreview(req, meetId)
-        : buildPasswordResetPreview();
+        : await buildPasswordResetPreview(req);
 
   return NextResponse.json(preview);
 }

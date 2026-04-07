@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { logMeetChange } from "@/lib/meetActivity";
 import { getMeetLockError, requireMeetLock } from "@/lib/meetLock";
 import { requireAnyRole } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
@@ -28,18 +29,18 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
   const sourceUsers = sourceIds.length > 0
     ? await db.user.findMany({
       where: { id: { in: sourceIds } },
-      select: { id: true, name: true, username: true, teamId: true, team: { select: { color: true } } },
+      select: { id: true, firstName: true, lastName: true, username: true, teamId: true, team: { select: { color: true } } },
     })
     : [];
   const peopleRuleUsers = peopleRuleUserIds.length > 0
     ? await db.user.findMany({
       where: { id: { in: peopleRuleUserIds } },
-      select: { id: true, role: true, name: true, username: true, teamId: true, team: { select: { color: true } } },
+      select: { id: true, role: true, firstName: true, lastName: true, username: true, teamId: true, team: { select: { color: true } } },
     })
     : [];
   const sourceMap = new Map(sourceUsers.map(user => [user.id, {
     id: user.id,
-    name: user.name,
+    name: getUserFullName(user),
     username: user.username,
     teamId: user.teamId,
     teamColor: user.team?.color ?? null,
@@ -47,7 +48,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ meetId: st
   const peopleRuleMap = new Map(peopleRuleUsers.map(user => [user.id, {
     id: user.id,
     role: user.role,
-    name: user.name,
+    name: getUserFullName(user),
     username: user.username,
     teamId: user.teamId,
     teamColor: user.team?.color ?? null,

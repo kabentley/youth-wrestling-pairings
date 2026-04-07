@@ -1,6 +1,7 @@
 node_modules
 .next
 .env
+.env.prod
 dev.db
 tmp-*.db
 prisma/dev.db

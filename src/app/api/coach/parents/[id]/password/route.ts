@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { describePasswordResetEmailResult, sendPasswordResetEmail } from "@/lib/passwordResetEmail";
 import { requireRole } from "@/lib/rbac";
+import { getUserFullName } from "@/lib/userName";
 
 const BodySchema = z.object({
   password: z.string().trim().min(1),
@@ -43,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const target = await db.user.findUnique({
     where: { id },
-    select: { id: true, teamId: true, role: true, username: true, name: true },
+    select: { id: true, teamId: true, role: true, username: true, firstName: true, lastName: true, email: true },
   });
   if (!target) {
     return NextResponse.json({ error: "User not found." }, { status: 404 });
@@ -65,11 +67,33 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
   });
 
+  let message = "Temporary password set.";
+  const email = target.email.trim();
+  if (!email) {
+    message = "Temporary password set. User has no email address, so no password reset email was sent.";
+  } else {
+    try {
+      const result = await sendPasswordResetEmail({
+        request: req,
+        email,
+        username: target.username,
+        tempPassword: parsed.data.password,
+        userId: target.id,
+        fullName: getUserFullName(target),
+      });
+      message = `Temporary password set. ${describePasswordResetEmailResult(result)}`;
+    } catch (error) {
+      console.error("Failed to deliver team password reset email", error);
+      message = "Temporary password set. Password reset email could not be sent.";
+    }
+  }
+
   return NextResponse.json({
     reset: {
       id: target.id,
       username: target.username,
-      name: target.name,
+      name: getUserFullName(target),
     },
+    message,
   });
 }

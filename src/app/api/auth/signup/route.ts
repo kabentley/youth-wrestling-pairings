@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const BodySchema = z.object({
@@ -13,6 +14,14 @@ const BodySchema = z.object({
   firstName: z.string().trim().min(1).max(50),
   lastName: z.string().trim().min(1).max(50),
   password: z.string().min(8).max(100).regex(/[^A-Za-z0-9]/, "Password must include a symbol."),
+}).superRefine((value, ctx) => {
+  if (lastNameHasDisallowedSuffix(value.lastName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lastName"],
+      message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
 });
 
 function normalizeUsername(username: string) {
@@ -59,7 +68,10 @@ export async function POST(req: Request) {
   const email = body.email.trim().toLowerCase();
   const phone = body.phone ? body.phone.trim() : "";
   const teamId = body.teamId.trim();
-  const normalizedName = `${body.firstName.trim()} ${body.lastName.trim()}`;
+  const resolvedName = resolveStoredUserName({
+    firstName: body.firstName,
+    lastName: body.lastName,
+  });
   const team = await db.team.findUnique({
     where: { id: teamId },
     select: { id: true, name: true, symbol: true },
@@ -82,7 +94,8 @@ export async function POST(req: Request) {
           email,
           phone: phone === "" ? "" : phone,
           teamId,
-          name: normalizedName,
+          firstName: resolvedName.firstName,
+          lastName: resolvedName.lastName,
           passwordHash,
           emailVerified: new Date(),
           role: "PARENT",
@@ -93,7 +106,7 @@ export async function POST(req: Request) {
           request: req,
           email,
           username,
-          fullName: normalizedName,
+          fullName: resolvedName.fullName,
           userId: existing.id,
           teamId,
           teamName: team.name,
@@ -116,7 +129,8 @@ export async function POST(req: Request) {
         email,
         phone: phone === "" ? "" : phone,
         teamId,
-        name: normalizedName,
+        firstName: resolvedName.firstName,
+        lastName: resolvedName.lastName,
         passwordHash,
         emailVerified: new Date(),
         role: "PARENT",
@@ -136,7 +150,7 @@ export async function POST(req: Request) {
       request: req,
       email,
       username,
-      fullName: normalizedName,
+      fullName: resolvedName.fullName,
       userId: createdUserId,
       teamId,
       teamName: team.name,

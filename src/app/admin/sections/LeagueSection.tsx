@@ -27,10 +27,14 @@ function compareTeamRows(a: TeamRow, b: TeamRow) {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 }
 
+function formatDisplayName(person?: { username?: string | null; name?: string | null } | null) {
+  if (!person) return "None";
+  const name = person.name?.trim();
+  return name ? `${name} (@${person.username})` : `@${person.username}`;
+}
+
 function formatHeadCoachLabel(team: TeamRow) {
-  if (!team.headCoach) return "None";
-  const fullName = team.headCoach.name?.trim();
-  return fullName ? `${fullName} (@${team.headCoach.username})` : `@${team.headCoach.username}`;
+  return formatDisplayName(team.headCoach);
 }
 
 export default function LeagueSection({ view = "league" }: { view?: "league" | "teams" | "pairings" }) {

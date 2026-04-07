@@ -4,6 +4,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
 import { db } from "@/lib/db";
+import { getUserFullName } from "@/lib/userName";
 
 function normalizeUsername(username: string) {
   return username.trim().toLowerCase();
@@ -47,7 +48,8 @@ export const authOptions: NextAuthOptions = {
           select: {
             id: true,
             username: true,
-            name: true,
+            firstName: true,
+            lastName: true,
             role: true,
             teamId: true,
             sessionVersion: true,
@@ -63,7 +65,9 @@ export const authOptions: NextAuthOptions = {
         return {
           id: user.id,
           username: user.username,
-          name: user.name ?? undefined,
+          firstName: user.firstName ?? undefined,
+          lastName: user.lastName ?? undefined,
+          name: getUserFullName(user) ?? undefined,
           role: user.role,
           teamId: user.teamId,
           sessionVersion: user.sessionVersion,
@@ -95,6 +99,9 @@ export const authOptions: NextAuthOptions = {
         const tokenUser = user as {
           id?: string;
           username?: string;
+          firstName?: string;
+          lastName?: string;
+          name?: string;
           role?: "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER";
           teamId?: string | null;
           sessionVersion?: number;
@@ -102,6 +109,9 @@ export const authOptions: NextAuthOptions = {
         };
         token.id = tokenUser.id;
         token.username = tokenUser.username;
+        token.firstName = tokenUser.firstName;
+        token.lastName = tokenUser.lastName;
+        token.name = tokenUser.name;
         token.role = tokenUser.role ?? "COACH";
         token.teamId = tokenUser.teamId ?? null;
         token.sessionVersion = tokenUser.sessionVersion ?? 1;
@@ -122,6 +132,9 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user).id = token.id as string | undefined;
         (session.user).username = token.username as string | undefined;
+        (session.user).firstName = token.firstName as string | undefined;
+        (session.user).lastName = token.lastName as string | undefined;
+        (session.user).name = token.name as string | undefined;
         (session.user).role = (token.role as "ADMIN" | "COACH" | "PARENT" | "TABLE_WORKER" | undefined) ?? "COACH";
         (session.user).teamId = token.teamId as string | null | undefined;
         (session.user).sessionVersion = token.sessionVersion as number | undefined;
