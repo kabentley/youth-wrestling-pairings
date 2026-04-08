@@ -41,11 +41,11 @@ Pat,Taylor,pat@example.com,(invalid),
 
   // Expect preview to show all rows
   await expect(page.getByText(/Preview/i)).toBeVisible();
-  
+
   // Check that valid phone formats are accepted
   // Rows with valid formats: John, Jane, Bob, Sarah, Mike, Lisa (blank is ok)
   // Rows that should fail: Tom (9 digits), Anna (12 digits), Chris (extension), Pat (invalid format)
-  
+
   // Look for error messages for invalid phone numbers
   await expect(page.getByText(/Phone must be a 10-digit phone number, or 11 digits starting with 1/i)).toBeVisible({ timeout: 5000 });
 });
