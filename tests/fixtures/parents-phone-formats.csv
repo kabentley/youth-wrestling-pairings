@@ -1,0 +1,16 @@
+first,last,email,phone,kids
+John,Smith,john.smith@example.com,(555) 123-4567,Jason
+Jane,Doe,jane.doe@example.com,555-123-4568,
+Bob,Johnson,bob@example.com,5551234569,
+Sarah,Williams,sarah@example.com,1-555-123-4570,Michael
+Mike,Brown,mike.brown@example.com,15551234571,Sarah;Emma
+Lisa,Davis,lisa@example.com,,Katie
+Tom,Miller,tom@example.com,555 123 4572,
+Anna,Wilson,anna@example.com,555-1234,David
+Chris,Moore,chris@example.com,555123456789,
+Pat,Taylor,pat@example.com,555-134,
+Maya,Anderson,(invalid-email),5551234573,
+David,Thomas,david@example.com,555-1234 ext 123,
+Emma,Jackson,emma@example.com,,
+Grace,White,grace.white@example.com,5551234574,
+Henry,Harris,(555) 223-4575,Oliver

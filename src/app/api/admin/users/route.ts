@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireAdmin } from "@/lib/rbac";
 import { extractLastNameCandidates, lastNameSimilarity, normalizeSurnameToken } from "@/lib/surnameMatching";
 import {
@@ -19,7 +20,7 @@ const UserRoleSchema = z.enum(["ADMIN", "COACH", "PARENT", "TABLE_WORKER"]);
 const CreateSchema = z.object({
   username: z.string().trim().min(6),
   email: z.string().trim().email().optional().or(z.literal("")),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
+  phone: z.string().optional().default(""),
   firstName: z.string().trim().min(1).max(60).optional(),
   lastName: z.string().trim().min(1).max(60).optional(),
   role: UserRoleSchema.default("COACH"),
@@ -45,6 +46,14 @@ const CreateSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["lastName"],
       message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
+  const phoneError = getPhoneValidationError(value.phone);
+  if (phoneError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phone"],
+      message: phoneError,
     });
   }
 });
@@ -223,7 +232,7 @@ export async function POST(req: Request) {
     lastName: body.lastName,
   });
   const email = body.email ? body.email.trim().toLowerCase() : "";
-  const phone = body.phone ? body.phone.trim() : "";
+  const phone = normalizePhoneNumber(body.phone);
   if (body.role === "COACH" && !body.teamId) {
     return NextResponse.json({ error: "Coaches must be assigned a team" }, { status: 400 });
   }
@@ -241,7 +250,7 @@ export async function POST(req: Request) {
       data: {
         username: body.username.toLowerCase(),
         email,
-        phone: phone === "" ? "" : phone,
+        phone,
         firstName: resolvedName.firstName,
         lastName: resolvedName.lastName,
         passwordHash,

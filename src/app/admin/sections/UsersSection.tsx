@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 
 import CreateUserModal from "@/app/admin/components/CreateUserModal";
 import { formatTeamName } from "@/lib/formatTeamName";
+import { getPhoneValidationError, isValidPhoneNumber, normalizePhoneNumber, standardizePhoneNumber } from "@/lib/phone";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 type UserRow = {
@@ -21,7 +22,6 @@ type UserRow = {
 };
 type TeamRow = { id: string; name: string; symbol: string };
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 const MIN_USERNAME_LEN = 6;
 const MAX_USERNAME_LEN = 32;
 
@@ -185,11 +185,11 @@ export default function UsersSection() {
     setMsg("");
     const normalizedUsername = editUsername.trim().toLowerCase();
     const normalizedEmail = editEmail.trim().toLowerCase();
-    const normalizedPhone = editPhone.trim();
+    const hasValidPhone = isValidPhoneNumber(editPhone);
+    const normalizedPhone = hasValidPhone ? normalizePhoneNumber(editPhone) : editPhone.trim();
     const normalizedFirstName = editFirstName.trim();
     const normalizedLastName = editLastName.trim();
     const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
-    const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
     const requiresTeam = editRole === "COACH" || editRole === "PARENT" || editRole === "TABLE_WORKER";
     const hasValidTeam = !requiresTeam || editTeamId.trim().length > 0;
     const hasValidFirstName = normalizedFirstName.length <= 60;
@@ -294,16 +294,19 @@ export default function UsersSection() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const normalizedEditUsername = editUsername.trim().toLowerCase();
   const normalizedEditEmail = editEmail.trim().toLowerCase();
-  const normalizedEditPhone = editPhone.trim();
+  const hasValidEditPhone = isValidPhoneNumber(editPhone);
   const normalizedEditFirstName = editFirstName.trim();
   const normalizedEditLastName = editLastName.trim();
   const requiresEditTeam = editRole === "COACH" || editRole === "PARENT" || editRole === "TABLE_WORKER";
   const hasValidEditTeam = !requiresEditTeam || editTeamId.trim().length > 0;
   const hasValidEditEmail = normalizedEditEmail === "" || EMAIL_REGEX.test(normalizedEditEmail);
-  const hasValidEditPhone = normalizedEditPhone === "" || PHONE_REGEX.test(normalizedEditPhone);
   const hasValidEditFirstName = normalizedEditFirstName.length <= 60;
   const hasValidEditLastName = normalizedEditLastName.length <= 60;
   const hasValidEditLastNameSuffix = !lastNameHasDisallowedSuffix(normalizedEditLastName);
+  const editPhoneError = getPhoneValidationError(editPhone);
+  const editValidationMessage = !hasValidEditLastNameSuffix
+    ? LAST_NAME_SUFFIX_VALIDATION_MESSAGE
+    : editPhoneError;
   const hasValidEditUsername =
     normalizedEditUsername.length >= MIN_USERNAME_LEN &&
     normalizedEditUsername.length <= MAX_USERNAME_LEN &&
@@ -465,7 +468,7 @@ export default function UsersSection() {
       />
 
       {editingUser && (
-        <div className="admin-modal-backdrop" onClick={closeEditUserModal}>
+        <div className="admin-modal-backdrop">
           <form
             className="admin-modal admin-create-user-modal"
             onClick={(event) => event.stopPropagation()}
@@ -500,11 +503,13 @@ export default function UsersSection() {
                 autoCapitalize="none"
                 spellCheck={false}
               />
-              <input
-                placeholder="Phone"
-                value={editPhone}
-                onChange={(event) => setEditPhone(event.target.value)}
-              />
+                <input
+                  type="tel"
+                  placeholder="Phone"
+                  value={editPhone}
+                  onChange={(event) => setEditPhone(event.target.value)}
+                  onBlur={() => setEditPhone((current) => standardizePhoneNumber(current))}
+                />
               <div className="admin-create-user-role-team">
                 <select
                   value={editRole}
@@ -528,7 +533,7 @@ export default function UsersSection() {
               </div>
             </div>
             <div className="admin-modal-actions">
-              {lastNameHasDisallowedSuffix(normalizedEditLastName) && <span className="admin-error" style={{ marginRight: "auto" }}>{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</span>}
+              {editValidationMessage && <span className="admin-error" style={{ marginRight: "auto" }}>{editValidationMessage}</span>}
               <button
                 className="admin-btn admin-btn-ghost"
                 type="button"

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireSession } from "@/lib/rbac";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, getUserFullName, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
@@ -9,7 +10,7 @@ const BodySchema = z.object({
   firstName: z.string().trim().max(60).nullable().optional(),
   lastName: z.string().trim().max(60).nullable().optional(),
   email: z.string().trim().email().optional(),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
+  phone: z.string().optional(),
   teamId: z.string().trim().optional().or(z.literal("")),
 }).superRefine((value, ctx) => {
   if (value.lastName !== undefined && lastNameHasDisallowedSuffix(value.lastName)) {
@@ -17,6 +18,14 @@ const BodySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["lastName"],
       message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
+  const phoneError = getPhoneValidationError(value.phone);
+  if (phoneError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phone"],
+      message: phoneError,
     });
   }
 });
@@ -84,7 +93,7 @@ export async function PATCH(req: Request) {
     data.email = email.trim().toLowerCase();
   }
   if (phone !== undefined) {
-    data.phone = phone.trim();
+    data.phone = normalizePhoneNumber(phone);
   }
   if (teamId !== undefined) {
     const nextTeamId = teamId.trim() || null;

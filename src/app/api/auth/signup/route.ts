@@ -3,13 +3,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
 const BodySchema = z.object({
   username: z.string().trim().min(6).max(32),
   email: z.string().trim().email(),
-  phone: z.string().trim().regex(/^\+?[1-9]\d{7,14}$/).optional().or(z.literal("")),
+  phone: z.string().optional().default(""),
   teamId: z.string().trim().min(1),
   firstName: z.string().trim().min(1).max(50),
   lastName: z.string().trim().min(1).max(50),
@@ -20,6 +21,14 @@ const BodySchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["lastName"],
       message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
+    });
+  }
+  const phoneError = getPhoneValidationError(value.phone);
+  if (phoneError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phone"],
+      message: phoneError,
     });
   }
 });
@@ -66,7 +75,7 @@ export async function POST(req: Request) {
   const body = parsed.data;
   const username = normalizeUsername(body.username);
   const email = body.email.trim().toLowerCase();
-  const phone = body.phone ? body.phone.trim() : "";
+  const phone = normalizePhoneNumber(body.phone);
   const teamId = body.teamId.trim();
   const resolvedName = resolveStoredUserName({
     firstName: body.firstName,
@@ -92,7 +101,7 @@ export async function POST(req: Request) {
         where: { id: existing.id },
         data: {
           email,
-          phone: phone === "" ? "" : phone,
+          phone,
           teamId,
           firstName: resolvedName.firstName,
           lastName: resolvedName.lastName,
@@ -127,7 +136,7 @@ export async function POST(req: Request) {
       data: {
         username,
         email,
-        phone: phone === "" ? "" : phone,
+        phone,
         teamId,
         firstName: resolvedName.firstName,
         lastName: resolvedName.lastName,

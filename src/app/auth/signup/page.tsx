@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { formatTeamName } from "@/lib/formatTeamName";
+import { getPhoneValidationError, standardizePhoneNumber } from "@/lib/phone";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 export default function SignUpPage() {
@@ -204,6 +205,12 @@ export default function SignUpPage() {
       setMsgTone("error");
       return;
     }
+    const phoneError = getPhoneValidationError(phone);
+    if (phoneError) {
+      setMsg(phoneError);
+      setMsgTone("error");
+      return;
+    }
     if (!isStrongPassword(password)) {
       setMsg("Password must be at least 8 characters and include a symbol.");
       setMsgTone("error");
@@ -221,7 +228,7 @@ export default function SignUpPage() {
       body: JSON.stringify({
         username,
         email,
-        phone,
+        phone: standardizePhoneNumber(phone),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         teamId,
@@ -653,6 +660,7 @@ export default function SignUpPage() {
                     type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    onBlur={() => setPhone((current) => standardizePhoneNumber(current))}
                   />
                 </div>
                 <div className="form-group">

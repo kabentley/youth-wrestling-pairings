@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 
 import { formatTeamName } from "@/lib/formatTeamName";
+import { getPhoneValidationError, isValidPhoneNumber, normalizePhoneNumber, standardizePhoneNumber } from "@/lib/phone";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 type TeamRow = { id: string; name: string; symbol: string };
@@ -20,7 +21,6 @@ type CreatedUser = {
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 const MIN_USERNAME_LEN = 6;
 const MAX_USERNAME_LEN = 32;
 
@@ -192,11 +192,11 @@ export default function CreateUserModal({
     const trimmedLastName = lastName.trim();
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
-    const normalizedPhone = phone.trim();
+    const hasValidPhone = isValidPhoneNumber(phone);
+    const normalizedPhone = hasValidPhone ? normalizePhoneNumber(phone) : phone.trim();
     const normalizedPassword = password.trim();
     const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
     const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
-    const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
     const hasValidTeam = !requiresTeam || teamId.trim().length > 0;
     const isValid =
       normalizedUsername.length >= MIN_USERNAME_LEN &&
@@ -251,13 +251,13 @@ export default function CreateUserModal({
   const trimmedLastName = lastName.trim();
   const normalizedUsername = username.trim().toLowerCase();
   const normalizedEmail = email.trim().toLowerCase();
-  const normalizedPhone = phone.trim();
+  const hasValidPhone = isValidPhoneNumber(phone);
   const normalizedPassword = password.trim();
   const requiresTeam = role === "COACH" || role === "PARENT" || role === "TABLE_WORKER";
   const hasValidEmail = normalizedEmail === "" || EMAIL_REGEX.test(normalizedEmail);
-  const hasValidPhone = normalizedPhone === "" || PHONE_REGEX.test(normalizedPhone);
   const hasValidTeam = !requiresTeam || teamId.trim().length > 0;
   const hasValidLastNameSuffix = !lastNameHasDisallowedSuffix(trimmedLastName);
+  const phoneError = getPhoneValidationError(phone);
   const canCreateUser = Boolean(
     normalizedUsername.length >= MIN_USERNAME_LEN &&
     normalizedUsername.length <= MAX_USERNAME_LEN &&
@@ -291,7 +291,13 @@ export default function CreateUserModal({
             autoCapitalize="none"
             spellCheck={false}
           />
-          <input placeholder="Phone (optional)" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <input
+            type="tel"
+            placeholder="Phone (optional)"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            onBlur={() => setPhone((current) => standardizePhoneNumber(current))}
+          />
           <div className="admin-create-user-password">
             <input
               placeholder="Temporary Password"
@@ -331,6 +337,7 @@ export default function CreateUserModal({
           </div>
         </div>
         {lastNameHasDisallowedSuffix(trimmedLastName) && <div className="admin-error" style={{ margin: "0 16px 8px" }}>{LAST_NAME_SUFFIX_VALIDATION_MESSAGE}</div>}
+        {phoneError && <div className="admin-error" style={{ margin: "0 16px 8px" }}>{phoneError}</div>}
         {errorMsg && <div className="admin-error" style={{ margin: "0 16px 8px" }}>{errorMsg}</div>}
         <div className="admin-modal-actions">
           <button className="admin-btn admin-btn-ghost" type="button" onClick={onClose} disabled={creatingUser}>

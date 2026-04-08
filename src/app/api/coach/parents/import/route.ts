@@ -6,11 +6,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireRole } from "@/lib/rbac";
 import { getUserFullName, LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 
-const PHONE_PATTERN = /^\+?[1-9]\d{7,14}$/;
 const MIN_USERNAME_LEN = 6;
 const MAX_USERNAME_LEN = 32;
 
@@ -75,29 +75,6 @@ const validateOptionalEmail = (email: string) => {
   if (!trimmed) return null;
   const parsed = z.string().email().safeParse(trimmed);
   return parsed.success ? null : "Email must be a valid email address.";
-};
-
-const normalizeOptionalPhone = (phone: string) => {
-  const trimmed = phone.trim();
-  if (!trimmed) return "";
-  const digits = trimmed.replace(/\D/g, "");
-  if (!digits) return "";
-  if (trimmed.startsWith("+")) {
-    return `+${digits}`;
-  }
-  if (digits.length === 10) {
-    return `+1${digits}`;
-  }
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return `+${digits}`;
-  }
-  return trimmed;
-};
-
-const validateOptionalPhone = (phone: string) => {
-  const trimmed = phone.trim();
-  if (!trimmed) return null;
-  return PHONE_PATTERN.test(trimmed) ? null : "Phone must be a valid international number.";
 };
 
 const generateTemporaryPassword = () => {
@@ -309,13 +286,13 @@ export async function POST(request: Request) {
       failedRows.push({ rowNumber: row.rowNumber, reason: emailError });
       continue;
     }
-    const normalizedPhone = normalizeOptionalPhone(row.phone);
-    const phoneError = validateOptionalPhone(normalizedPhone);
+    const phoneError = getPhoneValidationError(row.phone);
     if (phoneError) {
       rowErrors.push(`Row ${row.rowNumber}: ${phoneError}`);
       failedRows.push({ rowNumber: row.rowNumber, reason: phoneError });
       continue;
     }
+    const normalizedPhone = normalizePhoneNumber(row.phone);
     const wrestlerIds: string[] = [];
     const unknownKids: string[] = [];
     for (const kidName of row.kids) {

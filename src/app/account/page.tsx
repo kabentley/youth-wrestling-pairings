@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 import AppHeader from "@/components/AppHeader";
+import { getPhoneValidationError, standardizePhoneNumber } from "@/lib/phone";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
 export default function AccountPage() {
@@ -59,10 +60,15 @@ export default function AccountPage() {
       setProfileErr(LAST_NAME_SUFFIX_VALIDATION_MESSAGE);
       return;
     }
+    const phoneError = getPhoneValidationError(phone);
+    if (phoneError) {
+      setProfileErr(phoneError);
+      return;
+    }
     const res = await fetch("/api/account", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName, lastName, email, phone }),
+      body: JSON.stringify({ firstName, lastName, email, phone: standardizePhoneNumber(phone) }),
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
@@ -166,12 +172,13 @@ export default function AccountPage() {
             </label>
             <label className="account-field">
               <span className="account-label">Phone Number</span>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Phone number"
-              />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onBlur={() => setPhone((current) => standardizePhoneNumber(current))}
+                  placeholder="Phone number"
+                />
             </label>
           </div>
           <button className="account-btn" style={{ marginTop: 12 }} onClick={saveProfile}>Update</button>

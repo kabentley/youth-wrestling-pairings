@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireRole } from "@/lib/rbac";
 import { getUserFullName, LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
@@ -13,7 +14,7 @@ const PatchSchema = z.object({
   firstName: z.string().trim().min(1).max(60).optional(),
   lastName: z.string().trim().min(1).max(60).optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).default(""),
-  phone: z.union([z.string().trim().regex(/^\+?[1-9]\d{7,14}$/), z.literal("")]).default(""),
+  phone: z.string().default(""),
 }).superRefine((value, ctx) => {
   if (!value.firstName) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["firstName"], message: "First name is required." });
@@ -23,6 +24,10 @@ const PatchSchema = z.object({
   }
   if (value.lastName && lastNameHasDisallowedSuffix(value.lastName)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["lastName"], message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE });
+  }
+  const phoneError = getPhoneValidationError(value.phone);
+  if (phoneError) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: phoneError });
   }
 });
 
@@ -93,7 +98,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         firstName: resolvedName.firstName,
         lastName: resolvedName.lastName,
         email: parsed.data.email.trim().toLowerCase(),
-        phone: parsed.data.phone.trim(),
+        phone: normalizePhoneNumber(parsed.data.phone),
       },
       select: {
         id: true,

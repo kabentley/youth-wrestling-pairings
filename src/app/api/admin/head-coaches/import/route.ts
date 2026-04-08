@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireAdmin } from "@/lib/rbac";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 import { describeWelcomeEmailResult, sendWelcomeEmail } from "@/lib/welcomeEmail";
@@ -200,6 +201,22 @@ export async function POST(req: Request) {
     }
     seenTeamIds.add(team.id);
 
+    const phoneError = getPhoneValidationError(row.phone);
+    if (phoneError) {
+      results.push({
+        rowNumber: row.rowNumber,
+        team: team.symbol,
+        coachName,
+        email: row.email.trim().toLowerCase() || null,
+        username: row.username.trim().toLowerCase() || null,
+        temporaryPassword: null,
+        status: "error",
+        note: phoneError,
+      });
+      errorCount += 1;
+      continue;
+    }
+
     const providedUsername = row.username.trim().toLowerCase();
     const resolvedUsername = providedUsername || await nextAvailableUsername(row.firstName, row.lastName);
     if (!resolvedUsername) {
@@ -239,7 +256,7 @@ export async function POST(req: Request) {
 
         if (existingUser) {
           const nextEmail = row.email.trim().toLowerCase();
-          const nextPhone = row.phone.trim();
+          const nextPhone = normalizePhoneNumber(row.phone);
           await tx.user.update({
             where: { id: existingUser.id },
             data: {
@@ -256,7 +273,7 @@ export async function POST(req: Request) {
               username: resolvedUsername,
               name: coachName,
               email: row.email.trim().toLowerCase(),
-              phone: row.phone.trim(),
+              phone: normalizePhoneNumber(row.phone),
               role: "COACH",
               teamId: team.id,
               passwordHash,

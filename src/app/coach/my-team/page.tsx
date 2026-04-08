@@ -9,6 +9,7 @@ import NumberInput from "@/components/NumberInput";
 import { adjustTeamTextColor } from "@/lib/contrastText";
 import { formatTeamName } from "@/lib/formatTeamName";
 import { DEFAULT_MAT_RULES, type MatRule } from "@/lib/matRules";
+import { getPhoneValidationError, standardizePhoneNumber } from "@/lib/phone";
 import { extractLastNameCandidates, lastNameSimilarity, normalizeSurnameToken } from "@/lib/surnameMatching";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix } from "@/lib/userName";
 
@@ -1364,6 +1365,12 @@ export default function CoachMyTeamPage() {
       setRolesMessageStatus("error");
       return;
     }
+    const phoneError = getPhoneValidationError(newUserPhone);
+    if (phoneError) {
+      setRolesMessage(phoneError);
+      setRolesMessageStatus("error");
+      return;
+    }
     setCreatingUser(true);
     setRolesMessage(null);
     setRolesMessageStatus(null);
@@ -1390,7 +1397,7 @@ export default function CoachMyTeamPage() {
           lastName: newUserLastName,
           username: newUserUsername,
           email: newUserEmail,
-          phone: newUserPhone,
+          phone: standardizePhoneNumber(newUserPhone),
           password: newUserPassword,
           role: newUserRole,
           wrestlerIds: likelyWrestlerIds,
@@ -1578,6 +1585,12 @@ export default function CoachMyTeamPage() {
       setRolesMessageStatus("error");
       return;
     }
+    const phoneError = getPhoneValidationError(editUserPhone);
+    if (phoneError) {
+      setRolesMessage(phoneError);
+      setRolesMessageStatus("error");
+      return;
+    }
 
     setSavingEditedUser(true);
     setRolesMessage(null);
@@ -1592,7 +1605,7 @@ export default function CoachMyTeamPage() {
           lastName,
           username,
           email: editUserEmail,
-          phone: editUserPhone,
+          phone: standardizePhoneNumber(editUserPhone),
         }),
       });
       const data = await res.json().catch(() => null);
@@ -2578,9 +2591,11 @@ export default function CoachMyTeamPage() {
                 spellCheck={false}
               />
               <input
+                type="tel"
                 placeholder="Phone (optional)"
                 value={newUserPhone}
                 onChange={(event) => setNewUserPhone(event.target.value)}
+                onBlur={() => setNewUserPhone((current) => standardizePhoneNumber(current))}
               />
               <select
                 value={newUserRole}
@@ -2859,9 +2874,11 @@ Ashley,Smith,ashley@example.com,,Logan Smith,,
                 spellCheck={false}
               />
               <input
+                type="tel"
                 placeholder="Phone (optional)"
                 value={editUserPhone}
                 onChange={(event) => setEditUserPhone(event.target.value)}
+                onBlur={() => setEditUserPhone((current) => standardizePhoneNumber(current))}
               />
               <div className="coach-create-user-password coach-edit-user-password">
                 <input

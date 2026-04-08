@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { getPhoneValidationError, normalizePhoneNumber } from "@/lib/phone";
 import { requireAdmin, requireRole } from "@/lib/rbac";
 import { LAST_NAME_SUFFIX_VALIDATION_MESSAGE, lastNameHasDisallowedSuffix, resolveStoredUserName } from "@/lib/userName";
 
@@ -15,7 +16,7 @@ const PatchSchema = z.object({
   firstName: z.string().trim().max(60).nullable().optional(),
   lastName: z.string().trim().max(60).nullable().optional(),
   email: z.union([z.string().trim().email(), z.literal("")]).optional(),
-  phone: z.union([z.string().trim().regex(/^\+?[1-9]\d{7,14}$/), z.literal("")]).optional(),
+  phone: z.string().optional(),
 }).superRefine((value, ctx) => {
   if (value.lastName !== undefined && lastNameHasDisallowedSuffix(value.lastName)) {
     ctx.addIssue({
@@ -24,12 +25,24 @@ const PatchSchema = z.object({
       message: LAST_NAME_SUFFIX_VALIDATION_MESSAGE,
     });
   }
+  const phoneError = getPhoneValidationError(value.phone);
+  if (phoneError) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["phone"],
+      message: phoneError,
+    });
+  }
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   await requireAdmin();
-  const body = PatchSchema.parse(await req.json());
+  const parsed = PatchSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten().fieldErrors }, { status: 400 });
+  }
+  const body = parsed.data;
   const existing = await db.user.findUnique({
     where: { id },
     select: { role: true, teamId: true, firstName: true, lastName: true },
@@ -58,8 +71,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     data.username = body.username.trim().toLowerCase();
   }
   if (body.phone !== undefined) {
-    const trimmedPhone = body.phone.trim();
-    data.phone = trimmedPhone.length > 0 ? trimmedPhone : "";
+    data.phone = normalizePhoneNumber(body.phone);
   }
   if (body.firstName !== undefined || body.lastName !== undefined) {
     const resolvedName = resolveStoredUserName({
