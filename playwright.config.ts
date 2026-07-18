@@ -25,6 +25,4 @@ export default defineConfig({
 });
 
 // Set DATABASE_URL for test workers
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = DATABASE_URL;
-}
+process.env.DATABASE_URL ??= DATABASE_URL;

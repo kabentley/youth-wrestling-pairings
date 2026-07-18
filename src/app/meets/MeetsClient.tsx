@@ -1,5 +1,5 @@
 "use client";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -171,7 +171,13 @@ type Meet = {
   sendNotificationsToParents?: boolean;
 };
 
-export default function MeetsPage() {
+export default function MeetsPage({
+  createParam,
+  defaultsParam,
+}: {
+  createParam?: string;
+  defaultsParam?: string;
+}) {
   const { data: session } = useSession();
   const [teams, setTeams] = useState<Team[]>([]);
   const [meets, setMeets] = useState<Meet[]>([]);
@@ -207,10 +213,9 @@ export default function MeetsPage() {
     date: string;
   } | null>(null);
   const router = useRouter();
-  const searchParams = useSearchParams();
   const sessionUserId = (session?.user as any)?.id as string | undefined;
-  const hasCreateQuery = searchParams.get("create") === "1";
-  const restartDefaultsParam = searchParams.get("defaults");
+  const hasCreateQuery = createParam === "1";
+  const restartDefaultsParam = defaultsParam ?? null;
   const hasRestartDefaults = Boolean(restartDefaultsParam);
   const restartDefaults = useMemo<RestartDefaults | null>(() => {
     if (!restartDefaultsParam) return null;

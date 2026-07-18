@@ -1,11 +1,10 @@
-import { Suspense } from "react";
-
 import MeetsPage from "./MeetsClient";
 
-export default function Page() {
-  return (
-    <Suspense fallback={null}>
-      <MeetsPage />
-    </Suspense>
-  );
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: Promise<{ create?: string; defaults?: string }>;
+}) {
+  const params = await searchParams;
+  return <MeetsPage createParam={params?.create} defaultsParam={params?.defaults} />;
 }

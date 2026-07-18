@@ -64,7 +64,8 @@ async function resolveLeagueName() {
   const league = await db.league.findFirst({
     select: { name: true },
   });
-  return league?.name?.trim() || "the league";
+  const leagueName = league?.name?.trim();
+  return leagueName === undefined || leagueName.length === 0 ? "the league" : leagueName;
 }
 
 export function buildPasswordResetEmailContent({
