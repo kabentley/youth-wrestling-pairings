@@ -2,6 +2,8 @@ import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
+import { postgresConnectionString } from "./postgresConnectionString";
+
 declare global {
 
   var prisma: PrismaClient | undefined;
@@ -23,7 +25,7 @@ function createAdapter() {
     return new PrismaBetterSqlite3({ url });
   }
 
-  return new PrismaPg({ connectionString: url });
+  return new PrismaPg({ connectionString: postgresConnectionString(url) });
 }
 
 /**
