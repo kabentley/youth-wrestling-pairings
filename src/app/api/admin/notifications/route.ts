@@ -12,6 +12,7 @@ const NotificationEventSchema = z.enum([
   "welcome_email",
   "password_reset",
   "password_reset_code",
+  "test_email",
 ]);
 const NotificationStatusSchema = z.enum(["SKIPPED", "LOGGED", "SENT", "FAILED"]);
 

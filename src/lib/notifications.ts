@@ -11,6 +11,7 @@ import { getUserDisplayName } from "./userName";
 export type NotificationTransport = "off" | "log" | "live";
 export type NotificationChannel = "email" | "system";
 export type NotificationEvent = "meet_ready_for_attendance" | "meet_published" | "meet_attendees_message";
+type NotificationLogEvent = NotificationEvent | "test_email";
 export type NotificationStatus = "SKIPPED" | "LOGGED" | "SENT" | "FAILED";
 export type NotificationDispatchSummary = {
   transport: NotificationTransport;
@@ -40,7 +41,7 @@ function isNotificationLoggingEnabled(env: NodeJS.ProcessEnv = process.env) {
 }
 
 type NotificationLogInput = {
-  event: NotificationEvent;
+  event: NotificationLogEvent;
   channel: NotificationChannel;
   status: NotificationStatus;
   recipient: string;
@@ -559,7 +560,7 @@ async function sendEmailLive(subject: string, text: string, to: string, html?: s
 async function deliverNotification(
   message: DeliveryMessage,
   transport: NotificationTransport,
-  event: NotificationEvent,
+  event: NotificationLogEvent,
 ): Promise<DeliveryResult> {
   if (transport === "off") {
     return {
@@ -585,7 +586,7 @@ async function deliverNotification(
 }
 
 async function recordDelivery(
-  event: NotificationEvent,
+  event: NotificationLogEvent,
   message: DeliveryMessage,
   result: DeliveryResult,
   options?: { skipEmailLog?: boolean },
@@ -608,6 +609,25 @@ async function recordDelivery(
     meetId: message.meetId ?? null,
     deliveredAt: result.status === "SENT" || result.status === "LOGGED" ? new Date() : null,
   });
+}
+
+export async function sendAdminTestEmail(userId: string, recipient: string) {
+  const message: DeliveryMessage = {
+    channel: "email",
+    recipient,
+    subject: "App notification test email",
+    message: "This is a test of email delivery from Admin → Notifications.",
+    userId,
+    payload: {},
+  };
+  const settings = await getEmailDeliverySettings();
+  const result = await deliverNotification(message, resolveNotificationTransport(settings.mode), "test_email");
+  try {
+    await recordDelivery("test_email", message, result);
+  } catch (error) {
+    console.error("Unable to log admin test email result", error);
+  }
+  return result;
 }
 
 function buildEventDedupeKey(event: NotificationEvent, meetId: string) {

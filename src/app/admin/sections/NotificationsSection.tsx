@@ -70,6 +70,7 @@ const EVENT_OPTIONS = [
   { value: "welcome_email", label: "Welcome Email" },
   { value: "password_reset", label: "Password Reset Email" },
   { value: "password_reset_code", label: "Password Reset Code (Legacy)" },
+  { value: "test_email", label: "Test Email" },
 ] as const;
 
 const STATUS_OPTIONS = [
@@ -135,6 +136,8 @@ function formatEventLabel(event: NotificationRow["event"]) {
       return "Password Reset Email";
     case "password_reset_code":
       return "Password Reset Code";
+    case "test_email":
+      return "Test Email";
     default:
       return event;
   }
@@ -189,6 +192,30 @@ export default function NotificationsSection() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isLoadingPreviewOptions, setIsLoadingPreviewOptions] = useState(true);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailFeedback, setTestEmailFeedback] = useState<{ message: string; error: boolean } | null>(null);
+
+  async function sendTestEmail() {
+    setIsSendingTestEmail(true);
+    setTestEmailFeedback(null);
+    try {
+      const response = await fetch("/api/admin/notification-test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await response.json().catch(() => null);
+      setTestEmailFeedback({
+        message: (response.ok ? data?.message : data?.error) ?? "Unable to send the test email.",
+        error: !response.ok,
+      });
+      void load();
+    } catch {
+      setTestEmailFeedback({ message: "Unable to reach the app. Check the notification log before retrying.", error: true });
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  }
   const whitelistImportRef = useRef<HTMLInputElement | null>(null);
 
   async function loadEmailDeliverySettings() {
@@ -779,6 +806,14 @@ export default function NotificationsSection() {
             </button>
             <span style={{ color: previewError ? "#b00020" : "#5a6673", minHeight: 20 }}>
               {previewError || (isLoadingPreviewOptions ? "Loading preview options..." : "Preview uses sample recipient data and the live email template.")}
+            </span>
+          </div>
+          <div className="admin-field" style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <button type="button" className="admin-btn" disabled={isSendingTestEmail} onClick={() => { void sendTestEmail(); }}>
+              {isSendingTestEmail ? "Sending..." : "Send Test Email"}
+            </button>
+            <span role="status" style={{ color: testEmailFeedback?.error ? "#b00020" : "#5a6673" }}>
+              {testEmailFeedback?.message ?? "Uses the email address on your admin account."}
             </span>
           </div>
         </div>
